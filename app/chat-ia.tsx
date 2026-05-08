@@ -215,6 +215,12 @@ INTENTS e regras:
 - query: responda com RESUMO_FINANCEIRO, CONTAS_DISPONIVEIS, CAIXINHAS_DISPONIVEIS — execute direto
 - out_of_scope: bloqueie
 
+REGRA ABSOLUTA DE COLETA:
+- Quando status="collecting_data", qualquer resposta do usuário É a resposta ao último campo perguntado.
+- NUNCA retorne intent="out_of_scope" enquanto estiver coletando dados de uma operação.
+- NUNCA retorne message contendo "Não entendi" durante coleta de dados.
+- Interprete a resposta no contexto do campo que você acabou de perguntar.
+
 REGRA CRÍTICA DE ANÁLISE (savings_goal e analyze_finances):
 - SEMPRE use a descrição específica dos lançamentos. Nunca diga "reduza alimentação".
 - Sempre diga: "Você teve R$ X em '[descrição exata]', que é um gasto [classificação]"
@@ -1066,7 +1072,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
           model: MODELO,
           messages: [{ role: "system", content: promptSistema() }, ...historicoParaAPI],
           temperature: 0.1,
-          max_tokens: 600,
+          max_tokens: 1000,
         }),
       });
       clearTimeout(timeoutId);

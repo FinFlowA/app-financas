@@ -90,6 +90,7 @@ export default function TransacoesScreen() {
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<"todas" | "receita" | "despesa" | "transferencia">("todas");
   const [filtroVencidas, setFiltroVencidas] = useState(false);
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes">("todos");
   const [busca, setBusca] = useState("");
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 30;
@@ -337,11 +338,12 @@ export default function TransacoesScreen() {
 
   const hojeRef = new Date(); hojeRef.setHours(0, 0, 0, 0);
 
-  const termoBusca = busca.trim().toLowerCase();
+  const normalizar = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const termoBusca = normalizar(busca.trim());
 
   const transacoesDoMes = transacoes
     .filter((t) => {
-      const passaBusca = !termoBusca || (t.descricao || "").toLowerCase().includes(termoBusca);
+      const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
       if (filtroVencidas) {
         const p = (t.data_vencimento || "0000-00-00").split("-");
         const d = new Date(+p[0], +p[1] - 1, +p[2]);
@@ -351,7 +353,6 @@ export default function TransacoesScreen() {
       const dataSegura = t.data_vencimento || new Date().toISOString().split("T")[0];
       const passaMes = dataSegura.startsWith(mesSelecionado);
       const isTransferencia = t.descricao.includes("[Transf.]");
-      // Filtro de categoria: transferências não têm categoria, nunca são filtradas por ela
       const passaCategoria = filtroCategorias.length === 0
         || isTransferencia
         || (t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
@@ -359,8 +360,10 @@ export default function TransacoesScreen() {
       if (filtroTipo === "transferencia") passaTipo = isTransferencia;
       else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !isTransferencia;
       else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !isTransferencia;
-      // "todas" = passaTipo permanece true → exibe receitas, despesas e transferências
-      return passaConta && passaCategoria && passaMes && passaTipo && passaBusca;
+      let passaStatus = true;
+      if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
+      else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
+      return passaConta && passaCategoria && passaMes && passaTipo && passaStatus && passaBusca;
     })
     .sort((a, b) => (b.data_vencimento || "").localeCompare(a.data_vencimento || ""));
 
@@ -381,9 +384,9 @@ export default function TransacoesScreen() {
     const p = (t.data_vencimento || "0000-00-00").split("-");
     return new Date(+p[0], +p[1] - 1, +p[2]) < hojeRef;
   });
-  const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas;
+  const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas || filtroStatus !== "todos";
   const limparFiltros = () => {
-    setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setBusca(""); setPaginaAtual(1);
+    setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setFiltroStatus("todos"); setBusca(""); setPaginaAtual(1);
   };
 
   return (
@@ -448,6 +451,32 @@ export default function TransacoesScreen() {
             Categ. {filtroCategorias.length > 0 ? `(${filtroCategorias.length})` : ""}
           </Text>
         </TouchableOpacity>
+      </View>
+
+      {/* FILTRO DE STATUS */}
+      <View style={{ flexDirection: "row", paddingHorizontal: 15, paddingBottom: 8, gap: 8 }}>
+        {(["todos", "concluidos", "pendentes"] as const).map((opcao) => {
+          const ativo = filtroStatus === opcao;
+          const label = opcao === "todos" ? "Todos" : opcao === "concluidos" ? "Concluídos" : "Pendentes";
+          const cor = opcao === "concluidos" ? "#2A9D8F" : opcao === "pendentes" ? "#E9C46A" : Cores.textoPrincipal;
+          return (
+            <TouchableOpacity
+              key={opcao}
+              onPress={() => { setFiltroStatus(opcao); setPaginaAtual(1); }}
+              style={{
+                flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6,
+                borderRadius: 20, borderWidth: 1,
+                backgroundColor: ativo ? cor + "22" : Cores.pillFundo,
+                borderColor: ativo ? cor : Cores.borda,
+              }}
+            >
+              {opcao !== "todos" && (
+                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: cor, marginRight: 5 }} />
+              )}
+              <Text style={{ fontSize: 12, fontWeight: ativo ? "700" : "500", color: ativo ? cor : Cores.textoSecundario }}>{label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {temFiltroAtivo && (

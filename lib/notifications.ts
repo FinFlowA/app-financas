@@ -66,23 +66,16 @@ export async function agendarNotificacoesDoApp(
     const ativas = await notificacoesEstaoAtivasPara(userId);
     if (!ativas) return;
 
-    // Só cancela tudo se há transações para reagendar; caso contrário apenas
-    // adiciona as notificações de caixinha sem apagar as de transações
-    if (transacoes.length > 0) {
-      await Notif.cancelAllScheduledNotificationsAsync();
-    }
+    const agora = new Date();
+    const hojeStr = agora.toISOString().split("T")[0];
+    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
 
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
+    const channelId = Platform.OS === "android" ? "finflow" : undefined;
+    const notifBase = (extra?: object) => ({ badge: 0, ...(channelId ? { android: { channelId } } : {}), ...extra });
 
-    const vencendoHoje = transacoes.filter((t) => {
-      if (t.status !== "pendente") return false;
-      const p = (t.data_vencimento || "").split("-");
-      if (p.length < 3) return false;
-      const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
-      return d.getTime() === hoje.getTime();
-    });
+    try { await Notif.setBadgeCountAsync(0); } catch {}
 
+    // Vencidas — executa sempre mas com dedup diário (evita duplicata por re-foco)
     const vencidas = transacoes.filter((t) => {
       if (t.status !== "pendente") return false;
       const p = (t.data_vencimento || "").split("-");
@@ -90,17 +83,6 @@ export async function agendarNotificacoesDoApp(
       const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
       return d < hoje;
     });
-
-    const agora = new Date();
-    const hojeStr = agora.toISOString().split("T")[0];
-
-    const channelId = Platform.OS === "android" ? "finflow" : undefined;
-    const notifBase = (extra?: object) => ({ badge: 0, ...(channelId ? { android: { channelId } } : {}), ...extra });
-
-    // Remove badge do ícone do app
-    try { await Notif.setBadgeCountAsync(0); } catch {}
-
-    // Notificação de vencidos — uma vez por dia, separada por tipo
     const chaveVencidos = `@notif_vencidos_${userId}_${hojeStr}`;
     const jaNotificouVencidos = await AsyncStorage.getItem(chaveVencidos);
     if (vencidas.length > 0 && !jaNotificouVencidos) {
@@ -109,27 +91,33 @@ export async function agendarNotificacoesDoApp(
       const receitasVencidas = vencidas.filter((t) => t.tipo === "receita").length;
       if (despesasVencidas > 0) {
         await Notif.scheduleNotificationAsync({
-          content: {
-            ...notifBase(),
-            title: "🔴 FinFlow — Despesas Vencidas",
-            body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!`,
-          },
+          content: { ...notifBase(), title: "🔴 FinFlow — Despesas Vencidas", body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!` },
           trigger: { type: "timeInterval", seconds: 4, repeats: false } as any,
         });
       }
       if (receitasVencidas > 0) {
         await Notif.scheduleNotificationAsync({
-          content: {
-            ...notifBase(),
-            title: "🟡 FinFlow — Receitas Vencidas",
-            body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!`,
-          },
+          content: { ...notifBase(), title: "🟡 FinFlow — Receitas Vencidas", body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!` },
           trigger: { type: "timeInterval", seconds: 5, repeats: false } as any,
         });
       }
     }
 
-    // Notificações diárias com conteúdo personalizado
+    // Guard mestre: cancelamento + reagendamento completo só UMA VEZ por dia
+    const chaveAgendado = `@notif_agendado_${userId}_${hojeStr}`;
+    const jaAgendadoHoje = await AsyncStorage.getItem(chaveAgendado);
+    if (jaAgendadoHoje) return; // já reagendou tudo hoje — evita duplicatas de noon/caixinha
+    await AsyncStorage.setItem(chaveAgendado, "1");
+    await Notif.cancelAllScheduledNotificationsAsync();
+
+    // Vencendo hoje (8h e 19h)
+    const vencendoHoje = transacoes.filter((t) => {
+      if (t.status !== "pendente") return false;
+      const p = (t.data_vencimento || "").split("-");
+      if (p.length < 3) return false;
+      const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
+      return d.getTime() === hoje.getTime();
+    });
     if (vencendoHoje.length > 0) {
       const despesas = vencendoHoje.filter((t) => t.tipo === "despesa").length;
       const receitas = vencendoHoje.filter((t) => t.tipo === "receita").length;
