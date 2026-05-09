@@ -112,7 +112,9 @@ export default function TransacoesScreen() {
   const [modalOpcoesSerie, setModalOpcoesSerie] = useState<{
     titulo: string; descricao: string;
     labelSimples: string; labelSerie: string;
+    labelFuturas?: string;
     onSimples: () => void; onSerie: () => void;
+    onFuturas?: () => void;
     corSerie?: string;
   } | null>(null);
   const [modalDeleteSimples, setModalDeleteSimples] = useState<Transacao | null>(null);
@@ -180,6 +182,36 @@ export default function TransacoesScreen() {
     carregarDados();
   };
 
+  const deletarFuturas = async (transacao: Transacao) => {
+    const desc = transacao.descricao ?? "";
+    const isFixa = / \(Fixa\)$/.test(desc);
+    const parceladaMatch = desc.match(/^(.+) \((\d+)\/(\d+)\)$/);
+    if (isFixa) {
+      const base = desc.replace(/ \(Fixa\)$/, "");
+      const { error } = await supabase.from("transacoes")
+        .delete()
+        .eq("user_id", session.user.id)
+        .eq("descricao", `${base} (Fixa)`)
+        .gte("data_vencimento", transacao.data_vencimento);
+      if (error) Alert.alert("Erro", "Não foi possível apagar.");
+    } else if (parceladaMatch) {
+      const base = parceladaMatch[1];
+      const currentNum = parseInt(parceladaMatch[2]);
+      const totalStr = parceladaMatch[3];
+      const ids = transacoes
+        .filter((t) => {
+          const m = t.descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
+          return m && m[1] === base && m[3] === totalStr && parseInt(m[2]) >= currentNum;
+        })
+        .map((t) => t.id);
+      if (ids.length > 0) {
+        const { error } = await supabase.from("transacoes").delete().in("id", ids);
+        if (error) Alert.alert("Erro", "Não foi possível apagar.");
+      }
+    }
+    carregarDados();
+  };
+
   const deletarSerie = async (base: string, tipo: "fixa" | "parcelada", totalParcelas?: string) => {
     if (tipo === "fixa") {
       const { error } = await supabase.from("transacoes")
@@ -214,9 +246,11 @@ export default function TransacoesScreen() {
         titulo: "Apagar Agendamento",
         descricao: "Esta transação faz parte de uma série recorrente. O que deseja apagar?",
         labelSimples: "Apenas esta",
+        labelFuturas: "Esta e as próximas",
         labelSerie: "Toda a série",
         corSerie: "#E76F51",
         onSimples: () => { setModalOpcoesSerie(null); executarDeleteUma(transacao); },
+        onFuturas: () => { setModalOpcoesSerie(null); deletarFuturas(transacao); },
         onSerie: () => {
           setModalOpcoesSerie(null);
           if (isFixa) {
@@ -315,15 +349,35 @@ export default function TransacoesScreen() {
   const alternarStatus = async (id: number, statusAtual: string, tipo: string) => {
     const novoStatus = statusAtual === "paga" ? "pendente" : "paga";
     const { error } = await supabase.from("transacoes").update({ status: novoStatus }).eq("id", id);
-    if (error) Alert.alert("Erro", "Não foi possível atualizar o estado.");
-    else {
-      carregarDados();
-      if (novoStatus === "paga") {
-        const label = tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
-        showToast(label, tipo === "receita" ? "success" : "info");
-      } else {
-        showToast("Marcado como pendente", "info");
+    if (error) { Alert.alert("Erro", "Não foi possível atualizar o estado."); return; }
+
+    const transacao = transacoes.find((t) => t.id === id);
+    if (transacao) {
+      const desc = transacao.descricao ?? "";
+      let nomeCaixinha: string | null = null;
+      let operacao: "guardar" | "resgatar" | null = null;
+      if (desc.startsWith("Guardar em: ")) { nomeCaixinha = desc.replace("Guardar em: ", "").trim(); operacao = "guardar"; }
+      else if (desc.startsWith("Resgate de: ")) { nomeCaixinha = desc.replace("Resgate de: ", "").trim(); operacao = "resgatar"; }
+      if (nomeCaixinha && operacao) {
+        const { data: caixinhaData } = await supabase.from("caixinhas").select("id, saldo_atual").ilike("nome", nomeCaixinha).single();
+        if (caixinhaData) {
+          let novoSaldo = Number(caixinhaData.saldo_atual);
+          if (novoStatus === "paga") {
+            novoSaldo = operacao === "guardar" ? novoSaldo + Number(transacao.valor) : Math.max(0, novoSaldo - Number(transacao.valor));
+          } else {
+            novoSaldo = operacao === "guardar" ? Math.max(0, novoSaldo - Number(transacao.valor)) : novoSaldo + Number(transacao.valor);
+          }
+          await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaData.id);
+        }
       }
+    }
+
+    carregarDados();
+    if (novoStatus === "paga") {
+      const label = tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
+      showToast(label, tipo === "receita" ? "success" : "info");
+    } else {
+      showToast("Marcado como pendente", "info");
     }
   };
 
@@ -826,6 +880,14 @@ export default function TransacoesScreen() {
               >
                 <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelSimples}</Text>
               </TouchableOpacity>
+              {modalOpcoesSerie.labelFuturas && (
+                <TouchableOpacity
+                  style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#F4A261", marginBottom: 10 }}
+                  onPress={modalOpcoesSerie.onFuturas}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelFuturas}</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: modalOpcoesSerie.corSerie ?? "#2A9D8F", marginBottom: 10 }}
                 onPress={modalOpcoesSerie.onSerie}

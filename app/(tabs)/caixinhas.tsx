@@ -87,8 +87,6 @@ const LISTA_ICONES = [
   "favorite","work","celebration",
 ];
 
-const MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
-
 export default function CaixinhasScreen() {
   const { isDark, session, showToast } = useAppTheme();
 
@@ -108,6 +106,7 @@ export default function CaixinhasScreen() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
   const [parceiraNome, setParceiraNome] = useState("Parceiro(a)");
+  const [parceiroId, setParceiroId] = useState<string | null>(null);
 
   // Modal nova caixinha
   const [modalNovaVisivel, setModalNovaVisivel] = useState(false);
@@ -150,7 +149,7 @@ export default function CaixinhasScreen() {
   const [modalHistoricoVisivel, setModalHistoricoVisivel] = useState(false);
   const [historicoMovimentos, setHistoricoMovimentos] = useState<MovimentoCaixinha[]>([]);
   const [caixaHistorico, setCaixaHistorico] = useState<Caixinha | null>(null);
-  const [filtroMesHistorico, setFiltroMesHistorico] = useState<string>("");
+  const [filtroUsuarioHistorico, setFiltroUsuarioHistorico] = useState<string>("");
 
   const carregarDados = async () => {
     if (!session?.user?.id) return;
@@ -167,11 +166,12 @@ export default function CaixinhasScreen() {
       const parceria = resParceria.data?.[0];
       setTemParceiro(!!parceria);
       if (parceria) {
-        const parceiroId = parceria.solicitante_id === session.user.id
+        const pid = parceria.solicitante_id === session.user.id
           ? parceria.convidado_id
           : parceria.solicitante_id;
-        if (parceiroId) {
-          const { data: nomeData } = await supabase.rpc("get_user_name", { user_id: parceiroId });
+        if (pid) {
+          setParceiroId(pid);
+          const { data: nomeData } = await supabase.rpc("get_user_name", { user_id: pid });
           if (nomeData) setParceiraNome(nomeData);
         }
       }
@@ -287,15 +287,14 @@ export default function CaixinhasScreen() {
   const abrirHistorico = async (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
     setCaixaHistorico(caixa);
-    const hoje = new Date();
-    setFiltroMesHistorico(`${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`);
+    setFiltroUsuarioHistorico("");
 
     const { data } = await supabase
       .from("transacoes")
       .select("id, tipo, valor, data_vencimento, descricao, conta_id, user_id")
+      .eq("status", "paga")
       .order("data_vencimento", { ascending: false });
 
-    // Filtrar por caixinha pelo nome em código (evita SQL injection via ilike interpolado)
     const nomeGuardar = `Guardar em: ${caixa.nome}`;
     const nomeResgate = `Resgate de: ${caixa.nome}`;
     const dataFiltrada = (data ?? []).filter(
@@ -370,13 +369,12 @@ export default function CaixinhasScreen() {
   };
 
   const movimentosFiltrados = historicoMovimentos.filter((m) => {
-    if (!filtroMesHistorico) return true;
-    return (m.data_vencimento || "").startsWith(filtroMesHistorico);
+    if (!filtroUsuarioHistorico) return true;
+    return m.user_id === filtroUsuarioHistorico;
   });
 
   const totalGuardadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Guardar")).reduce((acc, m) => acc + Number(m.valor), 0);
   const totalResgatadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Resgate")).reduce((acc, m) => acc + Number(m.valor), 0);
-  const mesesMovimentos = [...new Set(historicoMovimentos.map((m) => (m.data_vencimento || "").substring(0, 7)))].sort().reverse();
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -546,6 +544,13 @@ export default function CaixinhasScreen() {
                 onPress={async () => {
                   const caixa = modalConfirmarDeletar;
                   setModalConfirmarDeletar(null);
+                  // Renomeia transações para não aparecerem em novo objetivo de mesmo nome
+                  await supabase.from("transacoes")
+                    .update({ descricao: `Guardar em: ${caixa.nome} (excluído)` })
+                    .eq("descricao", `Guardar em: ${caixa.nome}`);
+                  await supabase.from("transacoes")
+                    .update({ descricao: `Resgate de: ${caixa.nome} (excluído)` })
+                    .eq("descricao", `Resgate de: ${caixa.nome}`);
                   await supabase.from("caixinhas").delete().eq("id", caixa.id);
                   carregarDados();
                 }}
@@ -691,6 +696,7 @@ export default function CaixinhasScreen() {
                 value={nomeCaixinha}
                 onChangeText={setNomeCaixinha}
               />
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Valor da meta (quanto quer guardar):</Text>
               <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                 <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
                 <TextInput
@@ -702,12 +708,13 @@ export default function CaixinhasScreen() {
                   keyboardType="decimal-pad"
                 />
               </View>
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Saldo inicial (já guardado, opcional):</Text>
               <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                 <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
                 <TextInput
                   style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
                   placeholderTextColor={Cores.textoSecundario}
-                  placeholder="0,00 (opcional)"
+                  placeholder="0,00"
                   value={saldoInicialCaixinha}
                   onChangeText={setSaldoInicialCaixinha}
                   keyboardType="decimal-pad"
@@ -857,25 +864,32 @@ export default function CaixinhasScreen() {
               </View>
             )}
 
-            {mesesMovimentos.length > 0 && (
+            {caixaHistorico?.compartilhado && temParceiro && (
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }}>
                 <TouchableOpacity
-                  style={[styles.mesFiltro, { backgroundColor: filtroMesHistorico === "" ? Cores.textoPrincipal : Cores.pillFundo }]}
-                  onPress={() => setFiltroMesHistorico("")}
+                  style={[styles.mesFiltro, { backgroundColor: filtroUsuarioHistorico === "" ? Cores.textoPrincipal : Cores.pillFundo }]}
+                  onPress={() => setFiltroUsuarioHistorico("")}
                 >
-                  <Text style={{ color: filtroMesHistorico === "" ? Cores.fundo : Cores.textoSecundario, fontSize: 12, fontWeight: "600" }}>Todos</Text>
+                  <Text style={{ color: filtroUsuarioHistorico === "" ? Cores.fundo : Cores.textoSecundario, fontSize: 12, fontWeight: "600" }}>Todos</Text>
                 </TouchableOpacity>
-                {mesesMovimentos.map((mes) => {
-                  const [ano, mesNum] = mes.split("-");
-                  const isAtivo = filtroMesHistorico === mes;
-                  return (
-                    <TouchableOpacity key={mes} style={[styles.mesFiltro, { backgroundColor: isAtivo ? Cores.textoPrincipal : Cores.pillFundo }]} onPress={() => setFiltroMesHistorico(mes)}>
-                      <Text style={{ color: isAtivo ? Cores.fundo : Cores.textoSecundario, fontSize: 12, fontWeight: "600" }}>
-                        {MESES[parseInt(mesNum, 10) - 1]} {ano}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
+                <TouchableOpacity
+                  style={[styles.mesFiltro, { backgroundColor: filtroUsuarioHistorico === session?.user?.id ? Cores.textoPrincipal : Cores.pillFundo }]}
+                  onPress={() => setFiltroUsuarioHistorico(session?.user?.id ?? "")}
+                >
+                  <Text style={{ color: filtroUsuarioHistorico === session?.user?.id ? Cores.fundo : Cores.textoSecundario, fontSize: 12, fontWeight: "600" }}>
+                    {session?.user?.user_metadata?.nome_usuario || "Eu"}
+                  </Text>
+                </TouchableOpacity>
+                {parceiroId && (
+                  <TouchableOpacity
+                    style={[styles.mesFiltro, { backgroundColor: filtroUsuarioHistorico === parceiroId ? Cores.textoPrincipal : Cores.pillFundo }]}
+                    onPress={() => setFiltroUsuarioHistorico(parceiroId)}
+                  >
+                    <Text style={{ color: filtroUsuarioHistorico === parceiroId ? Cores.fundo : Cores.textoSecundario, fontSize: 12, fontWeight: "600" }}>
+                      {parceiraNome}
+                    </Text>
+                  </TouchableOpacity>
+                )}
               </ScrollView>
             )}
 

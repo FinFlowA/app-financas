@@ -624,6 +624,8 @@ export default function Dashboard() {
       let descFinal = descTransacao;
       if (frequencia === "parcelada") descFinal = `${descTransacao} (${i + 1}/${totalRepeticoes})`;
       if (frequencia === "fixa") descFinal = `${descTransacao} (Fixa)`;
+      // Parcelas/recorrências futuras (i > 0) sempre ficam pendentes
+      const statusFinal = (frequencia !== "unica" && i > 0) ? "pendente" : statusBd;
 
       if (tipoTransacao === "transferencia") {
         if (!contaSelecionadaId || (!contaDestinoId && !caixinhaDestinoId)) return Alert.alert("Aviso", "Seleciona a origem e destino.");
@@ -631,15 +633,15 @@ export default function Dashboard() {
           // Transferência para objetivo: cria despesa com descrição "Guardar em: X"
           const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
           if (!caixa) return Alert.alert("Aviso", "Objetivo não encontrado.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
         } else {
           if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
-          novasTransacoes.push({ tipo: "receita", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaDestinoId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "receita", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaDestinoId, user_id: session.user.id });
         }
       } else {
         if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
-        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusBd, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
+        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
       }
     }
 
