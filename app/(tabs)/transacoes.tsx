@@ -111,9 +111,11 @@ export default function TransacoesScreen() {
   const [mostrarCalendarioEdit, setMostrarCalendarioEdit] = useState(false);
   const [modalOpcoesSerie, setModalOpcoesSerie] = useState<{
     titulo: string; descricao: string;
-    labelSimples: string; labelSerie: string;
+    labelSimples: string;
+    labelSerie?: string;
     labelFuturas?: string;
-    onSimples: () => void; onSerie: () => void;
+    onSimples: () => void;
+    onSerie?: () => void;
     onFuturas?: () => void;
     corSerie?: string;
   } | null>(null);
@@ -244,22 +246,22 @@ export default function TransacoesScreen() {
     if (isFixa || parceladaMatch) {
       setModalOpcoesSerie({
         titulo: "Apagar Agendamento",
-        descricao: "Esta transação faz parte de uma série recorrente. O que deseja apagar?",
+        descricao: "Esta transação faz parte de uma série. O que deseja apagar?",
         labelSimples: "Apenas esta",
-        labelFuturas: "Esta e as próximas",
-        labelSerie: "Toda a série",
-        corSerie: "#E76F51",
-        onSimples: () => { setModalOpcoesSerie(null); executarDeleteUma(transacao); },
-        onFuturas: () => { setModalOpcoesSerie(null); deletarFuturas(transacao); },
-        onSerie: () => {
-          setModalOpcoesSerie(null);
-          if (isFixa) {
+        // Parceladas: "Esta e as próximas" | Recorrentes: "Toda a série"
+        ...(parceladaMatch ? {
+          labelFuturas: "Esta e as próximas",
+          onFuturas: () => { setModalOpcoesSerie(null); deletarFuturas(transacao); },
+        } : {
+          labelSerie: "Toda a série",
+          corSerie: "#E76F51",
+          onSerie: () => {
+            setModalOpcoesSerie(null);
             const base = descricao.replace(/ \(Fixa\)$/, "");
             deletarSerie(base, "fixa");
-          } else if (parceladaMatch) {
-            deletarSerie(parceladaMatch[1], "parcelada", parceladaMatch[3]);
-          }
-        },
+          },
+        }),
+        onSimples: () => { setModalOpcoesSerie(null); executarDeleteUma(transacao); },
       });
     } else {
       setModalDeleteSimples(transacao);
@@ -888,12 +890,14 @@ export default function TransacoesScreen() {
                   <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelFuturas}</Text>
                 </TouchableOpacity>
               )}
-              <TouchableOpacity
-                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: modalOpcoesSerie.corSerie ?? "#2A9D8F", marginBottom: 10 }}
-                onPress={modalOpcoesSerie.onSerie}
-              >
-                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelSerie}</Text>
-              </TouchableOpacity>
+              {modalOpcoesSerie.labelSerie && (
+                <TouchableOpacity
+                  style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: modalOpcoesSerie.corSerie ?? "#2A9D8F", marginBottom: 10 }}
+                  onPress={modalOpcoesSerie.onSerie}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalOpcoesSerie.labelSerie}</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }}
                 onPress={() => setModalOpcoesSerie(null)}

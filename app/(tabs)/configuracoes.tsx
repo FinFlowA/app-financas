@@ -140,7 +140,67 @@ export default function ConfiguracoesScreen() {
     else { Alert.alert("Parceria Formada!", "Agora vocês podem criar Contas Conjuntas!"); carregarParceria(); }
   };
 
+  const executarDissolucaoVinculo = async () => {
+    if (!parceria || !meuId) return;
+    const parceiroUserId = parceria.solicitante_id === meuId
+      ? parceria.convidado_id
+      : parceria.solicitante_id;
+
+    // 1. Objetivos conjuntos: separar saldo por contribuição de cada usuário
+    const [{ data: caixinhasShared }, { data: minhasTransacoes }] = await Promise.all([
+      supabase.from("caixinhas").select("*").eq("compartilhado", true),
+      supabase.from("transacoes").select("descricao, valor").eq("user_id", meuId).eq("status", "paga"),
+    ]);
+    const transMap = minhasTransacoes ?? [];
+
+    for (const caixa of (caixinhasShared ?? [])) {
+      const nomeGuardar = `Guardar em: ${caixa.nome}`;
+      const nomeResgate = `Resgate de: ${caixa.nome}`;
+      const meusGuardados = transMap.filter(t => t.descricao === nomeGuardar).reduce((s, t) => s + Number(t.valor), 0);
+      const meusResgatados = transMap.filter(t => t.descricao === nomeResgate).reduce((s, t) => s + Number(t.valor), 0);
+      const minhaContrib = Math.max(0, meusGuardados - meusResgatados);
+      const saldoParceiro = Math.max(0, Number(caixa.saldo_atual) - minhaContrib);
+
+      if (caixa.user_id === meuId) {
+        // Meu objetivo: atualizo com minha contribuição
+        await supabase.from("caixinhas")
+          .update({ saldo_atual: minhaContrib, compartilhado: false })
+          .eq("id", caixa.id);
+        // Tentativa de criar cópia para o parceiro (pode falhar por RLS)
+        if (parceiroUserId) {
+          await supabase.from("caixinhas").insert([{
+            nome: caixa.nome, meta_valor: caixa.meta_valor,
+            saldo_atual: saldoParceiro, cor: caixa.cor, icone: caixa.icone,
+            user_id: parceiroUserId, compartilhado: false, data_prazo: caixa.data_prazo ?? null,
+          }]);
+        }
+      } else {
+        // Objetivo do parceiro: crio minha cópia com minha contribuição
+        await supabase.from("caixinhas").insert([{
+          nome: caixa.nome, meta_valor: caixa.meta_valor,
+          saldo_atual: minhaContrib, cor: caixa.cor, icone: caixa.icone,
+          user_id: meuId, compartilhado: false, data_prazo: caixa.data_prazo ?? null,
+        }]);
+        // Tenta atualizar saldo do objetivo do parceiro (pode falhar por RLS)
+        await supabase.from("caixinhas")
+          .update({ saldo_atual: saldoParceiro, compartilhado: false })
+          .eq("id", caixa.id);
+      }
+    }
+
+    // 2. Contas compartilhadas próprias: remover compartilhamento
+    await supabase.from("contas")
+      .update({ compartilhado: false })
+      .eq("user_id", meuId)
+      .eq("compartilhado", true);
+
+    // 3. Deletar a parceria
+    await supabase.from("parcerias").delete().eq("id", parceria.id);
+    setParceria(null);
+  };
+
   const deletarParceria = async (mensagem: string) => {
+    const ehVinculoAtivo = parceria?.status === "aceito";
     setModalConfirmarAcao({
       titulo: "Atenção",
       mensagem,
@@ -149,8 +209,13 @@ export default function ConfiguracoesScreen() {
       onConfirm: async () => {
         setModalConfirmarAcao(null);
         setLoadingParceria(true);
-        await supabase.from("parcerias").delete().eq("id", parceria.id);
-        setParceria(null);
+        if (ehVinculoAtivo) {
+          await executarDissolucaoVinculo();
+        } else {
+          // Convite pendente: apenas deletar, sem split de dados
+          await supabase.from("parcerias").delete().eq("id", parceria.id);
+          setParceria(null);
+        }
         setLoadingParceria(false);
       },
     });
