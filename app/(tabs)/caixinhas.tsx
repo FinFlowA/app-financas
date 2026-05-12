@@ -289,19 +289,11 @@ export default function CaixinhasScreen() {
     setCaixaHistorico(caixa);
     setFiltroUsuarioHistorico("");
 
-    // Para objetivos conjuntos inclui transações do parceiro; o RLS pode limitar
-    // o retorno para transações de contas não-compartilhadas do parceiro —
-    // nesse caso ajuste a política "transacoes" no Supabase para incluir:
-    // descricao LIKE 'Guardar em: %' com parceria aceita.
-    const userFilter = caixa.compartilhado && parceiroId
-      ? `user_id.eq.${session?.user?.id},user_id.eq.${parceiroId}`
-      : `user_id.eq.${session?.user?.id}`;
-
     const { data } = await supabase
       .from("transacoes")
       .select("id, tipo, valor, data_vencimento, descricao, conta_id, user_id")
       .eq("status", "paga")
-      .or(userFilter)
+      .eq("user_id", session?.user?.id)
       .order("data_vencimento", { ascending: false });
 
     const nomeGuardar = `Guardar em: ${caixa.nome}`;
