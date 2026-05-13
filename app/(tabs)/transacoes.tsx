@@ -194,7 +194,8 @@ export default function TransacoesScreen() {
         .delete()
         .eq("user_id", session.user.id)
         .eq("descricao", `${base} (Fixa)`)
-        .gte("data_vencimento", transacao.data_vencimento);
+        .gte("data_vencimento", transacao.data_vencimento)
+        .neq("status", "paga");
       if (error) Alert.alert("Erro", "Não foi possível apagar.");
     } else if (parceladaMatch) {
       const base = parceladaMatch[1];
@@ -203,7 +204,7 @@ export default function TransacoesScreen() {
       const ids = transacoes
         .filter((t) => {
           const m = t.descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
-          return m && m[1] === base && m[3] === totalStr && parseInt(m[2]) >= currentNum;
+          return m && m[1] === base && m[3] === totalStr && parseInt(m[2]) >= currentNum && t.status !== "paga";
         })
         .map((t) => t.id);
       if (ids.length > 0) {
@@ -216,16 +217,19 @@ export default function TransacoesScreen() {
 
   const deletarSerie = async (base: string, tipo: "fixa" | "parcelada", totalParcelas?: string) => {
     if (tipo === "fixa") {
+      const dataCorte = `${mesSelecionado}-01`;
       const { error } = await supabase.from("transacoes")
         .delete()
         .eq("user_id", session.user.id)
-        .eq("descricao", `${base} (Fixa)`);
+        .eq("descricao", `${base} (Fixa)`)
+        .gte("data_vencimento", dataCorte)
+        .neq("status", "paga");
       if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
     } else {
       const idsParaDeletar = transacoes
         .filter((t) => {
           const m = t.descricao.match(/^(.+) \(\d+\/(\d+)\)$/);
-          return m && m[1] === base && m[2] === totalParcelas;
+          return m && m[1] === base && m[2] === totalParcelas && t.status !== "paga";
         })
         .map((t) => t.id);
       if (idsParaDeletar.length === 0) return;
