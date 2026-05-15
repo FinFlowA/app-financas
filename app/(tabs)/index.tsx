@@ -150,7 +150,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
 };
 
 export default function Dashboard() {
-  const { isDark, session, showToast, notificacoesAtivas } = useAppTheme();
+  const { isDark, session, showToast, notificacoesAtivas, verificarLimite } = useAppTheme();
   const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
 
@@ -325,7 +325,7 @@ export default function Dashboard() {
     if (!session?.user?.id) return;
 
     try {
-      const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas] = await Promise.all([
+      const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
         supabase.from("transacoes").select("*"),    // RLS retorna próprias + de contas compartilhadas
@@ -333,6 +333,7 @@ export default function Dashboard() {
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
         supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, cor, icone"),
+        supabase.from("cartoes").select("id, nome, dia_vencimento, dia_fechamento").eq("user_id", session.user.id).eq("ativo", true),
       ]);
 
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
@@ -369,7 +370,16 @@ export default function Dashboard() {
 
       // Agenda notificações locais com base nos dados do dia
       if (notificacoesAtivas && resTransacoes.data) {
-        agendarNotificacoesDoApp(resTransacoes.data, session.user.id);
+        agendarNotificacoesDoApp(
+          resTransacoes.data,
+          session.user.id,
+          undefined,
+          resCartoes.data?.map((c: any) => ({
+            nome: c.nome,
+            dia_vencimento: c.dia_vencimento,
+            dia_fechamento: c.dia_fechamento,
+          })) ?? []
+        );
       }
     } catch (error) {
       const catCache = await AsyncStorage.getItem("@cache_categorias");
@@ -398,6 +408,10 @@ export default function Dashboard() {
   // --- Ações de Categoria ---
   const salvarCategoria = async () => {
     if (nomeCategoria.trim() === "") return Alert.alert("Aviso", "Escreve um nome.");
+    // Verificar limite do plano para categorias
+    const catDoTipo = categorias.filter(c => c.tipo === tipoNovaCategoria && c.ativa !== 0).length;
+    const tipoLimite = tipoNovaCategoria === "receita" ? "categoriasReceita" : "categoriasDespesa";
+    if (!verificarLimite(tipoLimite, catDoTipo)) return;
     setLoadingCat(true);
     const { error } = await supabase.from("categorias").insert([{
       nome: nomeCategoria, cor: corSelecionada, icone: iconeSelecionado,
@@ -485,6 +499,8 @@ export default function Dashboard() {
   // --- Ações de Conta ---
   const salvarConta = async () => {
     if (nomeConta.trim() === "") return Alert.alert("Aviso", "Dá um nome à conta.");
+    // Verificar limite de contas do plano
+    if (!verificarLimite("contas", contasAtivas.length)) return;
     setLoadingConta(true);
     const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
@@ -601,6 +617,10 @@ export default function Dashboard() {
     if (loadingTrans) return;
     if (descTransacao.trim() === "" || valorTransacao.trim() === "")
       return Alert.alert("Aviso", "Preenche a descrição e o valor.");
+    // Verificar limite de lançamentos do mês
+    const mesStr = `${dataSelecionada.getFullYear()}-${String(dataSelecionada.getMonth() + 1).padStart(2, "0")}`;
+    const lancsMes = transacoes.filter(t => (t.data_vencimento || "").startsWith(mesStr)).length;
+    if (!verificarLimite("lancamentosMes", lancsMes)) return;
     const valorNum = parseFloat(valorTransacao.replace(",", "."));
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "O valor deve ser maior que zero.");
 
@@ -692,6 +712,10 @@ export default function Dashboard() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionScroll}>
           <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#E76F51" }]} onPress={() => setModalTransVisivel(true)}>
             <Text style={styles.actionButtonText}>+ Transação</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#457B9D" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
+            <MaterialIcons name="credit-card" size={15} color="#FFF" style={{ marginRight: 5 }} />
+            <Text style={styles.actionButtonText}>Cartão de Crédito</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#8AB17D" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
             <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
@@ -1483,7 +1507,7 @@ const styles = StyleSheet.create({
   },
   iaBotaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 13 },
   actionScroll: { flexDirection: "row", marginBottom: 20 },
-  actionButton: { paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, marginRight: 10, alignItems: "center", justifyContent: "center" },
+  actionButton: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, marginRight: 10, alignItems: "center", justifyContent: "center" },
   actionButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
   mesBotao: { padding: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20 },
   mesBotaoModal: { padding: 8, backgroundColor: "rgba(0,0,0,0.05)", borderRadius: 20 },

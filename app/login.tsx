@@ -1,5 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -431,6 +432,29 @@ export default function LoginScreen() {
                 : "Já tem uma conta? Faça login."}
           </Text>
         </TouchableOpacity>
+
+        {/* CONSENTIMENTO LGPD — exibido apenas no cadastro */}
+        {!isLogin && !isRecuperandoSenha && (
+          <View style={styles.consentimentoContainer}>
+            <Text style={styles.consentimentoTexto}>
+              Ao criar uma conta, você concorda com nossos{" "}
+              <Text
+                style={styles.consentimentoLink}
+                onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/finflow-docs/terms-of-use")}
+              >
+                Termos de Uso
+              </Text>
+              {" "}e{" "}
+              <Text
+                style={styles.consentimentoLink}
+                onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/finflow-docs/privacy-policy")}
+              >
+                Política de Privacidade
+              </Text>
+              , incluindo o tratamento dos seus dados conforme a LGPD.
+            </Text>
+          </View>
+        )}
       </ScrollView>
 
       {modalErro && (
@@ -532,4 +556,7 @@ const styles = StyleSheet.create({
   mainButtonText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
   switchButton: { marginTop: 20, alignItems: "center" },
   switchButtonText: { color: "#F4A261", fontSize: 14, fontWeight: "600" },
+  consentimentoContainer: { marginTop: 20, paddingHorizontal: 4 },
+  consentimentoTexto: { color: "#888", fontSize: 12, textAlign: "center", lineHeight: 18 },
+  consentimentoLink: { color: "#2A9D8F", textDecorationLine: "underline" },
 });

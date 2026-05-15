@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSFaceIDUsageDescription": "O FinFlow usa biometria para proteger o acesso à sua conta financeira."
+      },
+      "bundleIdentifier": "com.luishpalacio.meuappfinancas"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +33,7 @@
     },
     "plugins": [
       "expo-router",
+      "expo-local-authentication",
       [
         "expo-notifications",
         {

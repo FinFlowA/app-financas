@@ -1,6 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
@@ -18,8 +19,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 
+// URLs das páginas legais (GitHub Pages — atualizar quando publicado)
+const URL_PRIVACIDADE = "https://luishpalacio.github.io/finflow-docs/privacy-policy";
+const URL_TERMOS = "https://luishpalacio.github.io/finflow-docs/terms-of-use";
+
 export default function ConfiguracoesScreen() {
-  const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes } = useAppTheme();
+  const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, setPlano } = useAppTheme();
+  const router = useRouter();
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
@@ -329,6 +335,12 @@ export default function ConfiguracoesScreen() {
       await supabase.from("contas").delete().eq("user_id", meuId);
       await supabase.from("categorias").delete().eq("user_id", meuId);
       await supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`);
+      // Cartões e itens de fatura
+      await supabase.from("fatura_itens").delete().eq("user_id", meuId);
+      await supabase.from("cartoes").delete().eq("user_id", meuId);
+      // Histórico de IA e feedback
+      await supabase.from("chat_historico").delete().eq("user_id", meuId);
+      await supabase.from("feedbacks").delete().eq("user_id", meuId);
 
       const { error: erroDeletar } = await supabase.rpc("delete_user");
       if (erroDeletar) {
@@ -508,8 +520,65 @@ export default function ConfiguracoesScreen() {
             )}
           </View>
 
+          {/* PLANO ATUAL */}
+          <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>MEU PLANO</Text>
+          <TouchableOpacity
+            style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda, padding: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }]}
+            onPress={() => router.push("/planos" as any)}
+            activeOpacity={0.8}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: plano === "premium" ? "rgba(244,162,97,0.2)" : plano === "smart" ? "rgba(42,157,143,0.2)" : "rgba(150,150,150,0.2)", alignItems: "center", justifyContent: "center" }}>
+                <MaterialIcons
+                  name="workspace-premium"
+                  size={22}
+                  color={plano === "premium" ? "#F4A261" : plano === "smart" ? "#2A9D8F" : "#999"}
+                />
+              </View>
+              <View>
+                <Text style={[{ color: Cores.texto, fontWeight: "bold", fontSize: 16 }]}>
+                  Plano {plano === "free" ? "Free" : plano === "smart" ? "Smart" : "Premium"}
+                </Text>
+                <Text style={[{ color: Cores.secundario, fontSize: 12 }]}>
+                  {plano === "free" ? "Gratuito · Toque para fazer upgrade" : plano === "smart" ? "R$ 9,90/mês · Smart" : "R$ 19,90/mês · Premium"}
+                </Text>
+              </View>
+            </View>
+            <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
+          </TouchableOpacity>
+
+          {/* LINKS LEGAIS */}
+          <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>LEGAL</Text>
+          <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+            <TouchableOpacity
+              style={[styles.configRow, { borderBottomWidth: 1, borderBottomColor: Cores.borda }]}
+              onPress={() => WebBrowser.openBrowserAsync(URL_PRIVACIDADE)}
+            >
+              <View style={styles.configLeft}>
+                <MaterialIcons name="privacy-tip" size={22} color="#457B9D" />
+                <Text style={[styles.configText, { color: Cores.texto }]}>Política de Privacidade</Text>
+              </View>
+              <MaterialIcons name="open-in-new" size={18} color={Cores.secundario} />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.configRow}
+              onPress={() => WebBrowser.openBrowserAsync(URL_TERMOS)}
+            >
+              <View style={styles.configLeft}>
+                <MaterialIcons name="description" size={22} color="#457B9D" />
+                <Text style={[styles.configText, { color: Cores.texto }]}>Termos de Uso</Text>
+              </View>
+              <MaterialIcons name="open-in-new" size={18} color={Cores.secundario} />
+            </TouchableOpacity>
+          </View>
+
+          {/* VERSÃO */}
+          <Text style={[{ color: Cores.secundario, fontSize: 12, textAlign: "center", marginTop: 16 }]}>
+            FinFlow v1.0.0 · com.luishpalacio.meuappfinancas
+          </Text>
+
           {/* SAIR */}
-          <TouchableOpacity style={[styles.logoutButton, { borderColor: Cores.borda }]} onPress={handleLogout}>
+          <TouchableOpacity style={[styles.logoutButton, { borderColor: Cores.borda, marginTop: 20 }]} onPress={handleLogout}>
             <MaterialIcons name="logout" size={24} color="#E76F51" />
             <Text style={styles.logoutText}>Sair da Conta</Text>
           </TouchableOpacity>

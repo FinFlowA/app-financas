@@ -60,7 +60,6 @@ export default function TabLayout() {
         }}
       />
 
-      {/* NOSSA NOVA ABA AQUI */}
       <Tabs.Screen
         name="configuracoes"
         options={{
@@ -71,7 +70,19 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Escondendo a tela de ranking antiga */}
+      {/* Cartões: visível nas tabs */}
+      <Tabs.Screen
+        name="cartoes"
+        options={{
+          title: "Cartões",
+          tabBarIcon: ({ color }) => (
+            <MaterialIcons name="credit-card" size={26} color={color} />
+          ),
+          href: null, // Acessado via botão na home — oculto nas tabs para não sobrecarregar
+        }}
+      />
+
+      {/* Telas ocultas das tabs */}
       <Tabs.Screen name="ranking" options={{ href: null }} />
     </Tabs>
   );

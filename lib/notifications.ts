@@ -59,7 +59,8 @@ export async function notificacoesEstaoAtivasPara(userId: string): Promise<boole
 export async function agendarNotificacoesDoApp(
   transacoes: { status: string; data_vencimento: string; tipo: string }[],
   userId: string,
-  caixinhas?: { nome: string; meta_valor: number; saldo_atual: number; data_prazo?: string }[]
+  caixinhas?: { nome: string; meta_valor: number; saldo_atual: number; data_prazo?: string }[],
+  cartoes?: { nome: string; dia_vencimento: number; dia_fechamento: number; limite?: number; limite_usado?: number }[]
 ) {
   if (!Notif || Platform.OS === "web") return;
   try {
@@ -74,6 +75,28 @@ export async function agendarNotificacoesDoApp(
     const notifBase = (extra?: object) => ({ badge: 0, ...(channelId ? { android: { channelId } } : {}), ...extra });
 
     try { await Notif.setBadgeCountAsync(0); } catch {}
+
+    // Alertas imediatos de limite de cartão próximo do máximo (dedup por cartão/dia)
+    if (cartoes && cartoes.length > 0) {
+      for (const cartao of cartoes) {
+        if (cartao.limite && cartao.limite_usado && cartao.limite_usado / cartao.limite > 0.8) {
+          const chaveLimite = `@notif_limite_${userId}_${cartao.nome}_${hojeStr}`;
+          const jaNotificouLimite = await AsyncStorage.getItem(chaveLimite);
+          if (!jaNotificouLimite) {
+            await AsyncStorage.setItem(chaveLimite, "1");
+            const pct = Math.round((cartao.limite_usado / cartao.limite) * 100);
+            await Notif.scheduleNotificationAsync({
+              content: {
+                ...notifBase(),
+                title: `⚠️ Cartão ${cartao.nome} — ${pct}% do limite usado`,
+                body: `Disponível: R$ ${(cartao.limite - cartao.limite_usado).toFixed(2)} de R$ ${cartao.limite.toFixed(2)}`,
+              },
+              trigger: { type: "timeInterval", seconds: 3, repeats: false } as any,
+            });
+          }
+        }
+      }
+    }
 
     // Vencidas — executa sempre mas com dedup diário (evita duplicata por re-foco)
     const vencidas = transacoes.filter((t) => {
@@ -194,6 +217,55 @@ export async function agendarNotificacoesDoApp(
             },
             trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
           });
+        }
+      }
+    }
+    // Notificações de vencimento e fechamento de cartões
+    if (cartoes && cartoes.length > 0) {
+      const dataNotifCartao = (diaDoMes: number, diasAntes: number, hora: number): Date | null => {
+        for (let offset = 0; offset <= 1; offset++) {
+          const diaAlvo = new Date(agora.getFullYear(), agora.getMonth() + offset, diaDoMes, hora, 0, 0, 0);
+          const dataNotif = new Date(diaAlvo);
+          dataNotif.setDate(dataNotif.getDate() - diasAntes);
+          if (dataNotif > agora) return dataNotif;
+        }
+        return null;
+      };
+
+      for (const cartao of cartoes) {
+        // Vencimento: 3 dias antes, 1 dia antes, no dia
+        const eventosVenc = [
+          { diasAntes: 3, titulo: `💳 ${cartao.nome} — Fatura vence em 3 dias`, corpo: "Separe o valor para pagar sua fatura." },
+          { diasAntes: 1, titulo: `💳 ${cartao.nome} — Fatura vence amanhã`, corpo: "Não esqueça de pagar a fatura do seu cartão." },
+          { diasAntes: 0, titulo: `🔔 ${cartao.nome} — Fatura vence hoje!`, corpo: "Efetue o pagamento para evitar juros." },
+        ];
+        for (const ev of eventosVenc) {
+          const dataNotif = dataNotifCartao(cartao.dia_vencimento, ev.diasAntes, 9);
+          if (dataNotif) {
+            const segundos = Math.floor((dataNotif.getTime() - agora.getTime()) / 1000);
+            if (segundos > 0) {
+              await Notif.scheduleNotificationAsync({
+                content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
+                trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+              });
+            }
+          }
+        }
+
+        // Fechamento: 2 dias antes
+        const dataFecha = dataNotifCartao(cartao.dia_fechamento, 2, 9);
+        if (dataFecha) {
+          const segundos = Math.floor((dataFecha.getTime() - agora.getTime()) / 1000);
+          if (segundos > 0) {
+            await Notif.scheduleNotificationAsync({
+              content: {
+                ...notifBase(),
+                title: `📋 ${cartao.nome} — Fatura fecha em 2 dias`,
+                body: "Últimos dias para incluir compras nesta fatura.",
+              },
+              trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+            });
+          }
         }
       }
     }

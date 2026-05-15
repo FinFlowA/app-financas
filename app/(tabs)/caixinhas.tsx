@@ -88,7 +88,7 @@ const LISTA_ICONES = [
 ];
 
 export default function CaixinhasScreen() {
-  const { isDark, session, showToast } = useAppTheme();
+  const { isDark, session, showToast, verificarLimite } = useAppTheme();
 
   const Cores = {
     fundo: isDark ? "#121212" : "#ffffff",
@@ -196,6 +196,9 @@ export default function CaixinhasScreen() {
   const criarCaixinha = async () => {
     if (nomeCaixinha.trim() === "" || metaValor.trim() === "")
       return Alert.alert("Aviso", "Preenche o nome e a meta.");
+    // Verificar limite de caixinhas do plano
+    const caixinhasAtivas = caixinhas.filter((c) => !(c as any).arquivado).length;
+    if (!verificarLimite("caixinhas", caixinhasAtivas)) return;
     const valorNum = parseFloat(metaValor.replace(",", "."));
     if (isNaN(valorNum) || valorNum < 1) return Alert.alert("Aviso", "A meta deve ser maior que R$ 1,00.");
 

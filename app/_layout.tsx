@@ -21,6 +21,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Modal,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -32,6 +33,15 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
 import { pedirPermissaoNotificacoes } from "../lib/notifications";
+import {
+  type TipoPlano,
+  type LimitesPlano,
+  LIMITES_PLANOS,
+  dentroDoLimite,
+  msgLimiteAtingido,
+  nomePlano,
+} from "../lib/planos";
+import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 
 // ERROR BOUNDARY
 class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
@@ -70,6 +80,18 @@ export const ThemeContext = createContext({
   showToast: (_msg: string, _tipo?: "success" | "error" | "info") => {},
   notificacoesAtivas: false,
   toggleNotificacoes: async (_value: boolean) => {},
+  // Sistema de planos
+  plano: "free" as TipoPlano,
+  setPlano: (_plano: TipoPlano) => {},
+  limites: LIMITES_PLANOS.free as LimitesPlano,
+  /** Verifica se pode criar mais itens. Se não puder, exibe modal de upgrade e retorna false */
+  verificarLimite: (_tipo: keyof LimitesPlano, _qtdAtual: number): boolean => true,
+  /** Mostra modal de limite com mensagem customizada */
+  mostrarModalLimite: (_mensagem: string, _planoNecessario?: TipoPlano) => {},
+  // Controle de cota da IA
+  iaAcoesHoje: 0,
+  /** Tenta consumir 1 ação de IA. Retorna false se cota esgotada (e exibe modal) */
+  tentarAcaoIA: async (): Promise<boolean> => false,
 });
 
 export const useAppTheme = () => useContext(ThemeContext);
@@ -86,6 +108,15 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
+
+  // Sistema de planos
+  const [plano, setPlanoState] = useState<TipoPlano>("free");
+  const [iaAcoesHoje, setIaAcoesHoje] = useState(0);
+  const [modalLimite, setModalLimite] = useState<{
+    visivel: boolean;
+    mensagem: string;
+    planoNecessario?: TipoPlano;
+  }>({ visivel: false, mensagem: "" });
 
   // Toast
   const [toastMsg, setToastMsg] = useState("");
@@ -188,6 +219,22 @@ export default function RootLayout() {
     });
   }, [session?.user?.id]);
 
+  // Carrega plano e cota de IA do usuário
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const uid = session.user.id;
+
+    AsyncStorage.getItem(`@plano_usuario_${uid}`).then((val) => {
+      if (val === "smart" || val === "premium" || val === "free") {
+        setPlanoState(val);
+      }
+    });
+
+    verificarCotaIA(uid, plano).then(({ usadas }) => {
+      setIaAcoesHoje(usadas);
+    });
+  }, [session?.user?.id]);
+
   // Solicita permissão de notificação na primeira sessão do usuário neste dispositivo
   useEffect(() => {
     if (!session) return;
@@ -230,6 +277,44 @@ export default function RootLayout() {
       router.replace("/(tabs)");
     }
   }, [session, isReady, isAuthReady, segments]);
+
+  const setPlano = async (novoPlano: TipoPlano) => {
+    setPlanoState(novoPlano);
+    if (session?.user?.id) {
+      await AsyncStorage.setItem(`@plano_usuario_${session.user.id}`, novoPlano);
+    }
+  };
+
+  const verificarLimite = (tipo: keyof LimitesPlano, qtdAtual: number): boolean => {
+    const limite = LIMITES_PLANOS[plano][tipo] as number;
+    if (dentroDoLimite(limite, qtdAtual)) return true;
+
+    const msg = msgLimiteAtingido(tipo, plano);
+    const proxPlano: TipoPlano = plano === "free" ? "smart" : "premium";
+    setModalLimite({ visivel: true, mensagem: msg, planoNecessario: proxPlano });
+    return false;
+  };
+
+  const mostrarModalLimite = (mensagem: string, planoNecessario?: TipoPlano) => {
+    setModalLimite({ visivel: true, mensagem, planoNecessario });
+  };
+
+  const tentarAcaoIA = async (): Promise<boolean> => {
+    if (!session?.user?.id) return false;
+    const uid = session.user.id;
+
+    const resultado = await consumirAcaoIA(uid, plano);
+    if (!resultado) {
+      const msg = msgCotaEsgotada(plano);
+      const proxPlano: TipoPlano = plano === "free" ? "smart" : plano === "smart" ? "premium" : "premium";
+      setModalLimite({ visivel: true, mensagem: msg, planoNecessario: proxPlano !== plano ? proxPlano : undefined });
+      return false;
+    }
+
+    // Atualiza contador local
+    verificarCotaIA(uid, plano).then(({ usadas }) => setIaAcoesHoje(usadas));
+    return true;
+  };
 
   const carregarConfiguracoes = async () => {
     try {
@@ -321,13 +406,20 @@ export default function RootLayout() {
   return (
     <View style={{ flex: 1 }}>
       <ErrorBoundary>
-        <ThemeContext.Provider value={{ isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes }}>
+        <ThemeContext.Provider value={{
+          isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast,
+          notificacoesAtivas, toggleNotificacoes,
+          plano, setPlano, limites: LIMITES_PLANOS[plano],
+          verificarLimite, mostrarModalLimite,
+          iaAcoesHoje, tentarAcaoIA,
+        }}>
           <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="login" />
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="reset-password" />
               <Stack.Screen name="email-confirmed" />
+              <Stack.Screen name="planos" />
             </Stack>
             <StatusBar style={isDark ? "light" : "dark"} />
           </ThemeProvider>
@@ -341,6 +433,50 @@ export default function RootLayout() {
       >
         <Text style={styles.toastText}>{toastMsg}</Text>
       </Animated.View>
+
+      {/* Modal de limite de plano */}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={modalLimite.visivel}
+        onRequestClose={() => setModalLimite({ visivel: false, mensagem: "" })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={styles.modalLimiteTopo}>
+              <MaterialIcons name="workspace-premium" size={32} color="#F4A261" />
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#1A1A1A" }]}>
+              Limite do Plano {nomePlano(plano)}
+            </Text>
+            <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#666" }]}>
+              {modalLimite.mensagem}
+            </Text>
+            {modalLimite.planoNecessario && (
+              <TouchableOpacity
+                style={styles.modalLimiteBtnUpgrade}
+                onPress={() => {
+                  setModalLimite({ visivel: false, mensagem: "" });
+                  router.push("/planos" as any);
+                }}
+              >
+                <MaterialIcons name="arrow-upward" size={16} color="#FFF" />
+                <Text style={styles.modalLimiteBtnText}>
+                  Ver Plano {nomePlano(modalLimite.planoNecessario)}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity
+              style={[styles.modalLimiteBtnFechar, { backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }]}
+              onPress={() => setModalLimite({ visivel: false, mensagem: "" })}
+            >
+              <Text style={[styles.modalLimiteBtnFecharText, { color: isDark ? "#AAA" : "#666" }]}>
+                Entendi
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -366,4 +502,61 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   toastText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
+  // Modal de limite de plano
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 24,
+  },
+  modalLimite: {
+    width: "100%",
+    borderRadius: 20,
+    padding: 28,
+    alignItems: "center",
+    elevation: 10,
+  },
+  modalLimiteTopo: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "rgba(244,162,97,0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  modalLimiteTitulo: {
+    fontSize: 20,
+    fontWeight: "bold",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  modalLimiteMensagem: {
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  modalLimiteBtnUpgrade: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#F4A261",
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    width: "100%",
+    justifyContent: "center",
+    marginBottom: 10,
+  },
+  modalLimiteBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
+  modalLimiteBtnFechar: {
+    paddingVertical: 12,
+    paddingHorizontal: 28,
+    borderRadius: 12,
+    width: "100%",
+    alignItems: "center",
+  },
+  modalLimiteBtnFecharText: { fontWeight: "600", fontSize: 14 },
 });

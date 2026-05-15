@@ -17,6 +17,9 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
 
+import { verificarRateLimit } from "../lib/anti-spam";
+import { intentConsumeAcao } from "../lib/ia-limites";
+
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? "";
 const MODELO = "llama-3.3-70b-versatile";
 
@@ -44,6 +47,9 @@ interface RespostaIA {
     | "analyze_finances"
     | "financial_projection"
     | "savings_goal"
+    | "create_cartao"
+    | "add_compra_cartao"
+    | "query_cartao"
     | "query"
     | "out_of_scope";
   status: "collecting_data" | "ready_for_confirmation" | "confirmed";
@@ -205,14 +211,38 @@ CAMPOS — savings_goal:
 1. goal_amount → valor a economizar
 2. target_date → data prazo (YYYY-MM-DD)
 
+CAMPOS — create_cartao (perguntar UM por vez, TODOS obrigatórios):
+1. nome → "Qual o nome do cartão?"
+2. limite → "Qual o limite do cartão? (valor em R$)"
+3. dia_vencimento → "Qual o dia de vencimento da fatura? (1–31)"
+4. dia_fechamento → "Qual o dia de fechamento? (1–31)"
+
+RESUMO create_cartao:
+"Criação de cartão\nNome: [nome]\nLimite: R$ [valor]\nVencimento: dia [vencimento]\nFechamento: dia [fechamento]\n\nConfirma as informações?"
+
+CAMPOS — add_compra_cartao (perguntar UM por vez):
+1. cartao_name → "Em qual cartão? Disponíveis: [CARTOES_DISPONIVEIS]"
+2. descricao → "Descrição da compra?"
+3. valor → "Valor total da compra?"
+4. parcelas → "Em quantas parcelas? (1 para à vista)"
+5. data_compra → "Data da compra? (DD/MM/AAAA)" — padrão: hoje
+
+RESUMO add_compra_cartao (à vista): "Nova compra\nCartão: [nome]\nDescrição: [desc]\nValor: R$ [valor]\nFatura: [mês]\nData: [DD/MM/AAAA]\n\nConfirma?"
+RESUMO add_compra_cartao (parcelada): "Nova compra parcelada\nCartão: [nome]\nDescrição: [desc]\nTotal: R$ [valor] ([N]x de R$ [parcela])\nPrimeira fatura: [mês]\nData: [DD/MM/AAAA]\n\nConfirma?"
+
+CAMPOS — query_cartao:
+Sem coleta — responda diretamente usando CARTOES_DISPONIVEIS.
+
 INTENTS e regras:
 - create_transaction, create_account, edit_account, create_category, edit_category, delete_category: coleta → confirmação → execução
 - create_caixinha, move_caixinha, delete_caixinha, archive_caixinha: coleta → confirmação → execução
 - confirm_pending, delete_transaction, archive_account: coleta → confirmação → execução
+- create_cartao, add_compra_cartao: coleta → confirmação → execução
 - analyze_finances: execute direto. Inclua regra 50/30/20 SOMENTE quando usuário pedir explicitamente ("análise de gastos", "50/30/20", "regra", "necessidades e desejos")
 - financial_projection: colete target_date, depois execute direto (sem confirmação)
 - savings_goal: colete goal_amount e target_date, depois execute direto (sem confirmação)
 - query: responda com RESUMO_FINANCEIRO, CONTAS_DISPONIVEIS, CAIXINHAS_DISPONIVEIS — execute direto
+- query_cartao: responda usando CARTOES_DISPONIVEIS — execute direto
 - out_of_scope: bloqueie
 
 REGRA ABSOLUTA DE COLETA:
@@ -233,7 +263,7 @@ Formato obrigatório:
 {"intent":"...","status":"collecting_data","data":{},"missing_fields":[],"message":"mensagem aqui"}`;
 
 export default function ChatIA() {
-  const { isDark, session } = useAppTheme();
+  const { isDark, session, plano, limites, tentarAcaoIA, mostrarModalLimite } = useAppTheme();
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -248,6 +278,7 @@ export default function ChatIA() {
   const [contasUsuario, setContasUsuario] = useState<{ id: number; nome: string; saldo_inicial: number }[]>([]);
   const [categoriasUsuario, setCategoriasUsuario] = useState<{ id: number; nome: string; tipo: string; cor: string }[]>([]);
   const [caixinhasUsuario, setCaixinhasUsuario] = useState<{ id: number; nome: string; saldo_atual: number; meta_valor: number }[]>([]);
+  const [cartoesUsuario, setCartoesUsuario] = useState<{ id: number; nome: string; limite: number; dia_vencimento: number; dia_fechamento: number }[]>([]);
   const [resumoFinanceiro, setResumoFinanceiro] = useState<string>("");
   const [transacoesCompletas, setTransacoesCompletas] = useState<{
     id: number; tipo: string; valor: number; descricao: string;
@@ -270,11 +301,12 @@ export default function ChatIA() {
     if (!session?.user?.id) return;
     const uid = session.user.id;
 
-    const [resContas, resCat, resCaixa, resTransacoes] = await Promise.all([
+    const [resContas, resCat, resCaixa, resTransacoes, resCartoes] = await Promise.all([
       supabase.from("contas").select("id, nome, saldo_inicial, compartilhado, arquivado"),
       supabase.from("categorias").select("id, nome, tipo, cor").eq("user_id", uid).eq("ativa", 1),
       supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, compartilhado").neq("arquivado", true),
       supabase.from("transacoes").select("id, tipo, valor, descricao, status, categoria_id, conta_id, data_vencimento").eq("user_id", uid).order("data_vencimento", { ascending: false }).limit(500),
+      supabase.from("cartoes").select("id, nome, limite, dia_vencimento, dia_fechamento").eq("user_id", uid).eq("ativo", true),
     ]);
 
     const contasAtivas = (resContas.data || []).filter((c) => !c.arquivado);
@@ -282,6 +314,7 @@ export default function ChatIA() {
     if (resCat.data) setCategoriasUsuario(resCat.data);
     if (resCaixa.data) setCaixinhasUsuario(resCaixa.data);
     if (resTransacoes.data) setTransacoesCompletas(resTransacoes.data as any);
+    if (resCartoes.data) setCartoesUsuario(resCartoes.data);
 
     // Calcular resumo financeiro do mês atual
     if (resTransacoes.data && contasAtivas.length > 0) {
@@ -335,12 +368,17 @@ export default function ChatIA() {
         return `${t.tipo}|"${t.descricao}"|R$${Number(t.valor).toFixed(2)}|vence:${t.data_vencimento}|conta:${conta?.nome ?? "?"}|cat:${cat?.nome ?? "?"}|id:${t.id}`;
       }).join("; ") || "Nenhum";
 
+    const cartoesList = cartoesUsuario.length > 0
+      ? cartoesUsuario.map((c) => `"${c.nome}" (limite: R$ ${Number(c.limite).toFixed(2)}, venc: dia ${c.dia_vencimento}, fecha: dia ${c.dia_fechamento})`).join(", ")
+      : "Nenhum cartão cadastrado";
+
     return `${PROMPT_BASE}
 
 CONTAS_DISPONIVEIS: ${contasList}
 CATEGORIAS_DESPESA: ${catDespList}
 CATEGORIAS_RECEITA: ${catRecList}
 CAIXINHAS_DISPONIVEIS: ${caixinhasList}
+CARTOES_DISPONIVEIS: ${cartoesList}
 PENDENTES: ${pendentesList}
 RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
@@ -356,7 +394,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     const boasVindas: Mensagem = {
       id: "1",
       role: "ia",
-      texto: "Olá! Sou o assistente financeiro do FinFlow.\n\nPosso ajudar você a:\n• Criar receitas e despesas\n• Gerenciar contas e objetivos\n• Analisar seus gastos (regra 50/30/20)\n• Definir e acompanhar metas\n\nO que deseja fazer?",
+      texto: "Olá! Sou o assistente financeiro do FinFlow.\n\nPosso ajudar você a:\n• Criar receitas e despesas\n• Gerenciar contas e objetivos\n• Adicionar compras no cartão de crédito\n• Analisar seus gastos (regra 50/30/20)\n• Definir e acompanhar metas\n\nO que deseja fazer?",
     };
     try {
       const hoje = new Date().toDateString();
@@ -429,6 +467,27 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     if (partes.length === 3) return `${partes[2]}/${partes[1]}/${partes[0]}`;
     if (partes.length === 2) return `${partes[1]}/${partes[0]}`;
     return dataISO;
+  };
+
+  const mesParaFaturaIA = (dataCompra: Date, diaFechamento: number): string => {
+    const dia = dataCompra.getDate();
+    if (dia > diaFechamento) {
+      const proximo = new Date(dataCompra.getFullYear(), dataCompra.getMonth() + 1, 1);
+      return `${proximo.getFullYear()}-${String(proximo.getMonth() + 1).padStart(2, "0")}`;
+    }
+    return `${dataCompra.getFullYear()}-${String(dataCompra.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const adicionarMesesIA = (mes: string, n: number): string => {
+    const [ano, m] = mes.split("-").map(Number);
+    const d = new Date(ano, m - 1 + n, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  };
+
+  const formatarMesNome = (mes: string): string => {
+    const meses = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+    const [ano, m] = mes.split("-").map(Number);
+    return `${meses[m - 1]}/${ano}`;
   };
 
   const resolverConta = (data: Record<string, any>) => {
@@ -783,6 +842,96 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     return `✅ Objetivo "${caixinha.nome}" arquivado com sucesso!`;
   };
 
+  const criarCartaoIA = async (data: Record<string, any>): Promise<string> => {
+    const nome = (data.nome || "").trim();
+    if (!nome) return "Nome do cartão é obrigatório.";
+    const limite = Number(String(data.limite || "0").replace(",", "."));
+    if (limite <= 0) return "Informe um limite válido.";
+    const venc = parseInt(String(data.dia_vencimento || "10"));
+    const fecha = parseInt(String(data.dia_fechamento || "3"));
+    if (isNaN(venc) || venc < 1 || venc > 31) return "Dia de vencimento inválido (1–31).";
+    if (isNaN(fecha) || fecha < 1 || fecha > 31) return "Dia de fechamento inválido (1–31).";
+
+    const { error } = await supabase.from("cartoes").insert({
+      user_id: session?.user?.id,
+      nome,
+      cor: mapearCor(data.cor || "azul"),
+      limite,
+      dia_vencimento: venc,
+      dia_fechamento: fecha,
+      ativo: true,
+    });
+    if (error) return `Erro ao criar cartão: ${error.message}`;
+    await carregarContexto();
+    return `✅ Cartão "${nome}" criado!\n💳 Limite: R$ ${limite.toFixed(2)}\n📅 Vencimento: dia ${venc}\n🔒 Fechamento: dia ${fecha}`;
+  };
+
+  const adicionarCompraCartaoIA = async (data: Record<string, any>): Promise<string> => {
+    const nomeCartao = data.cartao_name || data.cartao || "";
+    const cartao = cartoesUsuario.find((c) => c.nome.toLowerCase().includes(nomeCartao.toLowerCase()));
+    if (!cartao) {
+      const disponiveis = cartoesUsuario.length > 0 ? cartoesUsuario.map((c) => `"${c.nome}"`).join(", ") : "nenhum";
+      return `Cartão "${nomeCartao}" não encontrado. Disponíveis: ${disponiveis}`;
+    }
+
+    const descricao = (data.descricao || data.description || "").trim();
+    if (!descricao) return "Descrição da compra é obrigatória.";
+    const valor = Number(String(data.valor || data.value || "0").replace(",", "."));
+    if (valor <= 0) return "Valor inválido.";
+    const parcelas = Math.max(1, parseInt(String(data.parcelas || data.num_parcelas || "1")));
+    if (parcelas > 48) return "Número máximo de parcelas é 48.";
+
+    const dataCompraISO = converterData(data.data_compra || data.date || "");
+    const dataCompra = new Date(dataCompraISO + "T00:00:00");
+    const valorParcela = +(valor / parcelas).toFixed(2);
+    const mesPrimeiro = mesParaFaturaIA(dataCompra, cartao.dia_fechamento);
+
+    const { data: primeiro, error: err1 } = await supabase
+      .from("fatura_itens")
+      .insert([{
+        cartao_id: cartao.id,
+        user_id: session?.user?.id,
+        descricao: parcelas > 1 ? `${descricao} (1/${parcelas})` : descricao,
+        valor: valorParcela,
+        data_compra: dataCompraISO,
+        mes_fatura: mesPrimeiro,
+        parcela_atual: 1,
+        total_parcelas: parcelas,
+        grupo_parcela_id: null,
+        pago: false,
+      }])
+      .select()
+      .single();
+
+    if (err1 || !primeiro) return `Erro ao registrar compra: ${err1?.message || "Erro desconhecido"}`;
+
+    await supabase.from("fatura_itens").update({ grupo_parcela_id: primeiro.id }).eq("id", primeiro.id);
+
+    if (parcelas > 1) {
+      const demais = [];
+      for (let i = 1; i < parcelas; i++) {
+        demais.push({
+          cartao_id: cartao.id,
+          user_id: session?.user?.id,
+          descricao: `${descricao} (${i + 1}/${parcelas})`,
+          valor: valorParcela,
+          data_compra: dataCompraISO,
+          mes_fatura: adicionarMesesIA(mesPrimeiro, i),
+          parcela_atual: i + 1,
+          total_parcelas: parcelas,
+          grupo_parcela_id: primeiro.id,
+          pago: false,
+        });
+      }
+      const { error: err2 } = await supabase.from("fatura_itens").insert(demais);
+      if (err2) return `Primeira parcela salva, mas erro nas demais: ${err2.message}`;
+    }
+
+    await carregarContexto();
+    const mesFmt = formatarMesNome(mesPrimeiro);
+    return `✅ Compra adicionada ao cartão "${cartao.nome}"!\n📝 ${descricao}\n💰 R$ ${valor.toFixed(2)}${parcelas > 1 ? ` (${parcelas}x de R$ ${valorParcela.toFixed(2)})` : ""}\n📅 Fatura: ${mesFmt}`;
+  };
+
   const projetarSaldo = async (data: Record<string, any>): Promise<string> => {
     const dataAlvo = converterData(data.target_date);
     const hoje = new Date();
@@ -1013,6 +1162,19 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
   const enviarMensagem = async () => {
     if (!input.trim() || carregando) return;
+
+    // Anti-spam: rate limit silencioso (máx 8 msgs/10s por usuário normal)
+    if (!verificarRateLimit(`chat_ia_${session?.user?.id}`, 8, 10_000)) return;
+
+    // Verificar se o plano permite IA operacional
+    if (!limites.iaOperacional) {
+      mostrarModalLimite(
+        "A IA não está disponível no plano Free.\n\nFaça upgrade para o Smart ou Premium para usar o assistente financeiro.",
+        "smart"
+      );
+      return;
+    }
+
     const textoUsuario = input.trim();
     setInput("");
 
@@ -1029,6 +1191,17 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       const CONFIRMACOES = ["sim", "pode", "confirma", "confirmar", "ok", "yes", "pronto", "vai", "deletar", "arquivar", "criar", "salvar", "quero"];
       if (currentStatusRef.current === "ready_for_confirmation" &&
           CONFIRMACOES.some((p) => textoUsuario.toLowerCase().includes(p))) {
+
+        // Verificar cota de IA antes de executar a ação confirmada
+        const podeExecutarDireto = await tentarAcaoIA();
+        if (!podeExecutarDireto) {
+          setCarregando(false);
+          currentDataRef.current = {};
+          currentIntentRef.current = null;
+          currentStatusRef.current = "collecting_data";
+          return;
+        }
+
         const mergedData = currentDataRef.current;
         const intent = currentIntentRef.current;
         let resultado = "Ação realizada.";
@@ -1046,6 +1219,8 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
           case "confirm_pending": resultado = await confirmarPendente(mergedData); break;
           case "delete_transaction": resultado = await deletarTransacao(mergedData); break;
           case "archive_account": resultado = await arquivarConta(mergedData); break;
+          case "create_cartao": resultado = await criarCartaoIA(mergedData); break;
+          case "add_compra_cartao": resultado = await adicionarCompraCartaoIA(mergedData); break;
           default: resultado = "Ação concluída.";
         }
         setMensagens((prev) => [...prev, { id: `${Date.now()}-sys`, role: "sistema", texto: resultado }]);
@@ -1112,6 +1287,31 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       const metaCompleta = (intent === "savings_goal") && mergedData.goal_amount && mergedData.target_date && respostaIA.missing_fields.length === 0;
 
       if (deveExecutar || pedidoAnalise || projecaoCompleta || metaCompleta) {
+        // Verificar se é uma ação analítica (requer plano Premium)
+        const intentsAnaliticos = new Set(["analyze_finances", "financial_projection", "savings_goal"]);
+        if (intentsAnaliticos.has(intent ?? "") && !limites.iaAnalitica) {
+          const msgBloqueio = "A IA analítica (análises, projeções e metas de economia) está disponível apenas no plano Premium.\n\nFaça upgrade para desbloquear insights financeiros avançados.";
+          const msgIA: Mensagem = { id: `${Date.now()}-ia`, role: "ia", texto: msgBloqueio };
+          setMensagens((prev) => [...prev, msgIA]);
+          currentDataRef.current = {};
+          currentIntentRef.current = null;
+          currentStatusRef.current = "collecting_data";
+          setCarregando(false);
+          return;
+        }
+
+        // Verificar cota diária de IA para ações reais (não para query/coleta)
+        if (intentConsumeAcao(intent ?? "", "confirmed") || pedidoAnalise || projecaoCompleta || metaCompleta) {
+          const podeExecutar = await tentarAcaoIA();
+          if (!podeExecutar) {
+            setCarregando(false);
+            currentDataRef.current = {};
+            currentIntentRef.current = null;
+            currentStatusRef.current = "collecting_data";
+            return;
+          }
+        }
+
         let resultado = "Ação realizada.";
         const msg = textoUsuario.toLowerCase();
         const quer5030 = msg.includes("50/30/20") || msg.includes("regra") || msg.includes("necessidade") || msg.includes("análise de gasto") || msg.includes("analise de gasto");
@@ -1155,6 +1355,12 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
             break;
           case "archive_account":
             resultado = await arquivarConta(mergedData);
+            break;
+          case "create_cartao":
+            resultado = await criarCartaoIA(mergedData);
+            break;
+          case "add_compra_cartao":
+            resultado = await adicionarCompraCartaoIA(mergedData);
             break;
           case "analyze_finances":
             resultado = await analisarFinancas(quer5030);
