@@ -48,7 +48,7 @@
 
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
@@ -138,15 +138,16 @@ function formatarMes(mes: string): string {
 
 export default function CartoesScreen() {
   const { isDark, session, showToast, verificarLimite } = useAppTheme();
+  const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F5F5",
-    texto: isDark ? "#FFFFFF" : "#1A1A1A",
-    secundario: isDark ? "#AAAAAA" : "#666666",
+    fundo: isDark ? "#121212" : "#F5F7FB",
+    texto: isDark ? "#FFFFFF" : "#111827",
+    secundario: isDark ? "#AAAAAA" : "#6B7280",
     card: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333" : "#EEE",
-    input: isDark ? "#2C2C2C" : "#FFF",
-    pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
+    borda: isDark ? "#333" : "#E5E7EB",
+    input: isDark ? "#2C2C2C" : "#F3F4F6",
+    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
   };
 
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
@@ -155,6 +156,7 @@ export default function CartoesScreen() {
 
   // Cartão selecionado (fatura aberta)
   const [cartaoAberto, setCartaoAberto] = useState<Cartao | null>(null);
+  const [modalFaturaVisivel, setModalFaturaVisivel] = useState(false);
   const [mesFaturaAtivo, setMesFaturaAtivo] = useState(mesAtualStr());
 
   // Modal novo cartão
@@ -437,6 +439,9 @@ export default function CartoesScreen() {
       <ScrollView>
         {/* Header */}
         <View style={estilos.header}>
+          <TouchableOpacity onPress={() => router.back()} style={estilos.voltarBtn}>
+            <MaterialIcons name="arrow-back" size={24} color={Cores.texto} />
+          </TouchableOpacity>
           <Text style={[estilos.titulo, { color: Cores.texto }]}>Cartões de Crédito</Text>
           <TouchableOpacity
             style={[estilos.btnNovo, { backgroundColor: "#457B9D" }]}
@@ -458,7 +463,7 @@ export default function CartoesScreen() {
             <Text style={[estilos.emptySubtitulo, { color: "#457B9D" }]}>Toque para adicionar seu primeiro cartão</Text>
           </TouchableOpacity>
         ) : (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={estilos.cartoesScroll}>
+          <View style={estilos.cartoesLista}>
             {cartoes.map((c) => {
               const total = calcularTotalFatura(c.id, mesAtualStr());
               const usado = calcularLimiteUsado(c.id);
@@ -470,6 +475,7 @@ export default function CartoesScreen() {
                   onPress={() => {
                     setCartaoAberto(c);
                     setMesFaturaAtivo(mesAtualStr());
+                    setModalFaturaVisivel(true);
                   }}
                   activeOpacity={0.85}
                 >
@@ -479,146 +485,146 @@ export default function CartoesScreen() {
                   </View>
                   <Text style={estilos.cartaoFaturaLabel}>Fatura atual</Text>
                   <Text style={estilos.cartaoFatura}>{fmtReais(total)}</Text>
-                  <View style={estilos.cartaoRodape}>
+                  <View style={estilos.cartaoRodapeCol}>
                     <Text style={estilos.cartaoLimite}>Disponível: {fmtReais(disponivel)}</Text>
                     <Text style={estilos.cartaoVenc}>Vence dia {c.dia_vencimento}</Text>
                   </View>
                 </TouchableOpacity>
               );
             })}
-          </ScrollView>
-        )}
-
-        {/* Fatura aberta */}
-        {cartaoAberto && (
-          <View style={[estilos.faturaContainer, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
-            {/* Header da fatura */}
-            <View style={estilos.faturaHeader}>
-              <View>
-                <Text style={[estilos.faturaCartaoNome, { color: Cores.texto }]}>{cartaoAberto.nome}</Text>
-                <Text style={[estilos.faturaTotal, { color: totalFaturaAtiva > 0 ? "#E76F51" : "#2A9D8F" }]}>
-                  {fmtReais(totalFaturaAtiva)}
-                </Text>
-              </View>
-              <TouchableOpacity onPress={() => setCartaoAberto(null)}>
-                <MaterialIcons name="close" size={22} color={Cores.secundario} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Limite */}
-            <View style={[estilos.limiteContainer, { backgroundColor: Cores.pillFundo }]}>
-              <View style={estilos.limiteRow}>
-                <Text style={[estilos.limiteLbl, { color: Cores.secundario }]}>Limite usado</Text>
-                <Text style={[estilos.limiteVal, { color: Cores.texto }]}>
-                  {fmtReais(limiteUsado)} / {fmtReais(cartaoAberto.limite)}
-                </Text>
-              </View>
-              <View style={[estilos.progressoBg, { backgroundColor: Cores.borda }]}>
-                <View
-                  style={[
-                    estilos.progressoBar,
-                    {
-                      width: `${pctUsado}%`,
-                      backgroundColor: pctUsado >= 90 ? "#E76F51" : pctUsado >= 70 ? "#F4A261" : "#2A9D8F",
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={[estilos.limiteDisp, { color: "#2A9D8F" }]}>
-                Disponível: {fmtReais(limiteDisponivel)}
-              </Text>
-            </View>
-
-            {/* Navegação de meses */}
-            <View style={estilos.mesNav}>
-              <TouchableOpacity onPress={() => {
-                const [ano, m] = mesFaturaAtivo.split("-").map(Number);
-                const d = new Date(ano, m - 2, 1);
-                setMesFaturaAtivo(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-              }}>
-                <MaterialIcons name="chevron-left" size={22} color={Cores.texto} />
-              </TouchableOpacity>
-              <Text style={[estilos.mesTitulo, { color: Cores.texto }]}>
-                Fatura {formatarMes(mesFaturaAtivo)}
-              </Text>
-              <TouchableOpacity onPress={() => {
-                setMesFaturaAtivo(adicionarMeses(mesFaturaAtivo, 1));
-              }}>
-                <MaterialIcons name="chevron-right" size={22} color={Cores.texto} />
-              </TouchableOpacity>
-            </View>
-
-            {/* Ações */}
-            <View style={estilos.acoesRow}>
-              <TouchableOpacity
-                style={[estilos.acaoBtn, { backgroundColor: "#457B9D" }]}
-                onPress={() => setModalNovaCompra(true)}
-              >
-                <MaterialIcons name="add-shopping-cart" size={16} color="#FFF" />
-                <Text style={estilos.acaoBtnText}>Add Compra</Text>
-              </TouchableOpacity>
-              {totalFaturaAtiva > 0 && (
-                <TouchableOpacity
-                  style={[estilos.acaoBtn, { backgroundColor: "#2A9D8F" }]}
-                  onPress={() => pagarFatura(cartaoAberto.id, mesFaturaAtivo)}
-                >
-                  <MaterialIcons name="check-circle" size={16} color="#FFF" />
-                  <Text style={estilos.acaoBtnText}>Pagar Fatura</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* Itens da fatura */}
-            {itensFatura.length === 0 ? (
-              <View style={estilos.faturaVazia}>
-                <MaterialIcons name="receipt" size={32} color={Cores.borda} />
-                <Text style={[estilos.faturaVaziaText, { color: Cores.secundario }]}>
-                  Nenhuma compra nesta fatura
-                </Text>
-              </View>
-            ) : (
-              <View style={estilos.itensList}>
-                {itensFatura.map((item) => (
-                  <TouchableOpacity
-                    key={item.id}
-                    style={[estilos.itemFatura, { borderBottomColor: Cores.borda }]}
-                    onLongPress={() => excluirCompra(item)}
-                    activeOpacity={0.7}
-                  >
-                    <View style={estilos.itemFaturaLeft}>
-                      <View style={[estilos.itemStatus, { backgroundColor: item.pago ? "#2A9D8F22" : "#E76F5122" }]}>
-                        <MaterialIcons
-                          name={item.pago ? "check-circle" : "radio-button-unchecked"}
-                          size={14}
-                          color={item.pago ? "#2A9D8F" : "#E76F51"}
-                        />
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={[estilos.itemDesc, { color: Cores.texto, opacity: item.pago ? 0.5 : 1 }]}>
-                          {item.descricao}
-                        </Text>
-                        <Text style={[estilos.itemData, { color: Cores.secundario }]}>
-                          {item.data_compra.split("-").reverse().join("/")}
-                          {item.total_parcelas > 1 && ` · ${item.parcela_atual}/${item.total_parcelas}x`}
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={[estilos.itemValor, { color: item.pago ? Cores.secundario : "#E76F51" }]}>
-                      {fmtReais(item.valor)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            <Text style={[estilos.dicaLongPress, { color: Cores.secundario }]}>
-              Pressione e segure uma compra para excluí-la
-            </Text>
           </View>
         )}
 
         <View style={{ height: 30 }} />
       </ScrollView>
+
+      {/* Modal: Fatura do Cartão (centered) */}
+      {cartaoAberto && (
+        <Modal animationType="fade" transparent visible={modalFaturaVisivel} onRequestClose={() => setModalFaturaVisivel(false)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              {/* Header */}
+              <View style={estilos.faturaHeader}>
+                <View>
+                  <Text style={[estilos.faturaCartaoNome, { color: Cores.texto }]}>{cartaoAberto.nome}</Text>
+                  <Text style={[estilos.faturaTotal, { color: totalFaturaAtiva > 0 ? "#E76F51" : "#2A9D8F" }]}>
+                    {fmtReais(totalFaturaAtiva)}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={() => setModalFaturaVisivel(false)}>
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Limite */}
+              <View style={[estilos.limiteContainer, { backgroundColor: Cores.pillFundo }]}>
+                <View style={estilos.limiteRow}>
+                  <Text style={[estilos.limiteLbl, { color: Cores.secundario }]}>Limite usado</Text>
+                  <Text style={[estilos.limiteVal, { color: Cores.texto }]}>
+                    {fmtReais(limiteUsado)} / {fmtReais(cartaoAberto.limite)}
+                  </Text>
+                </View>
+                <View style={[estilos.progressoBg, { backgroundColor: Cores.borda }]}>
+                  <View
+                    style={[
+                      estilos.progressoBar,
+                      {
+                        width: `${pctUsado}%` as any,
+                        backgroundColor: pctUsado >= 90 ? "#E76F51" : pctUsado >= 70 ? "#F4A261" : "#2A9D8F",
+                      },
+                    ]}
+                  />
+                </View>
+                <Text style={[estilos.limiteDisp, { color: "#2A9D8F" }]}>
+                  Disponível: {fmtReais(limiteDisponivel)}
+                </Text>
+              </View>
+
+              {/* Navegação de meses */}
+              <View style={estilos.mesNav}>
+                <TouchableOpacity onPress={() => {
+                  const [ano, m] = mesFaturaAtivo.split("-").map(Number);
+                  const d = new Date(ano, m - 2, 1);
+                  setMesFaturaAtivo(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+                }}>
+                  <MaterialIcons name="chevron-left" size={30} color={Cores.texto} />
+                </TouchableOpacity>
+                <Text style={[estilos.mesTitulo, { color: Cores.texto }]}>
+                  Fatura {formatarMes(mesFaturaAtivo)}
+                </Text>
+                <TouchableOpacity onPress={() => setMesFaturaAtivo(adicionarMeses(mesFaturaAtivo, 1))}>
+                  <MaterialIcons name="chevron-right" size={30} color={Cores.texto} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Ações */}
+              <View style={estilos.acoesRow}>
+                <TouchableOpacity
+                  style={[estilos.acaoBtn, { backgroundColor: "#457B9D" }]}
+                  onPress={() => setModalNovaCompra(true)}
+                >
+                  <MaterialIcons name="add-shopping-cart" size={16} color="#FFF" />
+                  <Text style={estilos.acaoBtnText}>Add Compra</Text>
+                </TouchableOpacity>
+                {totalFaturaAtiva > 0 && (
+                  <TouchableOpacity
+                    style={[estilos.acaoBtn, { backgroundColor: "#2A9D8F" }]}
+                    onPress={() => pagarFatura(cartaoAberto.id, mesFaturaAtivo)}
+                  >
+                    <MaterialIcons name="check-circle" size={16} color="#FFF" />
+                    <Text style={estilos.acaoBtnText}>Pagar Fatura</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* Itens da fatura */}
+              <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 280 }}>
+                {itensFatura.length === 0 ? (
+                  <View style={estilos.faturaVazia}>
+                    <MaterialIcons name="receipt" size={32} color={Cores.borda} />
+                    <Text style={[estilos.faturaVaziaText, { color: Cores.secundario }]}>
+                      Nenhuma compra nesta fatura
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={estilos.itensList}>
+                    {itensFatura.map((item) => (
+                      <TouchableOpacity
+                        key={item.id}
+                        style={[estilos.itemFatura, { borderBottomColor: Cores.borda }]}
+                        onPress={() => excluirCompra(item)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={estilos.itemFaturaLeft}>
+                          <View style={[estilos.itemStatus, { backgroundColor: item.pago ? "#2A9D8F22" : "#E76F5122" }]}>
+                            <MaterialIcons
+                              name={item.pago ? "check-circle" : "radio-button-unchecked"}
+                              size={14}
+                              color={item.pago ? "#2A9D8F" : "#E76F51"}
+                            />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[estilos.itemDesc, { color: Cores.texto, opacity: item.pago ? 0.5 : 1 }]}>
+                              {item.descricao}
+                            </Text>
+                            <Text style={[estilos.itemData, { color: Cores.secundario }]}>
+                              {item.data_compra.split("-").reverse().join("/")}
+                              {item.total_parcelas > 1 && ` · ${item.parcela_atual}/${item.total_parcelas}x`}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={[estilos.itemValor, { color: item.pago ? Cores.secundario : "#E76F51" }]}>
+                          {fmtReais(item.valor)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* Modal: Novo Cartão */}
       {modalNovoCartao && (
@@ -837,7 +843,8 @@ const estilos = StyleSheet.create({
     paddingTop: 28,
     paddingBottom: 10,
   },
-  titulo: { fontSize: 28, fontWeight: "bold" },
+  voltarBtn: { padding: 4 },
+  titulo: { fontSize: 24, fontWeight: "bold", flex: 1, textAlign: "center" },
   btnNovo: {
     flexDirection: "row",
     alignItems: "center",
@@ -859,28 +866,32 @@ const estilos = StyleSheet.create({
   emptyTitulo: { fontSize: 16, fontWeight: "600", marginTop: 12 },
   emptySubtitulo: { fontSize: 13, marginTop: 4 },
 
-  cartoesScroll: { paddingLeft: 16, marginBottom: 4 },
+  cartoesLista: { paddingHorizontal: 16, gap: 12, marginBottom: 4 },
   cartaoCard: {
-    width: 200,
-    height: 130,
     borderRadius: 16,
     padding: 16,
-    marginRight: 12,
     justifyContent: "space-between",
   },
-  cartaoTopo: { flexDirection: "row", alignItems: "center", gap: 8 },
+  cartaoTopo: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
   cartaoNome: { color: "#FFF", fontWeight: "bold", fontSize: 15, flex: 1 },
   cartaoFaturaLabel: { color: "rgba(255,255,255,0.7)", fontSize: 11 },
-  cartaoFatura: { color: "#FFF", fontSize: 22, fontWeight: "bold" },
-  cartaoRodape: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  cartaoFatura: { color: "#FFF", fontSize: 22, fontWeight: "bold", marginBottom: 8 },
+  cartaoRodapeCol: { gap: 2 },
   cartaoLimite: { color: "rgba(255,255,255,0.8)", fontSize: 11 },
   cartaoVenc: { color: "rgba(255,255,255,0.8)", fontSize: 11 },
 
-  faturaContainer: {
-    margin: 16,
-    borderRadius: 16,
-    borderWidth: 1,
+  modalFaturaOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "center",
+    alignItems: "center",
     padding: 16,
+  },
+  modalFaturaContent: {
+    width: "100%",
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: "85%",
   },
   faturaHeader: {
     flexDirection: "row",
@@ -935,8 +946,6 @@ const estilos = StyleSheet.create({
   itemDesc: { fontSize: 14, fontWeight: "500" },
   itemData: { fontSize: 11, marginTop: 2 },
   itemValor: { fontSize: 15, fontWeight: "bold" },
-  dicaLongPress: { fontSize: 11, textAlign: "center", marginTop: 12 },
-
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.7)",

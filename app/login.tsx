@@ -455,6 +455,23 @@ export default function LoginScreen() {
             </Text>
           </View>
         )}
+
+        {/* BOTÕES LEGAIS — sempre visíveis */}
+        <View style={styles.legalBtnRow}>
+          <TouchableOpacity
+            style={styles.legalBtn}
+            onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/finflow-docs/privacy-policy")}
+          >
+            <Text style={styles.legalBtnText}>Política de Privacidade</Text>
+          </TouchableOpacity>
+          <View style={styles.legalSeparador} />
+          <TouchableOpacity
+            style={styles.legalBtn}
+            onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/finflow-docs/terms-of-use")}
+          >
+            <Text style={styles.legalBtnText}>Termos de Uso</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
 
       {modalErro && (
@@ -559,4 +576,14 @@ const styles = StyleSheet.create({
   consentimentoContainer: { marginTop: 20, paddingHorizontal: 4 },
   consentimentoTexto: { color: "#888", fontSize: 12, textAlign: "center", lineHeight: 18 },
   consentimentoLink: { color: "#2A9D8F", textDecorationLine: "underline" },
+  legalBtnRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 16,
+    marginBottom: 8,
+  },
+  legalBtn: { paddingHorizontal: 12, paddingVertical: 6 },
+  legalBtnText: { color: "#2A9D8F", fontSize: 12, fontWeight: "600" },
+  legalSeparador: { width: 1, height: 14, backgroundColor: "#444" },
 });

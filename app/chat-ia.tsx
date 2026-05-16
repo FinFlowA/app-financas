@@ -274,6 +274,7 @@ export default function ChatIA() {
   const currentDataRef = useRef<Record<string, any>>({});
   const currentIntentRef = useRef<RespostaIA["intent"] | null>(null);
   const currentStatusRef = useRef<RespostaIA["status"]>("collecting_data");
+  const ultimoEnvioRef = useRef<number>(0);
 
   const [contasUsuario, setContasUsuario] = useState<{ id: number; nome: string; saldo_inicial: number }[]>([]);
   const [categoriasUsuario, setCategoriasUsuario] = useState<{ id: number; nome: string; tipo: string; cor: string }[]>([]);
@@ -1162,6 +1163,9 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
   const enviarMensagem = async () => {
     if (!input.trim() || carregando) return;
+    const agora = Date.now();
+    if (agora - ultimoEnvioRef.current < 3000) return;
+    ultimoEnvioRef.current = agora;
 
     // Anti-spam: rate limit silencioso (máx 8 msgs/10s por usuário normal)
     if (!verificarRateLimit(`chat_ia_${session?.user?.id}`, 8, 10_000)) return;
@@ -1247,7 +1251,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
           model: MODELO,
           messages: [{ role: "system", content: promptSistema() }, ...historicoParaAPI],
           temperature: 0.1,
-          max_tokens: 1000,
+          max_tokens: 500,
         }),
       });
       clearTimeout(timeoutId);

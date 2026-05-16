@@ -155,14 +155,14 @@ export default function Dashboard() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#ffffff",
-    textoPrincipal: isDark ? "#ffffff" : "#1A1A1A",
-    textoSecundario: isDark ? "#AAAAAA" : "#666666",
-    cardFundo: isDark ? "#1E1E1E" : "#ffffff",
-    borda: isDark ? "#333333" : "#DDDDDD",
-    inputFundo: isDark ? "#2C2C2C" : "#ffffff",
-    pillFundo: isDark ? "#333333" : "#F0F0F0",
-    pillAtivo: isDark ? "#555555" : "#EAEAEA",
+    fundo: isDark ? "#121212" : "#F5F7FB",
+    textoPrincipal: isDark ? "#ffffff" : "#111827",
+    textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
+    cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
+    borda: isDark ? "#333333" : "#E5E7EB",
+    inputFundo: isDark ? "#2C2C2C" : "#F3F4F6",
+    pillFundo: isDark ? "#333333" : "#F3F4F6",
+    pillAtivo: isDark ? "#555555" : "#E5E7EB",
   };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -709,18 +709,20 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.actionScroll}>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#E76F51" }]} onPress={() => setModalTransVisivel(true)}>
-            <Text style={styles.actionButtonText}>+ Transação</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#457B9D" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
-            <MaterialIcons name="credit-card" size={15} color="#FFF" style={{ marginRight: 5 }} />
+        <View style={styles.actionGrid}>
+          <View style={styles.actionRow}>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#F97316" }]} onPress={() => setModalTransVisivel(true)}>
+              <Text style={styles.actionButtonText}>+ Transação</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#6B7280" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
+              <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
+            </TouchableOpacity>
+          </View>
+          <TouchableOpacity style={[styles.actionButtonFull, { backgroundColor: "#2563EB" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
+            <MaterialIcons name="credit-card" size={15} color="#FFF" style={{ marginRight: 6 }} />
             <Text style={styles.actionButtonText}>Cartão de Crédito</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#8AB17D" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
-            <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
-          </TouchableOpacity>
-        </ScrollView>
+        </View>
 
         {/* CARTÃO DE FLUXO DE CAIXA */}
         <View style={[styles.balanceCard, { backgroundColor: isDark ? "#1A1A1A" : "#E8E8E8" }]}>
@@ -1435,7 +1437,7 @@ export default function Dashboard() {
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de Origem (Sai):" : "Qual Conta?"}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
-                {contas.map((conta) => (
+                {contas.filter(c => !c.arquivado).map((conta) => (
                   <TouchableOpacity key={conta.id} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, contaSelecionadaId === conta.id && { borderColor: "#457B9D", borderWidth: 2 }]} onPress={() => setContaSelecionadaId(conta.id)}>
                     <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? "#457B9D" : Cores.textoSecundario} style={{ marginRight: 6 }} />
                     <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
@@ -1506,8 +1508,10 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   iaBotaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 13 },
-  actionScroll: { flexDirection: "row", marginBottom: 20 },
-  actionButton: { flexDirection: "row", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 10, marginRight: 10, alignItems: "center", justifyContent: "center" },
+  actionGrid: { marginBottom: 20, gap: 10 },
+  actionRow: { flexDirection: "row", gap: 10 },
+  actionButton: { flex: 1, flexDirection: "row", paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  actionButtonFull: { flexDirection: "row", paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   actionButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
   mesBotao: { padding: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20 },
   mesBotaoModal: { padding: 8, backgroundColor: "rgba(0,0,0,0.05)", borderRadius: 20 },

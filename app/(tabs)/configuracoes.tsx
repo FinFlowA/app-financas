@@ -31,13 +31,13 @@ export default function ConfiguracoesScreen() {
   const meuId = session?.user?.id;
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#ffffff",
-    texto: isDark ? "#ffffff" : "#1A1A1A",
-    secundario: isDark ? "#AAAAAA" : "#666666",
-    card: isDark ? "#1E1E1E" : "#F8F9FA",
-    borda: isDark ? "#333" : "#EEE",
-    input: isDark ? "#2C2C2C" : "#FFF",
-    pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
+    fundo: isDark ? "#121212" : "#F5F7FB",
+    texto: isDark ? "#ffffff" : "#111827",
+    secundario: isDark ? "#AAAAAA" : "#6B7280",
+    card: isDark ? "#1E1E1E" : "#FFFFFF",
+    borda: isDark ? "#333" : "#E5E7EB",
+    input: isDark ? "#2C2C2C" : "#F3F4F6",
+    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
   };
 
   // Parceria
@@ -574,7 +574,7 @@ export default function ConfiguracoesScreen() {
 
           {/* VERSÃO */}
           <Text style={[{ color: Cores.secundario, fontSize: 12, textAlign: "center", marginTop: 16 }]}>
-            FinFlow v1.0.0 · com.luishpalacio.meuappfinancas
+            FinFlow v1.0.0
           </Text>
 
           {/* SAIR */}

@@ -117,6 +117,10 @@ export default function RootLayout() {
     mensagem: string;
     planoNecessario?: TipoPlano;
   }>({ visivel: false, mensagem: "" });
+  const [modalDowngrade, setModalDowngrade] = useState<{
+    visivel: boolean;
+    bloqueados: { tipo: string; nome: string }[];
+  }>({ visivel: false, bloqueados: [] });
 
   // Toast
   const [toastMsg, setToastMsg] = useState("");
@@ -279,6 +283,49 @@ export default function RootLayout() {
   }, [session, isReady, isAuthReady, segments]);
 
   const setPlano = async (novoPlano: TipoPlano) => {
+    const planOrder: Record<TipoPlano, number> = { free: 0, smart: 1, premium: 2 };
+    const eDowngrade = planOrder[novoPlano] < planOrder[plano];
+
+    if (eDowngrade && session?.user?.id) {
+      const limites = LIMITES_PLANOS[novoPlano];
+      const uid = session.user.id;
+      const bloqueados: { tipo: string; nome: string }[] = [];
+
+      if (limites.contas > 0) {
+        const { data: contas } = await supabase.from("contas").select("id, nome").eq("user_id", uid).eq("arquivado", false).order("id");
+        if (contas && contas.length > limites.contas) {
+          for (const c of contas.slice(limites.contas)) {
+            await supabase.from("contas").update({ arquivado: true }).eq("id", c.id);
+            bloqueados.push({ tipo: "Conta", nome: c.nome });
+          }
+        }
+      }
+
+      if (limites.cartoes > 0) {
+        const { data: cartoes } = await supabase.from("cartoes").select("id, nome").eq("user_id", uid).eq("ativo", true).order("id");
+        if (cartoes && cartoes.length > limites.cartoes) {
+          for (const c of cartoes.slice(limites.cartoes)) {
+            await supabase.from("cartoes").update({ ativo: false }).eq("id", c.id);
+            bloqueados.push({ tipo: "Cartão", nome: c.nome });
+          }
+        }
+      }
+
+      if (limites.caixinhas > 0) {
+        const { data: caixinhas } = await supabase.from("caixinhas").select("id, nome").eq("user_id", uid).eq("arquivado", false).order("id");
+        if (caixinhas && caixinhas.length > limites.caixinhas) {
+          for (const c of caixinhas.slice(limites.caixinhas)) {
+            await supabase.from("caixinhas").update({ arquivado: true }).eq("id", c.id);
+            bloqueados.push({ tipo: "Caixinha", nome: c.nome });
+          }
+        }
+      }
+
+      if (bloqueados.length > 0) {
+        setModalDowngrade({ visivel: true, bloqueados });
+      }
+    }
+
     setPlanoState(novoPlano);
     if (session?.user?.id) {
       await AsyncStorage.setItem(`@plano_usuario_${session.user.id}`, novoPlano);
@@ -434,6 +481,46 @@ export default function RootLayout() {
         <Text style={styles.toastText}>{toastMsg}</Text>
       </Animated.View>
 
+      {/* Modal de downgrade — itens bloqueados */}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={modalDowngrade.visivel}
+        onRequestClose={() => setModalDowngrade({ visivel: false, bloqueados: [] })}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(239,68,68,0.12)" }]}>
+              <MaterialIcons name="info-outline" size={32} color="#EF4444" />
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#111827" }]}>
+              Itens arquivados automaticamente
+            </Text>
+            <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#6B7280" }]}>
+              Os itens abaixo excediam o limite do plano gratuito e foram arquivados. Seus dados continuam salvos.
+            </Text>
+            <View style={{ width: "100%", marginBottom: 20 }}>
+              {modalDowngrade.bloqueados.map((b, i) => (
+                <View key={i} style={[styles.downgradeItem, { borderColor: isDark ? "#333" : "#E5E7EB" }]}>
+                  <MaterialIcons name="archive" size={14} color={isDark ? "#AAA" : "#6B7280"} />
+                  <Text style={{ color: isDark ? "#DDD" : "#374151", fontSize: 13, marginLeft: 8 }}>
+                    <Text style={{ fontWeight: "600" }}>{b.tipo}:</Text> {b.nome}
+                  </Text>
+                </View>
+              ))}
+            </View>
+            <TouchableOpacity
+              style={[styles.modalLimiteBtnFechar, { backgroundColor: isDark ? "#2C2C2C" : "#F3F4F6" }]}
+              onPress={() => setModalDowngrade({ visivel: false, bloqueados: [] })}
+            >
+              <Text style={[styles.modalLimiteBtnFecharText, { color: isDark ? "#AAA" : "#6B7280" }]}>
+                Entendi
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal de limite de plano */}
       <Modal
         animationType="fade"
@@ -559,4 +646,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   modalLimiteBtnFecharText: { fontWeight: "600", fontSize: 14 },
+  downgradeItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
 });

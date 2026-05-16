@@ -70,15 +70,15 @@ export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FA",
-    textoPrincipal: isDark ? "#ffffff" : "#1A1A1A",
-    textoSecundario: isDark ? "#AAAAAA" : "#666666",
-    cardFundo: isDark ? "#1E1E1E" : "#ffffff",
-    blocoData: isDark ? "#2C2C2C" : "#F0F0F0",
-    borda: isDark ? "#333333" : "#EEEEEE",
-    pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
-    headerTabela: isDark ? "#252525" : "#F0F4F8",
-    rowPar: isDark ? "#161616" : "#FAFAFA",
+    fundo: isDark ? "#121212" : "#F5F7FB",
+    textoPrincipal: isDark ? "#ffffff" : "#111827",
+    textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
+    cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
+    blocoData: isDark ? "#2C2C2C" : "#F3F4F6",
+    borda: isDark ? "#333333" : "#E5E7EB",
+    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
+    headerTabela: isDark ? "#252525" : "#F3F4F6",
+    rowPar: isDark ? "#161616" : "#F9FAFB",
     rowImpar: isDark ? "#1C1C1C" : "#FFFFFF",
   };
 

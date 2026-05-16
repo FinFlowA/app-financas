@@ -37,12 +37,12 @@ export default function PlanosScreen() {
   const [processando, setProcessando] = useState(false);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F5F5",
-    texto: isDark ? "#FFFFFF" : "#1A1A1A",
-    secundario: isDark ? "#AAAAAA" : "#666666",
+    fundo: isDark ? "#121212" : "#F5F7FB",
+    texto: isDark ? "#FFFFFF" : "#111827",
+    secundario: isDark ? "#AAAAAA" : "#6B7280",
     card: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333" : "#EEE",
-    pillFundo: isDark ? "#2C2C2C" : "#E8E8E8",
+    borda: isDark ? "#333" : "#E5E7EB",
+    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
   };
 
   const getPreco = (planoId: TipoPlano): string => {
@@ -68,8 +68,8 @@ export default function PlanosScreen() {
 
     if (planoId === "free") {
       Alert.alert(
-        "Fazer Downgrade?",
-        "Ao voltar para o Free, você perderá acesso a recursos avançados. Seus dados continuam salvos.",
+        "Diminuir o plano?",
+        "Ao voltar para o plano gratuito, você perderá acesso aos recursos avançados. Seus dados ficam salvos mesmo após a diminuição do nível da conta.",
         [
           { text: "Cancelar", style: "cancel" },
           {
@@ -263,46 +263,8 @@ export default function PlanosScreen() {
         <View style={[estilos.notaContainer, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
           <MaterialIcons name="security" size={18} color={Cores.secundario} />
           <Text style={[estilos.notaTexto, { color: Cores.secundario }]}>
-            Pagamento seguro. Cancele a qualquer momento. Seus dados ficam salvos mesmo no downgrade.
+            Pagamento seguro. Cancele a qualquer momento. Seus dados ficam salvos mesmo após a diminuição do nível da conta.
           </Text>
-        </View>
-
-        {/* Comparação de IA */}
-        <View style={[estilos.iaContainer, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
-          <Text style={[estilos.iaTitle, { color: Cores.texto }]}>Recursos de Inteligência Artificial</Text>
-
-          <View style={estilos.iaLinha}>
-            <Text style={[estilos.iaItem, { color: Cores.secundario }]}>IA Operacional (criar/editar)</Text>
-            <View style={estilos.iaPlanos}>
-              <MaterialIcons name="close" size={16} color="#E76F51" />
-              <MaterialIcons name="check" size={16} color="#2A9D8F" style={{ marginHorizontal: 18 }} />
-              <MaterialIcons name="check" size={16} color="#F4A261" />
-            </View>
-          </View>
-
-          <View style={estilos.iaLinha}>
-            <Text style={[estilos.iaItem, { color: Cores.secundario }]}>IA Analítica (análises e insights)</Text>
-            <View style={estilos.iaPlanos}>
-              <MaterialIcons name="close" size={16} color="#E76F51" />
-              <MaterialIcons name="close" size={16} color="#E76F51" style={{ marginHorizontal: 18 }} />
-              <MaterialIcons name="check" size={16} color="#F4A261" />
-            </View>
-          </View>
-
-          <View style={estilos.iaLinha}>
-            <Text style={[estilos.iaItem, { color: Cores.secundario }]}>Ações por dia</Text>
-            <View style={estilos.iaPlanos}>
-              <Text style={[estilos.iaValor, { color: Cores.secundario }]}>0</Text>
-              <Text style={[estilos.iaValor, { color: "#2A9D8F", marginHorizontal: 10 }]}>15</Text>
-              <Text style={[estilos.iaValor, { color: "#F4A261" }]}>50</Text>
-            </View>
-          </View>
-
-          <View style={[estilos.iaLegenda]}>
-            <Text style={[estilos.iaLegendaItem, { color: Cores.secundario }]}>Free</Text>
-            <Text style={[estilos.iaLegendaItem, { color: "#2A9D8F" }]}>Smart</Text>
-            <Text style={[estilos.iaLegendaItem, { color: "#F4A261" }]}>Premium</Text>
-          </View>
         </View>
 
         <View style={{ height: 40 }} />
@@ -409,32 +371,4 @@ const estilos = StyleSheet.create({
     borderWidth: 1,
   },
   notaTexto: { flex: 1, fontSize: 12, lineHeight: 18 },
-
-  iaContainer: {
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-  },
-  iaTitle: { fontSize: 15, fontWeight: "bold", marginBottom: 14 },
-  iaLinha: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  iaItem: { flex: 1, fontSize: 13 },
-  iaPlanos: { flexDirection: "row", alignItems: "center" },
-  iaValor: { fontSize: 13, fontWeight: "bold", width: 30, textAlign: "center" },
-  iaLegenda: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
-    gap: 0,
-    marginTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: "#33333333",
-    paddingTop: 8,
-  },
-  iaLegendaItem: { fontSize: 11, fontWeight: "bold", width: 50, textAlign: "center" },
 });
