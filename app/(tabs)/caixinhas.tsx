@@ -30,6 +30,7 @@ interface Caixinha {
   icone: string;
   compartilhado?: boolean;
   data_prazo?: string | null;
+  bloqueado_plano?: boolean;
 }
 
 const formatarReais = (valor: number): string => {
@@ -414,15 +415,16 @@ export default function CaixinhasScreen() {
           </TouchableOpacity>
         ) : (
           caixinhas.map((caixa) => {
+            const bloqueado = !!caixa.bloqueado_plano;
             const metaSegura = Math.max(Number(caixa.meta_valor), 0.01);
             const porcentagem = Math.min((Number(caixa.saldo_atual) / metaSegura) * 100, 100);
             const isCompleto = porcentagem === 100;
             return (
               <TouchableOpacity
                 key={caixa.id}
-                style={[styles.card, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}
-                onPress={() => abrirOpcoes(caixa)}
-                activeOpacity={0.8}
+                style={[styles.card, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, opacity: bloqueado ? 0.55 : 1 }]}
+                onPress={() => !bloqueado && abrirOpcoes(caixa)}
+                activeOpacity={bloqueado ? 1 : 0.8}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.titleRow}>
@@ -430,10 +432,15 @@ export default function CaixinhasScreen() {
                       <MaterialIcons name={caixa.icone as any} size={20} color="#FFF" />
                     </View>
                     <Text style={[styles.caixaName, { color: Cores.textoPrincipal }]}>{caixa.nome}</Text>
+                    {bloqueado && <MaterialIcons name="lock" size={14} color={Cores.textoSecundario} style={{ marginLeft: 6 }} />}
                   </View>
-                  <Text style={[styles.caixaPercent, { color: Cores.textoSecundario }, isCompleto && { color: "#2A9D8F" }]}>
-                    {isCompleto ? "100% 🎉" : `${porcentagem.toFixed(0)}%`}
-                  </Text>
+                  {bloqueado ? (
+                    <Text style={{ fontSize: 10, color: Cores.textoSecundario, fontWeight: "600" }}>Bloqueado</Text>
+                  ) : (
+                    <Text style={[styles.caixaPercent, { color: Cores.textoSecundario }, isCompleto && { color: "#2A9D8F" }]}>
+                      {isCompleto ? "100% 🎉" : `${porcentagem.toFixed(0)}%`}
+                    </Text>
+                  )}
                 </View>
 
                 <View style={styles.valuesRow}>

@@ -285,37 +285,47 @@ export default function RootLayout() {
   const setPlano = async (novoPlano: TipoPlano) => {
     const planOrder: Record<TipoPlano, number> = { free: 0, smart: 1, premium: 2 };
     const eDowngrade = planOrder[novoPlano] < planOrder[plano];
+    const eUpgrade = planOrder[novoPlano] > planOrder[plano];
+    const uid = session?.user?.id;
 
-    if (eDowngrade && session?.user?.id) {
+    if (eUpgrade && uid) {
+      // Desbloquear todos os itens que foram bloqueados por downgrade anterior
+      await Promise.all([
+        supabase.from("contas").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
+        supabase.from("cartoes").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
+        supabase.from("caixinhas").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
+      ]);
+    }
+
+    if (eDowngrade && uid) {
       const limites = LIMITES_PLANOS[novoPlano];
-      const uid = session.user.id;
       const bloqueados: { tipo: string; nome: string }[] = [];
 
       if (limites.contas > 0) {
-        const { data: contas } = await supabase.from("contas").select("id, nome").eq("user_id", uid).eq("arquivado", false).order("id");
+        const { data: contas } = await supabase.from("contas").select("id, nome").eq("user_id", uid).eq("arquivado", false).eq("bloqueado_plano", false).order("id");
         if (contas && contas.length > limites.contas) {
           for (const c of contas.slice(limites.contas)) {
-            await supabase.from("contas").update({ arquivado: true }).eq("id", c.id);
+            await supabase.from("contas").update({ bloqueado_plano: true }).eq("id", c.id);
             bloqueados.push({ tipo: "Conta", nome: c.nome });
           }
         }
       }
 
       if (limites.cartoes > 0) {
-        const { data: cartoes } = await supabase.from("cartoes").select("id, nome").eq("user_id", uid).eq("ativo", true).order("id");
+        const { data: cartoes } = await supabase.from("cartoes").select("id, nome").eq("user_id", uid).eq("ativo", true).eq("bloqueado_plano", false).order("id");
         if (cartoes && cartoes.length > limites.cartoes) {
           for (const c of cartoes.slice(limites.cartoes)) {
-            await supabase.from("cartoes").update({ ativo: false }).eq("id", c.id);
+            await supabase.from("cartoes").update({ bloqueado_plano: true }).eq("id", c.id);
             bloqueados.push({ tipo: "Cartão", nome: c.nome });
           }
         }
       }
 
       if (limites.caixinhas > 0) {
-        const { data: caixinhas } = await supabase.from("caixinhas").select("id, nome").eq("user_id", uid).eq("arquivado", false).order("id");
+        const { data: caixinhas } = await supabase.from("caixinhas").select("id, nome").eq("user_id", uid).eq("arquivado", false).eq("bloqueado_plano", false).order("id");
         if (caixinhas && caixinhas.length > limites.caixinhas) {
           for (const c of caixinhas.slice(limites.caixinhas)) {
-            await supabase.from("caixinhas").update({ arquivado: true }).eq("id", c.id);
+            await supabase.from("caixinhas").update({ bloqueado_plano: true }).eq("id", c.id);
             bloqueados.push({ tipo: "Caixinha", nome: c.nome });
           }
         }
@@ -327,8 +337,8 @@ export default function RootLayout() {
     }
 
     setPlanoState(novoPlano);
-    if (session?.user?.id) {
-      await AsyncStorage.setItem(`@plano_usuario_${session.user.id}`, novoPlano);
+    if (uid) {
+      await AsyncStorage.setItem(`@plano_usuario_${uid}`, novoPlano);
     }
   };
 

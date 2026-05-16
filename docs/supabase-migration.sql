@@ -1,6 +1,6 @@
 -- FinFlow — Migração Supabase
--- Execute este SQL no painel do Supabase (SQL Editor) para criar as tabelas
--- necessárias para o sistema de cartões de crédito.
+-- Execute este SQL no painel do Supabase (SQL Editor)
+-- Pode ser executado múltiplas vezes com segurança (IF NOT EXISTS / IF EXISTS)
 
 -- ─── Tabela de Cartões de Crédito ────────────────────────────────────────────
 
@@ -13,8 +13,12 @@ CREATE TABLE IF NOT EXISTS cartoes (
   dia_vencimento INTEGER NOT NULL DEFAULT 10,
   dia_fechamento INTEGER NOT NULL DEFAULT 3,
   ativo BOOLEAN NOT NULL DEFAULT true,
+  bloqueado_plano BOOLEAN NOT NULL DEFAULT false,
   criado_em TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Coluna bloqueado_plano nos cartões (para quem já criou a tabela)
+ALTER TABLE cartoes ADD COLUMN IF NOT EXISTS bloqueado_plano BOOLEAN NOT NULL DEFAULT false;
 
 -- ─── Tabela de Itens da Fatura ────────────────────────────────────────────────
 
@@ -34,6 +38,19 @@ CREATE TABLE IF NOT EXISTS fatura_itens (
   criado_em TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Coluna categoria_id nos itens de fatura (para quem já criou a tabela)
+ALTER TABLE fatura_itens ADD COLUMN IF NOT EXISTS categoria_id INTEGER REFERENCES categorias(id) ON DELETE SET NULL;
+
+-- ─── Coluna bloqueado_plano nas contas ───────────────────────────────────────
+-- Permite que itens bloqueados por downgrade continuem visíveis (com cadeado)
+-- sem serem arquivados
+
+ALTER TABLE contas ADD COLUMN IF NOT EXISTS bloqueado_plano BOOLEAN NOT NULL DEFAULT false;
+
+-- ─── Coluna bloqueado_plano nas caixinhas ────────────────────────────────────
+
+ALTER TABLE caixinhas ADD COLUMN IF NOT EXISTS bloqueado_plano BOOLEAN NOT NULL DEFAULT false;
+
 -- ─── Índices para performance ─────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_cartoes_user_id ON cartoes(user_id);
@@ -46,8 +63,6 @@ CREATE INDEX IF NOT EXISTS idx_fatura_itens_grupo ON fatura_itens(grupo_parcela_
 ALTER TABLE cartoes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fatura_itens ENABLE ROW LEVEL SECURITY;
 
--- Políticas: cada usuário acessa apenas seus próprios dados
-
 DROP POLICY IF EXISTS "cartoes_user_own" ON cartoes;
 CREATE POLICY "cartoes_user_own" ON cartoes
   USING (auth.uid() = user_id)
@@ -58,8 +73,7 @@ CREATE POLICY "fatura_itens_user_own" ON fatura_itens
   USING (auth.uid() = user_id)
   WITH CHECK (auth.uid() = user_id);
 
--- ─── Função para exclusão de conta (se ainda não existir) ─────────────────────
--- Esta função deve existir para o fluxo de "Apagar Minha Conta"
+-- ─── Função para exclusão de conta ───────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION delete_user()
 RETURNS void

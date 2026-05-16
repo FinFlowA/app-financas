@@ -245,7 +245,7 @@ export default function ConfiguracoesScreen() {
       mensagem: "Tem certeza que deseja sair?",
       labelConfirm: "Sair",
       cor: "#E76F51",
-      onConfirm: async () => { setModalConfirmarAcao(null); await supabase.auth.signOut(); },
+      onConfirm: () => { setModalConfirmarAcao(null); supabase.auth.signOut(); },
     });
   };
 

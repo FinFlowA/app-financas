@@ -24,12 +24,22 @@ interface Categoria {
   nome: string;
   cor: string;
   icone: string;
+  tipo: "receita" | "despesa" | "ambos";
   ativa: number;
 }
 interface Conta {
   id: number;
   nome: string;
   saldo_inicial: number;
+}
+interface FaturaGrupo {
+  cartao_id: number;
+  cartao_nome: string;
+  cartao_cor: string;
+  mes_fatura: string;
+  total: number;
+  pago: boolean;
+  itens_ids: number[];
 }
 interface Transacao {
   id: number;
@@ -85,6 +95,9 @@ export default function TransacoesScreen() {
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
+  const [faturaGrupos, setFaturaGrupos] = useState<FaturaGrupo[]>([]);
+  const [modalPagFatura, setModalPagFatura] = useState<FaturaGrupo | null>(null);
+  const [contaPagFaturaId, setContaPagFaturaId] = useState<number | null>(null);
 
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
@@ -140,14 +153,42 @@ export default function TransacoesScreen() {
   const carregarDados = async () => {
     if (!session?.user?.id) return;
     try {
-      const [resCategorias, resContas, resTransacoes] = await Promise.all([
+      const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
-        supabase.from("contas").select("*"),      // RLS retorna próprias + compartilhadas do parceiro
-        supabase.from("transacoes").select("*"),  // RLS retorna próprias + de contas compartilhadas
+        supabase.from("contas").select("*"),
+        supabase.from("transacoes").select("*"),
+        supabase.from("cartoes").select("id, nome, cor").eq("user_id", session.user.id).eq("ativo", true),
+        supabase.from("fatura_itens").select("id, cartao_id, valor, mes_fatura, pago").eq("user_id", session.user.id),
       ]);
       if (resCategorias.data) setCategorias(resCategorias.data);
       if (resContas.data) setContas(resContas.data);
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
+
+      // Agrupar fatura_itens por (cartao_id, mes_fatura)
+      if (resCartoes.data && resFaturas.data) {
+        const cartaoMap: Record<number, { nome: string; cor: string }> = {};
+        resCartoes.data.forEach((c: any) => { cartaoMap[c.id] = { nome: c.nome, cor: c.cor }; });
+
+        const grupos: Record<string, FaturaGrupo> = {};
+        resFaturas.data.forEach((item: any) => {
+          const key = `${item.cartao_id}_${item.mes_fatura}`;
+          if (!grupos[key]) {
+            grupos[key] = {
+              cartao_id: item.cartao_id,
+              cartao_nome: cartaoMap[item.cartao_id]?.nome ?? "Cartão",
+              cartao_cor: cartaoMap[item.cartao_id]?.cor ?? "#457B9D",
+              mes_fatura: item.mes_fatura,
+              total: 0,
+              pago: true,
+              itens_ids: [],
+            };
+          }
+          grupos[key].total += Number(item.valor);
+          if (!item.pago) grupos[key].pago = false;
+          grupos[key].itens_ids.push(item.id);
+        });
+        setFaturaGrupos(Object.values(grupos));
+      }
     } catch (error) {
       console.error(error);
     }
@@ -429,6 +470,8 @@ export default function TransacoesScreen() {
 
   const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
   const temMais = transacoesPaginadas.length < transacoesDoMes.length;
+
+  const faturaGruposDoMes = faturaGrupos.filter(g => g.mes_fatura === mesSelecionado);
 
   const totalReceitas = transacoesDoMes
     .filter((t) => t.tipo === "receita" && !t.descricao.includes("[Transf.]"))
@@ -738,10 +781,73 @@ export default function TransacoesScreen() {
               onPress={() => setPaginaAtual((p) => p + 1)}
               style={{ padding: 14, alignItems: "center", borderTopWidth: 1, borderTopColor: Cores.borda }}
             >
-              <Text style={{ color: "#457B9D", fontWeight: "600" }}>
+              <Text style={{ color: "#2563EB", fontWeight: "600" }}>
                 Ver mais ({transacoesDoMes.length - transacoesPaginadas.length} restantes)
               </Text>
             </TouchableOpacity>
+          )}
+
+          {/* ─── Faturas de Cartão do Mês ─── */}
+          {faturaGruposDoMes.length > 0 && (
+            <>
+              <View style={[styles.faturaSecHeader, { backgroundColor: isDark ? "#252525" : "#F3F4F6", borderColor: Cores.borda }]}>
+                <MaterialIcons name="credit-card" size={14} color={Cores.textoSecundario} />
+                <Text style={[styles.faturaSecLabel, { color: Cores.textoSecundario }]}>Faturas de Cartão</Text>
+              </View>
+              {faturaGruposDoMes.map((g) => (
+                <TouchableOpacity
+                  key={`${g.cartao_id}_${g.mes_fatura}`}
+                  style={[styles.transacaoCard, {
+                    backgroundColor: Cores.rowImpar,
+                    borderBottomColor: Cores.borda,
+                    borderLeftWidth: 3,
+                    borderLeftColor: g.cartao_cor,
+                  }]}
+                  onPress={() => {
+                    if (g.pago) {
+                      Alert.alert(`Fatura ${g.cartao_nome}`, `Fatura de ${formatarMesAno(g.mes_fatura)} já está paga.\n\nDeseja estornar?`, [
+                        { text: "Não", style: "cancel" },
+                        { text: "Estornar", style: "destructive", onPress: async () => {
+                          const descricao = `Fatura ${g.cartao_nome} - ${formatarMesAno(g.mes_fatura)}`;
+                          await Promise.all([
+                            supabase.from("fatura_itens").update({ pago: false }).in("id", g.itens_ids),
+                            supabase.from("transacoes").delete().eq("user_id", session!.user.id).eq("descricao", descricao),
+                          ]);
+                          carregarDados();
+                        }},
+                      ]);
+                    } else {
+                      setContaPagFaturaId(contas[0]?.id ?? null);
+                      setModalPagFatura(g);
+                    }
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
+                    <Text style={[styles.dataDia, { color: Cores.textoPrincipal }]}>FAT</Text>
+                    <Text style={[styles.dataMes, { color: Cores.textoSecundario }]}>{g.mes_fatura.split("-")[1]}/{g.mes_fatura.split("-")[0].slice(2)}</Text>
+                  </View>
+                  <View style={styles.transacaoInfo}>
+                    <View style={[{ backgroundColor: g.cartao_cor + "22", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: "flex-start", marginBottom: 4 }]}>
+                      <Text style={[styles.contaTag, { color: g.cartao_cor }]}>{g.cartao_nome}</Text>
+                    </View>
+                    <Text style={[styles.transacaoDesc, { color: Cores.textoPrincipal }]}>
+                      Fatura {formatarMesAno(g.mes_fatura)}
+                    </Text>
+                  </View>
+                  <View style={styles.transacaoAcoes}>
+                    <Text style={[styles.transacaoValor, { color: g.pago ? Cores.textoSecundario : "#EF4444" }]}>
+                      - {fmtReais(g.total)}
+                    </Text>
+                    <View style={[styles.statusBadge, { backgroundColor: g.pago ? "#D1FAE5" : "#FEE2E2" }]}>
+                      <Text style={[styles.statusBadgeText, { color: g.pago ? "#065F46" : "#991B1B" }]}>
+                        {g.pago ? "Paga" : "Em aberto"}
+                      </Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </>
           )}
 
           {/* Rodapé */}
@@ -942,6 +1048,59 @@ export default function TransacoesScreen() {
         </Modal>
       )}
 
+      {/* MODAL PAGAMENTO DE FATURA — seleção de conta */}
+      {modalPagFatura && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalPagFatura(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#111827" }]}>Pagar Fatura</Text>
+              <View style={{ backgroundColor: isDark ? "#2C2C2C" : "#F3F4F6", borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" }}>
+                <Text style={{ color: isDark ? "#AAA" : "#6B7280", fontSize: 12, marginBottom: 4 }}>
+                  {modalPagFatura.cartao_nome} — {formatarMesAno(modalPagFatura.mes_fatura)}
+                </Text>
+                <Text style={{ color: "#10B981", fontSize: 24, fontWeight: "bold" }}>
+                  {fmtReais(modalPagFatura.total)}
+                </Text>
+              </View>
+              <Text style={{ color: isDark ? "#AAA" : "#6B7280", fontSize: 12, fontWeight: "600", marginBottom: 8 }}>PAGAR COM QUAL CONTA?</Text>
+              {contas.map((c) => (
+                <TouchableOpacity
+                  key={c.id}
+                  style={{ flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, borderWidth: 2, borderColor: contaPagFaturaId === c.id ? "#10B981" : (isDark ? "#333" : "#E5E7EB"), backgroundColor: contaPagFaturaId === c.id ? "#D1FAE5" : "transparent", marginBottom: 8 }}
+                  onPress={() => setContaPagFaturaId(c.id)}
+                >
+                  <MaterialIcons name="account-balance-wallet" size={18} color={contaPagFaturaId === c.id ? "#10B981" : (isDark ? "#AAA" : "#6B7280")} />
+                  <Text style={{ color: contaPagFaturaId === c.id ? "#065F46" : (isDark ? "#FFF" : "#111827"), fontWeight: "600", marginLeft: 10, flex: 1 }}>{c.nome}</Text>
+                  {contaPagFaturaId === c.id && <MaterialIcons name="check-circle" size={18} color="#10B981" />}
+                </TouchableOpacity>
+              ))}
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
+                <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F3F4F6" }} onPress={() => setModalPagFatura(null)}>
+                  <Text style={{ color: isDark ? "#AAA" : "#6B7280", fontWeight: "bold" }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: contaPagFaturaId ? "#10B981" : "#999" }}
+                  disabled={!contaPagFaturaId}
+                  onPress={async () => {
+                    if (!contaPagFaturaId || !modalPagFatura) return;
+                    const hoje = new Date().toISOString().slice(0, 10);
+                    const descricao = `Fatura ${modalPagFatura.cartao_nome} - ${formatarMesAno(modalPagFatura.mes_fatura)}`;
+                    await Promise.all([
+                      supabase.from("fatura_itens").update({ pago: true }).in("id", modalPagFatura.itens_ids),
+                      supabase.from("transacoes").insert([{ user_id: session!.user.id, tipo: "despesa", valor: modalPagFatura.total, descricao, data_vencimento: hoje, conta_id: contaPagFaturaId, status: "paga", categoria_id: null }]),
+                    ]);
+                    setModalPagFatura(null);
+                    carregarDados();
+                  }}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>Confirmar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       <Modal animationType="fade" transparent visible={modalFiltroTipo} onRequestClose={() => setModalFiltroTipo(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
@@ -1130,4 +1289,11 @@ const styles = StyleSheet.create({
   modalBotaoTexto: { fontSize: 15, fontWeight: "700", color: "#FFF" },
   catSecaoHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: "#33333322" },
   catSecaoTitulo: { fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
+  faturaSecHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderTopWidth: 1, borderBottomWidth: 1 },
+  faturaSecLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, marginTop: 4 },
+  statusBadgeText: { fontSize: 10, fontWeight: "700" },
+  contaTag: { fontSize: 11, fontWeight: "700" },
+  transacaoDesc: { fontSize: 13, fontWeight: "600" },
+  transacaoValor: { fontSize: 14, fontWeight: "700", textAlign: "right" },
 });

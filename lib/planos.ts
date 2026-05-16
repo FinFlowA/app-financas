@@ -51,7 +51,7 @@ export interface InfoPlano {
 
 export const LIMITES_PLANOS: Record<TipoPlano, LimitesPlano> = {
   free: {
-    contas: 1,
+    contas: 2,
     lancamentosMes: 40,
     cartoes: 1,
     caixinhas: 1,
@@ -62,7 +62,7 @@ export const LIMITES_PLANOS: Record<TipoPlano, LimitesPlano> = {
     iaAcoesDia: 0,
   },
   smart: {
-    contas: 4,
+    contas: 5,
     lancamentosMes: 300,
     cartoes: 3,
     caixinhas: 5,
@@ -96,7 +96,7 @@ export const PLANOS: InfoPlano[] = [
     precoAnual: 0,
     limites: LIMITES_PLANOS.free,
     destaque: [
-      "1 conta",
+      "2 contas",
       "40 lançamentos/mês",
       "1 cartão de crédito",
       "1 caixinha",
@@ -113,7 +113,7 @@ export const PLANOS: InfoPlano[] = [
     precoAnual: 79.9,
     limites: LIMITES_PLANOS.smart,
     destaque: [
-      "4 contas",
+      "5 contas",
       "300 lançamentos/mês",
       "3 cartões de crédito",
       "5 caixinhas",

@@ -76,6 +76,7 @@ interface Cartao {
   dia_vencimento: number;
   dia_fechamento: number;
   ativo: boolean;
+  bloqueado_plano?: boolean;
 }
 
 interface FaturaItem {
@@ -88,7 +89,22 @@ interface FaturaItem {
   parcela_atual: number;
   total_parcelas: number;
   grupo_parcela_id: number | null;
+  categoria_id: number | null;
   pago: boolean;
+}
+
+interface Categoria {
+  id: number;
+  nome: string;
+  cor: string;
+  icone: string;
+  tipo: string;
+}
+
+interface ContaSimples {
+  id: number;
+  nome: string;
+  cor?: string;
 }
 
 // ─── Constantes ───────────────────────────────────────────────────────────────
@@ -176,27 +192,42 @@ export default function CartoesScreen() {
   const [dataCompra, setDataCompra] = useState(new Date());
   const [mostrarDataPicker, setMostrarDataPicker] = useState(false);
   const [loadingCompra, setLoadingCompra] = useState(false);
+  const [categCompraId, setCategCompraId] = useState<number | null>(null);
+
+  // Dados auxiliares
+  const [categorias, setCategorias] = useState<Categoria[]>([]);
+  const [contas, setContas] = useState<ContaSimples[]>([]);
+
+  // Modal editar cartão
+  const [modalEditarCartao, setModalEditarCartao] = useState(false);
+  const [cartaoEditando, setCartaoEditando] = useState<Cartao | null>(null);
+  const [editNome, setEditNome] = useState("");
+  const [editCor, setEditCor] = useState(CORES_CARTAO[0]);
+  const [editLimite, setEditLimite] = useState("");
+  const [editVenc, setEditVenc] = useState("");
+  const [editFecha, setEditFecha] = useState("");
+  const [loadingEditar, setLoadingEditar] = useState(false);
+
+  // Modal pagamento — selecionar conta
+  const [modalPagamento, setModalPagamento] = useState(false);
+  const [mesPagamento, setMesPagamento] = useState("");
+  const [contaPagamentoId, setContaPagamentoId] = useState<number | null>(null);
 
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     setLoading(true);
 
-    const [resCartoes, resItens] = await Promise.all([
-      supabase
-        .from("cartoes")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .eq("ativo", true)
-        .order("id"),
-      supabase
-        .from("fatura_itens")
-        .select("*")
-        .eq("user_id", session.user.id)
-        .order("data_compra", { ascending: false }),
+    const [resCartoes, resItens, resCats, resContas] = await Promise.all([
+      supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", true).order("id"),
+      supabase.from("fatura_itens").select("*").eq("user_id", session.user.id).order("data_compra", { ascending: false }),
+      supabase.from("categorias").select("id, nome, cor, icone, tipo").eq("user_id", session.user.id).eq("ativa", true).order("nome"),
+      supabase.from("contas").select("id, nome, cor").eq("user_id", session.user.id).eq("arquivado", false).order("nome"),
     ]);
 
     if (resCartoes.data) setCartoes(resCartoes.data);
     if (resItens.data) setItens(resItens.data);
+    if (resCats.data) setCategorias(resCats.data as Categoria[]);
+    if (resContas.data) setContas(resContas.data as ContaSimples[]);
     setLoading(false);
 
     // Alerta de limite próximo do máximo para cada cartão
@@ -305,6 +336,7 @@ export default function CartoesScreen() {
         parcela_atual: i + 1,
         total_parcelas: parcelas,
         grupo_parcela_id: null,
+        categoria_id: categCompraId,
         pago: false,
       });
     }
@@ -343,43 +375,145 @@ export default function CartoesScreen() {
     }
 
     setLoadingCompra(false);
-    setDescCompra(""); setValorCompra(""); setParcelasCompra("1"); setDataCompra(new Date());
+    setDescCompra(""); setValorCompra(""); setParcelasCompra("1"); setDataCompra(new Date()); setCategCompraId(null);
     setModalNovaCompra(false);
     showToast(`Compra adicionada${parcelas > 1 ? ` em ${parcelas}x` : ""} ✓`, "success");
     carregarDados();
   };
 
-  // ─── Marcar fatura como paga ───────────────────────────────────────────────
+  // ─── Pagar fatura — abre modal de seleção de conta ───────────────────────
 
-  const pagarFatura = async (cartaoId: number, mes: string) => {
-    const totalFatura = calcularTotalFatura(cartaoId, mes);
-    if (totalFatura === 0) return Alert.alert("Aviso", "Fatura já está zerada.");
+  const iniciarPagamentoFatura = (mes: string) => {
+    const totalFatura = calcularTotalFatura(cartaoAberto!.id, mes);
+    if (totalFatura === 0) return showToast("Fatura já está zerada", "info");
+    setMesPagamento(mes);
+    setContaPagamentoId(contas[0]?.id ?? null);
+    setModalPagamento(true);
+  };
 
-    Alert.alert(
-      "Pagar Fatura",
-      `Marcar fatura de ${formatarMes(mes)} como paga?\nValor: ${fmtReais(totalFatura)}`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Confirmar Pagamento",
-          onPress: async () => {
-            const { error } = await supabase
-              .from("fatura_itens")
-              .update({ pago: true })
-              .eq("cartao_id", cartaoId)
-              .eq("mes_fatura", mes)
-              .eq("pago", false);
+  const confirmarPagamentoFatura = async () => {
+    if (!cartaoAberto || !contaPagamentoId) return;
+    const totalFatura = calcularTotalFatura(cartaoAberto.id, mesPagamento);
+    const hoje = new Date().toISOString().slice(0, 10);
+    const descPagamento = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)}`;
 
-            if (error) {
-              Alert.alert("Erro", "Não foi possível marcar a fatura como paga.");
-              return;
-            }
-            showToast("Fatura paga ✓", "success");
-            carregarDados();
-          },
+    const [resUpdate, resTrans] = await Promise.all([
+      supabase.from("fatura_itens").update({ pago: true }).eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false),
+      supabase.from("transacoes").insert([{
+        user_id: session!.user.id,
+        tipo: "despesa",
+        valor: totalFatura,
+        descricao: descPagamento,
+        data_vencimento: hoje,
+        conta_id: contaPagamentoId,
+        status: "paga",
+        categoria_id: null,
+      }]),
+    ]);
+
+    if (resUpdate.error || resTrans.error) {
+      showToast("Erro ao registrar pagamento", "error");
+      return;
+    }
+
+    setModalPagamento(false);
+    showToast("Fatura paga ✓", "success");
+    carregarDados();
+  };
+
+  const estornarFatura = async (cartaoId: number, mes: string) => {
+    const totalFatura = calcularTotalFatura(cartaoId, mes) === 0
+      ? itens.filter(i => i.cartao_id === cartaoId && i.mes_fatura === mes && i.pago).reduce((a, i) => a + Number(i.valor), 0)
+      : 0;
+
+    const nomeCartao = cartoes.find(c => c.id === cartaoId)?.nome ?? "";
+    const descPagamento = `Fatura ${nomeCartao} - ${formatarMes(mes)}`;
+
+    Alert.alert("Estornar Pagamento", `Desfazer o pagamento da fatura ${formatarMes(mes)}?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Estornar",
+        style: "destructive",
+        onPress: async () => {
+          await Promise.all([
+            supabase.from("fatura_itens").update({ pago: false }).eq("cartao_id", cartaoId).eq("mes_fatura", mes).eq("pago", true),
+            supabase.from("transacoes").delete().eq("user_id", session!.user.id).eq("descricao", descPagamento),
+          ]);
+          showToast("Pagamento estornado", "success");
+          carregarDados();
         },
-      ]
-    );
+      },
+    ]);
+  };
+
+  // ─── Editar cartão ─────────────────────────────────────────────────────────
+
+  const abrirEditarCartao = (c: Cartao) => {
+    setCartaoEditando(c);
+    setEditNome(c.nome);
+    setEditCor(c.cor);
+    setEditLimite(c.limite.toString());
+    setEditVenc(c.dia_vencimento.toString());
+    setEditFecha(c.dia_fechamento.toString());
+    setModalEditarCartao(true);
+  };
+
+  const salvarEdicaoCartao = async () => {
+    if (!cartaoEditando) return;
+    if (!editNome.trim()) return showToast("Informe o nome", "error");
+    const limiteNum = parseFloat(editLimite.replace(",", ".")) || 0;
+    if (limiteNum <= 0) return showToast("Limite inválido", "error");
+    const venc = parseInt(editVenc);
+    const fecha = parseInt(editFecha);
+    if (isNaN(venc) || venc < 1 || venc > 31) return showToast("Vencimento inválido (1–31)", "error");
+    if (isNaN(fecha) || fecha < 1 || fecha > 31) return showToast("Fechamento inválido (1–31)", "error");
+
+    setLoadingEditar(true);
+    const { error } = await supabase.from("cartoes").update({
+      nome: editNome.trim(), cor: editCor, limite: limiteNum,
+      dia_vencimento: venc, dia_fechamento: fecha,
+    }).eq("id", cartaoEditando.id);
+    setLoadingEditar(false);
+
+    if (error) { showToast("Erro ao salvar", "error"); return; }
+    setModalEditarCartao(false);
+    showToast("Cartão atualizado ✓", "success");
+    carregarDados();
+  };
+
+  // ─── Opções ao pressionar e segurar cartão ────────────────────────────────
+
+  const opcoesCartao = (c: Cartao) => {
+    const temItens = itens.some(i => i.cartao_id === c.id);
+    Alert.alert(c.nome, "O que deseja fazer?", [
+      { text: "Cancelar", style: "cancel" },
+      { text: "Editar Cartão", onPress: () => abrirEditarCartao(c) },
+      {
+        text: temItens ? "Arquivar Cartão" : "Excluir Cartão",
+        style: "destructive",
+        onPress: () => {
+          if (temItens) {
+            Alert.alert("Arquivar Cartão", `O cartão "${c.nome}" tem lançamentos e será arquivado. Deseja continuar?`, [
+              { text: "Cancelar", style: "cancel" },
+              { text: "Arquivar", style: "destructive", onPress: async () => {
+                await supabase.from("cartoes").update({ ativo: false }).eq("id", c.id);
+                showToast("Cartão arquivado", "success");
+                carregarDados();
+              }},
+            ]);
+          } else {
+            Alert.alert("Excluir Cartão", `Excluir o cartão "${c.nome}" permanentemente?`, [
+              { text: "Cancelar", style: "cancel" },
+              { text: "Excluir", style: "destructive", onPress: async () => {
+                await supabase.from("cartoes").delete().eq("id", c.id);
+                showToast("Cartão excluído", "success");
+                carregarDados();
+              }},
+            ]);
+          }
+        },
+      },
+    ]);
   };
 
   // ─── Excluir compra ────────────────────────────────────────────────────────
@@ -468,27 +602,39 @@ export default function CartoesScreen() {
               const total = calcularTotalFatura(c.id, mesAtualStr());
               const usado = calcularLimiteUsado(c.id);
               const disponivel = Math.max(0, c.limite - usado);
+              const bloqueado = c.bloqueado_plano;
               return (
                 <TouchableOpacity
                   key={c.id}
-                  style={[estilos.cartaoCard, { backgroundColor: c.cor }]}
+                  style={[estilos.cartaoCard, { backgroundColor: c.cor, opacity: bloqueado ? 0.55 : 1 }]}
                   onPress={() => {
+                    if (bloqueado) return;
                     setCartaoAberto(c);
                     setMesFaturaAtivo(mesAtualStr());
                     setModalFaturaVisivel(true);
                   }}
-                  activeOpacity={0.85}
+                  onLongPress={() => !bloqueado && opcoesCartao(c)}
+                  activeOpacity={bloqueado ? 1 : 0.85}
                 >
                   <View style={estilos.cartaoTopo}>
-                    <MaterialIcons name="credit-card" size={22} color="rgba(255,255,255,0.8)" />
+                    {bloqueado
+                      ? <MaterialIcons name="lock" size={18} color="rgba(255,255,255,0.9)" />
+                      : <MaterialIcons name="credit-card" size={22} color="rgba(255,255,255,0.8)" />
+                    }
                     <Text style={estilos.cartaoNome}>{c.nome}</Text>
                   </View>
-                  <Text style={estilos.cartaoFaturaLabel}>Fatura atual</Text>
-                  <Text style={estilos.cartaoFatura}>{fmtReais(total)}</Text>
-                  <View style={estilos.cartaoRodapeCol}>
-                    <Text style={estilos.cartaoLimite}>Disponível: {fmtReais(disponivel)}</Text>
-                    <Text style={estilos.cartaoVenc}>Vence dia {c.dia_vencimento}</Text>
-                  </View>
+                  {bloqueado ? (
+                    <Text style={[estilos.cartaoFaturaLabel, { marginTop: 4 }]}>Bloqueado — faça upgrade</Text>
+                  ) : (
+                    <>
+                      <Text style={estilos.cartaoFaturaLabel}>Fatura atual</Text>
+                      <Text style={estilos.cartaoFatura}>{fmtReais(total)}</Text>
+                      <View style={estilos.cartaoRodapeCol}>
+                        <Text style={estilos.cartaoLimite}>Disponível: {fmtReais(disponivel)}</Text>
+                        <Text style={estilos.cartaoVenc}>Vence dia {c.dia_vencimento}</Text>
+                      </View>
+                    </>
+                  )}
                 </TouchableOpacity>
               );
             })}
@@ -560,21 +706,29 @@ export default function CartoesScreen() {
               {/* Ações */}
               <View style={estilos.acoesRow}>
                 <TouchableOpacity
-                  style={[estilos.acaoBtn, { backgroundColor: "#457B9D" }]}
+                  style={[estilos.acaoBtn, { backgroundColor: "#2563EB" }]}
                   onPress={() => setModalNovaCompra(true)}
                 >
                   <MaterialIcons name="add-shopping-cart" size={16} color="#FFF" />
                   <Text style={estilos.acaoBtnText}>Add Compra</Text>
                 </TouchableOpacity>
-                {totalFaturaAtiva > 0 && (
+                {totalFaturaAtiva > 0 ? (
                   <TouchableOpacity
-                    style={[estilos.acaoBtn, { backgroundColor: "#2A9D8F" }]}
-                    onPress={() => pagarFatura(cartaoAberto.id, mesFaturaAtivo)}
+                    style={[estilos.acaoBtn, { backgroundColor: "#10B981" }]}
+                    onPress={() => iniciarPagamentoFatura(mesFaturaAtivo)}
                   >
                     <MaterialIcons name="check-circle" size={16} color="#FFF" />
                     <Text style={estilos.acaoBtnText}>Pagar Fatura</Text>
                   </TouchableOpacity>
-                )}
+                ) : itensFatura.some(i => i.pago) ? (
+                  <TouchableOpacity
+                    style={[estilos.acaoBtn, { backgroundColor: "#F59E0B" }]}
+                    onPress={() => estornarFatura(cartaoAberto.id, mesFaturaAtivo)}
+                  >
+                    <MaterialIcons name="undo" size={16} color="#FFF" />
+                    <Text style={estilos.acaoBtnText}>Estornar</Text>
+                  </TouchableOpacity>
+                ) : null}
               </View>
 
               {/* Itens da fatura */}
@@ -788,6 +942,21 @@ export default function CartoesScreen() {
                 </View>
               )}
 
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Categoria</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {categorias.filter(c => c.tipo === "despesa").map((cat) => (
+                    <TouchableOpacity
+                      key={cat.id}
+                      style={[estilos.catPill, { backgroundColor: categCompraId === cat.id ? cat.cor : Cores.pillFundo, borderWidth: 1, borderColor: categCompraId === cat.id ? cat.cor : Cores.borda }]}
+                      onPress={() => setCategCompraId(categCompraId === cat.id ? null : cat.id)}
+                    >
+                      <Text style={{ color: categCompraId === cat.id ? "#FFF" : Cores.texto, fontSize: 13 }}>{cat.nome}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
               <Text style={[estilos.label, { color: Cores.secundario }]}>Data da Compra</Text>
               <TouchableOpacity
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda }]}
@@ -814,13 +983,112 @@ export default function CartoesScreen() {
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[estilos.modalBtn, { backgroundColor: "#457B9D" }]}
+                  style={[estilos.modalBtn, { backgroundColor: "#2563EB" }]}
                   onPress={salvarCompra}
                   disabled={loadingCompra}
                 >
                   <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>
                     {loadingCompra ? "Salvando..." : "Salvar Compra"}
                   </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Modal: Pagamento da Fatura — selecionar conta */}
+      {modalPagamento && cartaoAberto && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalPagamento(false)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <View style={estilos.modalHeaderRow}>
+                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagar Fatura</Text>
+                <TouchableOpacity onPress={() => setModalPagamento(false)}>
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
+              </View>
+
+              <View style={[{ backgroundColor: Cores.pillFundo, borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" }]}>
+                <Text style={{ color: Cores.secundario, fontSize: 12, marginBottom: 4 }}>Valor da Fatura {formatarMes(mesPagamento)}</Text>
+                <Text style={{ color: "#10B981", fontSize: 26, fontWeight: "bold" }}>
+                  {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}
+                </Text>
+              </View>
+
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Pagar com qual conta?</Text>
+              {contas.map((conta) => (
+                <TouchableOpacity
+                  key={conta.id}
+                  style={[estilos.contaOpcao, { borderColor: contaPagamentoId === conta.id ? "#10B981" : Cores.borda, backgroundColor: contaPagamentoId === conta.id ? "#D1FAE5" : Cores.pillFundo }]}
+                  onPress={() => setContaPagamentoId(conta.id)}
+                >
+                  <MaterialIcons name="account-balance-wallet" size={18} color={contaPagamentoId === conta.id ? "#10B981" : Cores.secundario} />
+                  <Text style={{ color: contaPagamentoId === conta.id ? "#065F46" : Cores.texto, fontWeight: "600", marginLeft: 10, flex: 1 }}>{conta.nome}</Text>
+                  {contaPagamentoId === conta.id && <MaterialIcons name="check-circle" size={18} color="#10B981" />}
+                </TouchableOpacity>
+              ))}
+
+              <View style={[estilos.modalBtns, { marginTop: 16 }]}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamento(false)}>
+                  <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#10B981" }]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId}>
+                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar Pagamento</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Modal: Editar Cartão */}
+      {modalEditarCartao && cartaoEditando && (
+        <Modal animationType="slide" transparent visible onRequestClose={() => setModalEditarCartao(false)}>
+          <View style={estilos.modalOverlay}>
+            <View style={[estilos.modalContent, { backgroundColor: Cores.card }]}>
+              <View style={estilos.modalHeaderRow}>
+                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Editar Cartão</Text>
+                <TouchableOpacity onPress={() => setModalEditarCartao(false)}>
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Nome do Cartão</Text>
+              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} placeholder="Ex: Nubank" placeholderTextColor={Cores.secundario} value={editNome} onChangeText={setEditNome} />
+
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Limite (R$)</Text>
+              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} placeholder="Ex: 5000" placeholderTextColor={Cores.secundario} value={editLimite} onChangeText={setEditLimite} keyboardType="decimal-pad" />
+
+              <View style={estilos.doisCampos}>
+                <View style={{ flex: 1 }}>
+                  <Text style={[estilos.label, { color: Cores.secundario }]}>Dia Vencimento</Text>
+                  <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} value={editVenc} onChangeText={setEditVenc} keyboardType="number-pad" maxLength={2} />
+                </View>
+                <View style={{ width: 12 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[estilos.label, { color: Cores.secundario }]}>Dia Fechamento</Text>
+                  <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} value={editFecha} onChangeText={setEditFecha} keyboardType="number-pad" maxLength={2} />
+                </View>
+              </View>
+
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Cor do Cartão</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+                <View style={{ flexDirection: "row", gap: 10 }}>
+                  {CORES_CARTAO.map((cor) => (
+                    <TouchableOpacity key={cor} style={[estilos.corCirculo, { backgroundColor: cor }, editCor === cor && estilos.corSelecionada]} onPress={() => setEditCor(cor)}>
+                      {editCor === cor && <MaterialIcons name="check" size={14} color="#FFF" />}
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </ScrollView>
+
+              <View style={estilos.modalBtns}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalEditarCartao(false)}>
+                  <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#2563EB" }]} onPress={salvarEdicaoCartao} disabled={loadingEditar}>
+                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>{loadingEditar ? "Salvando..." : "Salvar"}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -981,4 +1249,13 @@ const estilos = StyleSheet.create({
   modalBtnText: { fontWeight: "bold", fontSize: 15 },
   previewParcelas: { borderRadius: 8, padding: 10, marginBottom: 16, alignItems: "center" },
   previewText: { fontSize: 13 },
+  catPill: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
+  contaOpcao: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 2,
+    marginBottom: 10,
+  },
 });

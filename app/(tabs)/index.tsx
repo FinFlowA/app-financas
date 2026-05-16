@@ -37,6 +37,7 @@ interface Conta {
   compartilhado: boolean;
   cor?: string;
   arquivado?: boolean;
+  bloqueado_plano?: boolean;
 }
 interface Caixinha {
   id: number;
@@ -139,7 +140,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
                 </Text>
               </View>
             </View>
-            <View style={{ height: 7, backgroundColor: isDark ? "#2C2C2C" : "#E8E8E8", borderRadius: 4, overflow: "hidden" }}>
+            <View style={{ height: 7, backgroundColor: isDark ? "#2C2C2C" : "#E5E7EB", borderRadius: 4, overflow: "hidden" }}>
               <View style={{ height: 7, width: `${pct}%`, backgroundColor: item.cor, borderRadius: 4 }} />
             </View>
           </View>
@@ -170,6 +171,7 @@ export default function Dashboard() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
+  const [isOffline, setIsOffline] = useState(false);
 
   const [mesAtual, setMesAtual] = useState(new Date());
   const [mostrarPickerMesAno, setMostrarPickerMesAno] = useState(false);
@@ -346,9 +348,11 @@ export default function Dashboard() {
       const temParc = resParceria.data ? resParceria.data.length > 0 : false;
       setTemParceiro(temParc);
 
+      setIsOffline(false);
       await AsyncStorage.setItem("@cache_categorias", JSON.stringify(resCategorias.data ?? []));
       await AsyncStorage.setItem("@cache_contas", JSON.stringify(resContas.data ?? []));
       await AsyncStorage.setItem("@cache_transacoes", JSON.stringify(resTransacoes.data ?? []));
+      await AsyncStorage.setItem("@cache_caixinhas", JSON.stringify(resCaixinhas.data ?? []));
       await AsyncStorage.setItem("@cache_parceiro", JSON.stringify(temParc));
 
       // Alerta de vencidos (apenas uma vez por sessão)
@@ -385,14 +389,19 @@ export default function Dashboard() {
       const catCache = await AsyncStorage.getItem("@cache_categorias");
       const conCache = await AsyncStorage.getItem("@cache_contas");
       const transCache = await AsyncStorage.getItem("@cache_transacoes");
+      const caixCache = await AsyncStorage.getItem("@cache_caixinhas");
       const parcCache = await AsyncStorage.getItem("@cache_parceiro");
 
       if (catCache) setCategorias(JSON.parse(catCache));
       if (conCache) setContas(JSON.parse(conCache));
-      if (transCache) setTransacoes(JSON.parse(transCache));
+      if (transCache) {
+        const anoAtual = new Date().getFullYear();
+        const todas: Transacao[] = JSON.parse(transCache);
+        setTransacoes(todas.filter(t => new Date(t.data_vencimento).getFullYear() === anoAtual));
+      }
+      if (caixCache) setCaixinhas(JSON.parse(caixCache));
       if (parcCache) setTemParceiro(JSON.parse(parcCache));
-
-      Alert.alert("Modo Offline", "Você está sem internet. Mostrando seus últimos dados salvos.");
+      setIsOffline(true);
     }
   };
 
@@ -709,12 +718,19 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
+        {isOffline && (
+          <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F59E0B22", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: "#F59E0B55" }}>
+            <MaterialIcons name="wifi-off" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
+            <Text style={{ color: "#B45309", fontSize: 13, fontWeight: "600", flex: 1 }}>Sem conexão — exibindo dados salvos (apenas ano atual)</Text>
+          </View>
+        )}
+
         <View style={styles.actionGrid}>
           <View style={styles.actionRow}>
             <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#F97316" }]} onPress={() => setModalTransVisivel(true)}>
               <Text style={styles.actionButtonText}>+ Transação</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#6B7280" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#2A9D8F" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
               <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
             </TouchableOpacity>
           </View>
@@ -725,10 +741,10 @@ export default function Dashboard() {
         </View>
 
         {/* CARTÃO DE FLUXO DE CAIXA */}
-        <View style={[styles.balanceCard, { backgroundColor: isDark ? "#1A1A1A" : "#E8E8E8" }]}>
+        <View style={[styles.balanceCard, { backgroundColor: isDark ? "#1A1A1A" : "#FFFFFF", borderWidth: isDark ? 0 : 1, borderColor: isDark ? "transparent" : "#E5E7EB", shadowColor: isDark ? "transparent" : "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 8, elevation: isDark ? 0 : 2 }]}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.mesBotao}>
-              <MaterialIcons name="chevron-left" size={24} color={isDark ? "#FFF" : "#1A1A1A"} />
+              <MaterialIcons name="chevron-left" size={24} color={isDark ? "#FFF" : "#111827"} />
             </TouchableOpacity>
 
             {/* DATA CLICÁVEL */}
@@ -738,39 +754,39 @@ export default function Dashboard() {
               setMostrarPickerMesAno(true);
             }}>
               <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={{ fontSize: 18, fontWeight: "bold", color: isDark ? "#FFF" : "#1A1A1A", textTransform: "capitalize" }}>
+                <Text style={{ fontSize: 18, fontWeight: "bold", color: isDark ? "#FFF" : "#111827", textTransform: "capitalize" }}>
                   {nomeDoMes}
                 </Text>
-                <MaterialIcons name="arrow-drop-down" size={20} color={isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.5)"} style={{ marginLeft: 4 }} />
+                <MaterialIcons name="arrow-drop-down" size={20} color={isDark ? "rgba(255,255,255,0.7)" : "#6B7280"} style={{ marginLeft: 4 }} />
               </View>
             </TouchableOpacity>
 
             <TouchableOpacity onPress={() => alterarMes(1)} style={styles.mesBotao}>
-              <MaterialIcons name="chevron-right" size={24} color={isDark ? "#FFF" : "#1A1A1A"} />
+              <MaterialIcons name="chevron-right" size={24} color={isDark ? "#FFF" : "#111827"} />
             </TouchableOpacity>
           </View>
 
-          <Text style={[styles.balanceTitle, { color: isDark ? "#999" : "#555" }]}>Saldo Global (Na Conta)</Text>
-          <Text style={[styles.balanceAmount, { color: isDark ? "#FFF" : "#1A1A1A" }]}>{fmtReais(saldoAtualGlobal)}</Text>
+          <Text style={[styles.balanceTitle, { color: isDark ? "#999" : "#6B7280" }]}>Saldo Global (Na Conta)</Text>
+          <Text style={[styles.balanceAmount, { color: isDark ? "#FFF" : "#111827" }]}>{fmtReais(saldoAtualGlobal)}</Text>
 
-          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: isDark ? "#333" : "#CCC" }}>
+          <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 20, paddingTop: 15, borderTopWidth: 1, borderTopColor: isDark ? "#333" : "#E5E7EB" }}>
             <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
-              <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12 }}>Entradas do Mês</Text>
-              <Text style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 16 }}>
+              <Text style={{ color: isDark ? "#999" : "#6B7280", fontSize: 12 }}>Entradas do Mês</Text>
+              <Text style={{ color: "#10B981", fontWeight: "bold", fontSize: 16 }}>
                 + {fmtReais(receitasDoMes)}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity onPress={() => setModalResumoVisivel(true)}>
-              <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12, textAlign: "right" }}>Saídas do Mês</Text>
-              <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 16, textAlign: "right" }}>
+              <Text style={{ color: isDark ? "#999" : "#6B7280", fontSize: 12, textAlign: "right" }}>Saídas do Mês</Text>
+              <Text style={{ color: "#EF4444", fontWeight: "bold", fontSize: 16, textAlign: "right" }}>
                 - {fmtReais(despesasDoMes)}
               </Text>
             </TouchableOpacity>
           </View>
 
-          <View style={{ marginTop: 15, alignItems: "center", backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)", padding: 10, borderRadius: 8 }}>
-            <Text style={{ color: isDark ? "#999" : "#666", fontSize: 12 }}>Balanço do Mês</Text>
-            <Text style={{ color: balancoMensal >= 0 ? "#8AB17D" : "#E76F51", fontWeight: "bold", fontSize: 20 }}>
+          <View style={{ marginTop: 15, alignItems: "center", backgroundColor: isDark ? "rgba(255,255,255,0.05)" : "#F3F4F6", padding: 10, borderRadius: 8 }}>
+            <Text style={{ color: isDark ? "#999" : "#6B7280", fontSize: 12 }}>Balanço do Mês</Text>
+            <Text style={{ color: balancoMensal >= 0 ? "#10B981" : "#EF4444", fontWeight: "bold", fontSize: 20 }}>
               {fmtReais(balancoMensal)}
             </Text>
           </View>
@@ -796,22 +812,24 @@ export default function Dashboard() {
             >
               <MaterialIcons name="account-balance-wallet" size={40} color={Cores.borda} />
               <Text style={{ color: Cores.textoSecundario, marginTop: 10, fontWeight: "600" }}>Nenhuma conta criada</Text>
-              <Text style={{ color: "#457B9D", fontSize: 13, marginTop: 4 }}>Toque para adicionar sua primeira conta</Text>
+              <Text style={{ color: "#2563EB", fontSize: 13, marginTop: 4 }}>Toque para adicionar sua primeira conta</Text>
             </TouchableOpacity>
           ) : (
             <View style={styles.accountsGrid}>
               {contas.filter(c => !c.arquivado).map((conta) => {
                 const estilo = getEstiloBanco(conta.nome, isDark, conta.cor);
+                const bloqueada = conta.bloqueado_plano;
                 return (
                   <TouchableOpacity
                     key={conta.id}
-                    style={[styles.accountCard, { backgroundColor: estilo.bg, borderColor: isDark ? Cores.borda : estilo.bg, borderWidth: isDark ? 1 : 0 }]}
-                    onPress={() => abrirEditarConta(conta)}
-                    activeOpacity={0.8}
+                    style={[styles.accountCard, { backgroundColor: estilo.bg, borderColor: isDark ? Cores.borda : estilo.bg, borderWidth: isDark ? 1 : 0, opacity: bloqueada ? 0.55 : 1 }]}
+                    onPress={() => !bloqueada && abrirEditarConta(conta)}
+                    activeOpacity={bloqueada ? 1 : 0.8}
                   >
                     <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      {bloqueada && <MaterialIcons name="lock" size={13} color={estilo.text} style={{ marginRight: 4 }} />}
                       <Text style={[styles.accountName, { color: estilo.text }]}>{conta.nome}</Text>
-                      {conta.compartilhado && (
+                      {conta.compartilhado && !bloqueada && (
                         <View style={{ marginLeft: 8, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }}>
                           <MaterialIcons name="people" size={14} color={estilo.text} />
                         </View>
@@ -820,7 +838,9 @@ export default function Dashboard() {
                     <Text style={[styles.accountBalance, { color: estilo.text }]}>
                       {fmtReais(calcularSaldoConta(conta))}
                     </Text>
-                    <Text style={{ color: estilo.text, opacity: 0.6, fontSize: 11, marginTop: 4 }}>Toque para editar</Text>
+                    <Text style={{ color: estilo.text, opacity: 0.6, fontSize: 11, marginTop: 4 }}>
+                      {bloqueada ? "Bloqueada — faça upgrade" : "Toque para editar"}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
