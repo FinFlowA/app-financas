@@ -171,6 +171,8 @@ export default function TransacoesScreen() {
 
         const grupos: Record<string, FaturaGrupo> = {};
         resFaturas.data.forEach((item: any) => {
+          // Ignora itens de cartões arquivados (não estão no cartaoMap)
+          if (!cartaoMap[item.cartao_id]) return;
           const key = `${item.cartao_id}_${item.mes_fatura}`;
           if (!grupos[key]) {
             grupos[key] = {
@@ -787,8 +789,8 @@ export default function TransacoesScreen() {
             </TouchableOpacity>
           )}
 
-          {/* ─── Faturas de Cartão do Mês ─── */}
-          {faturaGruposDoMes.length > 0 && (
+          {/* ─── Faturas de Cartão do Mês (oculto no filtro de receita) ─── */}
+          {faturaGruposDoMes.length > 0 && filtroTipo !== "receita" && (
             <>
               <View style={[styles.faturaSecHeader, { backgroundColor: isDark ? "#252525" : "#F3F4F6", borderColor: Cores.borda }]}>
                 <MaterialIcons name="credit-card" size={14} color={Cores.textoSecundario} />

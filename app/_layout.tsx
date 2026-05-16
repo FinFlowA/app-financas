@@ -294,6 +294,7 @@ export default function RootLayout() {
         supabase.from("contas").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
         supabase.from("cartoes").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
         supabase.from("caixinhas").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
+        supabase.from("categorias").update({ bloqueado_plano: false }).eq("user_id", uid).eq("bloqueado_plano", true),
       ]);
     }
 
@@ -327,6 +328,26 @@ export default function RootLayout() {
           for (const c of caixinhas.slice(limites.caixinhas)) {
             await supabase.from("caixinhas").update({ bloqueado_plano: true }).eq("id", c.id);
             bloqueados.push({ tipo: "Caixinha", nome: c.nome });
+          }
+        }
+      }
+
+      if (limites.categoriasDespesa > 0) {
+        const { data: catDesp } = await supabase.from("categorias").select("id, nome").eq("user_id", uid).eq("tipo", "despesa").eq("ativa", true).eq("bloqueado_plano", false).order("id");
+        if (catDesp && catDesp.length > limites.categoriasDespesa) {
+          for (const c of catDesp.slice(limites.categoriasDespesa)) {
+            await supabase.from("categorias").update({ bloqueado_plano: true }).eq("id", c.id);
+            bloqueados.push({ tipo: "Categoria", nome: c.nome });
+          }
+        }
+      }
+
+      if (limites.categoriasReceita > 0) {
+        const { data: catRec } = await supabase.from("categorias").select("id, nome").eq("user_id", uid).eq("tipo", "receita").eq("ativa", true).eq("bloqueado_plano", false).order("id");
+        if (catRec && catRec.length > limites.categoriasReceita) {
+          for (const c of catRec.slice(limites.categoriasReceita)) {
+            await supabase.from("categorias").update({ bloqueado_plano: true }).eq("id", c.id);
+            bloqueados.push({ tipo: "Categoria", nome: c.nome });
           }
         }
       }

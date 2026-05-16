@@ -51,6 +51,10 @@ ALTER TABLE contas ADD COLUMN IF NOT EXISTS bloqueado_plano BOOLEAN NOT NULL DEF
 
 ALTER TABLE caixinhas ADD COLUMN IF NOT EXISTS bloqueado_plano BOOLEAN NOT NULL DEFAULT false;
 
+-- ─── Coluna bloqueado_plano nas categorias ───────────────────────────────────
+
+ALTER TABLE categorias ADD COLUMN IF NOT EXISTS bloqueado_plano BOOLEAN NOT NULL DEFAULT false;
+
 -- ─── Índices para performance ─────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_cartoes_user_id ON cartoes(user_id);

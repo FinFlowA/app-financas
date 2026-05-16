@@ -213,21 +213,33 @@ export default function CartoesScreen() {
   const [mesPagamento, setMesPagamento] = useState("");
   const [contaPagamentoId, setContaPagamentoId] = useState<number | null>(null);
 
+  // Modal opções cartão (long-press) — substitui Alert
+  const [modalOpcoesCartao, setModalOpcoesCartao] = useState<Cartao | null>(null);
+
+  // Modal excluir item de fatura — substitui Alert
+  const [modalExcluirItem, setModalExcluirItem] = useState<FaturaItem | null>(null);
+
+  // Cartões arquivados
+  const [cartoesArquivados, setCartoesArquivados] = useState<Cartao[]>([]);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
+
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     setLoading(true);
 
-    const [resCartoes, resItens, resCats, resContas] = await Promise.all([
+    const [resCartoes, resItens, resCats, resContas, resArquivados] = await Promise.all([
       supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", true).order("id"),
       supabase.from("fatura_itens").select("*").eq("user_id", session.user.id).order("data_compra", { ascending: false }),
       supabase.from("categorias").select("id, nome, cor, icone, tipo").eq("user_id", session.user.id).eq("ativa", true).order("nome"),
       supabase.from("contas").select("id, nome, cor").eq("user_id", session.user.id).eq("arquivado", false).order("nome"),
+      supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", false).order("id"),
     ]);
 
     if (resCartoes.data) setCartoes(resCartoes.data);
     if (resItens.data) setItens(resItens.data);
     if (resCats.data) setCategorias(resCats.data as Categoria[]);
     if (resContas.data) setContas(resContas.data as ContaSimples[]);
+    if (resArquivados.data) setCartoesArquivados(resArquivados.data);
     setLoading(false);
 
     // Alerta de limite próximo do máximo para cada cartão
@@ -484,69 +496,33 @@ export default function CartoesScreen() {
   // ─── Opções ao pressionar e segurar cartão ────────────────────────────────
 
   const opcoesCartao = (c: Cartao) => {
-    const temItens = itens.some(i => i.cartao_id === c.id);
-    Alert.alert(c.nome, "O que deseja fazer?", [
-      { text: "Cancelar", style: "cancel" },
-      { text: "Editar Cartão", onPress: () => abrirEditarCartao(c) },
-      {
-        text: temItens ? "Arquivar Cartão" : "Excluir Cartão",
-        style: "destructive",
-        onPress: () => {
-          if (temItens) {
-            Alert.alert("Arquivar Cartão", `O cartão "${c.nome}" tem lançamentos e será arquivado. Deseja continuar?`, [
-              { text: "Cancelar", style: "cancel" },
-              { text: "Arquivar", style: "destructive", onPress: async () => {
-                await supabase.from("cartoes").update({ ativo: false }).eq("id", c.id);
-                showToast("Cartão arquivado", "success");
-                carregarDados();
-              }},
-            ]);
-          } else {
-            Alert.alert("Excluir Cartão", `Excluir o cartão "${c.nome}" permanentemente?`, [
-              { text: "Cancelar", style: "cancel" },
-              { text: "Excluir", style: "destructive", onPress: async () => {
-                await supabase.from("cartoes").delete().eq("id", c.id);
-                showToast("Cartão excluído", "success");
-                carregarDados();
-              }},
-            ]);
-          }
-        },
-      },
-    ]);
+    setModalOpcoesCartao(c);
+  };
+
+  const arquivarCartaoConfirm = async (c: Cartao) => {
+    setModalOpcoesCartao(null);
+    await supabase.from("cartoes").update({ ativo: false }).eq("id", c.id);
+    showToast("Cartão arquivado", "success");
+    carregarDados();
+  };
+
+  const deletarCartaoConfirm = async (c: Cartao) => {
+    setModalOpcoesCartao(null);
+    await supabase.from("cartoes").delete().eq("id", c.id);
+    showToast("Cartão excluído", "success");
+    carregarDados();
+  };
+
+  const desarquivarCartao = async (c: Cartao) => {
+    await supabase.from("cartoes").update({ ativo: true }).eq("id", c.id);
+    showToast("Cartão reativado ✓", "success");
+    carregarDados();
   };
 
   // ─── Excluir compra ────────────────────────────────────────────────────────
 
-  const excluirCompra = async (item: FaturaItem) => {
-    const opcoes = item.total_parcelas > 1
-      ? [
-          { text: "Cancelar", style: "cancel" as const },
-          {
-            text: `Excluir só esta (${item.parcela_atual}/${item.total_parcelas})`,
-            onPress: () => executarExclusao([item.id]),
-          },
-          {
-            text: "Excluir todas as parcelas",
-            style: "destructive" as const,
-            onPress: async () => {
-              const ids = itens
-                .filter((i) => i.grupo_parcela_id === (item.grupo_parcela_id || item.id))
-                .map((i) => i.id);
-              await executarExclusao(ids);
-            },
-          },
-        ]
-      : [
-          { text: "Cancelar", style: "cancel" as const },
-          {
-            text: "Excluir",
-            style: "destructive" as const,
-            onPress: () => executarExclusao([item.id]),
-          },
-        ];
-
-    Alert.alert("Excluir Compra", `"${item.descricao}"`, opcoes);
+  const excluirCompra = (item: FaturaItem) => {
+    setModalExcluirItem(item);
   };
 
   const executarExclusao = async (ids: number[]) => {
@@ -638,6 +614,42 @@ export default function CartoesScreen() {
                 </TouchableOpacity>
               );
             })}
+          </View>
+        )}
+
+        {/* Seção: Cartões Arquivados */}
+        {cartoesArquivados.length > 0 && (
+          <View style={{ marginHorizontal: 16, marginTop: 8 }}>
+            <TouchableOpacity
+              style={{ flexDirection: "row", alignItems: "center", paddingVertical: 12, gap: 8 }}
+              onPress={() => setMostrarArquivados(v => !v)}
+            >
+              <MaterialIcons name={mostrarArquivados ? "expand-less" : "expand-more"} size={20} color={Cores.secundario} />
+              <MaterialIcons name="archive" size={16} color={Cores.secundario} />
+              <Text style={{ color: Cores.secundario, fontSize: 13, fontWeight: "600" }}>
+                Arquivados ({cartoesArquivados.length})
+              </Text>
+            </TouchableOpacity>
+            {mostrarArquivados && cartoesArquivados.map((c) => (
+              <View key={c.id} style={[estilos.cartaoArquivado, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1, gap: 10 }}>
+                  <View style={[estilos.corPill, { backgroundColor: c.cor }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ color: Cores.texto, fontWeight: "600", fontSize: 14 }}>{c.nome}</Text>
+                    <Text style={{ color: Cores.secundario, fontSize: 11, marginTop: 2 }}>
+                      Limite: {fmtReais(c.limite)} · Vence dia {c.dia_vencimento}
+                    </Text>
+                  </View>
+                </View>
+                <TouchableOpacity
+                  style={[estilos.desarquivarBtn, { backgroundColor: "#2A9D8F22", borderColor: "#2A9D8F" }]}
+                  onPress={() => desarquivarCartao(c)}
+                >
+                  <MaterialIcons name="unarchive" size={14} color="#2A9D8F" />
+                  <Text style={{ color: "#2A9D8F", fontSize: 12, fontWeight: "700" }}>Reativar</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
           </View>
         )}
 
@@ -780,11 +792,11 @@ export default function CartoesScreen() {
         </Modal>
       )}
 
-      {/* Modal: Novo Cartão */}
+      {/* Modal: Novo Cartão — centralizado */}
       {modalNovoCartao && (
-        <Modal animationType="slide" transparent visible onRequestClose={() => setModalNovoCartao(false)}>
-          <View style={estilos.modalOverlay}>
-            <View style={[estilos.modalContent, { backgroundColor: Cores.card }]}>
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalNovoCartao(false)}>
+          <View style={estilos.modalCentradoOverlay}>
+            <View style={[estilos.modalCentradoContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
                 <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Novo Cartão</Text>
                 <TouchableOpacity onPress={() => setModalNovoCartao(false)}>
@@ -945,7 +957,7 @@ export default function CartoesScreen() {
               <Text style={[estilos.label, { color: Cores.secundario }]}>Categoria</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
                 <View style={{ flexDirection: "row", gap: 8 }}>
-                  {categorias.filter(c => c.tipo === "despesa").map((cat) => (
+                  {categorias.filter(c => c.tipo === "despesa" || c.tipo === "ambos").map((cat) => (
                     <TouchableOpacity
                       key={cat.id}
                       style={[estilos.catPill, { backgroundColor: categCompraId === cat.id ? cat.cor : Cores.pillFundo, borderWidth: 1, borderColor: categCompraId === cat.id ? cat.cor : Cores.borda }]}
@@ -1091,6 +1103,112 @@ export default function CartoesScreen() {
                   <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>{loadingEditar ? "Salvando..." : "Salvar"}</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Modal: Opções do Cartão (long-press) */}
+      {modalOpcoesCartao && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesCartao(null)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20, gap: 10 }}>
+                <View style={[{ width: 14, height: 14, borderRadius: 7, backgroundColor: modalOpcoesCartao.cor }]} />
+                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>{modalOpcoesCartao.nome}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[estilos.opcaoModalBtn, { backgroundColor: "#2563EB" }]}
+                onPress={() => { setModalOpcoesCartao(null); abrirEditarCartao(modalOpcoesCartao); }}
+              >
+                <MaterialIcons name="edit" size={18} color="#FFF" />
+                <Text style={estilos.opcaoModalBtnText}>Editar Cartão</Text>
+              </TouchableOpacity>
+
+              {itens.some(i => i.cartao_id === modalOpcoesCartao.id) ? (
+                <TouchableOpacity
+                  style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]}
+                  onPress={() => arquivarCartaoConfirm(modalOpcoesCartao)}
+                >
+                  <MaterialIcons name="archive" size={18} color="#FFF" />
+                  <Text style={estilos.opcaoModalBtnText}>Arquivar Cartão</Text>
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity
+                  style={[estilos.opcaoModalBtn, { backgroundColor: "#EF4444" }]}
+                  onPress={() => deletarCartaoConfirm(modalOpcoesCartao)}
+                >
+                  <MaterialIcons name="delete-outline" size={18} color="#FFF" />
+                  <Text style={estilos.opcaoModalBtnText}>Excluir Cartão</Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]}
+                onPress={() => setModalOpcoesCartao(null)}
+              >
+                <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Modal: Excluir Item de Fatura */}
+      {modalExcluirItem && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalExcluirItem(null)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
+                <MaterialIcons name="delete-outline" size={22} color="#EF4444" style={{ marginRight: 10 }} />
+                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Excluir Compra</Text>
+              </View>
+              <Text style={{ color: Cores.secundario, fontSize: 14, marginBottom: 20 }} numberOfLines={2}>
+                "{modalExcluirItem.descricao}"
+              </Text>
+
+              {modalExcluirItem.total_parcelas > 1 && (
+                <TouchableOpacity
+                  style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]}
+                  onPress={async () => {
+                    setModalExcluirItem(null);
+                    await executarExclusao([modalExcluirItem.id]);
+                  }}
+                >
+                  <Text style={estilos.opcaoModalBtnText}>
+                    Excluir só esta ({modalExcluirItem.parcela_atual}/{modalExcluirItem.total_parcelas})
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              <TouchableOpacity
+                style={[estilos.opcaoModalBtn, { backgroundColor: "#EF4444" }]}
+                onPress={async () => {
+                  const item = modalExcluirItem;
+                  setModalExcluirItem(null);
+                  if (item.total_parcelas > 1) {
+                    const ids = itens
+                      .filter(i => i.grupo_parcela_id === (item.grupo_parcela_id || item.id))
+                      .map(i => i.id);
+                    await executarExclusao(ids);
+                  } else {
+                    await executarExclusao([item.id]);
+                  }
+                }}
+              >
+                <MaterialIcons name="delete-forever" size={18} color="#FFF" />
+                <Text style={estilos.opcaoModalBtnText}>
+                  {modalExcluirItem.total_parcelas > 1 ? "Excluir todas as parcelas" : "Excluir"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]}
+                onPress={() => setModalExcluirItem(null)}
+              >
+                <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -1257,5 +1375,50 @@ const estilos = StyleSheet.create({
     borderRadius: 12,
     borderWidth: 2,
     marginBottom: 10,
+  },
+  // Modal centralizado (novo cartão)
+  modalCentradoOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCentradoContent: {
+    width: "100%",
+    borderRadius: 20,
+    padding: 24,
+    maxHeight: "90%",
+  },
+  // Opções modais (substituem Alert)
+  opcaoModalBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 10,
+  },
+  opcaoModalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
+  // Arquivados
+  cartaoArquivado: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  corPill: { width: 12, height: 12, borderRadius: 6 },
+  desarquivarBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
   },
 });
