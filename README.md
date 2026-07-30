@@ -191,9 +191,21 @@ Hospedar o repositório em uma organização compartilhada é a opção recomend
 - [ ] Exportar relatórios em PDF.
 - [ ] Evoluir o funcionamento offline.
 
-## Contato
+## Responsáveis pelo FinFlow
 
-- GitHub: [LuishPalacio/app-financas](https://github.com/LuishPalacio/app-financas)
-- Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
+O FinFlow foi construído e continua sendo evoluído de forma colaborativa por Luis e Gabriel.
+
+| Responsável | Participação | Perfil |
+|---|---|---|
+| Luis Henrique Palacio | Criação e desenvolvimento inicial | [@LuishPalacio](https://github.com/LuishPalacio) |
+| Gabriel | Desenvolvimento, correções, regras financeiras, documentação e publicações | [@GbrielH](https://github.com/GbrielH) |
+
+### Links do projeto
+
+- Código-fonte: [LuishPalacio/app-financas](https://github.com/LuishPalacio/app-financas)
+- Aplicativo no Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
+- Histórico completo: [commits](https://github.com/LuishPalacio/app-financas/commits/main) e [contributors](https://github.com/LuishPalacio/app-financas/graphs/contributors)
+
+> O repositório ainda está hospedado na conta pessoal do Luis por uma decisão histórica. Isso não representa autoria exclusiva: Gabriel também é desenvolvedor e responsável pela evolução do FinFlow.
 
 Contribuições, relatos de erro e sugestões são bem-vindos.
