@@ -13,6 +13,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
+import {
+  getContaDestinoTransferencia,
+  isTransferencia,
+} from "../../lib/transacoes";
 
 interface Transacao {
   valor: number;
@@ -20,6 +24,7 @@ interface Transacao {
   status: string;
   data_vencimento: string;
   conta_id: number;
+  descricao: string;
 }
 
 interface Conta {
@@ -71,7 +76,7 @@ export default function RelatoriosScreen() {
     if (!session?.user?.id) return;
     try {
       const [resT, resC] = await Promise.all([
-        supabase.from("transacoes").select("valor, tipo, status, data_vencimento, conta_id"),
+        supabase.from("transacoes").select("valor, tipo, status, data_vencimento, conta_id, descricao"),
         supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
       ]);
       if (resT.data) setTransacoes(resT.data);
@@ -88,9 +93,23 @@ export default function RelatoriosScreen() {
   };
 
   // Filtered data based on account selection (null = todas)
-  const transacoesFiltradas = contaSelecionada === null
-    ? transacoes
-    : transacoes.filter(t => t.conta_id === contaSelecionada);
+  const transacoesFiltradas = transacoes.flatMap((t) => {
+    const destinoId = getContaDestinoTransferencia(t.descricao);
+
+    if (destinoId !== null) {
+      if (contaSelecionada === null) return [];
+      if (t.conta_id === contaSelecionada) return [t];
+      if (destinoId === contaSelecionada) {
+        return [{ ...t, tipo: "receita", conta_id: destinoId }];
+      }
+      return [];
+    }
+
+    // Transferências antigas possuem duas linhas. No consolidado elas são
+    // internas e não representam receita ou despesa real.
+    if (isTransferencia(t.descricao) && contaSelecionada === null) return [];
+    return contaSelecionada === null || t.conta_id === contaSelecionada ? [t] : [];
+  });
 
   const contasFiltradas = contaSelecionada === null
     ? contas
@@ -123,17 +142,25 @@ export default function RelatoriosScreen() {
     };
   });
 
-  const getBalanceAtEndOfMonth = (yyyymm: string): number => {
-    const laterRec = transacoesFiltradas
-      .filter(t => t.tipo === "receita" && t.status === "paga" && (t.data_vencimento || "") > yyyymm + "-31")
-      .reduce((a, t) => a + Number(t.valor), 0);
-    const laterDesp = transacoesFiltradas
-      .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.data_vencimento || "") > yyyymm + "-31")
-      .reduce((a, t) => a + Number(t.valor), 0);
-    return saldoAtualGlobal + laterDesp - laterRec;
+  const saldoRealAte = (dataFim: string): number => {
+    return transacoesFiltradas
+      .filter(t => t.status === "paga" && (t.data_vencimento || "") <= dataFim)
+      .reduce(
+        (saldo, t) => saldo + (t.tipo === "receita" ? Number(t.valor) : -Number(t.valor)),
+        saldoInicialTotal,
+      );
   };
 
-  // Balance line: projecao from start of year (or current month for current year)
+  const saldoProjetadoAte = (dataFim: string): number => {
+    return transacoesFiltradas
+      .filter(t => t.status !== "paga" && (t.data_vencimento || "") <= dataFim)
+      .reduce(
+        (saldo, t) => saldo + (t.tipo === "receita" ? Number(t.valor) : -Number(t.valor)),
+        saldoAtualGlobal,
+      );
+  };
+
+  // Passado mostra apenas o realizado; mês atual e futuro incluem pendências.
   interface MesProj {
     mesIdx: number;
     saldo: number;
@@ -142,36 +169,20 @@ export default function RelatoriosScreen() {
   }
 
   const projecaoSaldo: MesProj[] = [];
-  let saldoAcc = saldoAtualGlobal;
-
-  if (!isAnoAtual) {
-    saldoAcc = saldoInicialTotal;
-    transacoesFiltradas
-      .filter(t => t.status === "paga" && (t.data_vencimento || "").substring(0, 4) < String(anoSelecionado))
-      .forEach(t => { saldoAcc += t.tipo === "receita" ? Number(t.valor) : -Number(t.valor); });
-  }
-
   for (let m = 0; m <= 11; m++) {
-    const mes = todosOsMeses[m];
     const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
-    if (!isAnoAtual) {
-      saldoAcc += mes.recPagas + mes.recPendentes - mes.despPagas - mes.despPendentes;
-      projecaoSaldo.push({ mesIdx: m, saldo: saldoAcc, isFuture: true });
-    } else if (m < mesAtualIdx) {
-      projecaoSaldo.push({ mesIdx: m, saldo: getBalanceAtEndOfMonth(yyyymm), isFuture: false, isPast: true });
-    } else if (m === mesAtualIdx) {
-      const hasPending = mes.recPendentes > 0 || mes.despPendentes > 0;
-      if (hasPending) {
-        const saldoPrevisto = saldoAtualGlobal + mes.recPendentes - mes.despPendentes;
-        projecaoSaldo.push({ mesIdx: m, saldo: saldoPrevisto, isFuture: true });
-        saldoAcc = saldoPrevisto;
-      } else {
-        projecaoSaldo.push({ mesIdx: m, saldo: saldoAtualGlobal, isFuture: false });
-        saldoAcc = saldoAtualGlobal;
-      }
+    const fimDoMes = `${yyyymm}-${String(new Date(anoSelecionado, m + 1, 0).getDate()).padStart(2, "0")}`;
+    const mesNoPassado = anoSelecionado < anoAtualNum || (isAnoAtual && m < mesAtualIdx);
+    const mesAtualSemPendencias = isAnoAtual
+      && m === mesAtualIdx
+      && !transacoesFiltradas.some(t => t.status !== "paga" && (t.data_vencimento || "").startsWith(yyyymm));
+
+    if (mesNoPassado) {
+      projecaoSaldo.push({ mesIdx: m, saldo: saldoRealAte(fimDoMes), isFuture: false, isPast: true });
+    } else if (mesAtualSemPendencias) {
+      projecaoSaldo.push({ mesIdx: m, saldo: saldoAtualGlobal, isFuture: false });
     } else {
-      saldoAcc += mes.recPagas + mes.recPendentes - mes.despPagas - mes.despPendentes;
-      projecaoSaldo.push({ mesIdx: m, saldo: saldoAcc, isFuture: true });
+      projecaoSaldo.push({ mesIdx: m, saldo: saldoProjetadoAte(fimDoMes), isFuture: true });
     }
   }
 

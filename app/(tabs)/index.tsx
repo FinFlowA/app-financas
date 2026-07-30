@@ -21,6 +21,14 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { fmtReais } from "../../lib/utils";
+import {
+  adicionarRecorrencia,
+  descricaoTransferencia,
+  getContaDestinoTransferencia,
+  isTransferencia,
+  type FrequenciaRecorrencia,
+  sufixoRecorrencia,
+} from "../../lib/transacoes";
 
 interface Categoria {
   id: number;
@@ -225,6 +233,7 @@ export default function Dashboard() {
   const [contaDestinoId, setContaDestinoId] = useState<number | null>(null);
   const [caixinhaDestinoId, setCaixinhaDestinoId] = useState<number | null>(null);
   const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">("unica");
+  const [frequenciaFixa, setFrequenciaFixa] = useState<FrequenciaRecorrencia>("mensal");
   const [numParcelas, setNumParcelas] = useState("");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
@@ -244,7 +253,7 @@ export default function Dashboard() {
     .filter((t) => t.tipo === "receita" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
     .reduce((acc, curr) => acc + curr.valor, 0);
   const despesasRealizadas = transacoes
-    .filter((t) => t.tipo === "despesa" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
+    .filter((t) => t.tipo === "despesa" && t.status === "paga" && contasAtivasIds.has(t.conta_id) && !(isTransferencia(t.descricao) && getContaDestinoTransferencia(t.descricao) !== null))
     .reduce((acc, curr) => acc + curr.valor, 0);
   const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
 
@@ -257,8 +266,9 @@ export default function Dashboard() {
     );
   });
 
-  const receitasDoMes = transacoesDoMes.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasDoMes = transacoesDoMes.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
+  const transacoesDoMesSemTransferencias = transacoesDoMes.filter((t) => !isTransferencia(t.descricao));
+  const receitasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
   const balancoMensal = receitasDoMes - despesasDoMes;
 
   // Dados para os gráficos de pizza
@@ -291,8 +301,8 @@ export default function Dashboard() {
     .sort((a, b) => b.valor - a.valor);
 
   // Data for "realized only" mode
-  const receitasDoMesRealizadas = transacoesDoMes.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
-  const despesasDoMesRealizadas = transacoesDoMes.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+  const receitasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+  const despesasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
 
   const caixinhaGuardadoRealizado = transacoesDoMes
     .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.descricao || "").startsWith("Guardar em: "))
@@ -411,7 +421,10 @@ export default function Dashboard() {
     const transDaConta = transacoes.filter((t) => t.conta_id === conta.id && t.status === "paga");
     const rec = transDaConta.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
     const desp = transDaConta.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
-    return Number(conta.saldo_inicial) + rec - desp;
+    const transferenciasRecebidas = transacoes
+      .filter((t) => t.status === "paga" && getContaDestinoTransferencia(t.descricao) === conta.id)
+      .reduce((acc, curr) => acc + curr.valor, 0);
+    return Number(conta.saldo_inicial) + rec + transferenciasRecebidas - desp;
   };
 
   // --- Ações de Categoria ---
@@ -641,18 +654,20 @@ export default function Dashboard() {
       if (isNaN(totalRepeticoes) || totalRepeticoes < 2) return Alert.alert("Aviso", "Número de parcelas inválido.");
       // valorNum já é o valor de cada parcela — não dividir
     } else if (frequencia === "fixa") {
-      totalRepeticoes = 60; // 5 anos — contínua até o usuário deletar a série
+      totalRepeticoes = frequenciaFixa === "semanal" ? 260 : frequenciaFixa === "anual" ? 5 : 60;
     }
 
     const statusBd = foiPago ? "paga" : "pendente";
     const novasTransacoes: any[] = [];
 
     for (let i = 0; i < totalRepeticoes; i++) {
-      const dataIteracao = new Date(dataSelecionada.getFullYear(), dataSelecionada.getMonth() + i, dataSelecionada.getDate());
+      const dataIteracao = frequencia === "fixa"
+        ? adicionarRecorrencia(dataSelecionada, i, frequenciaFixa)
+        : adicionarRecorrencia(dataSelecionada, i, "mensal");
       const dataFormatadaSql = `${dataIteracao.getFullYear()}-${String(dataIteracao.getMonth() + 1).padStart(2, "0")}-${String(dataIteracao.getDate()).padStart(2, "0")}`;
       let descFinal = descTransacao;
       if (frequencia === "parcelada") descFinal = `${descTransacao} (${i + 1}/${totalRepeticoes})`;
-      if (frequencia === "fixa") descFinal = `${descTransacao} (Fixa)`;
+      if (frequencia === "fixa") descFinal = `${descTransacao} ${sufixoRecorrencia(frequenciaFixa)}`;
       // Parcelas/recorrências futuras (i > 0) sempre ficam pendentes
       const statusFinal = (frequencia !== "unica" && i > 0) ? "pendente" : statusBd;
 
@@ -665,8 +680,7 @@ export default function Dashboard() {
           novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
         } else {
           if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
-          novasTransacoes.push({ tipo: "receita", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `[Transf.] ${descFinal}`, categoria_id: null, conta_id: contaDestinoId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: descricaoTransferencia(descFinal, contaDestinoId!), categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
         }
       } else {
         if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
@@ -689,7 +703,7 @@ export default function Dashboard() {
 
     setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
     setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
-    setNumParcelas("2"); setDataSelecionada(new Date()); setFoiPago(true);
+    setNumParcelas("2"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
     setModalTransVisivel(false);
     carregarDados();
   };
@@ -1416,7 +1430,6 @@ export default function Dashboard() {
                   <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "transferencia" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Transferência</Text>
                 </TouchableOpacity>
               </View>
-
               {frequencia === "unica" && (
                 <>
                   <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
@@ -1439,11 +1452,29 @@ export default function Dashboard() {
                     if (freq !== "unica") setFoiPago(false);
                   }}>
                     <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, frequencia === freq ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>
-                      {freq === "unica" ? "Única" : freq === "parcelada" ? "Parcelada" : "Fixa Mensal"}
+                      {freq === "unica" ? "Única" : freq === "parcelada" ? "Parcelada" : "Fixa"}
                     </Text>
                   </TouchableOpacity>
                 ))}
               </View>
+              {frequencia === "fixa" && (
+                <>
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Periodicidade:</Text>
+                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+                    {(["semanal", "mensal", "anual"] as const).map((periodo) => (
+                      <TouchableOpacity
+                        key={periodo}
+                        style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequenciaFixa === periodo && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]}
+                        onPress={() => setFrequenciaFixa(periodo)}
+                      >
+                        <Text style={[styles.freqButtonText, { color: frequenciaFixa === periodo ? Cores.textoPrincipal : Cores.textoSecundario }]}>
+                          {periodo === "semanal" ? "Semanal" : periodo === "mensal" ? "Mensal" : "Anual"}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
 
               <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
 

@@ -18,6 +18,13 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
+import {
+  descricaoBaseRecorrencia,
+  descricaoVisivel,
+  getContaDestinoTransferencia,
+  isRecorrenciaFixa,
+  isTransferencia,
+} from "../../lib/transacoes";
 
 interface Categoria {
   id: number;
@@ -215,7 +222,7 @@ export default function TransacoesScreen() {
     if (descricao.startsWith("Guardar em: ")) { nomeCaixinha = descricao.replace("Guardar em: ", "").trim(); operacao = "reverter_guardar"; }
     else if (descricao.startsWith("Resgate de: ")) { nomeCaixinha = descricao.replace("Resgate de: ", "").trim(); operacao = "reverter_resgatar"; }
 
-    if (nomeCaixinha && operacao) {
+    if (transacao.status === "paga" && nomeCaixinha && operacao) {
       const { data: caixinhaData } = await supabase.from("caixinhas").select("id, saldo_atual").ilike("nome", nomeCaixinha).single();
       if (caixinhaData) {
         const novoSaldo = operacao === "reverter_guardar"
@@ -229,14 +236,13 @@ export default function TransacoesScreen() {
 
   const deletarFuturas = async (transacao: Transacao) => {
     const desc = transacao.descricao ?? "";
-    const isFixa = / \(Fixa\)$/.test(desc);
+    const isFixa = isRecorrenciaFixa(desc);
     const parceladaMatch = desc.match(/^(.+) \((\d+)\/(\d+)\)$/);
     if (isFixa) {
-      const base = desc.replace(/ \(Fixa\)$/, "");
       const { error } = await supabase.from("transacoes")
         .delete()
         .eq("user_id", session.user.id)
-        .eq("descricao", `${base} (Fixa)`)
+        .eq("descricao", desc)
         .gte("data_vencimento", transacao.data_vencimento)
         .neq("status", "paga");
       if (error) Alert.alert("Erro", "Não foi possível apagar.");
@@ -261,12 +267,12 @@ export default function TransacoesScreen() {
   const deletarSerie = async (base: string, tipo: "fixa" | "parcelada", totalParcelas?: string) => {
     if (tipo === "fixa") {
       const dataCorte = `${mesSelecionado}-01`;
-      const { error } = await supabase.from("transacoes")
-        .delete()
-        .eq("user_id", session.user.id)
-        .eq("descricao", `${base} (Fixa)`)
-        .gte("data_vencimento", dataCorte)
-        .neq("status", "paga");
+      const idsParaDeletar = transacoes
+        .filter((t) => isRecorrenciaFixa(t.descricao) && descricaoBaseRecorrencia(t.descricao) === base && t.data_vencimento >= dataCorte && t.status !== "paga")
+        .map((t) => t.id);
+      const { error } = idsParaDeletar.length
+        ? await supabase.from("transacoes").delete().in("id", idsParaDeletar)
+        : { error: null };
       if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
     } else {
       const idsParaDeletar = transacoes
@@ -287,7 +293,7 @@ export default function TransacoesScreen() {
     if (!transacao) return;
 
     const descricao = transacao.descricao ?? "";
-    const isFixa = / \(Fixa\)$/.test(descricao);
+    const isFixa = isRecorrenciaFixa(descricao);
     const parceladaMatch = descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
 
     if (isFixa || parceladaMatch) {
@@ -304,7 +310,7 @@ export default function TransacoesScreen() {
           corSerie: "#E76F51",
           onSerie: () => {
             setModalOpcoesSerie(null);
-            const base = descricao.replace(/ \(Fixa\)$/, "");
+            const base = descricaoBaseRecorrencia(descricao);
             deletarSerie(base, "fixa");
           },
         }),
@@ -316,10 +322,10 @@ export default function TransacoesScreen() {
   };
 
   const isRecorrente = (t: Transacao) =>
-    t.descricao.endsWith("(Fixa)") || /\(\d+\/\d+\)$/.test(t.descricao);
+    isRecorrenciaFixa(t.descricao) || /\(\d+\/\d+\)(?:\s*\[Destino:\d+\])?$/.test(t.descricao);
 
   const descricaoBase = (desc: string) =>
-    desc.replace(/\s*\(\d+\/\d+\)$/, "").replace(/\s*\(Fixa\)$/, "").trim();
+    descricaoBaseRecorrencia(desc);
 
   const abrirEditarTransacao = (t: Transacao) => {
     setTransacaoEditando(t);
@@ -348,11 +354,11 @@ export default function TransacoesScreen() {
       const novoBase = descricaoBase(editDescricao);
       const novoDia = editData.getDate();
       const { data: serie } = await supabase.from("transacoes")
-        .select("id, descricao, data_vencimento")
+        .select("id, descricao, data_vencimento, status")
         .eq("user_id", session.user.id)
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
-      const itens = (serie ?? []).filter((t) => descricaoBase(t.descricao) === base);
+      const itens = (serie ?? []).filter((t) => descricaoBase(t.descricao) === base && t.status !== "paga");
       const resultados = await Promise.all(
         itens.map((item) => {
           const partes = (item.data_vencimento || dataFormatada).split("-");
@@ -364,7 +370,7 @@ export default function TransacoesScreen() {
           const sufixo = item.descricao.slice(descricaoBase(item.descricao).length);
           const novaDescricao = novoBase + sufixo;
           return supabase.from("transacoes").update({
-            ...campos, descricao: novaDescricao, data_vencimento: novaData,
+            ...campos, status: editStatus, descricao: novaDescricao, data_vencimento: novaData,
           }).eq("id", item.id);
         })
       );
@@ -686,8 +692,10 @@ export default function TransacoesScreen() {
               const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
               const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
               const isVencida = isPendente && dataT < hoje;
-              const isTransferencia = t.descricao.includes("[Transf.]");
-              const corValor = isTransferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
+              const transferencia = isTransferencia(t.descricao);
+              const contaDestinoId = getContaDestinoTransferencia(t.descricao);
+              const contaDestino = contas.find((c) => c.id === contaDestinoId);
+              const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
               const prefixoValor = t.tipo === "receita" ? "+" : "-";
               const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
 
@@ -716,7 +724,7 @@ export default function TransacoesScreen() {
                   {/* Coluna central: descrição + badges */}
                   <View style={styles.transacaoInfo}>
                     <Text style={[styles.nomeText, { color: isPendente ? Cores.textoSecundario : Cores.textoPrincipal }]} numberOfLines={2}>
-                      {t.descricao}
+                      {descricaoVisivel(t.descricao)}
                     </Text>
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {/* Badge conta */}
@@ -742,10 +750,15 @@ export default function TransacoesScreen() {
                           <Text style={styles.pendenteText}>Pendente</Text>
                         </View>
                       )}
-                      {isTransferencia && (
+                      {transferencia && (
                         <View style={styles.transferPill}>
                           <MaterialIcons name="swap-horiz" size={9} color="#F4A261" />
                           <Text style={styles.transferText}>Transf.</Text>
+                        </View>
+                      )}
+                      {contaDestino && (
+                        <View style={styles.transferPill}>
+                          <Text style={styles.transferText}>→ {contaDestino.nome}</Text>
                         </View>
                       )}
                     </View>
