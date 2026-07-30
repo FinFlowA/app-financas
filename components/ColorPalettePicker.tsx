@@ -32,8 +32,12 @@ export default function ColorPalettePicker({ value, onChange, dark = false }: Pr
   const panResponder = useMemo(() => PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
+    onStartShouldSetPanResponderCapture: () => true,
+    onMoveShouldSetPanResponderCapture: () => true,
     onPanResponderGrant: (e) => changeRef.current(e.nativeEvent.locationX, e.nativeEvent.locationY),
     onPanResponderMove: (e) => changeRef.current(e.nativeEvent.locationX, e.nativeEvent.locationY),
+    onPanResponderTerminationRequest: () => false,
+    onShouldBlockNativeResponder: () => true,
   }), []);
   const cells = useMemo(() => Array.from({ length: 12 }, (_, row) =>
     Array.from({ length: 24 }, (_, column) => {
@@ -52,12 +56,14 @@ export default function ColorPalettePicker({ value, onChange, dark = false }: Pr
         style={styles.palette}
         accessibilityLabel="Paleta de cor personalizada"
       >
-        {cells.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            {row.map((color, columnIndex) => <View key={columnIndex} style={{ flex: 1, backgroundColor: color }} />)}
-          </View>
-        ))}
-        <View style={[styles.cursor, { left: point.x * size.width - 10, top: point.y * size.height - 10 }]} />
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+          {cells.map((row, rowIndex) => (
+            <View key={rowIndex} style={styles.row}>
+              {row.map((color, columnIndex) => <View key={columnIndex} style={{ flex: 1, backgroundColor: color }} />)}
+            </View>
+          ))}
+        </View>
+        <View pointerEvents="none" style={[styles.cursor, { left: point.x * size.width - 10, top: point.y * size.height - 10 }]} />
       </View>
       <View style={[styles.result, { backgroundColor: dark ? "#252525" : "#F4F4F4" }]}>
         <View style={[styles.swatch, { backgroundColor: value }]} />
