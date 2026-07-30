@@ -103,8 +103,11 @@ Crie um arquivo `.env` na raiz:
 ```dotenv
 EXPO_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
-EXPO_PUBLIC_GROQ_API_KEY=sua-chave-groq
 ```
+
+As chaves privadas do Groq e dos provedores de pagamento pertencem somente às
+Edge Functions do Supabase. Consulte
+[`docs/billing-setup.md`](./docs/billing-setup.md) para configurar o backend.
 
 Depois execute:
 
@@ -128,7 +131,8 @@ npx tsc --noEmit
 - Nunca use a chave `service_role` do Supabase no aplicativo.
 - A chave publicável/anon do Supabase pode ser utilizada no cliente somente com políticas RLS corretamente configuradas.
 - Variáveis com o prefixo `EXPO_PUBLIC_` são incorporadas ao bundle e podem ser extraídas do APK.
-- A chave Groq deve ser movida para uma Edge Function ou outro backend antes de uma distribuição pública. Mantê-la como `EXPO_PUBLIC_GROQ_API_KEY` não oferece proteção real.
+- A chave Groq é mantida em segredo na Edge Function `groq-proxy`; ela nunca deve usar o prefixo `EXPO_PUBLIC_`.
+- Assinaturas são confirmadas no backend e por webhook. O retorno do navegador não concede plano ao usuário.
 - Revogue imediatamente qualquer chave que tenha sido publicada, enviada em conversas ou exposta em capturas de tela.
 
 ## Builds e atualizações
@@ -188,7 +192,10 @@ Contribuições técnicas permanecem registradas naturalmente no histórico do G
 
 ## Roadmap
 
-- [ ] Mover a integração Groq para uma função segura no backend.
+- [ ] Implementar a nova identidade visual do FinFlow em todas as telas.
+- [ ] Revisar, testar e liberar gradualmente o assistente de IA.
+- [x] Mover a integração Groq para uma função segura no backend.
+- [ ] Integrar compras das lojas Google Play e Apple à fonte única de direitos.
 - [ ] Ampliar testes automatizados das regras financeiras.
 - [ ] Importar extratos bancários.
 - [ ] Criar dashboard web complementar.

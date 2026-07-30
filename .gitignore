@@ -30,17 +30,15 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
-.env*.local
+# local env files and provider secrets
+.env*
+!.env.example
+supabase/.temp/
 
 # typescript
 *.tsbuildinfo
 
 app-example
-
 # generated native folders
 /ios
 /android
-
-# Variáveis de Ambiente
-.env

@@ -23,9 +23,6 @@ import { verificarRateLimit } from "../lib/anti-spam";
 import { intentConsumeAcao } from "../lib/ia-limites";
 import { dataEfetivaTransacao, descricaoTransferencia } from "../lib/transacoes";
 
-const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? "";
-const MODELO = "llama-3.3-70b-versatile";
-
 interface Mensagem {
   id: string;
   role: "user" | "ia" | "sistema";
@@ -266,7 +263,7 @@ Formato obrigatório:
 {"intent":"...","status":"collecting_data","data":{},"missing_fields":[],"message":"mensagem aqui"}`;
 
 export default function ChatIA() {
-  const { isDark, session, plano, limites, tentarAcaoIA, mostrarModalLimite } = useAppTheme();
+  const { isDark, session, limites, tentarAcaoIA, mostrarModalLimite } = useAppTheme();
   const iaBetaLiberada = usuarioPodeAcessarIA(session?.user?.email);
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
@@ -1196,8 +1193,6 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     setCarregando(true);
 
     try {
-      if (!GROQ_API_KEY) throw new Error("GROQ_API_KEY não encontrada. Verifique o arquivo .env");
-
       // Confirmação direta — pula a API para evitar loop de dupla confirmação
       const CONFIRMACOES = ["sim", "pode", "confirma", "confirmar", "ok", "yes", "pronto", "vai", "deletar", "arquivar", "criar", "salvar", "quero"];
       if (currentStatusRef.current === "ready_for_confirmation" &&
@@ -1247,26 +1242,12 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
         .slice(-20) // últimas 20 mensagens para contexto
         .map((m) => ({ role: m.role === "user" ? "user" : "assistant", content: m.texto }));
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
-
-      const resAPI = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        signal: controller.signal,
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${GROQ_API_KEY}` },
-        body: JSON.stringify({
-          model: MODELO,
-          messages: [{ role: "system", content: promptSistema() }, ...historicoParaAPI],
-          temperature: 0.1,
-          max_tokens: 500,
-        }),
+      const { data: dados, error: erroIA } = await supabase.functions.invoke("groq-proxy", {
+        body: { systemPrompt: promptSistema(), messages: historicoParaAPI },
       });
-      clearTimeout(timeoutId);
+      if (erroIA) throw erroIA;
 
-      const dados = await resAPI.json();
-      if (!resAPI.ok) throw new Error(dados.error?.message || `Erro HTTP ${resAPI.status}`);
-
-      let conteudo = dados.choices[0]?.message?.content || "";
+      let conteudo = dados?.content || "";
       conteudo = conteudo.replace(/```json|```/g, "").replace(/<[^>]+>/g, "").trim();
 
       let respostaIA: RespostaIA;

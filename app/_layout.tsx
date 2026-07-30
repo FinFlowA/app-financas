@@ -37,10 +37,12 @@ import {
   type TipoPlano,
   type LimitesPlano,
   LIMITES_PLANOS,
+  LIMITES_DESENVOLVIMENTO,
   dentroDoLimite,
   msgLimiteAtingido,
   nomePlano,
 } from "../lib/planos";
+import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 
 // ERROR BOUNDARY
@@ -92,6 +94,9 @@ export const ThemeContext = createContext({
   iaAcoesHoje: 0,
   /** Tenta consumir 1 ação de IA. Retorna false se cota esgotada (e exibe modal) */
   tentarAcaoIA: async (): Promise<boolean> => false,
+  billingEnabled: false,
+  limitsEnabled: false,
+  refreshEntitlement: async () => {},
 });
 
 export const useAppTheme = () => useContext(ThemeContext);
@@ -113,6 +118,7 @@ export default function RootLayout() {
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
   const [iaAcoesHoje, setIaAcoesHoje] = useState(0);
+  const [entitlement, setEntitlement] = useState(DEVELOPMENT_ENTITLEMENT);
   const [modalLimite, setModalLimite] = useState<{
     visivel: boolean;
     mensagem: string;
@@ -231,19 +237,25 @@ export default function RootLayout() {
     });
   }, [session?.user?.id]);
 
-  // Carrega plano e cota de IA do usuário
+  const refreshEntitlement = async () => {
+    if (!session?.user?.id) return;
+    const next = await fetchMyEntitlement();
+    setEntitlement(next);
+    setPlanoState(next.plan);
+  };
+
+  // Carrega direitos do servidor. O dispositivo nunca é a fonte oficial do plano.
   useEffect(() => {
     if (!session?.user?.id) return;
     const uid = session.user.id;
-
-    AsyncStorage.getItem(`@plano_usuario_${uid}`).then((val) => {
-      if (val === "smart" || val === "premium" || val === "free") {
-        setPlanoState(val);
+    fetchMyEntitlement().then((next) => {
+      setEntitlement(next);
+      setPlanoState(next.plan);
+      if (next.limitsEnabled) {
+        verificarCotaIA(uid, next.plan).then(({ usadas }) => setIaAcoesHoje(usadas));
+      } else {
+        setIaAcoesHoje(0);
       }
-    });
-
-    verificarCotaIA(uid, plano).then(({ usadas }) => {
-      setIaAcoesHoje(usadas);
     });
   }, [session?.user?.id]);
 
@@ -291,6 +303,12 @@ export default function RootLayout() {
   }, [session, isReady, isAuthReady, segments]);
 
   const setPlano = async (novoPlano: TipoPlano) => {
+    // Compatibilidade temporária com telas antigas. O plano só pode mudar por
+    // confirmação do backend/provedor; nunca por uma ação local do aplicativo.
+    if (novoPlano !== plano) {
+      console.warn("Alteração local de plano bloqueada. Use o fluxo seguro de assinatura.");
+      return;
+    }
     const planOrder: Record<TipoPlano, number> = { free: 0, smart: 1, premium: 2 };
     const eDowngrade = planOrder[novoPlano] < planOrder[plano];
     const eUpgrade = planOrder[novoPlano] > planOrder[plano];
@@ -366,12 +384,10 @@ export default function RootLayout() {
     }
 
     setPlanoState(novoPlano);
-    if (uid) {
-      await AsyncStorage.setItem(`@plano_usuario_${uid}`, novoPlano);
-    }
   };
 
   const verificarLimite = (tipo: keyof LimitesPlano, qtdAtual: number): boolean => {
+    if (!entitlement.limitsEnabled) return true;
     const limite = LIMITES_PLANOS[plano][tipo] as number;
     if (dentroDoLimite(limite, qtdAtual)) return true;
 
@@ -387,6 +403,7 @@ export default function RootLayout() {
 
   const tentarAcaoIA = async (): Promise<boolean> => {
     if (!session?.user?.id) return false;
+    if (!entitlement.limitsEnabled) return true;
     const uid = session.user.id;
 
     const resultado = await consumirAcaoIA(uid, plano);
@@ -495,7 +512,11 @@ export default function RootLayout() {
         <ThemeContext.Provider value={{
           isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast,
           notificacoesAtivas, toggleNotificacoes,
-          plano, setPlano, limites: LIMITES_PLANOS[plano],
+          plano, setPlano,
+          limites: entitlement.limitsEnabled ? LIMITES_PLANOS[plano] : LIMITES_DESENVOLVIMENTO,
+          billingEnabled: entitlement.billingEnabled,
+          limitsEnabled: entitlement.limitsEnabled,
+          refreshEntitlement,
           verificarLimite, mostrarModalLimite,
           iaAcoesHoje, tentarAcaoIA,
         }}>

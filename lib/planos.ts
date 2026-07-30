@@ -85,6 +85,19 @@ export const LIMITES_PLANOS: Record<TipoPlano, LimitesPlano> = {
   },
 };
 
+/** Acesso temporariamente irrestrito durante o desenvolvimento, sem conceder plano pago. */
+export const LIMITES_DESENVOLVIMENTO: LimitesPlano = {
+  contas: -1,
+  lancamentosMes: -1,
+  cartoes: -1,
+  caixinhas: -1,
+  categoriasReceita: -1,
+  categoriasDespesa: -1,
+  iaOperacional: true,
+  iaAnalitica: true,
+  iaAcoesDia: -1,
+};
+
 // ─── Informações completas dos planos ────────────────────────────────────────
 
 export const PLANOS: InfoPlano[] = [

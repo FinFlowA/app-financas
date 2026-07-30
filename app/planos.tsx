@@ -11,6 +11,7 @@
 
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
 import React, { useState } from "react";
 import {
   Alert,
@@ -25,12 +26,16 @@ import { useAppTheme } from "./_layout";
 import {
   PLANOS,
   PRECOS,
-  fmtPreco,
   type TipoPlano,
 } from "../lib/planos";
+import {
+  cancelSubscription,
+  createSubscriptionCheckout,
+  syncSubscription,
+} from "../lib/subscriptions";
 
 export default function PlanosScreen() {
-  const { isDark, plano: planoAtual, setPlano, session } = useAppTheme();
+  const { isDark, plano: planoAtual, billingEnabled, refreshEntitlement } = useAppTheme();
   const router = useRouter();
 
   const [ciclo, setCiclo] = useState<"mensal" | "anual">("mensal");
@@ -67,16 +72,25 @@ export default function PlanosScreen() {
     if (planoId === planoAtual) return;
 
     if (planoId === "free") {
+      if (planoAtual === "free") return;
       Alert.alert(
-        "Diminuir o plano?",
-        "Ao voltar para o plano gratuito, você perderá acesso aos recursos avançados. Seus dados ficam salvos mesmo após a diminuição do nível da conta.",
+        "Cancelar assinatura?",
+        "A renovação será cancelada. O acesso pago permanece até o fim do período já quitado.",
         [
           { text: "Cancelar", style: "cancel" },
           {
             text: "Confirmar",
             onPress: async () => {
-              await setPlano("free");
-              router.back();
+              try {
+                setProcessando(true);
+                await cancelSubscription();
+                await refreshEntitlement();
+                Alert.alert("Cancelamento solicitado", "Sua assinatura não será renovada.");
+              } catch {
+                Alert.alert("Não foi possível cancelar", "Tente novamente ou entre em contato com o suporte.");
+              } finally {
+                setProcessando(false);
+              }
             },
           },
         ]
@@ -84,43 +98,26 @@ export default function PlanosScreen() {
       return;
     }
 
+    if (!billingEnabled) {
+      Alert.alert(
+        "Assinaturas em breve",
+        "Durante o desenvolvimento, todas as funções estão liberadas gratuitamente. Nenhuma cobrança será realizada.",
+      );
+      return;
+    }
+
     setProcessando(true);
-
-    /**
-     * TODO: Integração com pagamento
-     *
-     * Opção 1 — Stripe:
-     *   const session = await stripe.createPaymentSheet({ ... })
-     *
-     * Opção 2 — Mercado Pago:
-     *   const preference = await mp.createPreference({ ... })
-     *   await WebBrowser.openBrowserAsync(preference.init_point)
-     *
-     * Opção 3 — RevenueCat (recomendado para apps mobile):
-     *   const offerings = await Purchases.getOfferings()
-     *   await Purchases.purchasePackage(package)
-     *
-     * Após confirmação do pagamento:
-     *   await setPlano(planoId)
-     *   await sincronizarStatusPremium(session.user.id, planoId)
-     */
-
-    // Por enquanto, ativa imediatamente (simulação)
-    Alert.alert(
-      "Plano Selecionado",
-      `O plano ${planoId === "smart" ? "Smart" : "Premium"} foi ativado!\n\n(Integração de pagamento em breve via Stripe/Mercado Pago)`,
-      [
-        {
-          text: "OK",
-          onPress: async () => {
-            await setPlano(planoId);
-            router.back();
-          },
-        },
-      ]
-    );
-
-    setProcessando(false);
+    try {
+      const productCode = `${planoId}_${ciclo === "anual" ? "annual" : "monthly"}`;
+      const checkout = await createSubscriptionCheckout(productCode);
+      await WebBrowser.openBrowserAsync(checkout.checkoutUrl);
+      await syncSubscription();
+      await refreshEntitlement();
+    } catch {
+      Alert.alert("Pagamento indisponível", "Não foi possível iniciar a assinatura. Nenhuma cobrança foi realizada.");
+    } finally {
+      setProcessando(false);
+    }
   };
 
   const corDestaque = (planoId: TipoPlano) => {
@@ -263,7 +260,9 @@ export default function PlanosScreen() {
         <View style={[estilos.notaContainer, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
           <MaterialIcons name="security" size={18} color={Cores.secundario} />
           <Text style={[estilos.notaTexto, { color: Cores.secundario }]}>
-            Pagamento seguro. Cancele a qualquer momento. Seus dados ficam salvos mesmo após a diminuição do nível da conta.
+            {billingEnabled
+              ? "Pagamento processado pelo provedor oficial. Seus dados financeiros não são armazenados pelo FinFlow."
+              : "Cobranças desativadas durante o desenvolvimento. Todas as funções estão temporariamente liberadas sem custo."}
           </Text>
         </View>
 

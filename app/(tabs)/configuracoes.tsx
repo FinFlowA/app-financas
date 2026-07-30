@@ -24,7 +24,7 @@ const URL_PRIVACIDADE = "https://finflowa.github.io/finflow-legal/#privacidade";
 const URL_TERMOS = "https://finflowa.github.io/finflow-legal/#termos";
 
 export default function ConfiguracoesScreen() {
-  const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, setPlano } = useAppTheme();
+  const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, limitsEnabled } = useAppTheme();
   const router = useRouter();
 
   const meuEmail = session?.user?.email || "";
@@ -540,7 +540,7 @@ export default function ConfiguracoesScreen() {
                   Plano {plano === "free" ? "Free" : plano === "smart" ? "Smart" : "Premium"}
                 </Text>
                 <Text style={[{ color: Cores.secundario, fontSize: 12 }]}>
-                  {plano === "free" ? "Gratuito · Toque para fazer upgrade" : plano === "smart" ? "R$ 9,90/mês · Smart" : "R$ 19,90/mês · Premium"}
+                  {!limitsEnabled ? "Todas as funções liberadas durante o desenvolvimento" : plano === "free" ? "Gratuito · Toque para fazer upgrade" : plano === "smart" ? "R$ 9,90/mês · Smart" : "R$ 19,90/mês · Premium"}
                 </Text>
               </View>
             </View>
