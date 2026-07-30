@@ -106,6 +106,7 @@ export default function TransacoesScreen() {
   const [faturaGrupos, setFaturaGrupos] = useState<FaturaGrupo[]>([]);
   const [modalPagFatura, setModalPagFatura] = useState<FaturaGrupo | null>(null);
   const [contaPagFaturaId, setContaPagFaturaId] = useState<number | null>(null);
+  const [faturaAbrirCartao, setFaturaAbrirCartao] = useState<FaturaGrupo | null>(null);
 
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
@@ -866,14 +867,7 @@ export default function TransacoesScreen() {
                         }},
                       ]);
                     } else {
-                      Alert.alert(
-                        "Pagamento de fatura",
-                        "Para garantir as regras de pagamento integral, parcial e saldo para o próximo mês, o pagamento será feito na tela do cartão.",
-                        [
-                          { text: "Cancelar", style: "cancel" },
-                          { text: "Abrir cartão", onPress: () => router.push("/cartoes" as any) },
-                        ],
-                      );
+                      setFaturaAbrirCartao(g);
                     }
                   }}
                   activeOpacity={0.7}
@@ -924,6 +918,40 @@ export default function TransacoesScreen() {
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {faturaAbrirCartao && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setFaturaAbrirCartao(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: faturaAbrirCartao.cartao_cor }]}>
+              <View style={{ alignItems: "center", marginBottom: 14 }}>
+                <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: `${faturaAbrirCartao.cartao_cor}22`, alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name="credit-card" size={30} color={faturaAbrirCartao.cartao_cor} />
+                </View>
+              </View>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Pagar fatura</Text>
+              <Text style={{ color: Cores.textoSecundario, textAlign: "center", fontSize: 14, lineHeight: 21, marginBottom: 14 }}>
+                {faturaAbrirCartao.cartao_nome} • {formatarMesAno(faturaAbrirCartao.mes_fatura)}
+              </Text>
+              <View style={{ backgroundColor: Cores.blocoData, borderRadius: 12, padding: 14, alignItems: "center", marginBottom: 16 }}>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 12 }}>Valor da fatura</Text>
+                <Text style={{ color: "#E76F51", fontSize: 24, fontWeight: "bold", marginTop: 3 }}>{fmtReais(faturaAbrirCartao.total)}</Text>
+              </View>
+              <Text style={{ color: Cores.textoSecundario, textAlign: "center", fontSize: 13, lineHeight: 19, marginBottom: 18 }}>
+                Na tela do cartão você poderá pagar o valor integral, registrar um pagamento parcial ou levar o saldo restante para a próxima fatura.
+              </Text>
+              <TouchableOpacity
+                style={{ minHeight: 52, borderRadius: 11, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginBottom: 9 }}
+                onPress={() => { setFaturaAbrirCartao(null); router.push("/cartoes" as any); }}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Continuar para o cartão</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ minHeight: 48, borderRadius: 11, backgroundColor: Cores.blocoData, alignItems: "center", justifyContent: "center" }} onPress={() => setFaturaAbrirCartao(null)}>
+                <Text style={{ color: Cores.textoSecundario, fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {transacaoConfirmar && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoConfirmar(null)}>

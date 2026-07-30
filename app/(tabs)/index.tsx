@@ -222,6 +222,11 @@ export default function Dashboard() {
   const [editandoSaldoConta, setEditandoSaldoConta] = useState(false);
   const [loadingConta, setLoadingConta] = useState(false);
   const [loadingCat, setLoadingCat] = useState(false);
+  const [contaConfirmarArquivo, setContaConfirmarArquivo] = useState<{
+    conta: Conta;
+    saldoAtual: number;
+    temLancamentos: boolean;
+  } | null>(null);
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [loadingTrans, setLoadingTrans] = useState(false);
@@ -575,6 +580,7 @@ export default function Dashboard() {
       res = await supabase.from("contas").update(base).eq("id", contaEditando.id);
     }
     if (res.error) return Alert.alert("Erro", `Falha ao atualizar conta: ${res.error.message}`);
+    setContaConfirmarArquivo(null);
     setModalEditarContaVisivel(false);
     setContaEditando(null);
     setEditandoSaldoConta(false);
@@ -596,6 +602,7 @@ export default function Dashboard() {
         "Para arquivar contas, adicione a coluna 'arquivado' (boolean, default false) na tabela 'contas' no Supabase."
       );
     }
+    setContaConfirmarArquivo(null);
     setModalEditarContaVisivel(false);
     carregarDados();
   };
@@ -603,35 +610,15 @@ export default function Dashboard() {
   const arquivarConta = (conta: Conta) => {
     const saldoAtual = calcularSaldoConta(conta);
     const temLancamentos = transacoes.some((t) => t.conta_id === conta.id);
+    setContaConfirmarArquivo({ conta, saldoAtual, temLancamentos });
+  };
 
-    if (temLancamentos) {
-      const aviso = saldoAtual > 0.005
-        ? `Esta conta possui saldo de ${fmtReais(saldoAtual)}. O saldo ficará registrado, mas a conta não aparecerá mais nas operações.\n\nDeseja arquivá-la?`
-        : `A conta "${conta.nome}" tem lançamentos e não pode ser excluída. Deseja arquivá-la?`;
-      Alert.alert("Arquivar Conta", aviso, [
-        { text: "Cancelar", style: "cancel" },
-        { text: "Arquivar", onPress: () => executarArquivar(conta) },
-      ]);
-    } else {
-      Alert.alert(
-        "Arquivar ou Excluir",
-        `A conta "${conta.nome}" não possui lançamentos. O que deseja fazer?`,
-        [
-          { text: "Cancelar", style: "cancel" },
-          { text: "Arquivar", onPress: () => executarArquivar(conta) },
-          {
-            text: "Excluir",
-            style: "destructive",
-            onPress: async () => {
-              const { error } = await supabase.from("contas").delete().eq("id", conta.id);
-              if (error) return Alert.alert("Erro", `Falha ao excluir: ${error.message}`);
-              setModalEditarContaVisivel(false);
-              carregarDados();
-            },
-          },
-        ]
-      );
-    }
+  const excluirContaSemLancamentos = async (conta: Conta) => {
+    const { error } = await supabase.from("contas").delete().eq("id", conta.id);
+    if (error) return Alert.alert("Erro", `Falha ao excluir: ${error.message}`);
+    setContaConfirmarArquivo(null);
+    setModalEditarContaVisivel(false);
+    carregarDados();
   };
 
   // --- Transação ---
@@ -981,6 +968,45 @@ export default function Dashboard() {
         </View>
 
       </ScrollView>
+
+      {contaConfirmarArquivo && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setContaConfirmarArquivo(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "90%", borderTopWidth: 4, borderTopColor: "#F4A261" }]}>
+              <View style={{ alignItems: "center", marginBottom: 14 }}>
+                <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#F4A26122", alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name="archive" size={31} color="#F4A261" />
+                </View>
+              </View>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>
+                {contaConfirmarArquivo.temLancamentos ? "Arquivar conta" : "Arquivar ou excluir"}
+              </Text>
+              <Text style={{ color: Cores.textoSecundario, textAlign: "center", fontSize: 14, lineHeight: 21, marginBottom: 10 }}>
+                {contaConfirmarArquivo.temLancamentos
+                  ? `A conta “${contaConfirmarArquivo.conta.nome}” deixará de aparecer nas operações, mas todo o histórico será preservado.`
+                  : `A conta “${contaConfirmarArquivo.conta.nome}” ainda não possui movimentações.`}
+              </Text>
+              {Math.abs(contaConfirmarArquivo.saldoAtual) > 0.005 && (
+                <View style={{ backgroundColor: Cores.pillFundo, borderRadius: 12, padding: 14, alignItems: "center", marginBottom: 16 }}>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12 }}>Saldo que ficará arquivado</Text>
+                  <Text style={{ color: Cores.textoPrincipal, fontSize: 22, fontWeight: "bold", marginTop: 3 }}>{fmtReais(contaConfirmarArquivo.saldoAtual)}</Text>
+                </View>
+              )}
+              <TouchableOpacity style={{ minHeight: 50, borderRadius: 11, backgroundColor: "#F4A261", alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={() => executarArquivar(contaConfirmarArquivo.conta)}>
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Arquivar conta</Text>
+              </TouchableOpacity>
+              {!contaConfirmarArquivo.temLancamentos && (
+                <TouchableOpacity style={{ minHeight: 50, borderRadius: 11, backgroundColor: "#E76F51", alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={() => excluirContaSemLancamentos(contaConfirmarArquivo.conta)}>
+                  <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Excluir definitivamente</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity style={{ minHeight: 48, borderRadius: 11, backgroundColor: Cores.pillFundo, alignItems: "center", justifyContent: "center" }} onPress={() => setContaConfirmarArquivo(null)}>
+                <Text style={{ color: Cores.textoSecundario, fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* MODAL PICKER MÊS/ANO */}
       <Modal animationType="fade" transparent visible={mostrarPickerMesAno} onRequestClose={() => setMostrarPickerMesAno(false)}>
