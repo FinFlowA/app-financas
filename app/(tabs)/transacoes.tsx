@@ -767,12 +767,8 @@ export default function TransacoesScreen() {
               const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
               const prefixoValor = t.tipo === "receita" ? "+" : "-";
               const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
-              const corStatus = isPendente
-                ? (isVencida ? "#DC2626" : "#F59E0B")
-                : (t.tipo === "receita" ? "#2A9D8F" : "#E76F51");
-              const textoStatus = isPendente
-                ? (isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar")
-                : (t.tipo === "receita" ? "Recebido" : "Pago");
+              const corStatus = isVencida ? "#DC2626" : "#F59E0B";
+              const textoStatus = isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar";
 
               return (
                 <TouchableOpacity
@@ -780,8 +776,9 @@ export default function TransacoesScreen() {
                   style={[styles.transacaoCard, {
                     backgroundColor: bgRow,
                     borderBottomColor: Cores.borda,
-                    borderLeftWidth: 4,
+                    borderLeftWidth: isPendente ? 4 : 0,
                     borderLeftColor: corStatus,
+                    opacity: isPendente ? 1 : 0.72,
                   }]}
                   onPress={() => setTransacaoDetalhe(t)}
                   activeOpacity={0.75}
@@ -796,7 +793,7 @@ export default function TransacoesScreen() {
 
                   {/* Coluna central: descrição + badges */}
                   <View style={styles.transacaoInfo}>
-                    <Text style={[styles.nomeText, { color: isPendente ? Cores.textoSecundario : Cores.textoPrincipal }]} numberOfLines={2}>
+                    <Text style={[styles.nomeText, { color: isPendente ? Cores.textoPrincipal : Cores.textoSecundario, textDecorationLine: isPendente ? "none" : "line-through", textDecorationColor: Cores.textoSecundario }]} numberOfLines={2}>
                       {descricaoVisivel(t.descricao)}
                     </Text>
                     {!isPendente && t.data_realizacao && t.data_realizacao !== t.data_vencimento && (
@@ -811,15 +808,15 @@ export default function TransacoesScreen() {
                           <Text style={[styles.badgeText, { color: estiloConta.text }]} numberOfLines={1}>{conta.nome}</Text>
                         </View>
                       )}
-                      <View style={[styles.pendentePill, { backgroundColor: `${corStatus}22` }]}>
+                      {isPendente && <View style={[styles.pendentePill, { backgroundColor: `${corStatus}22` }]}>
                         <Text style={[styles.pendenteText, { color: corStatus }]}>{textoStatus}</Text>
-                      </View>
+                      </View>}
                     </View>
                   </View>
 
                   {/* Coluna direita: valor + ações */}
                   <View style={styles.transacaoAcoes}>
-                    <Text style={[styles.valorText, { color: isPendente ? Cores.textoSecundario : corValor }]} numberOfLines={1} adjustsFontSizeToFit>
+                    <Text style={[styles.valorText, { color: isPendente ? corValor : Cores.textoSecundario, textDecorationLine: isPendente ? "none" : "line-through", textDecorationColor: Cores.textoSecundario }]} numberOfLines={1} adjustsFontSizeToFit>
                       {prefixoValor} {fmtReais(t.valor)}
                     </Text>
                     <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginTop: 5 }} />
@@ -861,7 +858,7 @@ export default function TransacoesScreen() {
                     if (g.pago) {
                       setFaturaEstornar(g);
                     } else {
-                      setFaturaAbrirCartao(g);
+                      router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(g.cartao_id), mesFatura: g.mes_fatura } } as any);
                     }
                   }}
                   activeOpacity={0.7}
@@ -935,7 +932,11 @@ export default function TransacoesScreen() {
               </Text>
               <TouchableOpacity
                 style={{ minHeight: 52, borderRadius: 11, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginBottom: 9 }}
-                onPress={() => { setFaturaAbrirCartao(null); router.push("/cartoes" as any); }}
+                onPress={() => {
+                  const fatura = faturaAbrirCartao;
+                  setFaturaAbrirCartao(null);
+                  router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(fatura.cartao_id), mesFatura: fatura.mes_fatura } } as any);
+                }}
               >
                 <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Continuar para o cartão</Text>
               </TouchableOpacity>

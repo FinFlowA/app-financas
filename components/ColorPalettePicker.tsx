@@ -61,8 +61,8 @@ export default function ColorPalettePicker({ value, onChange, dark = false }: Pr
       </View>
       <View style={[styles.result, { backgroundColor: dark ? "#252525" : "#F4F4F4" }]}>
         <View style={[styles.swatch, { backgroundColor: value }]} />
-        <Text style={{ color: dark ? "#FFF" : "#27313A", fontWeight: "700" }}>{value.toUpperCase()}</Text>
-        <Text style={{ color: dark ? "#AAA" : "#68727D", marginLeft: "auto", fontSize: 12 }}>Deslize para escolher</Text>
+        <Text style={{ color: dark ? "#FFF" : "#27313A", fontWeight: "700" }}>Cor escolhida</Text>
+        <Text style={{ color: dark ? "#AAA" : "#68727D", marginLeft: "auto", fontSize: 12 }}>Deslize na paleta</Text>
       </View>
     </View>
   );

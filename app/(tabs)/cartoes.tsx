@@ -48,8 +48,8 @@
 
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useState } from "react";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Modal,
@@ -157,6 +157,8 @@ function formatarMes(mes: string): string {
 export default function CartoesScreen() {
   const { isDark, session, showToast, verificarLimite } = useAppTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ pagarCartaoId?: string; mesFatura?: string }>();
+  const pagamentoRotaConsumido = useRef("");
 
   const Cores = {
     fundo: isDark ? "#121212" : "#F5F2EC",
@@ -273,6 +275,28 @@ export default function CartoesScreen() {
   }, [session?.user?.id]);
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
+
+  useEffect(() => {
+    const cartaoId = Number(params.pagarCartaoId);
+    const mes = params.mesFatura;
+    const chave = `${cartaoId}:${mes}`;
+    if (!cartaoId || !mes || pagamentoRotaConsumido.current === chave || cartoes.length === 0 || itens.length === 0) return;
+    const cartao = cartoes.find((item) => item.id === cartaoId);
+    if (!cartao) return;
+    const total = itens
+      .filter((item) => item.cartao_id === cartaoId && item.mes_fatura === mes && !item.pago)
+      .reduce((acc, item) => acc + Number(item.valor), 0);
+    pagamentoRotaConsumido.current = chave;
+    setCartaoAberto(cartao);
+    setMesFaturaAtivo(mes);
+    setMesPagamento(mes);
+    setValorPagamento(total.toFixed(2).replace(".", ","));
+    setValorJuros("");
+    setContaPagamentoId(contas[0]?.id ?? null);
+    setModalFaturaVisivel(true);
+    if (total > 0) setModalPagamento(true);
+    else showToast("Esta fatura já está paga", "info");
+  }, [cartoes, contas, itens, params.mesFatura, params.pagarCartaoId, showToast]);
 
   // ─── Cálculos ──────────────────────────────────────────────────────────────
 

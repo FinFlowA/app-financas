@@ -108,7 +108,7 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
-  const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | null>(null);
+  const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
 
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
@@ -191,6 +191,17 @@ export default function RootLayout() {
       }
     }
     if (!__DEV__) verificarAtualizacao();
+  }, []);
+
+  useEffect(() => {
+    if (__DEV__ || !Updates.updateId) return;
+    const chave = "@finflow_ultima_atualizacao_exibida";
+    AsyncStorage.getItem(chave).then((ultima) => {
+      if (ultima !== Updates.updateId) {
+        setModalAtualizacao("novidades");
+        AsyncStorage.setItem(chave, Updates.updateId!);
+      }
+    });
   }, []);
 
   // Inicializa sessão e escuta mudanças de autenticação
@@ -518,23 +529,33 @@ export default function RootLayout() {
                 : <MaterialIcons name="auto-awesome" size={34} color="#2A9D8F" />}
             </View>
             <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
-              {modalAtualizacao === "baixando" ? "Preparando novidades" : "FinFlow atualizado!"}
+              {modalAtualizacao === "baixando" ? "Preparando atualização" : modalAtualizacao === "pronta" ? "Atualização pronta" : "Novidades no FinFlow"}
             </Text>
             {modalAtualizacao === "baixando" ? (
               <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
                 Estamos baixando melhorias para deixar sua experiência ainda melhor.
               </Text>
+            ) : modalAtualizacao === "pronta" ? (
+              <>
+                <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
+                  O download terminou. Reinicie o FinFlow para aplicar a nova versão.
+                </Text>
+                <TouchableOpacity style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F" }]} onPress={() => Updates.reloadAsync()}>
+                  <MaterialIcons name="refresh" size={18} color="#FFF" />
+                  <Text style={styles.modalLimiteBtnText}>Aplicar agora</Text>
+                </TouchableOpacity>
+              </>
             ) : (
               <>
                 <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D", marginBottom: 14 }]}>
-                  A nova versão já está pronta para uso.
+                  Veja o que mudou nesta versão:
                 </Text>
-                <View style={[styles.updateList, { backgroundColor: isDark ? "#272727" : "#F2F7F6" }]}>
+                <View style={[styles.updateList, { backgroundColor: isDark ? "#252B2A" : "#EEF7F5", borderColor: isDark ? "#334744" : "#D4EAE5" }]}>
                   {[
-                    "Histórico mais claro e organizado",
-                    "Ajustes opcionais de juros e desconto",
-                    "Mais cores e ícones para personalizar",
-                    "Melhorias gerais de estabilidade",
+                    "Concluídos mais discretos e fáceis de identificar",
+                    "Escolha de cores mais simples e sem códigos",
+                    "Pagamento de fatura direto pelo histórico",
+                    "Avisos de atualização renovados",
                   ].map((item) => (
                     <View key={item} style={styles.updateItem}>
                       <MaterialIcons name="check-circle" size={18} color="#2A9D8F" />
@@ -542,9 +563,9 @@ export default function RootLayout() {
                     </View>
                   ))}
                 </View>
-                <TouchableOpacity style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]} onPress={() => Updates.reloadAsync()}>
-                  <MaterialIcons name="refresh" size={18} color="#FFF" />
-                  <Text style={styles.modalLimiteBtnText}>Reiniciar e aproveitar</Text>
+                <TouchableOpacity style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]} onPress={() => setModalAtualizacao(null)}>
+                  <MaterialIcons name="check" size={18} color="#FFF" />
+                  <Text style={styles.modalLimiteBtnText}>Continuar</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -726,6 +747,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 6,
   },
-  updateList: { width: "100%", borderRadius: 14, padding: 14, gap: 10 },
+  updateList: { width: "100%", borderRadius: 14, padding: 14, gap: 10, borderWidth: 1 },
   updateItem: { flexDirection: "row", alignItems: "center", gap: 9 },
 });
