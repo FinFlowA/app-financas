@@ -148,6 +148,8 @@ export default function TransacoesScreen() {
   const [transacaoConfirmar, setTransacaoConfirmar] = useState<Transacao | null>(null);
   const [dataRealizacao, setDataRealizacao] = useState(new Date());
   const [mostrarDataRealizacao, setMostrarDataRealizacao] = useState(false);
+  const [ajusteTipo, setAjusteTipo] = useState<"nenhum" | "juros" | "desconto">("nenhum");
+  const [ajusteValor, setAjusteValor] = useState("");
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -426,12 +428,20 @@ export default function TransacoesScreen() {
   };
 
   const aplicarStatus = async (transacao: Transacao, novoStatus: "paga" | "pendente", data?: Date) => {
-    const atualizacao: { status: string; data_realizacao?: string | null } = {
+    const atualizacao: { status: string; data_realizacao?: string | null; valor?: number } = {
       status: novoStatus,
       data_realizacao: novoStatus === "pendente" ? null : undefined,
     };
     if (novoStatus === "paga" && data) {
       atualizacao.data_realizacao = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+      const agendada = new Date(`${transacao.data_vencimento}T00:00:00`);
+      const realizada = new Date(data); realizada.setHours(0, 0, 0, 0);
+      const ajuste = Number(ajusteValor.replace(",", "."));
+      if (realizada > agendada && ajusteTipo !== "nenhum" && Number.isFinite(ajuste) && ajuste > 0) {
+        atualizacao.valor = ajusteTipo === "juros"
+          ? Number(transacao.valor) + ajuste
+          : Math.max(0.01, Number(transacao.valor) - ajuste);
+      }
     }
     const { error } = await supabase.from("transacoes").update(atualizacao).eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível atualizar o estado."); return; }
@@ -458,6 +468,8 @@ export default function TransacoesScreen() {
 
     carregarDados();
     setTransacaoConfirmar(null);
+    setAjusteTipo("nenhum");
+    setAjusteValor("");
     const tipo = transacao.tipo;
     if (novoStatus === "paga") {
       const label = tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
@@ -480,6 +492,8 @@ export default function TransacoesScreen() {
       return;
     }
     setDataRealizacao(new Date());
+    setAjusteTipo("nenhum");
+    setAjusteValor("");
     setTransacaoConfirmar(transacao);
   };
 
@@ -753,19 +767,21 @@ export default function TransacoesScreen() {
               const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
               const prefixoValor = t.tipo === "receita" ? "+" : "-";
               const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
+              const corStatus = isPendente
+                ? (isVencida ? "#DC2626" : "#F59E0B")
+                : (t.tipo === "receita" ? "#2A9D8F" : "#E76F51");
+              const textoStatus = isPendente
+                ? (isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar")
+                : (t.tipo === "receita" ? "Recebido" : "Pago");
 
               return (
                 <TouchableOpacity
                   key={t.id}
                   style={[styles.transacaoCard, {
-                    backgroundColor: isVencida
-                      ? (isDark ? "#2A0A0A" : "#FFEBEE")
-                      : isPendente
-                        ? (isDark ? "#1A1200" : "#FFFDE7")
-                        : bgRow,
+                    backgroundColor: bgRow,
                     borderBottomColor: Cores.borda,
-                    borderLeftWidth: isVencida ? 3 : 0,
-                    borderLeftColor: "#E76F51",
+                    borderLeftWidth: 4,
+                    borderLeftColor: corStatus,
                   }]}
                   onPress={() => setTransacaoDetalhe(t)}
                   activeOpacity={0.75}
@@ -795,16 +811,9 @@ export default function TransacoesScreen() {
                           <Text style={[styles.badgeText, { color: estiloConta.text }]} numberOfLines={1}>{conta.nome}</Text>
                         </View>
                       )}
-                      {isVencida && (
-                        <View style={[styles.pendentePill, { backgroundColor: "#E76F5133" }]}>
-                          <Text style={[styles.pendenteText, { color: "#E76F51" }]}>Vencida</Text>
-                        </View>
-                      )}
-                      {isPendente && !isVencida && (
-                        <View style={styles.pendentePill}>
-                          <Text style={styles.pendenteText}>Pendente</Text>
-                        </View>
-                      )}
+                      <View style={[styles.pendentePill, { backgroundColor: `${corStatus}22` }]}>
+                        <Text style={[styles.pendenteText, { color: corStatus }]}>{textoStatus}</Text>
+                      </View>
                     </View>
                   </View>
 
@@ -1043,6 +1052,30 @@ export default function TransacoesScreen() {
                   display="default"
                   onChange={(_e, d) => { setMostrarDataRealizacao(false); if (d) setDataRealizacao(d); }}
                 />
+              )}
+              {dataRealizacao > new Date(`${transacaoConfirmar.data_vencimento}T23:59:59`) && (
+                <View style={{ marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: isDark ? "#2A2418" : "#FFF7E6", borderWidth: 1, borderColor: isDark ? "#5A4722" : "#F4D79A" }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                    <MaterialIcons name="schedule" size={19} color="#D89014" />
+                    <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", flex: 1 }}>Realização após a data agendada</Text>
+                  </View>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, lineHeight: 18, marginBottom: 10 }}>
+                    Se desejar, ajuste o valor final com juros ou desconto.
+                  </Text>
+                  <View style={{ flexDirection: "row", gap: 6 }}>
+                    {(["nenhum", "juros", "desconto"] as const).map((tipo) => (
+                      <TouchableOpacity key={tipo} onPress={() => { setAjusteTipo(tipo); if (tipo === "nenhum") setAjusteValor(""); }} style={{ flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: "center", backgroundColor: ajusteTipo === tipo ? (tipo === "desconto" ? "#2A9D8F" : tipo === "juros" ? "#E76F51" : "#68727D") : Cores.cardFundo }}>
+                        <Text style={{ color: ajusteTipo === tipo ? "#FFF" : Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>{tipo === "nenhum" ? "Sem ajuste" : tipo === "juros" ? "Juros" : "Desconto"}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                  {ajusteTipo !== "nenhum" && (
+                    <View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                      <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
+                      <TextInput value={ajusteValor} onChangeText={setAjusteValor} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
+                    </View>
+                  )}
+                </View>
               )}
               <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
                 <TouchableOpacity style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: Cores.blocoData }} onPress={() => setTransacaoConfirmar(null)}>

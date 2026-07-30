@@ -65,6 +65,7 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import ColorPalettePicker from "../../components/ColorPalettePicker";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -980,6 +981,7 @@ export default function CartoesScreen() {
                   ))}
                 </View>
               </ScrollView>
+              <ColorPalettePicker value={corCartao} onChange={setCorCartao} dark={isDark} />
 
               <View style={estilos.modalBtns}>
                 <TouchableOpacity
@@ -1105,7 +1107,6 @@ export default function CartoesScreen() {
                   ))}
                 </View>
               </ScrollView>
-
               <Text style={[estilos.label, { color: Cores.secundario }]}>Data da Compra</Text>
               <TouchableOpacity
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda }]}
@@ -1303,6 +1304,7 @@ export default function CartoesScreen() {
                   ))}
                 </View>
               </ScrollView>
+              <ColorPalettePicker value={editCor} onChange={setEditCor} dark={isDark} />
 
               <View style={estilos.modalBtns}>
                 <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalEditarCartao(false)}>

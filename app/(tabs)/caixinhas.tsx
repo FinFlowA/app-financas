@@ -20,6 +20,7 @@ import { supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { fmtReais } from "../../lib/utils";
 import { useAppTheme } from "../_layout";
+import ColorPalettePicker from "../../components/ColorPalettePicker";
 
 interface Caixinha {
   id: number;
@@ -85,7 +86,10 @@ const LISTA_ICONES = [
   "fitness-center","local-hospital","shopping-cart","pets",
   "beach-access","sports-esports","music-note","restaurant",
   "local-movies","card-giftcard","smartphone","laptop-mac",
-  "favorite","work","celebration",
+  "favorite","work","celebration","coffee","local-gas-station",
+  "child-care","spa","book","camera-alt","palette","two-wheeler",
+  "electrical-services","water-drop","wifi","checkroom","bakery-dining",
+  "medical-services","payments","trending-up","volunteer-activism",
 ];
 
 export default function CaixinhasScreen() {
@@ -659,6 +663,7 @@ export default function CaixinhasScreen() {
                   />
                 ))}
               </View>
+              <ColorPalettePicker value={corEditCaixa} onChange={setCorEditCaixa} dark={isDark} />
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -775,6 +780,7 @@ export default function CaixinhasScreen() {
                   />
                 ))}
               </View>
+              <ColorPalettePicker value={corSelecionada} onChange={setCorSelecionada} dark={isDark} />
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (

@@ -108,6 +108,7 @@ export default function RootLayout() {
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
+  const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | null>(null);
 
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
@@ -181,13 +182,9 @@ export default function RootLayout() {
       try {
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
-          Alert.alert("Nova versão encontrada", "O FinFlow está baixando melhorias de estabilidade e novas funções.", [{ text: "Continuar" }]);
+          setModalAtualizacao("baixando");
           await Updates.fetchUpdateAsync();
-          Alert.alert(
-            "FinFlow atualizado!",
-            "Novidades desta versão:\n\n• Fluxo de caixa usa a data real de pagamento ou recebimento\n• A data agendada continua disponível para seu controle\n• Histórico mostra a data agendada quando ela for diferente\n• Transferências criadas pela IA foram corrigidas\n• Pagamentos de fatura ficaram mais seguros contra registros incompletos\n\nO aplicativo será reiniciado para aplicar tudo.",
-            [{ text: "Ver melhorias", onPress: () => Updates.reloadAsync() }],
-          );
+          setModalAtualizacao("pronta");
         }
       } catch (error) {
         console.log("Erro ao buscar atualizações:", error);
@@ -512,6 +509,49 @@ export default function RootLayout() {
         <Text style={styles.toastText}>{toastMsg}</Text>
       </Animated.View>
 
+      <Modal animationType="fade" transparent visible={modalAtualizacao !== null}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
+              {modalAtualizacao === "baixando"
+                ? <ActivityIndicator size="large" color="#2A9D8F" />
+                : <MaterialIcons name="auto-awesome" size={34} color="#2A9D8F" />}
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
+              {modalAtualizacao === "baixando" ? "Preparando novidades" : "FinFlow atualizado!"}
+            </Text>
+            {modalAtualizacao === "baixando" ? (
+              <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
+                Estamos baixando melhorias para deixar sua experiência ainda melhor.
+              </Text>
+            ) : (
+              <>
+                <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D", marginBottom: 14 }]}>
+                  A nova versão já está pronta para uso.
+                </Text>
+                <View style={[styles.updateList, { backgroundColor: isDark ? "#272727" : "#F2F7F6" }]}>
+                  {[
+                    "Histórico mais claro e organizado",
+                    "Ajustes opcionais de juros e desconto",
+                    "Mais cores e ícones para personalizar",
+                    "Melhorias gerais de estabilidade",
+                  ].map((item) => (
+                    <View key={item} style={styles.updateItem}>
+                      <MaterialIcons name="check-circle" size={18} color="#2A9D8F" />
+                      <Text style={{ flex: 1, color: isDark ? "#DDD" : "#34404B", fontSize: 13, lineHeight: 19 }}>{item}</Text>
+                    </View>
+                  ))}
+                </View>
+                <TouchableOpacity style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]} onPress={() => Updates.reloadAsync()}>
+                  <MaterialIcons name="refresh" size={18} color="#FFF" />
+                  <Text style={styles.modalLimiteBtnText}>Reiniciar e aproveitar</Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
       {/* Modal de downgrade — itens bloqueados */}
       <Modal
         animationType="fade"
@@ -686,4 +726,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginBottom: 6,
   },
+  updateList: { width: "100%", borderRadius: 14, padding: 14, gap: 10 },
+  updateItem: { flexDirection: "row", alignItems: "center", gap: 9 },
 });

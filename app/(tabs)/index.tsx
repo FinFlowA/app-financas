@@ -22,6 +22,7 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais } from "../../lib/utils";
+import ColorPalettePicker from "../../components/ColorPalettePicker";
 import {
   adicionarRecorrencia,
   dataEfetivaTransacao,
@@ -92,7 +93,11 @@ const LISTA_ICONES = [
   "shopping-cart", "school", "fitness-center", "local-hospital",
   "flight", "beach-access", "pets", "work", "sports-esports",
   "music-note", "local-movies", "attach-money", "savings",
-  "card-giftcard", "build",
+  "card-giftcard", "build", "coffee", "local-gas-station", "child-care",
+  "spa", "book", "camera-alt", "palette", "two-wheeler", "commute",
+  "electrical-services", "water-drop", "wifi", "phone-android", "laptop",
+  "checkroom", "local-grocery-store", "bakery-dining", "medical-services",
+  "payments", "trending-up", "volunteer-activism", "business-center",
 ];
 
 const getSaudacao = () => {
@@ -131,7 +136,7 @@ const mesesEmPortugues = [
 ];
 
 // Gráfico de barras horizontais por categoria
-const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string }[]; total: number; isDark: boolean }) => {
+const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string; icone?: string }[]; total: number; isDark: boolean }) => {
   if (total === 0 || dados.length === 0) return (
     <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 20 }}>
       <MaterialIcons name="bar-chart" size={32} color={isDark ? "#333" : "#DDD"} />
@@ -146,7 +151,9 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
           <View key={i} style={{ marginBottom: 10 }}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
               <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
-                <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: item.cor, marginRight: 6 }} />
+                <View style={{ width: 25, height: 25, borderRadius: 8, backgroundColor: `${item.cor}26`, marginRight: 7, alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name={(item.icone || "label") as any} size={15} color={item.cor} />
+                </View>
                 <Text style={{ flex: 1, fontSize: 12, color: isDark ? "#AAA" : "#555" }} numberOfLines={1}>{item.nome}</Text>
               </View>
               <View style={{ alignItems: "flex-end" }}>
@@ -190,6 +197,7 @@ export default function Dashboard() {
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
+  const [modalIaEmBreve, setModalIaEmBreve] = useState(false);
 
   const [mesAtual, setMesAtual] = useState(new Date());
   const [mostrarPickerMesAno, setMostrarPickerMesAno] = useState(false);
@@ -314,10 +322,10 @@ export default function Dashboard() {
         const totalCartao = comprasCartaoDoMes
           .filter((item) => item.categoria_id === cat.id)
           .reduce((acc, item) => acc + Number(item.valor), 0);
-        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome };
+        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome, icone: cat.icone };
       })
       .filter((d) => d.valor > 0),
-    ...(caixinhaGuardadoTotal > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoTotal, nome: "Objetivos" }] : []),
+    ...(caixinhaGuardadoTotal > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoTotal, nome: "Objetivos", icone: "savings" }] : []),
   ].sort((a, b) => b.valor - a.valor);
 
   const dadosReceitasPorCat = categorias
@@ -326,7 +334,7 @@ export default function Dashboard() {
       const total = transacoesDoMes
         .filter((t) => t.tipo === "receita" && t.categoria_id === cat.id)
         .reduce((acc, t) => acc + t.valor, 0);
-      return { cor: cat.cor, valor: total, nome: cat.nome };
+      return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
     })
     .filter((d) => d.valor > 0)
     .sort((a, b) => b.valor - a.valor);
@@ -350,10 +358,10 @@ export default function Dashboard() {
         const totalCartao = comprasCartaoDoMes
           .filter((item) => item.categoria_id === cat.id)
           .reduce((acc, item) => acc + Number(item.valor), 0);
-        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome };
+        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome, icone: cat.icone };
       })
       .filter((d) => d.valor > 0),
-    ...(caixinhaGuardadoRealizado > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoRealizado, nome: "Objetivos" }] : []),
+    ...(caixinhaGuardadoRealizado > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoRealizado, nome: "Objetivos", icone: "savings" }] : []),
   ].sort((a, b) => b.valor - a.valor);
 
   const dadosReceitasPorCatRealizadas = categorias
@@ -362,7 +370,7 @@ export default function Dashboard() {
       const total = transacoesDoMes
         .filter(t => t.tipo === "receita" && t.status === "paga" && t.categoria_id === cat.id)
         .reduce((acc, t) => acc + t.valor, 0);
-      return { cor: cat.cor, valor: total, nome: cat.nome };
+      return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
     })
     .filter((d) => d.valor > 0)
     .sort((a, b) => b.valor - a.valor);
@@ -767,7 +775,7 @@ export default function Dashboard() {
               if (usuarioPodeAcessarIA(session?.user?.email)) {
                 router.push("/chat-ia");
               } else {
-                Alert.alert("IA em desenvolvimento", "O assistente financeiro ainda está em desenvolvimento e será liberado em breve.");
+                setModalIaEmBreve(true);
               }
             }}
           >
@@ -1152,6 +1160,7 @@ export default function Dashboard() {
                   />
                 ))}
               </View>
+              <ColorPalettePicker value={corEditConta} onChange={setCorEditConta} dark={isDark} />
 
               {/* Editar saldo inicial com confirmação */}
               <TouchableOpacity
@@ -1258,6 +1267,7 @@ export default function Dashboard() {
                 />
               ))}
             </View>
+            <ColorPalettePicker value={corNovaConta} onChange={setCorNovaConta} dark={isDark} />
 
             {/* Preview da conta */}
             <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
@@ -1310,6 +1320,7 @@ export default function Dashboard() {
                     />
                   ))}
                 </View>
+                <ColorPalettePicker value={corEditCat} onChange={setCorEditCat} dark={isDark} />
                 <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                   {LISTA_ICONES.map((icone) => (
@@ -1404,6 +1415,7 @@ export default function Dashboard() {
                 <TouchableOpacity key={cor} style={[styles.colorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setCorSelecionada(cor)} />
               ))}
             </View>
+            <ColorPalettePicker value={corSelecionada} onChange={setCorSelecionada} dark={isDark} />
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
               {LISTA_ICONES.map((icone) => (
@@ -1549,19 +1561,6 @@ export default function Dashboard() {
                   </View>
                 </>
               )}
-              {frequencia === "parcelada" && (
-                <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Quantidade de parcelas:</Text>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-                    placeholder="Ex: 3"
-                    placeholderTextColor={Cores.textoSecundario}
-                    value={numParcelas}
-                    onChangeText={setNumParcelas}
-                    keyboardType="numeric"
-                  />
-                </>
-              )}
               {frequencia === "unica" && (
                 <>
                   <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
@@ -1589,6 +1588,19 @@ export default function Dashboard() {
                   <TextInput style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="decimal-pad" />
                 </View>
               </View>
+              {frequencia === "parcelada" && (
+                <>
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Número de parcelas:</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                    placeholder="Ex: 3"
+                    placeholderTextColor={Cores.textoSecundario}
+                    value={numParcelas}
+                    onChangeText={setNumParcelas}
+                    keyboardType="numeric"
+                  />
+                </>
+              )}
               {frequencia === "parcelada" && valorTransacao && numParcelas && !isNaN(parseFloat(valorTransacao)) && !isNaN(parseInt(numParcelas)) && (
                 <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: -10, marginBottom: 10, textAlign: "right" }}>
                   Total: {fmtReais(parseFloat(valorTransacao.replace(",", ".")) * parseInt(numParcelas))}
@@ -1644,6 +1656,25 @@ export default function Dashboard() {
                 <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color="#2A9D8F" onPress={salvarTransacao} disabled={loadingTrans} />
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+      <Modal animationType="fade" transparent visible={modalIaEmBreve} onRequestClose={() => setModalIaEmBreve(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxWidth: 390, alignItems: "center", borderTopWidth: 4, borderTopColor: "#7C6FF0" }]}>
+            <View style={{ width: 68, height: 68, borderRadius: 24, backgroundColor: "#7C6FF022", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <MaterialIcons name="auto-awesome" size={36} color="#7C6FF0" />
+            </View>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>IA FinFlow</Text>
+            <View style={{ backgroundColor: "#7C6FF022", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 14 }}>
+              <Text style={{ color: "#7C6FF0", fontWeight: "900", letterSpacing: 1 }}>EM BREVE</Text>
+            </View>
+            <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 21, marginBottom: 20 }}>
+              Estamos preparando um assistente financeiro inteligente, seguro e realmente útil para sua rotina.
+            </Text>
+            <TouchableOpacity style={{ width: "100%", minHeight: 50, borderRadius: 12, backgroundColor: "#7C6FF0", alignItems: "center", justifyContent: "center" }} onPress={() => setModalIaEmBreve(false)}>
+              <Text style={{ color: "#FFF", fontWeight: "800" }}>Entendi</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
