@@ -1,6 +1,16 @@
-# FinFlow
+<p align="center">
+  <img src="./assets/images/icon.png" alt="Logo do FinFlow" width="128">
+</p>
 
-Aplicativo mobile de organização financeira pessoal e compartilhada, desenvolvido com React Native, Expo e Supabase.
+<h1 align="center">FinFlow</h1>
+
+<p align="center">
+  Organização financeira pessoal e compartilhada em uma experiência simples, segura e inteligente.
+</p>
+
+<p align="center">
+  Um projeto mantido pela equipe <a href="https://github.com/FinFlowA">FinFlowA</a>.
+</p>
 
 [![React Native](https://img.shields.io/badge/React_Native-0.81-61DAFB?logo=react&logoColor=white)](https://reactnative.dev/)
 [![Expo](https://img.shields.io/badge/Expo-SDK_54-000020?logo=expo&logoColor=white)](https://expo.dev/)
@@ -11,7 +21,7 @@ Aplicativo mobile de organização financeira pessoal e compartilhada, desenvolv
 
 O FinFlow reúne contas, receitas, despesas, transferências, objetivos financeiros e cartões de crédito em uma única experiência. O app permite acompanhar valores realizados e agendados, criar recorrências e compartilhar contas específicas com outra pessoa.
 
-O projeto é mantido de forma colaborativa. O histórico completo de autoria está disponível em [Contributors](https://github.com/FinFlowA/app-financas/graphs/contributors).
+O projeto é mantido de forma colaborativa pela equipe FinFlow. O histórico técnico completo está disponível em [Contributors](https://github.com/FinFlowA/app-financas/graphs/contributors).
 
 ## Funcionalidades
 
@@ -170,17 +180,11 @@ docs/
   supabase-migration.sql
 ```
 
-## Colaboração e autoria
+## Colaboração
 
-O repositório está hospedado na organização compartilhada `FinFlowA`, representando a propriedade conjunta do projeto. A autoria de cada alteração é preservada pelo histórico de commits do Git.
+O FinFlow é um projeto colaborativo mantido pela organização [FinFlowA](https://github.com/FinFlowA). Planejamento, desenvolvimento, manutenção, documentação e evolução do produto são conduzidos de forma conjunta pela equipe.
 
-Principais participantes:
-
-- Luis Henrique Palacio — criação do projeto e desenvolvimento da base do aplicativo; integração com Supabase e conta conjunta; implementação e evolução do assistente financeiro; cartões, planos, notificações, interface, identidade visual e automações de publicação pelo Expo.
-- Gabriel Henrique — desenvolvimento, correções, regras financeiras, documentação, publicação e evolução do aplicativo.
-- Demais contribuições automatizadas ou assistidas aparecem no histórico do repositório.
-
-Luis Henrique Palacio e Gabriel Henrique são proprietários da organização e responsáveis pela continuidade do projeto.
+Contribuições técnicas permanecem registradas naturalmente no histórico do Git, preservando a rastreabilidade do projeto sem dividir o produto por responsabilidades individuais.
 
 ## Roadmap
 
@@ -191,22 +195,11 @@ Luis Henrique Palacio e Gabriel Henrique são proprietários da organização e 
 - [ ] Exportar relatórios em PDF.
 - [ ] Evoluir o funcionamento offline.
 
-## Responsáveis pelo FinFlow
-
-O FinFlow foi construído e continua sendo evoluído de forma colaborativa por Luis Henrique Palacio e Gabriel Henrique.
-
-| Responsável | Participação | Perfil |
-|---|---|---|
-| Luis Henrique Palacio | Criação do projeto, arquitetura inicial, Supabase, conta conjunta, assistente financeiro, cartões, planos, notificações, interface, identidade visual e automações do Expo | [@LuishPalacio](https://github.com/LuishPalacio) |
-| Gabriel Henrique | Desenvolvimento, correções, regras financeiras, documentação, publicações e evolução do aplicativo | [@GbrielH](https://github.com/GbrielH) |
-
-### Links do projeto
+## Links do projeto
 
 - Código-fonte: [FinFlowA/app-financas](https://github.com/FinFlowA/app-financas)
 - Aplicativo no Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
 - Documentos legais: [FinFlowA/finflow-legal](https://github.com/FinFlowA/finflow-legal)
 - Histórico completo: [commits](https://github.com/FinFlowA/app-financas/commits/main) e [contributors](https://github.com/FinFlowA/app-financas/graphs/contributors)
-
-> O FinFlow pertence à organização compartilhada `FinFlowA`, administrada em conjunto por Luis Henrique Palacio e Gabriel Henrique.
 
 Contribuições, relatos de erro e sugestões são bem-vindos.
