@@ -8,6 +8,8 @@ const IA_BETA_EMAILS = new Set([
   "henrique0limah@gmail.com",
 ]);
 
+const IA_BETA_ATIVA = false;
+
 export function usuarioPodeAcessarIA(email?: string | null): boolean {
-  return IA_BETA_EMAILS.has((email ?? "").trim().toLowerCase());
+  return IA_BETA_ATIVA && IA_BETA_EMAILS.has((email ?? "").trim().toLowerCase());
 }
