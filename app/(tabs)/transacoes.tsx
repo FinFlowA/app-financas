@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
@@ -85,9 +85,10 @@ const formatarMesAno = (yyyymm: string) => {
 
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
+  const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EEF3F8",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     textoPrincipal: isDark ? "#ffffff" : "#111827",
     textoSecundario: isDark ? "#AAAAAA" : "#526071",
     cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
@@ -865,8 +866,14 @@ export default function TransacoesScreen() {
                         }},
                       ]);
                     } else {
-                      setContaPagFaturaId(contas[0]?.id ?? null);
-                      setModalPagFatura(g);
+                      Alert.alert(
+                        "Pagamento de fatura",
+                        "Para garantir as regras de pagamento integral, parcial e saldo para o próximo mês, o pagamento será feito na tela do cartão.",
+                        [
+                          { text: "Cancelar", style: "cancel" },
+                          { text: "Abrir cartão", onPress: () => router.push("/cartoes" as any) },
+                        ],
+                      );
                     }
                   }}
                   activeOpacity={0.7}

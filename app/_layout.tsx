@@ -181,12 +181,12 @@ export default function RootLayout() {
       try {
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
-          Alert.alert("Nova Atualização!", "Baixando as novidades do FinFlow...", [{ text: "Aguarde..." }]);
+          Alert.alert("Nova versão encontrada", "O FinFlow está baixando melhorias de estabilidade e novas funções.", [{ text: "Continuar" }]);
           await Updates.fetchUpdateAsync();
           Alert.alert(
-            "Sucesso!",
-            "O aplicativo será reiniciado para aplicar as melhorias.",
-            [{ text: "OK", onPress: () => Updates.reloadAsync() }],
+            "FinFlow atualizado!",
+            "Novidades desta versão:\n\n• Recorrências preservam movimentações concluídas\n• Confirmação da data real de pagamento\n• Pagamento parcial de faturas\n• Melhorias no cartão e no tema claro\n\nO aplicativo será reiniciado para aplicar tudo.",
+            [{ text: "Ver melhorias", onPress: () => Updates.reloadAsync() }],
           );
         }
       } catch (error) {

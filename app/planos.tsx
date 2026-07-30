@@ -37,7 +37,7 @@ export default function PlanosScreen() {
   const [processando, setProcessando] = useState(false);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FB",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     texto: isDark ? "#FFFFFF" : "#111827",
     secundario: isDark ? "#AAAAAA" : "#6B7280",
     card: isDark ? "#1E1E1E" : "#FFFFFF",

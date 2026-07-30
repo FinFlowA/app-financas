@@ -164,7 +164,7 @@ export default function Dashboard() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EEF3F8",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     textoPrincipal: isDark ? "#ffffff" : "#111827",
     textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
     cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",

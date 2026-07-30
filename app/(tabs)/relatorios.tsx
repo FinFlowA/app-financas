@@ -49,7 +49,7 @@ export default function RelatoriosScreen() {
   const { isDark, session } = useAppTheme();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#ffffff",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     textoPrincipal: isDark ? "#ffffff" : "#1A1A1A",
     textoSecundario: isDark ? "#AAAAAA" : "#666666",
     cardFundo: isDark ? "#1E1E1E" : "#F8F9FA",

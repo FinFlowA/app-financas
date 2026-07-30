@@ -158,7 +158,7 @@ export default function CartoesScreen() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EEF3F8",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     texto: isDark ? "#FFFFFF" : "#111827",
     secundario: isDark ? "#AAAAAA" : "#526071",
     card: isDark ? "#1E1E1E" : "#FFFFFF",
@@ -215,6 +215,7 @@ export default function CartoesScreen() {
   const [contaPagamentoId, setContaPagamentoId] = useState<number | null>(null);
   const [valorPagamento, setValorPagamento] = useState("");
   const [modalPagamentoParcial, setModalPagamentoParcial] = useState(false);
+  const [modalJuros, setModalJuros] = useState(false);
   const [tipoJuros, setTipoJuros] = useState<"valor" | "percentual">("valor");
   const [valorJuros, setValorJuros] = useState("");
 
@@ -333,6 +334,12 @@ export default function CartoesScreen() {
 
     const valorParcela = +(valor / parcelas).toFixed(2);
     const mesPrimeiro = mesParaFatura(dataCompra, cartaoAberto.dia_fechamento);
+    const [anoFatura, mesFatura] = mesPrimeiro.split("-").map(Number);
+    const ultimoDia = new Date(anoFatura, mesFatura, 0).getDate();
+    const dataFechamento = new Date(anoFatura, mesFatura - 1, Math.min(cartaoAberto.dia_fechamento, ultimoDia), 23, 59, 59);
+    if (new Date() > dataFechamento) {
+      return Alert.alert("Fatura fechada", `A fatura de ${formatarMes(mesPrimeiro)} já fechou. Não é possível adicionar novas compras nela.`);
+    }
 
     setLoadingCompra(true);
 
@@ -1118,11 +1125,11 @@ export default function CartoesScreen() {
                 </TouchableOpacity>
               ))}
 
-              <View style={[estilos.modalBtns, { marginTop: 16 }]}>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamento(false)}>
+              <View style={{ marginTop: 16, gap: 10 }}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, flex: 0, minHeight: 50, justifyContent: "center" }]} onPress={() => setModalPagamento(false)}>
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#10B981" }]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#10B981", flex: 0, minHeight: 52, justifyContent: "center" }]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId}>
                   <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar Pagamento</Text>
                 </TouchableOpacity>
               </View>
@@ -1136,7 +1143,12 @@ export default function CartoesScreen() {
         <Modal animationType="fade" transparent visible onRequestClose={() => setModalPagamentoParcial(false)}>
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
-              <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagamento menor que a fatura</Text>
+              <View style={estilos.modalHeaderRow}>
+                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagamento menor que a fatura</Text>
+                <TouchableOpacity onPress={() => setModalPagamentoParcial(false)}>
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
+              </View>
               <Text style={{ color: Cores.secundario, lineHeight: 20, marginBottom: 14 }}>
                 Você pagou {fmtReais(Number(valorPagamento.replace(",", ".")) || 0)} de {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}. Escolha como tratar o restante.
               </Text>
@@ -1146,23 +1158,43 @@ export default function CartoesScreen() {
                   <Text style={{ color: Cores.secundario, fontSize: 12, marginTop: 3 }}>A fatura atual continua aberta com o saldo restante.</Text>
                 </View>
               </TouchableOpacity>
-              <Text style={[estilos.label, { color: Cores.secundario, marginTop: 14 }]}>Juros para levar o saldo à próxima fatura</Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
-                {(["valor", "percentual"] as const).map((tipo) => (
-                  <TouchableOpacity key={tipo} onPress={() => setTipoJuros(tipo)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9, backgroundColor: tipoJuros === tipo ? "#2563EB" : Cores.pillFundo }}>
-                    <Text style={{ color: tipoJuros === tipo ? "#FFF" : Cores.texto, fontWeight: "600" }}>{tipo === "valor" ? "R$" : "%"}</Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} value={valorJuros} onChangeText={setValorJuros} keyboardType="decimal-pad" placeholder={tipoJuros === "valor" ? "Juros em reais (opcional)" : "Juros em percentual (opcional)"} placeholderTextColor={Cores.secundario} />
-              <TouchableOpacity style={[estilos.contaOpcao, { borderColor: "#F59E0B", backgroundColor: Cores.pillFundo, marginTop: 8 }]} onPress={() => registrarPagamentoMenor(true)}>
+              <TouchableOpacity style={[estilos.contaOpcao, { borderColor: "#F59E0B", backgroundColor: Cores.pillFundo, marginTop: 8 }]} onPress={() => { setModalPagamentoParcial(false); setModalJuros(true); }}>
                 <View>
                   <Text style={{ color: Cores.texto, fontWeight: "700" }}>Levar saldo para a próxima fatura</Text>
                   <Text style={{ color: Cores.secundario, fontSize: 12, marginTop: 3 }}>O restante e os juros serão lançados no próximo mês.</Text>
                 </View>
               </TouchableOpacity>
-              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, marginTop: 14, alignSelf: "stretch" }]} onPress={() => setModalPagamentoParcial(false)}>
+              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, marginTop: 14, flex: 0, minHeight: 50, justifyContent: "center" }]} onPress={() => setModalPagamentoParcial(false)}>
                 <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Voltar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {modalJuros && cartaoAberto && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalJuros(false)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <View style={estilos.modalHeaderRow}>
+                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Juros do saldo restante</Text>
+                <TouchableOpacity onPress={() => setModalJuros(false)}>
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
+              </View>
+              <Text style={{ color: Cores.secundario, lineHeight: 20, marginBottom: 14 }}>
+                Informe os juros cobrados pelo banco. Este campo é opcional e pode ficar zerado.
+              </Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+                {(["valor", "percentual"] as const).map((tipo) => (
+                  <TouchableOpacity key={tipo} onPress={() => setTipoJuros(tipo)} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 9, backgroundColor: tipoJuros === tipo ? "#2563EB" : Cores.pillFundo }}>
+                    <Text style={{ color: tipoJuros === tipo ? "#FFF" : Cores.texto, fontWeight: "700" }}>{tipo === "valor" ? "Valor em R$" : "Percentual %"}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} value={valorJuros} onChangeText={setValorJuros} keyboardType="decimal-pad" placeholder={tipoJuros === "valor" ? "0,00 (opcional)" : "0% (opcional)"} placeholderTextColor={Cores.secundario} />
+              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#10B981", flex: 0, minHeight: 52, justifyContent: "center" }]} onPress={() => { setModalJuros(false); registrarPagamentoMenor(true); }}>
+                <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar e lançar na próxima fatura</Text>
               </TouchableOpacity>
             </View>
           </View>

@@ -92,7 +92,7 @@ export default function CaixinhasScreen() {
   const { isDark, session, showToast, verificarLimite } = useAppTheme();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FB",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     textoPrincipal: isDark ? "#ffffff" : "#111827",
     textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
     cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",

@@ -31,7 +31,7 @@ export default function ConfiguracoesScreen() {
   const meuId = session?.user?.id;
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FB",
+    fundo: isDark ? "#121212" : "#EAF0F6",
     texto: isDark ? "#ffffff" : "#111827",
     secundario: isDark ? "#AAAAAA" : "#6B7280",
     card: isDark ? "#1E1E1E" : "#FFFFFF",
