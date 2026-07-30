@@ -20,8 +20,8 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 
 // URLs das páginas legais (GitHub Pages — atualizar quando publicado)
-const URL_PRIVACIDADE = "https://luishpalacio.github.io/finflow-docs/privacy-policy";
-const URL_TERMOS = "https://luishpalacio.github.io/finflow-docs/terms-of-use";
+const URL_PRIVACIDADE = "https://luishpalacio.github.io/app-financas/#privacidade";
+const URL_TERMOS = "https://luishpalacio.github.io/app-financas/#termos";
 
 export default function ConfiguracoesScreen() {
   const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, setPlano } = useAppTheme();

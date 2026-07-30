@@ -1,261 +1,90 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FinFlow — Documentos Legais</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#08785f">
+  <meta name="description" content="Termos de Uso e Política de Privacidade do FinFlow.">
+  <title>FinFlow — Termos e Privacidade</title>
   <style>
-    :root {
-      --primary: #2A9D8F;
-      --secondary: #F4A261;
-      --bg: #0f0f0f;
-      --card: #1a1a1a;
-      --border: #2a2a2a;
-      --text: #f0f0f0;
-      --muted: #888;
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-    }
-
-    /* ─── Header ─────────────────────────────── */
-    .header {
-      background: linear-gradient(135deg, #0f0f0f 0%, #1a2a2a 100%);
-      border-bottom: 1px solid var(--border);
-      padding: 24px 20px 0;
-      text-align: center;
-    }
-    .logo-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
-    .logo-icon {
-      width: 48px; height: 48px; border-radius: 12px;
-      background: linear-gradient(135deg, var(--primary), #1a7a6e);
-      display: flex; align-items: center; justify-content: center;
-      font-size: 24px;
-    }
-    .logo-title { font-size: 28px; font-weight: 800; color: var(--text); }
-    .header-sub { color: var(--muted); font-size: 14px; margin-bottom: 20px; }
-
-    /* ─── Tabs ───────────────────────────────── */
-    .tabs {
-      display: flex; gap: 0; justify-content: center;
-      background: var(--card);
-      border-radius: 12px 12px 0 0;
-      padding: 4px;
-      max-width: 420px;
-      margin: 0 auto;
-    }
-    .tab-btn {
-      flex: 1; padding: 10px 16px; border: none; border-radius: 8px;
-      background: transparent; color: var(--muted); cursor: pointer;
-      font-size: 14px; font-weight: 600; transition: all 0.2s;
-    }
-    .tab-btn.active { background: var(--primary); color: #fff; }
-
-    /* ─── Content ────────────────────────────── */
-    .container { max-width: 860px; margin: 0 auto; padding: 32px 20px 60px; }
-    .content { display: none; }
-    .content.active { display: block; }
-
-    /* ─── Markdown-style ─────────────────────── */
-    h1 { font-size: 28px; font-weight: 800; color: var(--primary); margin-bottom: 8px; }
-    h2 { font-size: 18px; font-weight: 700; color: var(--secondary); margin: 32px 0 12px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
-    h3 { font-size: 15px; font-weight: 600; margin: 20px 0 8px; color: #ccc; }
-    p { line-height: 1.7; color: #ccc; margin-bottom: 12px; font-size: 14px; }
-    ul, ol { padding-left: 24px; margin-bottom: 12px; }
-    li { line-height: 1.7; color: #ccc; font-size: 14px; margin-bottom: 4px; }
-    strong { color: var(--text); }
-    .badge {
-      display: inline-block; background: rgba(42,157,143,0.2);
-      color: var(--primary); border: 1px solid var(--primary);
-      padding: 2px 10px; border-radius: 20px; font-size: 12px; font-weight: 600;
-    }
-    .last-update { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
-
-    /* ─── Table ──────────────────────────────── */
-    table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13px; }
-    th { background: var(--card); color: var(--muted); text-align: left; padding: 10px 12px; border-bottom: 2px solid var(--border); }
-    td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: #ccc; }
-    tr:hover td { background: rgba(255,255,255,0.03); }
-
-    /* ─── Card highlight ─────────────────────── */
-    .highlight {
-      background: rgba(42,157,143,0.08); border: 1px solid rgba(42,157,143,0.3);
-      border-radius: 10px; padding: 16px; margin: 20px 0;
-    }
-    .highlight p { margin: 0; }
-
-    /* ─── Footer ─────────────────────────────── */
-    footer {
-      text-align: center; padding: 24px 20px;
-      border-top: 1px solid var(--border);
-      color: var(--muted); font-size: 12px;
-    }
-    footer a { color: var(--primary); text-decoration: none; }
-    footer a:hover { text-decoration: underline; }
-
-    @media (max-width: 600px) {
-      h1 { font-size: 22px; }
-      .container { padding: 20px 16px 40px; }
-    }
+    :root{color-scheme:light dark;--bg:#f3f5f0;--card:rgba(255,255,255,.86);--text:#14221e;--muted:#61706a;--line:#dbe4de;--brand:#08785f;--soft:#e3f3ed;--shadow:0 22px 70px rgba(12,49,39,.11)}
+    @media(prefers-color-scheme:dark){:root{--bg:#0b1110;--card:rgba(22,30,28,.9);--text:#eef7f3;--muted:#a1ada8;--line:#293632;--brand:#54d4aa;--soft:#142d25;--shadow:0 22px 70px rgba(0,0,0,.35)}}
+    *{box-sizing:border-box}html{scroll-behavior:smooth;scroll-padding-top:92px}body{margin:0;background:radial-gradient(circle at 7% 0%,rgba(32,164,127,.14),transparent 30rem),radial-gradient(circle at 100% 28%,rgba(8,120,95,.09),transparent 34rem),var(--bg);color:var(--text);font:16px/1.72 Inter,system-ui,-apple-system,"Segoe UI",sans-serif}a{color:var(--brand)}
+    .top{position:sticky;top:0;z-index:5;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--bg) 85%,transparent);backdrop-filter:blur(18px)}.topin{max-width:1120px;min-height:70px;margin:auto;padding:10px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}.brand{display:flex;align-items:center;gap:11px;font-weight:850;letter-spacing:-.03em}.mark{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(145deg,#064e40,#21b58b);box-shadow:0 8px 24px rgba(8,120,95,.25)}.mark svg{width:22px}.nav{display:flex;gap:6px}.nav a{padding:8px 12px;border-radius:999px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:750}.nav a:hover,.nav a.active{background:var(--soft);color:var(--brand)}
+    .hero{max-width:1120px;margin:auto;padding:70px 24px 42px;display:grid;grid-template-columns:1.3fr .7fr;align-items:end;gap:36px}.eyebrow,.label{color:var(--brand);font-size:13px;font-weight:850;letter-spacing:.12em;text-transform:uppercase}h1{max-width:720px;margin:12px 0 18px;font-size:clamp(40px,6vw,72px);line-height:1.02;letter-spacing:-.055em}.lead{max-width:680px;margin:0;color:var(--muted);font-size:18px}.updated{padding:20px;border:1px solid var(--line);border-radius:22px;background:var(--card);box-shadow:var(--shadow)}.updated span{display:block;color:var(--muted);font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.updated strong{display:block;margin-top:5px;font-size:17px}
+    .layout{max-width:1120px;margin:auto;padding:18px 24px 80px;display:grid;grid-template-columns:250px minmax(0,1fr);gap:32px}aside{align-self:start;position:sticky;top:100px}.side{padding:12px;border:1px solid var(--line);border-radius:22px;background:var(--card)}.side a{display:block;padding:11px 12px;border-radius:12px;color:var(--muted);text-decoration:none;font-size:14px;font-weight:750}.side a:hover{background:var(--soft);color:var(--brand)}.contact{margin-top:14px;padding:18px;border-radius:20px;background:linear-gradient(145deg,#075a49,#0b8a6c);color:#fff}.contact small{display:block;opacity:.75}.contact a{color:#fff;font-size:13px;overflow-wrap:anywhere}
+    article{scroll-margin-top:92px;margin-bottom:28px;padding:clamp(24px,5vw,54px);border:1px solid var(--line);border-radius:30px;background:var(--card);box-shadow:var(--shadow)}article>header{margin-bottom:34px;padding-bottom:28px;border-bottom:1px solid var(--line)}h2{margin:8px 0 12px;font-size:clamp(30px,5vw,46px);line-height:1.08;letter-spacing:-.04em}h3{margin:38px 0 10px;font-size:21px;line-height:1.3;letter-spacing:-.02em}p,li{color:var(--muted)}strong{color:var(--text)}ul{padding-left:22px}li{margin:7px 0}.notice{margin:24px 0;padding:18px 20px;border-left:4px solid var(--brand);border-radius:8px 16px 16px 8px;background:var(--soft)}.notice p{margin:0;color:var(--text)}.tablewrap{overflow:auto;margin:20px 0;border:1px solid var(--line);border-radius:16px}table{width:100%;min-width:640px;border-collapse:collapse;font-size:14px}th,td{padding:14px 16px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line)}th{background:var(--soft);color:var(--text)}td{color:var(--muted)}tr:last-child td{border:0}footer{padding:28px 24px 50px;text-align:center;color:var(--muted);font-size:13px}
+    @media(max-width:820px){.hero{grid-template-columns:1fr;padding-top:48px}.layout{grid-template-columns:1fr}aside{position:static}.side{display:flex;overflow:auto}.side a{white-space:nowrap}.contact{display:none}}@media(max-width:560px){.topin{padding-inline:16px}.brand b{display:none}.nav a{font-size:12px;padding-inline:9px}.hero,.layout{padding-left:16px;padding-right:16px}article{border-radius:22px}}
   </style>
 </head>
 <body>
-
-<div class="header">
-  <div class="logo-row">
-    <div class="logo-icon">💰</div>
-    <span class="logo-title">FinFlow</span>
+  <nav class="top" aria-label="Navegação principal"><div class="topin">
+    <div class="brand"><span class="mark"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 18V9m5 9V5m5 13v-7m5 7V3"/></svg></span><b>FinFlow</b></div>
+    <div class="nav"><a href="#privacidade">Privacidade</a><a href="#termos">Termos de Uso</a></div>
+  </div></nav>
+  <header class="hero">
+    <div><div class="eyebrow">Documentos legais</div><h1>Clareza para cuidar do seu dinheiro.</h1><p class="lead">Entenda, em linguagem direta, como o FinFlow funciona, quais dados utiliza e quais são os seus direitos.</p></div>
+    <div class="updated"><span>Última atualização</span><strong>30 de julho de 2026</strong></div>
+  </header>
+  <div class="layout">
+    <aside><nav class="side"><a href="#privacidade">Política de Privacidade</a><a href="#termos">Termos de Uso</a><a href="#contato">Contato</a></nav><div class="contact"><small>Canal de privacidade</small><a href="mailto:luispalacio1617@gmail.com">luispalacio1617@gmail.com</a></div></aside>
+    <main>
+      <article id="privacidade">
+        <header><div class="label">Documento 01</div><h2>Política de Privacidade</h2><p>Esta Política explica como os dados pessoais são tratados quando você cria uma conta e utiliza o FinFlow.</p></header>
+        <h3>1. Responsável pelo tratamento</h3>
+        <p>O <strong>FinFlow</strong> é um aplicativo de organização financeira pessoal desenvolvido e mantido por <strong>Luís Henrique Palácio</strong>, responsável pelas decisões sobre o tratamento descrito nesta Política. Contato: <a href="mailto:luispalacio1617@gmail.com">luispalacio1617@gmail.com</a>.</p>
+        <h3>2. Dados tratados</h3>
+        <div class="tablewrap"><table><thead><tr><th>Categoria</th><th>Exemplos</th><th>Finalidade</th></tr></thead><tbody>
+          <tr><td>Cadastro e perfil</td><td>Nome, e-mail, telefone opcional e identificador da conta</td><td>Criar, autenticar, recuperar e personalizar sua conta.</td></tr>
+          <tr><td>Dados financeiros inseridos</td><td>Contas, saldos, receitas, despesas, categorias, objetivos, cartões, compras e faturas</td><td>Entregar as funções de organização financeira solicitadas.</td></tr>
+          <tr><td>Compartilhamento</td><td>Convites, vínculo com parceiro e registros compartilhados</td><td>Operar a função compartilhada quando ambos optarem por usá-la.</td></tr>
+          <tr><td>Suporte</td><td>Feedback, sugestões, reclamações e mensagens</td><td>Responder solicitações e melhorar o serviço.</td></tr>
+          <tr><td>Dispositivo</td><td>Permissão/token de notificação, preferências locais e dados técnicos necessários</td><td>Enviar lembretes autorizados, guardar preferências e proteger a sessão.</td></tr>
+          <tr><td>Interações com IA</td><td>Perguntas e contexto financeiro necessário à resposta</td><td>Fornecer o assistente quando estiver disponível e for acionado.</td></tr>
+        </tbody></table></div>
+        <div class="notice"><p><strong>Biometria:</strong> o FinFlow apenas pede ao sistema operacional que confirme sua identidade. Impressão digital e reconhecimento facial permanecem no dispositivo e não são recebidos pelo FinFlow.</p></div>
+        <h3>3. Bases legais e usos</h3>
+        <p>Dados necessários à conta e às funções escolhidas são tratados principalmente para <strong>executar o serviço solicitado</strong>. Permissões opcionais, como notificações, dependem da sua escolha. Obrigações legais, segurança, prevenção a fraude e defesa de direitos podem justificar tratamentos específicos quando aplicável.</p>
+        <p>O FinFlow não utiliza seus dados financeiros para conceder crédito, vender produtos financeiros ou tomar decisões automatizadas com efeitos jurídicos sobre você.</p>
+        <h3>4. Fornecedores e transferência internacional</h3>
+        <p>O FinFlow não vende dados pessoais. Conforme as funções usadas, dados podem ser processados por <strong>Supabase</strong> (autenticação e banco de dados), <strong>Expo</strong> (distribuição técnica, atualizações e notificações) e <strong>Groq</strong> (mensagens do assistente de IA, quando disponível e acionado).</p>
+        <p>Fornecedores podem processar dados fora do Brasil, observadas medidas contratuais e técnicas compatíveis com a legislação. Dados também poderão ser divulgados para cumprir obrigação legal, ordem válida de autoridade ou proteger direitos e segurança.</p>
+        <h3>5. Conta compartilhada</h3>
+        <p>O compartilhamento é opcional. Após aceitar o vínculo, cada participante poderá visualizar e interagir com os registros definidos como compartilhados. Não insira dados de terceiros sem autorização. O vínculo pode ser desfeito nas configurações.</p>
+        <h3>6. Retenção e segurança</h3>
+        <p>Os dados são mantidos enquanto a conta estiver ativa e pelo tempo necessário às finalidades informadas, ao cumprimento de obrigações legais, à prevenção de fraude e ao exercício de direitos. Após pedido de exclusão, são excluídos ou anonimizados, ressalvadas hipóteses legais de retenção e cópias temporárias de segurança.</p>
+        <p>São adotadas medidas razoáveis de segurança, incluindo autenticação, conexões protegidas e controles de acesso. Nenhum sistema é totalmente imune; incidentes relevantes serão tratados conforme a legislação.</p>
+        <h3>7. Seus direitos sob a LGPD</h3>
+        <ul><li>confirmação do tratamento e acesso aos dados;</li><li>correção de dados incompletos, inexatos ou desatualizados;</li><li>anonimização, bloqueio ou eliminação de dados desnecessários ou irregulares;</li><li>portabilidade, conforme regulamentação aplicável;</li><li>informações sobre compartilhamento e sobre a possibilidade de não consentir;</li><li>revogação do consentimento e eliminação dos dados tratados com essa base, quando cabível;</li><li>oposição a tratamento irregular e revisão de decisões unicamente automatizadas, quando houver.</li></ul>
+        <p>Você pode editar o perfil, controlar notificações, desfazer parceria e apagar a conta pelo app. Para outros pedidos, use o contato abaixo. Poderemos confirmar sua identidade antes do atendimento.</p>
+        <h3>8. Crianças e adolescentes</h3><p>O FinFlow não é direcionado a crianças. Adolescentes devem utilizá-lo com participação do responsável legal, observadas a legislação brasileira e a proteção de seu melhor interesse.</p>
+        <h3>9. Atualizações</h3><p>Esta Política pode mudar para refletir alterações no produto ou na legislação. Mudanças relevantes serão comunicadas de modo adequado, e a versão vigente permanecerá nesta página.</p>
+      </article>
+      <article id="termos">
+        <header><div class="label">Documento 02</div><h2>Termos de Uso</h2><p>Estes Termos regulam o acesso e o uso do FinFlow. Leia-os antes de criar sua conta.</p></header>
+        <h3>1. Aceitação</h3><p>Ao criar uma conta ou utilizar o FinFlow, você declara que leu e concorda com estes Termos e com a Política de Privacidade. Se usar o serviço em nome de outra pessoa, declara possuir autorização.</p>
+        <h3>2. O serviço</h3><p>O FinFlow ajuda a registrar e visualizar contas, movimentações, categorias, objetivos, cartões, compras, faturas, projeções, relatórios, lembretes e registros compartilhados com parceiro autorizado. Algumas funções podem estar em desenvolvimento, teste ou limitadas por plano.</p>
+        <div class="notice"><p><strong>Importante:</strong> o FinFlow é uma ferramenta de organização. Não é banco, instituição de pagamento, corretora, consultoria contábil ou de investimentos e não movimenta dinheiro por conta própria.</p></div>
+        <h3>3. Conta e segurança</h3><ul><li>Forneça dados corretos e atualizados;</li><li>proteja senha, dispositivo e sessão;</li><li>avise em caso de uso não autorizado;</li><li>não ceda nem comercialize o acesso.</li></ul><p>Você é responsável pelos registros inseridos e por conferir valores, datas, saldos e projeções antes de tomar decisões.</p>
+        <h3>4. Planos</h3><p>O app pode oferecer planos com limites e recursos diferentes. Preço, periodicidade, cobrança, renovação, cancelamento e eventual reembolso devem ser apresentados antes da contratação. Enquanto não houver meio de pagamento ativo e confirmação expressa da compra, exibir um plano ou preço no app não representa cobrança.</p>
+        <h3>5. Uso permitido</h3><p>É proibido usar o serviço para fins ilícitos ou fraudulentos; acessar contas sem autorização; explorar falhas; introduzir código malicioso; interferir na infraestrutura; automatizar acessos abusivos; ou copiar e distribuir o produto em desacordo com a lei.</p>
+        <h3>6. Assistente de IA</h3><p>Quando disponível, o assistente pode gerar respostas imprecisas. O conteúdo é informativo e não constitui recomendação financeira, jurídica, contábil ou de investimento. Confirme informações importantes e consulte profissional qualificado.</p>
+        <h3>7. Parceiro</h3><p>Convite e aceite devem ser voluntários. Cada participante responde pelo que compartilha e pelas ações em sua conta. Ao encerrar o vínculo, os registros seguem as regras exibidas no app e nesta Política.</p>
+        <h3>8. Disponibilidade e mudanças</h3><p>O serviço pode passar por manutenção ou indisponibilidade temporária. Recursos podem ser corrigidos, alterados ou descontinuados, preservados os direitos aplicáveis e com comunicação quando necessária.</p>
+        <h3>9. Propriedade intelectual</h3><p>Nome, identidade, interfaces, textos e software são protegidos e pertencem aos respectivos titulares. É concedida somente licença pessoal, limitada, revogável, não exclusiva e intransferível para uso regular do app.</p>
+        <h3>10. Responsabilidades</h3><p>Os resultados dependem dos dados inseridos e podem sofrer falhas. Na extensão permitida pela lei, o FinFlow não responde por decisões tomadas exclusivamente com base em projeções, relatórios ou respostas automáticas, nem por eventos fora de controle razoável. Nada nestes Termos afasta direitos ou garantias obrigatórios do consumidor.</p>
+        <h3>11. Encerramento</h3><p>O acesso pode ser limitado em caso de fraude, risco de segurança, determinação legal ou violação destes Termos. Você pode solicitar a exclusão nas configurações; ela é permanente, ressalvadas retenções legalmente permitidas.</p>
+        <h3>12. Alterações</h3><p>Mudanças relevantes serão informadas e, quando exigido, será solicitado novo aceite. A versão vigente e sua data estarão nesta página.</p>
+        <h3>13. Lei e conflitos</h3><p>Aplicam-se as leis brasileiras. Permanecem preservados os direitos do consumidor, inclusive o foro legalmente competente de seu domicílio quando aplicável.</p>
+      </article>
+      <article id="contato"><header><div class="label">Fale conosco</div><h2>Contato</h2><p>Dúvidas, solicitações de privacidade ou questões sobre o FinFlow:</p></header><p><strong>Responsável:</strong> Luís Henrique Palácio<br><strong>E-mail:</strong> <a href="mailto:luispalacio1617@gmail.com">luispalacio1617@gmail.com</a></p><p>Se uma solicitação relativa à LGPD não for solucionada, o titular poderá recorrer à Autoridade Nacional de Proteção de Dados e aos órgãos de defesa do consumidor, conforme aplicável.</p></article>
+    </main>
   </div>
-  <p class="header-sub">Controle financeiro inteligente</p>
-  <div class="tabs">
-    <button class="tab-btn active" onclick="mostrarAba('privacidade', this)">Política de Privacidade</button>
-    <button class="tab-btn" onclick="mostrarAba('termos', this)">Termos de Uso</button>
-  </div>
-</div>
-
-<div class="container">
-
-  <!-- ─── POLÍTICA DE PRIVACIDADE ─── -->
-  <div id="privacidade" class="content active">
-    <h1>Política de Privacidade</h1>
-    <p class="last-update"><strong>Última atualização:</strong> 14 de maio de 2026</p>
-
-    <h2>1. Quem Somos</h2>
-    <p>O <strong>FinFlow</strong> é um aplicativo de controle financeiro pessoal desenvolvido por <strong>Luís Henrique Palácio</strong>.</p>
-    <p><strong>Responsável pelo Tratamento de Dados:</strong><br>
-    Nome: Luís Henrique Palácio<br>
-    E-mail: <a href="mailto:luispalacio1617@gmail.com" style="color:var(--primary)">luispalacio1617@gmail.com</a></p>
-
-    <h2>2. Dados que Coletamos</h2>
-    <h3>2.1 Dados fornecidos pelo usuário</h3>
-    <table>
-      <tr><th>Dado</th><th>Finalidade</th><th>Base Legal</th></tr>
-      <tr><td>Nome completo</td><td>Personalização da interface</td><td>Consentimento</td></tr>
-      <tr><td>Endereço de e-mail</td><td>Autenticação e recuperação de acesso</td><td>Execução de contrato</td></tr>
-      <tr><td>Número de telefone</td><td>Identificação opcional do perfil</td><td>Consentimento</td></tr>
-      <tr><td>Dados financeiros (contas, lançamentos, cartões, caixinhas)</td><td>Prestação do serviço principal</td><td>Execução de contrato</td></tr>
-    </table>
-
-    <h3>2.2 Dados biométricos</h3>
-    <div class="highlight">
-      <p>Os dados biométricos (impressão digital ou reconhecimento facial) são processados <strong>exclusivamente pelo sistema operacional do dispositivo</strong> e <strong>nunca são transmitidos</strong> aos nossos servidores.</p>
-    </div>
-
-    <h2>3. Como Usamos seus Dados</h2>
-    <ul>
-      <li><strong>Prestação do serviço:</strong> armazenar e sincronizar suas informações financeiras</li>
-      <li><strong>Segurança:</strong> autenticação e controle de acesso</li>
-      <li><strong>Notificações:</strong> lembretes de vencimentos (somente com permissão)</li>
-      <li><strong>IA do FinFlow:</strong> seus dados são enviados à API da Groq (LLaMA) apenas para responder suas perguntas dentro do app</li>
-      <li><strong>Melhoria do produto:</strong> análise agregada e anônima</li>
-    </ul>
-
-    <h2>4. Compartilhamento de Dados</h2>
-    <p>Seus dados <strong>nunca são vendidos</strong> a terceiros. Compartilhamos somente com:</p>
-    <table>
-      <tr><th>Parceiro</th><th>Finalidade</th></tr>
-      <tr><td><strong>Supabase (AWS)</strong></td><td>Banco de dados e autenticação</td></tr>
-      <tr><td><strong>Groq</strong></td><td>Processamento de IA (LLaMA)</td></tr>
-      <tr><td><strong>Expo</strong></td><td>Build, atualizações OTA e notificações push</td></tr>
-    </table>
-
-    <h2>5. Seus Direitos (LGPD — Lei nº 13.709/2018)</h2>
-    <ul>
-      <li><strong>Acesso:</strong> solicitar cópia dos seus dados pessoais</li>
-      <li><strong>Correção:</strong> corrigir dados incompletos ou desatualizados</li>
-      <li><strong>Exclusão:</strong> apagar sua conta — disponível em Configurações → "Apagar Minha Conta"</li>
-      <li><strong>Portabilidade:</strong> solicitar exportação dos dados</li>
-      <li><strong>Revogação do consentimento:</strong> desativar notificações nas Configurações</li>
-    </ul>
-    <p>Para exercer qualquer direito: <a href="mailto:luispalacio1617@gmail.com" style="color:var(--primary)">luispalacio1617@gmail.com</a></p>
-
-    <h2>6. Segurança</h2>
-    <p>Utilizamos criptografia TLS 1.3 em trânsito e AES-256 em repouso (via Supabase/AWS). O acesso é protegido por Row Level Security — cada usuário acessa somente seus próprios dados.</p>
-
-    <h2>7. Retenção</h2>
-    <p>Seus dados são mantidos enquanto a conta estiver ativa. Após a exclusão, são removidos permanentemente em até 30 dias.</p>
-
-    <h2>8. Contato</h2>
-    <p>
-      E-mail: <a href="mailto:luispalacio1617@gmail.com" style="color:var(--primary)">luispalacio1617@gmail.com</a><br>
-      ANPD: <a href="https://www.gov.br/anpd" target="_blank" style="color:var(--primary)">www.gov.br/anpd</a>
-    </p>
-  </div>
-
-  <!-- ─── TERMOS DE USO ─── -->
-  <div id="termos" class="content">
-    <h1>Termos de Uso</h1>
-    <p class="last-update"><strong>Última atualização:</strong> 14 de maio de 2026</p>
-
-    <h2>1. Aceitação dos Termos</h2>
-    <p>Ao criar uma conta ou utilizar o <strong>FinFlow</strong>, você concorda com estes Termos. Se não concordar, não utilize o aplicativo.</p>
-
-    <h2>2. Descrição do Serviço</h2>
-    <p>O FinFlow é um aplicativo de controle financeiro pessoal que permite gerenciar contas, lançamentos, categorias, caixinhas, cartões de crédito e utilizar inteligência artificial para organização financeira.</p>
-
-    <h2>3. Planos e Assinaturas</h2>
-    <ul>
-      <li><strong>Plano Free:</strong> gratuito, com limitações de funcionalidade</li>
-      <li><strong>Planos Pagos (Smart/Premium):</strong> cobrados mensalmente ou anualmente, com renovação automática</li>
-      <li><strong>Cancelamento:</strong> a qualquer momento — acesso premium permanece até fim do período pago</li>
-      <li><strong>Reembolsos:</strong> conforme regras da App Store ou Google Play</li>
-    </ul>
-
-    <h2>4. Uso Aceitável</h2>
-    <p>Você se compromete a <strong>NÃO</strong>:</p>
-    <ul>
-      <li>Utilizar o app para fins ilegais ou fraudulentos</li>
-      <li>Tentar acessar contas de outros usuários</li>
-      <li>Realizar engenharia reversa ou distribuir o aplicativo</li>
-      <li>Sobrecarregar os servidores com requisições automatizadas</li>
-    </ul>
-
-    <h2>5. Inteligência Artificial</h2>
-    <div class="highlight">
-      <p>A IA do FinFlow é uma ferramenta de <strong>auxílio</strong> ao controle financeiro e <strong>não constitui aconselhamento financeiro profissional</strong>. Decisões importantes devem ser tomadas com orientação de profissionais qualificados.</p>
-    </div>
-
-    <h2>6. Limitação de Responsabilidade</h2>
-    <p>O FinFlow é fornecido "como está". O desenvolvedor não garante disponibilidade ininterrupta nem ausência total de erros. Não nos responsabilizamos por danos indiretos decorrentes do uso do aplicativo.</p>
-
-    <h2>7. Exclusão de Conta</h2>
-    <p>Você pode excluir sua conta a qualquer momento em: <strong>Configurações → Apagar Minha Conta</strong>. Todos os dados são removidos permanentemente.</p>
-
-    <h2>8. Lei Aplicável</h2>
-    <p>Estes Termos são regidos pelas leis brasileiras. Fica eleito o foro da comarca de domicílio do usuário para resolução de conflitos.</p>
-
-    <h2>9. Contato</h2>
-    <p>E-mail: <a href="mailto:luispalacio1617@gmail.com" style="color:var(--primary)">luispalacio1617@gmail.com</a></p>
-  </div>
-
-</div>
-
-<footer>
-  <p>© 2026 FinFlow · Desenvolvido por Luís Henrique Palácio</p>
-  <p style="margin-top:6px">
-    <a href="mailto:luispalacio1617@gmail.com">luispalacio1617@gmail.com</a>
-  </p>
-</footer>
-
-<script>
-  function mostrarAba(id, btn) {
-    document.querySelectorAll('.content').forEach(el => el.classList.remove('active'));
-    document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    btn.classList.add('active');
-  }
-
-  // Suporte a hash na URL
-  const hash = window.location.hash.replace('#', '');
-  if (hash === 'termos') {
-    const btnTermos = document.querySelectorAll('.tab-btn')[1];
-    mostrarAba('termos', btnTermos);
-  }
-</script>
-
+  <footer>© 2026 FinFlow · Termos de Uso e Política de Privacidade em uma única página.</footer>
+  <script>
+    const links=[...document.querySelectorAll(".nav a")],sections=["privacidade","termos"].map(id=>document.getElementById(id));
+    const observer=new IntersectionObserver(entries=>{const v=entries.filter(e=>e.isIntersecting).sort((a,b)=>b.intersectionRatio-a.intersectionRatio)[0];if(v)links.forEach(a=>a.classList.toggle("active",a.hash==="#"+v.target.id))},{rootMargin:"-20% 0px -65%",threshold:[0,.2,.5]});
+    sections.forEach(s=>observer.observe(s));
+  </script>
 </body>
 </html>
