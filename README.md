@@ -11,7 +11,7 @@ Aplicativo mobile de organização financeira pessoal e compartilhada, desenvolv
 
 O FinFlow reúne contas, receitas, despesas, transferências, objetivos financeiros e cartões de crédito em uma única experiência. O app permite acompanhar valores realizados e agendados, criar recorrências e compartilhar contas específicas com outra pessoa.
 
-O projeto é mantido de forma colaborativa. O histórico completo de autoria está disponível em [Contributors](https://github.com/LuishPalacio/app-financas/graphs/contributors).
+O projeto é mantido de forma colaborativa. O histórico completo de autoria está disponível em [Contributors](https://github.com/FinFlowA/app-financas/graphs/contributors).
 
 ## Funcionalidades
 
@@ -83,7 +83,7 @@ A IA não deve executar alterações financeiras sem validação e confirmação
 ### Instalação
 
 ```bash
-git clone https://github.com/LuishPalacio/app-financas.git
+git clone https://github.com/FinFlowA/app-financas.git
 cd app-financas
 npm install
 ```
@@ -172,7 +172,7 @@ docs/
 
 ## Colaboração e autoria
 
-O repositório está hospedado atualmente em `LuishPalacio/app-financas`, mas o FinFlow possui desenvolvimento colaborativo. A autoria de cada alteração é preservada pelo histórico de commits do Git.
+O repositório está hospedado na organização compartilhada `FinFlowA`, representando a propriedade conjunta do projeto. A autoria de cada alteração é preservada pelo histórico de commits do Git.
 
 Principais participantes:
 
@@ -180,7 +180,7 @@ Principais participantes:
 - Gabriel Henrique — desenvolvimento, correções, regras financeiras, documentação, publicação e evolução do aplicativo.
 - Demais contribuições automatizadas ou assistidas aparecem no histórico do repositório.
 
-Hospedar o repositório em uma organização compartilhada é a opção recomendada para representar a propriedade conjunta do projeto.
+Luis Henrique Palacio e Gabriel Henrique são proprietários da organização e responsáveis pela continuidade do projeto.
 
 ## Roadmap
 
@@ -202,10 +202,11 @@ O FinFlow foi construído e continua sendo evoluído de forma colaborativa por L
 
 ### Links do projeto
 
-- Código-fonte: [LuishPalacio/app-financas](https://github.com/LuishPalacio/app-financas)
+- Código-fonte: [FinFlowA/app-financas](https://github.com/FinFlowA/app-financas)
 - Aplicativo no Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
-- Histórico completo: [commits](https://github.com/LuishPalacio/app-financas/commits/main) e [contributors](https://github.com/LuishPalacio/app-financas/graphs/contributors)
+- Documentos legais: [FinFlowA/finflow-legal](https://github.com/FinFlowA/finflow-legal)
+- Histórico completo: [commits](https://github.com/FinFlowA/app-financas/commits/main) e [contributors](https://github.com/FinFlowA/app-financas/graphs/contributors)
 
-> O repositório ainda está hospedado na conta pessoal do Luis por uma decisão histórica. Isso não representa autoria exclusiva: Gabriel Henrique também é desenvolvedor e responsável pela evolução do FinFlow.
+> O FinFlow pertence à organização compartilhada `FinFlowA`, administrada em conjunto por Luis Henrique Palacio e Gabriel Henrique.
 
 Contribuições, relatos de erro e sugestões são bem-vindos.
