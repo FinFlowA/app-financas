@@ -16,7 +16,10 @@ export function descricaoTransferencia(descricao: string, contaDestinoId: number
 }
 
 export function descricaoVisivel(descricao: string): string {
-  return descricao.replace(DESTINO_TRANSFERENCIA_REGEX, "").trim();
+  return descricao
+    .replace(/\s*\[PagFatura:\d+:\d{4}-\d{2}:[^\]]+\]\s*$/, "")
+    .replace(DESTINO_TRANSFERENCIA_REGEX, "")
+    .trim();
 }
 
 export function sufixoRecorrencia(frequencia: FrequenciaRecorrencia): string {

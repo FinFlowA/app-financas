@@ -127,6 +127,9 @@ export async function agendarNotificacoesDoApp(
     }
 
     // Guard mestre: cancelamento + reagendamento completo só UMA VEZ por dia
+    // Apenas o dashboard envia transações, caixinhas e cartões juntos.
+    // Uma tela com dados parciais não pode apagar a agenda completa.
+    if (transacoes.length === 0) return;
     const chaveAgendado = `@notif_agendado_${userId}_${hojeStr}`;
     const jaAgendadoHoje = await AsyncStorage.getItem(chaveAgendado);
     if (jaAgendadoHoje) return; // já reagendou tudo hoje — evita duplicatas de noon/caixinha
@@ -224,7 +227,9 @@ export async function agendarNotificacoesDoApp(
     if (cartoes && cartoes.length > 0) {
       const dataNotifCartao = (diaDoMes: number, diasAntes: number, hora: number): Date | null => {
         for (let offset = 0; offset <= 1; offset++) {
-          const diaAlvo = new Date(agora.getFullYear(), agora.getMonth() + offset, diaDoMes, hora, 0, 0, 0);
+          const baseMes = new Date(agora.getFullYear(), agora.getMonth() + offset, 1);
+          const ultimoDia = new Date(baseMes.getFullYear(), baseMes.getMonth() + 1, 0).getDate();
+          const diaAlvo = new Date(baseMes.getFullYear(), baseMes.getMonth(), Math.min(diaDoMes, ultimoDia), hora, 0, 0, 0);
           const dataNotif = new Date(diaAlvo);
           dataNotif.setDate(dataNotif.getDate() - diasAntes);
           if (dataNotif > agora) return dataNotif;

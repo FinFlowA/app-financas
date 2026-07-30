@@ -164,7 +164,7 @@ export default function Dashboard() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FB",
+    fundo: isDark ? "#121212" : "#EEF3F8",
     textoPrincipal: isDark ? "#ffffff" : "#111827",
     textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
     cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
@@ -387,7 +387,12 @@ export default function Dashboard() {
         agendarNotificacoesDoApp(
           resTransacoes.data,
           session.user.id,
-          undefined,
+          resCaixinhas.data?.map((c: any) => ({
+            nome: c.nome,
+            meta_valor: Number(c.meta_valor),
+            saldo_atual: Number(c.saldo_atual),
+            data_prazo: c.data_prazo,
+          })) ?? [],
           resCartoes.data?.map((c: any) => ({
             nome: c.nome,
             dia_vencimento: c.dia_vencimento,

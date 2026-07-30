@@ -87,14 +87,14 @@ export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FB",
+    fundo: isDark ? "#121212" : "#EEF3F8",
     textoPrincipal: isDark ? "#ffffff" : "#111827",
-    textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
+    textoSecundario: isDark ? "#AAAAAA" : "#526071",
     cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
-    blocoData: isDark ? "#2C2C2C" : "#F3F4F6",
-    borda: isDark ? "#333333" : "#E5E7EB",
-    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
-    headerTabela: isDark ? "#252525" : "#F3F4F6",
+    blocoData: isDark ? "#2C2C2C" : "#F1F5F9",
+    borda: isDark ? "#333333" : "#D6DEE8",
+    pillFundo: isDark ? "#2C2C2C" : "#F1F5F9",
+    headerTabela: isDark ? "#252525" : "#E8EEF5",
     rowPar: isDark ? "#161616" : "#F9FAFB",
     rowImpar: isDark ? "#1C1C1C" : "#FFFFFF",
   };
@@ -140,6 +140,9 @@ export default function TransacoesScreen() {
     corSerie?: string;
   } | null>(null);
   const [modalDeleteSimples, setModalDeleteSimples] = useState<Transacao | null>(null);
+  const [transacaoConfirmar, setTransacaoConfirmar] = useState<Transacao | null>(null);
+  const [dataRealizacao, setDataRealizacao] = useState(new Date());
+  const [mostrarDataRealizacao, setMostrarDataRealizacao] = useState(false);
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -204,6 +207,7 @@ export default function TransacoesScreen() {
   };
 
   useFocusEffect(useCallback(() => {
+    setTransacaoConfirmar(null);
     carregarDados();
     // Scroll para o mês atual ao entrar na aba
     setTimeout(() => {
@@ -212,6 +216,20 @@ export default function TransacoesScreen() {
   }, [session]));
 
   const executarDeleteUma = async (transacao: Transacao) => {
+    const pagamentoFatura = (transacao.descricao ?? "").match(/\[PagFatura:(\d+):(\d{4}-\d{2}):([^:\]]+)(?::(\d+))?\]/);
+    if (pagamentoFatura) {
+      const cartaoId = Number(pagamentoFatura[1]);
+      const mes = pagamentoFatura[2];
+      const modo = pagamentoFatura[3];
+      const itemId = pagamentoFatura[4] ? Number(pagamentoFatura[4]) : null;
+      if (modo === "parcial" && itemId) {
+        await supabase.from("fatura_itens").delete().eq("id", itemId);
+      } else {
+        await supabase.from("fatura_itens").update({ pago: false })
+          .eq("cartao_id", cartaoId).eq("mes_fatura", mes);
+        if (itemId) await supabase.from("fatura_itens").delete().eq("id", itemId);
+      }
+    }
     const { error } = await supabase.from("transacoes").delete().eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível apagar a transação."); return; }
 
@@ -296,7 +314,7 @@ export default function TransacoesScreen() {
     const isFixa = isRecorrenciaFixa(descricao);
     const parceladaMatch = descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
 
-    if (isFixa || parceladaMatch) {
+    if (transacao.status !== "paga" && (isFixa || parceladaMatch)) {
       setModalOpcoesSerie({
         titulo: "Apagar Agendamento",
         descricao: "Esta transação faz parte de uma série. O que deseja apagar?",
@@ -387,7 +405,7 @@ export default function TransacoesScreen() {
     const valorNum = parseFloat(editValor.replace(",", "."));
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
 
-    if (isRecorrente(transacaoEditando)) {
+    if (isRecorrente(transacaoEditando) && transacaoEditando.status !== "paga") {
       setModalOpcoesSerie({
         titulo: "Editar Recorrência",
         descricao: "Deseja alterar apenas este lançamento ou toda a série?",
@@ -401,12 +419,14 @@ export default function TransacoesScreen() {
     }
   };
 
-  const alternarStatus = async (id: number, statusAtual: string, tipo: string) => {
-    const novoStatus = statusAtual === "paga" ? "pendente" : "paga";
-    const { error } = await supabase.from("transacoes").update({ status: novoStatus }).eq("id", id);
+  const aplicarStatus = async (transacao: Transacao, novoStatus: "paga" | "pendente", data?: Date) => {
+    const atualizacao: { status: string; data_vencimento?: string } = { status: novoStatus };
+    if (novoStatus === "paga" && data) {
+      atualizacao.data_vencimento = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+    }
+    const { error } = await supabase.from("transacoes").update(atualizacao).eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível atualizar o estado."); return; }
 
-    const transacao = transacoes.find((t) => t.id === id);
     if (transacao) {
       const desc = transacao.descricao ?? "";
       let nomeCaixinha: string | null = null;
@@ -428,12 +448,25 @@ export default function TransacoesScreen() {
     }
 
     carregarDados();
+    setTransacaoConfirmar(null);
+    const tipo = transacao.tipo;
     if (novoStatus === "paga") {
       const label = tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
-      showToast(label, tipo === "receita" ? "success" : "info");
+      showToast(label, transacao.tipo === "receita" ? "success" : "info");
     } else {
       showToast("Marcado como pendente", "info");
     }
+  };
+
+  const alternarStatus = async (id: number, statusAtual: string, _tipo: string) => {
+    const transacao = transacoes.find((t) => t.id === id);
+    if (!transacao) return;
+    if (statusAtual === "paga") {
+      aplicarStatus(transacao, "pendente");
+      return;
+    }
+    setDataRealizacao(new Date());
+    setTransacaoConfirmar(transacao);
   };
 
   const toggleFiltroConta = (id: number) => {
@@ -884,6 +917,44 @@ export default function TransacoesScreen() {
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      {transacaoConfirmar && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoConfirmar(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Confirmar realização</Text>
+              <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 20, marginBottom: 16 }}>
+                Agendado para {transacaoConfirmar.data_vencimento.split("-").reverse().join("/")}. Confirme a data em que a movimentação realmente aconteceu.
+              </Text>
+              <TouchableOpacity
+                style={[styles.editInput, { backgroundColor: Cores.blocoData, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}
+                onPress={() => setMostrarDataRealizacao(true)}
+              >
+                <MaterialIcons name="event-available" size={20} color="#2A9D8F" style={{ marginRight: 10 }} />
+                <Text style={{ color: Cores.textoPrincipal, fontWeight: "600" }}>
+                  {String(dataRealizacao.getDate()).padStart(2, "0")}/{String(dataRealizacao.getMonth() + 1).padStart(2, "0")}/{dataRealizacao.getFullYear()}
+                </Text>
+              </TouchableOpacity>
+              {mostrarDataRealizacao && (
+                <DateTimePicker
+                  value={dataRealizacao}
+                  mode="date"
+                  display="default"
+                  onChange={(_e, d) => { setMostrarDataRealizacao(false); if (d) setDataRealizacao(d); }}
+                />
+              )}
+              <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
+                <TouchableOpacity style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: Cores.blocoData }} onPress={() => setTransacaoConfirmar(null)}>
+                  <Text style={{ color: Cores.textoSecundario, fontWeight: "bold" }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#2A9D8F" }} onPress={() => aplicarStatus(transacaoConfirmar, "paga", dataRealizacao)}>
+                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>Confirmar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {/* MODAIS DE FILTRO */}
       {/* MODAL EDITAR TRANSAÇÃO */}

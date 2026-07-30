@@ -99,6 +99,7 @@ interface Categoria {
   cor: string;
   icone: string;
   tipo: string;
+  ativa?: boolean | number;
 }
 
 interface ContaSimples {
@@ -157,13 +158,13 @@ export default function CartoesScreen() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F7FB",
+    fundo: isDark ? "#121212" : "#EEF3F8",
     texto: isDark ? "#FFFFFF" : "#111827",
-    secundario: isDark ? "#AAAAAA" : "#6B7280",
+    secundario: isDark ? "#AAAAAA" : "#526071",
     card: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333" : "#E5E7EB",
-    input: isDark ? "#2C2C2C" : "#F3F4F6",
-    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
+    borda: isDark ? "#333" : "#D6DEE8",
+    input: isDark ? "#2C2C2C" : "#F8FAFC",
+    pillFundo: isDark ? "#2C2C2C" : "#F1F5F9",
   };
 
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
@@ -212,6 +213,10 @@ export default function CartoesScreen() {
   const [modalPagamento, setModalPagamento] = useState(false);
   const [mesPagamento, setMesPagamento] = useState("");
   const [contaPagamentoId, setContaPagamentoId] = useState<number | null>(null);
+  const [valorPagamento, setValorPagamento] = useState("");
+  const [modalPagamentoParcial, setModalPagamentoParcial] = useState(false);
+  const [tipoJuros, setTipoJuros] = useState<"valor" | "percentual">("valor");
+  const [valorJuros, setValorJuros] = useState("");
 
   // Modal opções cartão (long-press) — substitui Alert
   const [modalOpcoesCartao, setModalOpcoesCartao] = useState<Cartao | null>(null);
@@ -230,14 +235,14 @@ export default function CartoesScreen() {
     const [resCartoes, resItens, resCats, resContas, resArquivados] = await Promise.all([
       supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", true).order("id"),
       supabase.from("fatura_itens").select("*").eq("user_id", session.user.id).order("data_compra", { ascending: false }),
-      supabase.from("categorias").select("id, nome, cor, icone, tipo").eq("user_id", session.user.id).eq("ativa", true).order("nome"),
+      supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id).order("nome"),
       supabase.from("contas").select("id, nome, cor").eq("user_id", session.user.id).eq("arquivado", false).order("nome"),
       supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", false).order("id"),
     ]);
 
     if (resCartoes.data) setCartoes(resCartoes.data);
     if (resItens.data) setItens(resItens.data);
-    if (resCats.data) setCategorias(resCats.data as Categoria[]);
+    if (resCats.data) setCategorias((resCats.data as Categoria[]).filter((c) => c.ativa !== false && c.ativa !== 0));
     if (resContas.data) setContas(resContas.data as ContaSimples[]);
     if (resArquivados.data) setCartoesArquivados(resArquivados.data);
     setLoading(false);
@@ -399,6 +404,8 @@ export default function CartoesScreen() {
     const totalFatura = calcularTotalFatura(cartaoAberto!.id, mes);
     if (totalFatura === 0) return showToast("Fatura já está zerada", "info");
     setMesPagamento(mes);
+    setValorPagamento(totalFatura.toFixed(2).replace(".", ","));
+    setValorJuros("");
     setContaPagamentoId(contas[0]?.id ?? null);
     setModalPagamento(true);
   };
@@ -406,8 +413,21 @@ export default function CartoesScreen() {
   const confirmarPagamentoFatura = async () => {
     if (!cartaoAberto || !contaPagamentoId) return;
     const totalFatura = calcularTotalFatura(cartaoAberto.id, mesPagamento);
+    const valorPago = Number(valorPagamento.replace(",", "."));
+    if (!Number.isFinite(valorPago) || valorPago <= 0) {
+      Alert.alert("Valor inválido", "Informe quanto foi pago.");
+      return;
+    }
+    if (valorPago > totalFatura + 0.005) {
+      Alert.alert("Valor acima da fatura", `O pagamento não pode ultrapassar ${fmtReais(totalFatura)}.`);
+      return;
+    }
+    if (valorPago < totalFatura - 0.005) {
+      setModalPagamentoParcial(true);
+      return;
+    }
     const hoje = new Date().toISOString().slice(0, 10);
-    const descPagamento = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)}`;
+    const descPagamento = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)} [PagFatura:${cartaoAberto.id}:${mesPagamento}:total]`;
 
     const [resUpdate, resTrans] = await Promise.all([
       supabase.from("fatura_itens").update({ pago: true }).eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false),
@@ -430,6 +450,53 @@ export default function CartoesScreen() {
 
     setModalPagamento(false);
     showToast("Fatura paga ✓", "success");
+    carregarDados();
+  };
+
+  const registrarPagamentoMenor = async (levarSaldo: boolean) => {
+    if (!cartaoAberto || !contaPagamentoId || !session?.user?.id) return;
+    const total = calcularTotalFatura(cartaoAberto.id, mesPagamento);
+    const pago = Number(valorPagamento.replace(",", "."));
+    const hoje = new Date().toISOString().slice(0, 10);
+    let itemVinculado: number | null = null;
+    let erro: any = null;
+
+    if (levarSaldo) {
+      const restante = total - pago;
+      const jurosInformado = Math.max(0, Number(valorJuros.replace(",", ".")) || 0);
+      const juros = tipoJuros === "percentual" ? restante * jurosInformado / 100 : jurosInformado;
+      const atualizado = await supabase.from("fatura_itens").update({ pago: true })
+        .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false);
+      const inserido = await supabase.from("fatura_itens").insert([{
+        cartao_id: cartaoAberto.id, user_id: session.user.id,
+        descricao: `Saldo da fatura anterior (${formatarMes(mesPagamento)})`,
+        valor: +(restante + juros).toFixed(2), data_compra: hoje,
+        mes_fatura: proximoMesStr(mesPagamento), parcela_atual: 1, total_parcelas: 1,
+        grupo_parcela_id: null, categoria_id: null, pago: false,
+      }]).select("id").single();
+      erro = atualizado.error || inserido.error;
+      itemVinculado = inserido.data?.id ?? null;
+    } else {
+      const inserido = await supabase.from("fatura_itens").insert([{
+        cartao_id: cartaoAberto.id, user_id: session.user.id,
+        descricao: "Pagamento parcial da fatura", valor: -pago, data_compra: hoje,
+        mes_fatura: mesPagamento, parcela_atual: 1, total_parcelas: 1,
+        grupo_parcela_id: null, categoria_id: null, pago: false,
+      }]).select("id").single();
+      erro = inserido.error;
+      itemVinculado = inserido.data?.id ?? null;
+    }
+
+    const modo = levarSaldo ? "saldo_transferido" : "parcial";
+    const desc = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)} [PagFatura:${cartaoAberto.id}:${mesPagamento}:${modo}:${itemVinculado}]`;
+    const movimento = await supabase.from("transacoes").insert([{
+      user_id: session.user.id, tipo: "despesa", valor: pago, descricao: desc,
+      data_vencimento: hoje, conta_id: contaPagamentoId, status: "paga", categoria_id: null,
+    }]);
+    if (erro || movimento.error) return showToast("Erro ao registrar pagamento", "error");
+    setModalPagamentoParcial(false);
+    setModalPagamento(false);
+    showToast(levarSaldo ? "Saldo levado para a próxima fatura ✓" : "Pagamento parcial registrado ✓", "success");
     carregarDados();
   };
 
@@ -1028,6 +1095,16 @@ export default function CartoesScreen() {
                 </Text>
               </View>
 
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Valor pago (R$)</Text>
+              <TextInput
+                style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
+                value={valorPagamento}
+                onChangeText={setValorPagamento}
+                keyboardType="decimal-pad"
+                placeholder="0,00"
+                placeholderTextColor={Cores.secundario}
+              />
+
               <Text style={[estilos.label, { color: Cores.secundario }]}>Pagar com qual conta?</Text>
               {contas.map((conta) => (
                 <TouchableOpacity
@@ -1055,6 +1132,43 @@ export default function CartoesScreen() {
       )}
 
       {/* Modal: Editar Cartão */}
+      {modalPagamentoParcial && cartaoAberto && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setModalPagamentoParcial(false)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagamento menor que a fatura</Text>
+              <Text style={{ color: Cores.secundario, lineHeight: 20, marginBottom: 14 }}>
+                Você pagou {fmtReais(Number(valorPagamento.replace(",", ".")) || 0)} de {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}. Escolha como tratar o restante.
+              </Text>
+              <TouchableOpacity style={[estilos.contaOpcao, { borderColor: "#2563EB", backgroundColor: Cores.pillFundo }]} onPress={() => registrarPagamentoMenor(false)}>
+                <View>
+                  <Text style={{ color: Cores.texto, fontWeight: "700" }}>Pagamento parcial</Text>
+                  <Text style={{ color: Cores.secundario, fontSize: 12, marginTop: 3 }}>A fatura atual continua aberta com o saldo restante.</Text>
+                </View>
+              </TouchableOpacity>
+              <Text style={[estilos.label, { color: Cores.secundario, marginTop: 14 }]}>Juros para levar o saldo à próxima fatura</Text>
+              <View style={{ flexDirection: "row", gap: 8, marginBottom: 8 }}>
+                {(["valor", "percentual"] as const).map((tipo) => (
+                  <TouchableOpacity key={tipo} onPress={() => setTipoJuros(tipo)} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: 9, backgroundColor: tipoJuros === tipo ? "#2563EB" : Cores.pillFundo }}>
+                    <Text style={{ color: tipoJuros === tipo ? "#FFF" : Cores.texto, fontWeight: "600" }}>{tipo === "valor" ? "R$" : "%"}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} value={valorJuros} onChangeText={setValorJuros} keyboardType="decimal-pad" placeholder={tipoJuros === "valor" ? "Juros em reais (opcional)" : "Juros em percentual (opcional)"} placeholderTextColor={Cores.secundario} />
+              <TouchableOpacity style={[estilos.contaOpcao, { borderColor: "#F59E0B", backgroundColor: Cores.pillFundo, marginTop: 8 }]} onPress={() => registrarPagamentoMenor(true)}>
+                <View>
+                  <Text style={{ color: Cores.texto, fontWeight: "700" }}>Levar saldo para a próxima fatura</Text>
+                  <Text style={{ color: Cores.secundario, fontSize: 12, marginTop: 3 }}>O restante e os juros serão lançados no próximo mês.</Text>
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, marginTop: 14, alignSelf: "stretch" }]} onPress={() => setModalPagamentoParcial(false)}>
+                <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Voltar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       {modalEditarCartao && cartaoEditando && (
         <Modal animationType="slide" transparent visible onRequestClose={() => setModalEditarCartao(false)}>
           <View style={estilos.modalOverlay}>
