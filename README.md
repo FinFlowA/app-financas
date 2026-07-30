@@ -1,152 +1,199 @@
-# 💰 FinFlow Finanças
+# FinFlow
 
-> App de controle financeiro pessoal e compartilhado com **assistente IA** que entende comandos em linguagem natural.
+Aplicativo mobile de organização financeira pessoal e compartilhada, desenvolvido com React Native, Expo e Supabase.
 
-![React Native](https://img.shields.io/badge/React_Native-0.81-61DAFB?style=flat&logo=react&logoColor=white)
-![Expo](https://img.shields.io/badge/Expo-SDK_54-000020?style=flat&logo=expo&logoColor=white)
-![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat&logo=typescript&logoColor=white)
-![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?style=flat&logo=supabase&logoColor=white)
+[![React Native](https://img.shields.io/badge/React_Native-0.81-61DAFB?logo=react&logoColor=white)](https://reactnative.dev/)
+[![Expo](https://img.shields.io/badge/Expo-SDK_54-000020?logo=expo&logoColor=white)](https://expo.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 
----
+## Sobre o projeto
 
-## ✨ Funcionalidades
+O FinFlow reúne contas, receitas, despesas, transferências, objetivos financeiros e cartões de crédito em uma única experiência. O app permite acompanhar valores realizados e agendados, criar recorrências e compartilhar contas específicas com outra pessoa.
 
-- 🔐 **Autenticação segura** com Supabase Auth + biometria (Face ID / Digital)
-- 💳 **Gestão completa de transações** — receitas, despesas, categorias e contas
-- 🎯 **Caixinhas de metas** para organizar economias por objetivo
-- 🤝 **Conta conjunta multi-tenant** — compartilhe contas específicas com outra pessoa, mantendo o restante dos dados privados
-- 🤖 **Assistente IA com Llama 3.3 70B** que entende linguagem natural (mais detalhes abaixo)
-- 📊 **Relatórios e ranking** de gastos por categoria
-- 🌙 **Tema claro/escuro** adaptativo ao sistema
-- 🔔 **Notificações locais** para lembretes financeiros
-- 📱 **Cache local com SQLite** para uso offline
+O projeto é mantido de forma colaborativa. O histórico completo de autoria está disponível em [Contributors](https://github.com/LuishPalacio/app-financas/graphs/contributors).
 
----
+## Funcionalidades
 
-## 🤖 Sobre o Assistente IA
+- Autenticação com Supabase Auth e proteção por biometria.
+- Contas financeiras com saldo inicial, arquivamento e compartilhamento.
+- Receitas, despesas e transferências entre contas.
+- Movimentações realizadas, pendentes, parceladas e recorrentes.
+- Recorrências semanais, mensais e anuais.
+- Confirmação da data real ao concluir uma movimentação.
+- Categorias personalizadas para receitas e despesas.
+- Objetivos financeiros e caixinhas.
+- Cartões de crédito, compras parceladas e acompanhamento de faturas.
+- Pagamento integral ou parcial da fatura.
+- Transferência do saldo restante para a próxima fatura, com juros opcionais.
+- Fluxo de caixa, relatórios e distribuição por categoria.
+- Conta compartilhada com acesso controlado por políticas RLS.
+- Assistente financeiro com comandos em linguagem natural.
+- Notificações de movimentações, objetivos, fechamento e vencimento de cartões.
+- Tema claro e escuro.
+- Cache local para melhorar a experiência sem conexão.
+- Atualizações OTA distribuídas pelo EAS Update.
 
-O assistente do FinFlow não é um chatbot tradicional — é um **agente estruturado** que traduz linguagem natural em ações no banco de dados.
+## Tecnologias
 
-**Como funciona:**
+| Camada | Tecnologias |
+|---|---|
+| Aplicativo | React Native 0.81, React 19 e TypeScript |
+| Plataforma | Expo SDK 54 e Expo Router |
+| Backend | Supabase, PostgreSQL e Supabase Auth |
+| Segurança de dados | Row Level Security (RLS) |
+| Armazenamento local | AsyncStorage e Expo SQLite |
+| Inteligência artificial | Groq API e Llama 3.3 70B |
+| Recursos mobile | Biometria, notificações locais e EAS Update |
 
-1. Usuário fala normalmente: *"gastei 80 reais no mercado ontem"*
-2. A IA (Llama 3.3 70B via Groq) retorna um **JSON estruturado** com `intent`, `data`, `missing_fields` e `status`
-3. Se faltar algum dado, o agente coleta via conversa
-4. Antes de executar, o app pede **confirmação** do usuário
-5. Após confirmar, a ação é executada no Supabase
+## Arquitetura
 
-**Intents suportadas (17+):** criar transação, criar/editar/excluir conta, criar/mover/arquivar caixinha, confirmar pendências, analisar finanças, fazer projeções, definir metas de economia, e mais.
+### Dados e compartilhamento
 
-Essa arquitetura garante que o LLM nunca executa direto — sempre passa por validação e confirmação humana.
+Os dados são armazenados no Supabase. Cada registro é associado ao usuário responsável, e as políticas RLS devem garantir que uma pessoa somente acesse dados próprios ou contas explicitamente compartilhadas com ela.
 
----
+### Transferências
 
-## 🏗️ Arquitetura
+Uma transferência é registrada como uma única movimentação vinculada às contas de origem e destino. O saldo da origem recebe o débito e o destino recebe o crédito, sem duplicar o agendamento no histórico.
 
-### Multi-tenant com Row Level Security
+### Assistente financeiro
 
-O sistema de conta conjunta usa **políticas RLS do PostgreSQL** para garantir o isolamento de dados na camada do banco:
+O assistente converte a mensagem do usuário em uma ação estruturada:
 
-- Cada usuário tem seu próprio escopo de dados
-- O compartilhamento é granular: o usuário escolhe **quais contas específicas** compartilhar com qual parceiro
-- As políticas RLS garantem que mesmo via API direta, ninguém acessa dados que não deveria — segurança não depende só do código do app
-
-### IA como camada de comando
-
-A camada de IA é desacoplada da execução. O fluxo é sempre:
-
+```text
+Linguagem natural
+    → intenção estruturada
+    → validação dos campos
+    → confirmação do usuário
+    → operação no Supabase
 ```
-Linguagem natural → JSON estruturado → Validação → Confirmação → Banco
-```
 
-Isso permite trocar o modelo (ou rodar local) sem mudar a lógica de negócio.
+A IA não deve executar alterações financeiras sem validação e confirmação.
 
----
+## Executando localmente
 
-## 🛠️ Stack Técnica
+### Requisitos
 
-**Frontend**
-- React Native 0.81
-- Expo SDK 54 + Expo Router 6 (file-based routing)
-- TypeScript 5.9
-- React Native Reanimated 4
+- Node.js LTS
+- npm
+- Expo CLI por meio do `npx`
+- Projeto Supabase configurado
+- Conta Expo para builds e atualizações
 
-**Backend & Dados**
-- Supabase (PostgreSQL + Auth + Realtime)
-- Row Level Security (RLS)
-- AsyncStorage + Expo SQLite (cache local)
-
-**IA**
-- Groq API
-- Modelo: `llama-3.3-70b-versatile`
-
-**Mobile-specific**
-- expo-local-authentication (biometria)
-- expo-notifications
-- expo-haptics
-- expo-image
-
----
-
-## 🚀 Como rodar localmente
+### Instalação
 
 ```bash
-# Clone o repositório
-git clone https://github.com/SEU-USUARIO/app-financas.git
+git clone https://github.com/LuishPalacio/app-financas.git
 cd app-financas
-
-# Instale as dependências
 npm install
-
-# Configure variáveis de ambiente
-cp .env.example .env
 ```
 
-Edite o `.env` com suas chaves:
+Crie um arquivo `.env` na raiz:
 
-```
-EXPO_PUBLIC_SUPABASE_URL=sua-url-supabase
-EXPO_PUBLIC_SUPABASE_ANON_KEY=sua-chave-anon
+```dotenv
+EXPO_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+EXPO_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
 EXPO_PUBLIC_GROQ_API_KEY=sua-chave-groq
 ```
 
+Depois execute:
+
 ```bash
-# Inicie o projeto
 npx expo start
 ```
 
-Escaneie o QR code com o app **Expo Go** ou rode em emulador iOS/Android.
+Comandos úteis:
 
----
+```bash
+npm run android
+npm run ios
+npm run web
+npm run lint
+npx tsc --noEmit
+```
 
-## 📝 Decisões técnicas e aprendizados
+## Segurança
 
-- **Por que Supabase + RLS:** queria segurança real (na camada do banco) e não só validações no app. RLS força o isolamento mesmo em chamadas diretas à API.
-- **Por que IA estruturada (JSON) em vez de chat livre:** garantir confiabilidade. Um LLM solto pode gerar texto bonito que executa coisas erradas. Forçando JSON com validação, o usuário sempre confirma antes da ação.
-- **Por que Expo Router:** a navegação por arquivos deixa a estrutura do projeto mais previsível e facilita manutenção.
-- **Por que Groq + Llama 70B:** latência baixa (importante em chat) e bom desempenho em tarefas estruturadas de extração.
+- Nunca versione o arquivo `.env`.
+- Nunca use a chave `service_role` do Supabase no aplicativo.
+- A chave publicável/anon do Supabase pode ser utilizada no cliente somente com políticas RLS corretamente configuradas.
+- Variáveis com o prefixo `EXPO_PUBLIC_` são incorporadas ao bundle e podem ser extraídas do APK.
+- A chave Groq deve ser movida para uma Edge Function ou outro backend antes de uma distribuição pública. Mantê-la como `EXPO_PUBLIC_GROQ_API_KEY` não oferece proteção real.
+- Revogue imediatamente qualquer chave que tenha sido publicada, enviada em conversas ou exposta em capturas de tela.
 
----
+## Builds e atualizações
 
-## 🗺️ Roadmap
+O projeto usa dois canais principais:
 
-- [ ] Importação de extratos via OCR
-- [ ] Dashboard web complementar
-- [ ] Notificações inteligentes baseadas em padrões
-- [ ] Modo offline-first completo
-- [ ] Compartilhamento de relatórios em PDF
+| Canal | Uso |
+|---|---|
+| `preview` | APK de distribuição interna e testes |
+| `production` | Versão destinada aos usuários de produção |
 
----
+Criar APK de testes:
 
-## 👤 Autor
+```bash
+npx eas-cli build --platform android --profile preview
+```
 
-**Luis Henrique Palacio**
+Publicar uma atualização OTA para o APK interno:
 
-Projeto desenvolvido como parte da minha transição para desenvolvimento mobile. Aberto a feedback, sugestões e oportunidades.
+```bash
+npx eas-cli update --branch preview --message "descrição da atualização"
+```
 
-- 💼 LinkedIn: *www.linkedin.com/in/luishpalacio*
-- 📧 Email: *luispalacio1617@gmail.com*
+Publicar em produção:
 
----
+```bash
+npx eas-cli update --branch production --message "descrição da atualização"
+```
 
-⭐ Se o projeto te ajudou ou despertou interesse, deixa uma estrela!
+O canal da atualização deve ser o mesmo canal do build instalado. Um APK `preview` não recebe atualizações publicadas somente em `production`.
+
+## Estrutura principal
+
+```text
+app/
+  (tabs)/
+    index.tsx          painel e contas
+    transacoes.tsx     histórico e agendamentos
+    caixinhas.tsx      objetivos financeiros
+    cartoes.tsx        cartões, compras e faturas
+    relatorios.tsx     fluxo de caixa
+    configuracoes.tsx  perfil e preferências
+  chat-ia.tsx          assistente financeiro
+lib/
+  supabase.ts          cliente Supabase
+  notifications.ts     notificações locais
+  transacoes.ts        regras compartilhadas de movimentações
+docs/
+  supabase-migration.sql
+```
+
+## Colaboração e autoria
+
+O repositório está hospedado atualmente em `LuishPalacio/app-financas`, mas o FinFlow possui desenvolvimento colaborativo. A autoria de cada alteração é preservada pelo histórico de commits do Git.
+
+Principais participantes:
+
+- Luis Henrique Palacio — criação e desenvolvimento inicial.
+- Gabriel (`GbrieIH`/`gabriel.xxtth`) — desenvolvimento, correções, publicação e evolução do aplicativo.
+- Demais contribuições automatizadas ou assistidas aparecem no histórico do repositório.
+
+Hospedar o repositório em uma organização compartilhada é a opção recomendada para representar a propriedade conjunta do projeto.
+
+## Roadmap
+
+- [ ] Mover a integração Groq para uma função segura no backend.
+- [ ] Ampliar testes automatizados das regras financeiras.
+- [ ] Importar extratos bancários.
+- [ ] Criar dashboard web complementar.
+- [ ] Exportar relatórios em PDF.
+- [ ] Evoluir o funcionamento offline.
+
+## Contato
+
+- GitHub: [LuishPalacio/app-financas](https://github.com/LuishPalacio/app-financas)
+- Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
+
+Contribuições, relatos de erro e sugestões são bem-vindos.
