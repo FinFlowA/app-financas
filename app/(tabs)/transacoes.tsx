@@ -4,7 +4,6 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
-  Button,
   Modal,
   ScrollView,
   StyleSheet,
@@ -21,6 +20,7 @@ import { fmtReais } from "../../lib/utils";
 import {
   descricaoBaseRecorrencia,
   descricaoVisivel,
+  dataEfetivaTransacao,
   getContaDestinoTransferencia,
   isRecorrenciaFixa,
   isTransferencia,
@@ -53,6 +53,7 @@ interface Transacao {
   tipo: string;
   valor: number;
   data_vencimento: string;
+  data_realizacao?: string | null;
   descricao: string;
   categoria_id: number | null;
   conta_id: number;
@@ -104,8 +105,6 @@ export default function TransacoesScreen() {
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
   const [faturaGrupos, setFaturaGrupos] = useState<FaturaGrupo[]>([]);
-  const [modalPagFatura, setModalPagFatura] = useState<FaturaGrupo | null>(null);
-  const [contaPagFaturaId, setContaPagFaturaId] = useState<number | null>(null);
   const [faturaAbrirCartao, setFaturaAbrirCartao] = useState<FaturaGrupo | null>(null);
 
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
@@ -422,9 +421,12 @@ export default function TransacoesScreen() {
   };
 
   const aplicarStatus = async (transacao: Transacao, novoStatus: "paga" | "pendente", data?: Date) => {
-    const atualizacao: { status: string; data_vencimento?: string } = { status: novoStatus };
+    const atualizacao: { status: string; data_realizacao?: string | null } = {
+      status: novoStatus,
+      data_realizacao: novoStatus === "pendente" ? null : undefined,
+    };
     if (novoStatus === "paga" && data) {
-      atualizacao.data_vencimento = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+      atualizacao.data_realizacao = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
     }
     const { error } = await supabase.from("transacoes").update(atualizacao).eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível atualizar o estado."); return; }
@@ -489,12 +491,12 @@ export default function TransacoesScreen() {
     .filter((t) => {
       const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
       if (filtroVencidas) {
-        const p = (t.data_vencimento || "0000-00-00").split("-");
+        const p = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
         const d = new Date(+p[0], +p[1] - 1, +p[2]);
         return t.status === "pendente" && d < hojeRef && passaBusca;
       }
       const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
-      const dataSegura = t.data_vencimento || new Date().toISOString().split("T")[0];
+      const dataSegura = dataEfetivaTransacao(t) || new Date().toISOString().split("T")[0];
       const passaMes = dataSegura.startsWith(mesSelecionado);
       const isTransferencia = t.descricao.includes("[Transf.]");
       const passaCategoria = filtroCategorias.length === 0
@@ -509,7 +511,7 @@ export default function TransacoesScreen() {
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
       return passaConta && passaCategoria && passaMes && passaTipo && passaStatus && passaBusca;
     })
-    .sort((a, b) => (b.data_vencimento || "").localeCompare(a.data_vencimento || ""));
+    .sort((a, b) => dataEfetivaTransacao(b).localeCompare(dataEfetivaTransacao(a)));
 
   const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
   const temMais = transacoesPaginadas.length < transacoesDoMes.length;
@@ -527,7 +529,7 @@ export default function TransacoesScreen() {
 
   const temVencidas = transacoes.some(t => {
     if (t.status !== "pendente") return false;
-    const p = (t.data_vencimento || "0000-00-00").split("-");
+    const p = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
     return new Date(+p[0], +p[1] - 1, +p[2]) < hojeRef;
   });
   const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas || filtroStatus !== "todos";
@@ -722,7 +724,7 @@ export default function TransacoesScreen() {
               const conta = contas.find((c) => c.id === t.conta_id);
               const categoria = categorias.find((c) => c.id === t.categoria_id);
               const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
-              const partes = (t.data_vencimento || "0000-00-00").split("-");
+              const partes = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
               const isPendente = t.status === "pendente";
               const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
               const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
@@ -761,6 +763,11 @@ export default function TransacoesScreen() {
                     <Text style={[styles.nomeText, { color: isPendente ? Cores.textoSecundario : Cores.textoPrincipal }]} numberOfLines={2}>
                       {descricaoVisivel(t.descricao)}
                     </Text>
+                    {!isPendente && t.data_realizacao && t.data_realizacao !== t.data_vencimento && (
+                      <Text style={{ color: Cores.textoSecundario, fontSize: 11, marginTop: 2 }}>
+                        Agendado para {t.data_vencimento.split("-").reverse().join("/")}
+                      </Text>
+                    )}
                     <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, marginTop: 4 }}>
                       {/* Badge conta */}
                       {conta && (
@@ -1164,59 +1171,6 @@ export default function TransacoesScreen() {
               >
                 <Text style={{ color: isDark ? "#AAA" : "#666", fontWeight: "bold" }}>Cancelar</Text>
               </TouchableOpacity>
-            </View>
-          </View>
-        </Modal>
-      )}
-
-      {/* MODAL PAGAMENTO DE FATURA — seleção de conta */}
-      {modalPagFatura && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalPagFatura(null)}>
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
-              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#111827" }]}>Pagar Fatura</Text>
-              <View style={{ backgroundColor: isDark ? "#2C2C2C" : "#F3F4F6", borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" }}>
-                <Text style={{ color: isDark ? "#AAA" : "#6B7280", fontSize: 12, marginBottom: 4 }}>
-                  {modalPagFatura.cartao_nome} — {formatarMesAno(modalPagFatura.mes_fatura)}
-                </Text>
-                <Text style={{ color: "#10B981", fontSize: 24, fontWeight: "bold" }}>
-                  {fmtReais(modalPagFatura.total)}
-                </Text>
-              </View>
-              <Text style={{ color: isDark ? "#AAA" : "#6B7280", fontSize: 12, fontWeight: "600", marginBottom: 8 }}>PAGAR COM QUAL CONTA?</Text>
-              {contas.map((c) => (
-                <TouchableOpacity
-                  key={c.id}
-                  style={{ flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, borderWidth: 2, borderColor: contaPagFaturaId === c.id ? "#10B981" : (isDark ? "#333" : "#E5E7EB"), backgroundColor: contaPagFaturaId === c.id ? "#D1FAE5" : "transparent", marginBottom: 8 }}
-                  onPress={() => setContaPagFaturaId(c.id)}
-                >
-                  <MaterialIcons name="account-balance-wallet" size={18} color={contaPagFaturaId === c.id ? "#10B981" : (isDark ? "#AAA" : "#6B7280")} />
-                  <Text style={{ color: contaPagFaturaId === c.id ? "#065F46" : (isDark ? "#FFF" : "#111827"), fontWeight: "600", marginLeft: 10, flex: 1 }}>{c.nome}</Text>
-                  {contaPagFaturaId === c.id && <MaterialIcons name="check-circle" size={18} color="#10B981" />}
-                </TouchableOpacity>
-              ))}
-              <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F3F4F6" }} onPress={() => setModalPagFatura(null)}>
-                  <Text style={{ color: isDark ? "#AAA" : "#6B7280", fontWeight: "bold" }}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: contaPagFaturaId ? "#10B981" : "#999" }}
-                  disabled={!contaPagFaturaId}
-                  onPress={async () => {
-                    if (!contaPagFaturaId || !modalPagFatura) return;
-                    const hoje = new Date().toISOString().slice(0, 10);
-                    const descricao = `Fatura ${modalPagFatura.cartao_nome} - ${formatarMesAno(modalPagFatura.mes_fatura)}`;
-                    await Promise.all([
-                      supabase.from("fatura_itens").update({ pago: true }).in("id", modalPagFatura.itens_ids),
-                      supabase.from("transacoes").insert([{ user_id: session!.user.id, tipo: "despesa", valor: modalPagFatura.total, descricao, data_vencimento: hoje, conta_id: contaPagFaturaId, status: "paga", categoria_id: null }]),
-                    ]);
-                    setModalPagFatura(null);
-                    carregarDados();
-                  }}
-                >
-                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>Confirmar</Text>
-                </TouchableOpacity>
-              </View>
             </View>
           </View>
         </Modal>

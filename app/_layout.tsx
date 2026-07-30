@@ -185,7 +185,7 @@ export default function RootLayout() {
           await Updates.fetchUpdateAsync();
           Alert.alert(
             "FinFlow atualizado!",
-            "Novidades desta versão:\n\n• Recorrências preservam movimentações concluídas\n• Confirmação da data real de pagamento\n• Pagamento parcial de faturas\n• Melhorias no cartão e no tema claro\n\nO aplicativo será reiniciado para aplicar tudo.",
+            "Novidades desta versão:\n\n• Fluxo de caixa usa a data real de pagamento ou recebimento\n• A data agendada continua disponível para seu controle\n• Histórico mostra a data agendada quando ela for diferente\n• Transferências criadas pela IA foram corrigidas\n• Pagamentos de fatura ficaram mais seguros contra registros incompletos\n\nO aplicativo será reiniciado para aplicar tudo.",
             [{ text: "Ver melhorias", onPress: () => Updates.reloadAsync() }],
           );
         }

@@ -19,6 +19,7 @@ import { useAppTheme } from "./_layout";
 
 import { verificarRateLimit } from "../lib/anti-spam";
 import { intentConsumeAcao } from "../lib/ia-limites";
+import { dataEfetivaTransacao, descricaoTransferencia } from "../lib/transacoes";
 
 const GROQ_API_KEY = process.env.EXPO_PUBLIC_GROQ_API_KEY ?? "";
 const MODELO = "llama-3.3-70b-versatile";
@@ -283,7 +284,7 @@ export default function ChatIA() {
   const [resumoFinanceiro, setResumoFinanceiro] = useState<string>("");
   const [transacoesCompletas, setTransacoesCompletas] = useState<{
     id: number; tipo: string; valor: number; descricao: string;
-    status: string; categoria_id: number | null; conta_id: number; data_vencimento: string;
+    status: string; categoria_id: number | null; conta_id: number; data_vencimento: string; data_realizacao?: string | null;
   }[]>([]);
 
   const Cores = {
@@ -306,7 +307,7 @@ export default function ChatIA() {
       supabase.from("contas").select("id, nome, saldo_inicial, compartilhado, arquivado"),
       supabase.from("categorias").select("id, nome, tipo, cor").eq("user_id", uid).eq("ativa", 1),
       supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, compartilhado").neq("arquivado", true),
-      supabase.from("transacoes").select("id, tipo, valor, descricao, status, categoria_id, conta_id, data_vencimento").eq("user_id", uid).order("data_vencimento", { ascending: false }).limit(500),
+      supabase.from("transacoes").select("id, tipo, valor, descricao, status, categoria_id, conta_id, data_vencimento, data_realizacao").eq("user_id", uid).order("data_vencimento", { ascending: false }).limit(500),
       supabase.from("cartoes").select("id, nome, limite, dia_vencimento, dia_fechamento").eq("user_id", uid).eq("ativo", true),
     ]);
 
@@ -320,7 +321,7 @@ export default function ChatIA() {
     // Calcular resumo financeiro do mês atual
     if (resTransacoes.data && contasAtivas.length > 0) {
       const mesAtual = new Date().toISOString().slice(0, 7);
-      const transDoMes = resTransacoes.data.filter((t) => (t.data_vencimento || "").startsWith(mesAtual));
+      const transDoMes = resTransacoes.data.filter((t) => dataEfetivaTransacao(t).startsWith(mesAtual));
 
       const totalReceitas = transDoMes.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
       const totalDespesas = transDoMes.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + Number(t.valor), 0);
@@ -542,7 +543,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       else if (frequencia === "recorrente" || frequencia === "fixa") desc = `${descBase} (Fixa)`;
       const { error } = await supabase.from("transacoes").insert({
         tipo, valor: Number(data.value), descricao: desc, status,
-        data_vencimento: dataFmt, conta_id: conta.id,
+        data_vencimento: dataFmt, data_realizacao: status === "paga" ? dataFmt : null, conta_id: conta.id,
         categoria_id: cat?.id ?? null, user_id: session?.user?.id,
       });
       if (error) return `Erro ao criar lançamento: ${error.message}`;
@@ -563,15 +564,13 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     const desc = data.description || "Transferência";
 
     const caixinhaDestino = caixinhasUsuario.find((c) => c.nome.toLowerCase().includes(destino));
-    const { error: errDesp } = await supabase.from("transacoes").insert({
-      tipo: "despesa", valor,
-      descricao: caixinhaDestino ? `Guardar em: ${caixinhaDestino.nome}` : desc,
-      status: "paga", data_vencimento: dataVenc,
-      conta_id: contaOrigem.id, categoria_id: null, user_id: session?.user?.id,
-    });
-    if (errDesp) return `Erro na transferência: ${errDesp.message}`;
-
     if (caixinhaDestino) {
+      const { error: errDesp } = await supabase.from("transacoes").insert({
+        tipo: "despesa", valor, descricao: `Guardar em: ${caixinhaDestino.nome}`,
+        status: "paga", data_vencimento: dataVenc, data_realizacao: dataVenc,
+        conta_id: contaOrigem.id, categoria_id: null, user_id: session?.user?.id,
+      });
+      if (errDesp) return `Erro na transferência: ${errDesp.message}`;
       const novoSaldo = Number(caixinhaDestino.saldo_atual) + valor;
       await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaDestino.id);
       await carregarContexto();
@@ -580,12 +579,12 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
     const contaDestino = contasUsuario.find((c) => c.nome.toLowerCase().includes(destino));
     if (!contaDestino) return `Conta de destino "${data.account_destino}" não encontrada.`;
-    const { error: errRec } = await supabase.from("transacoes").insert({
-      tipo: "receita", valor, descricao: desc,
-      status: "paga", data_vencimento: dataVenc,
-      conta_id: contaDestino.id, categoria_id: null, user_id: session?.user?.id,
+    const { error: errTransferencia } = await supabase.from("transacoes").insert({
+      tipo: "despesa", valor, descricao: descricaoTransferencia(desc, contaDestino.id),
+      status: "paga", data_vencimento: dataVenc, data_realizacao: dataVenc,
+      conta_id: contaOrigem.id, categoria_id: null, user_id: session?.user?.id,
     });
-    if (errRec) return `Erro ao registrar destino: ${errRec.message}`;
+    if (errTransferencia) return `Erro ao registrar transferência: ${errTransferencia.message}`;
     await carregarContexto();
     return `✅ Transferência de R$ ${valor.toFixed(2)} realizada!\n📅 ${formatarDataBR(dataVenc)}\n🏦 De: ${contaOrigem.nome} → Para: ${contaDestino.nome}`;
   };
@@ -717,6 +716,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       valor,
       descricao,
       data_vencimento: new Date().toISOString().split("T")[0],
+      data_realizacao: new Date().toISOString().split("T")[0],
       conta_id: contaId,
       categoria_id: null,
       status: "paga",
@@ -988,7 +988,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     const economiaNecess = metaValor / mesesRestantes;
 
     const mesAtual = hoje.toISOString().slice(0, 7);
-    const transDoMes = transacoesCompletas.filter((t) => (t.data_vencimento || "").startsWith(mesAtual) && t.status === "paga");
+    const transDoMes = transacoesCompletas.filter((t) => dataEfetivaTransacao(t).startsWith(mesAtual) && t.status === "paga");
     const totalRecMes = transDoMes.filter((t) => t.tipo === "receita").reduce((a, t) => a + Number(t.valor), 0);
     const totalDespMes = transDoMes.filter((t) => t.tipo === "despesa").reduce((a, t) => a + Number(t.valor), 0);
     const saldoMes = totalRecMes - totalDespMes;
@@ -1061,15 +1061,15 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
 
     const { data: trans } = await supabase
       .from("transacoes")
-      .select("tipo, valor, categoria_id, data_vencimento, conta_id")
+      .select("tipo, valor, categoria_id, data_vencimento, data_realizacao, conta_id")
       .eq("status", "paga")
-      .gte("data_vencimento", tresMesesAtras)
       .order("data_vencimento", { ascending: false })
       .limit(500);
 
     if (!trans || trans.length === 0) return "Você ainda não tem transações registradas para análise.";
 
-    const transDoMes = trans.filter((t) => (t.data_vencimento || "").startsWith(mesAtual));
+    const transRecentes = trans.filter((t) => dataEfetivaTransacao(t) >= tresMesesAtras);
+    const transDoMes = transRecentes.filter((t) => dataEfetivaTransacao(t).startsWith(mesAtual));
     const totalRec = transDoMes.filter((t) => t.tipo === "receita").reduce((acc, t) => acc + Number(t.valor), 0);
     const totalDesp = transDoMes.filter((t) => t.tipo === "despesa").reduce((acc, t) => acc + Number(t.valor), 0);
     const saldo = totalRec - totalDesp;
@@ -1080,7 +1080,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       return d.toISOString().slice(0, 7);
     });
     const despMesesAnt = mesesAnteriores.map((mes) =>
-      trans.filter((t) => t.tipo === "despesa" && (t.data_vencimento || "").startsWith(mes))
+      transRecentes.filter((t) => t.tipo === "despesa" && dataEfetivaTransacao(t).startsWith(mes))
            .reduce((acc, t) => acc + Number(t.valor), 0)
     );
     const mediaDespAnt = despMesesAnt.filter((v) => v > 0).length > 0

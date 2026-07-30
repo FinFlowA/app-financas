@@ -323,6 +323,7 @@ export default function CaixinhasScreen() {
       tipo: tipoMovimento === "guardar" ? "despesa" : "receita",
       valor: valorNum, descricao,
       data_vencimento: new Date().toISOString().split("T")[0],
+      data_realizacao: new Date().toISOString().split("T")[0],
       conta_id: contaMovimentoId, categoria_id: null,
       status: "paga", user_id: session.user.id,
     }]);
@@ -548,7 +549,7 @@ export default function CaixinhasScreen() {
             <View style={{ width: "100%", backgroundColor: Cores.cardFundo, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: "#FF4444" }}>
               <Text style={{ color: Cores.textoPrincipal, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>Apagar Objetivo</Text>
               <Text style={{ color: Cores.textoSecundario, fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>
-                Tem certeza que quer apagar "{modalConfirmarDeletar.nome}"?
+                {`Tem certeza que quer apagar “${modalConfirmarDeletar.nome}”?`}
               </Text>
               <TouchableOpacity
                 style={{ backgroundColor: "#FF4444", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 10 }}

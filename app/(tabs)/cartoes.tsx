@@ -169,7 +169,6 @@ export default function CartoesScreen() {
 
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
   const [itens, setItens] = useState<FaturaItem[]>([]);
-  const [loading, setLoading] = useState(false);
 
   // Cartão selecionado (fatura aberta)
   const [cartaoAberto, setCartaoAberto] = useState<Cartao | null>(null);
@@ -231,7 +230,6 @@ export default function CartoesScreen() {
 
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
-    setLoading(true);
 
     const [resCartoes, resItens, resCats, resContas, resArquivados] = await Promise.all([
       supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", true).order("id"),
@@ -246,7 +244,6 @@ export default function CartoesScreen() {
     if (resCats.data) setCategorias((resCats.data as Categoria[]).filter((c) => c.ativa !== false && c.ativa !== 0));
     if (resContas.data) setContas(resContas.data as ContaSimples[]);
     if (resArquivados.data) setCartoesArquivados(resArquivados.data);
-    setLoading(false);
 
     // Alerta de limite próximo do máximo para cada cartão
     if (resCartoes.data && resItens.data && session?.user?.id) {
@@ -436,21 +433,27 @@ export default function CartoesScreen() {
     const hoje = new Date().toISOString().slice(0, 10);
     const descPagamento = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)} [PagFatura:${cartaoAberto.id}:${mesPagamento}:total]`;
 
-    const [resUpdate, resTrans] = await Promise.all([
-      supabase.from("fatura_itens").update({ pago: true }).eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false),
-      supabase.from("transacoes").insert([{
+    const resUpdate = await supabase.from("fatura_itens").update({ pago: true })
+      .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false);
+    if (resUpdate.error) {
+      showToast("Erro ao atualizar a fatura", "error");
+      return;
+    }
+    const resTrans = await supabase.from("transacoes").insert([{
         user_id: session!.user.id,
         tipo: "despesa",
         valor: totalFatura,
         descricao: descPagamento,
         data_vencimento: hoje,
+        data_realizacao: hoje,
         conta_id: contaPagamentoId,
         status: "paga",
         categoria_id: null,
-      }]),
-    ]);
+      }]);
 
-    if (resUpdate.error || resTrans.error) {
+    if (resTrans.error) {
+      await supabase.from("fatura_itens").update({ pago: false })
+        .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento);
       showToast("Erro ao registrar pagamento", "error");
       return;
     }
@@ -494,13 +497,29 @@ export default function CartoesScreen() {
       itemVinculado = inserido.data?.id ?? null;
     }
 
+    if (erro) {
+      if (itemVinculado) await supabase.from("fatura_itens").delete().eq("id", itemVinculado);
+      if (levarSaldo) {
+        await supabase.from("fatura_itens").update({ pago: false })
+          .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento);
+      }
+      return showToast("Erro ao atualizar a fatura", "error");
+    }
+
     const modo = levarSaldo ? "saldo_transferido" : "parcial";
     const desc = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)} [PagFatura:${cartaoAberto.id}:${mesPagamento}:${modo}:${itemVinculado}]`;
     const movimento = await supabase.from("transacoes").insert([{
       user_id: session.user.id, tipo: "despesa", valor: pago, descricao: desc,
-      data_vencimento: hoje, conta_id: contaPagamentoId, status: "paga", categoria_id: null,
+      data_vencimento: hoje, data_realizacao: hoje, conta_id: contaPagamentoId, status: "paga", categoria_id: null,
     }]);
-    if (erro || movimento.error) return showToast("Erro ao registrar pagamento", "error");
+    if (movimento.error) {
+      if (itemVinculado) await supabase.from("fatura_itens").delete().eq("id", itemVinculado);
+      if (levarSaldo) {
+        await supabase.from("fatura_itens").update({ pago: false })
+          .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento);
+      }
+      return showToast("Erro ao registrar pagamento", "error");
+    }
     setModalPagamentoParcial(false);
     setModalPagamento(false);
     showToast(levarSaldo ? "Saldo levado para a próxima fatura ✓" : "Pagamento parcial registrado ✓", "success");
@@ -508,10 +527,6 @@ export default function CartoesScreen() {
   };
 
   const estornarFatura = async (cartaoId: number, mes: string) => {
-    const totalFatura = calcularTotalFatura(cartaoId, mes) === 0
-      ? itens.filter(i => i.cartao_id === cartaoId && i.mes_fatura === mes && i.pago).reduce((a, i) => a + Number(i.valor), 0)
-      : 0;
-
     const nomeCartao = cartoes.find(c => c.id === cartaoId)?.nome ?? "";
     const descPagamento = `Fatura ${nomeCartao} - ${formatarMes(mes)}`;
 
@@ -1311,7 +1326,7 @@ export default function CartoesScreen() {
                 <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Excluir Compra</Text>
               </View>
               <Text style={{ color: Cores.secundario, fontSize: 14, marginBottom: 20 }} numberOfLines={2}>
-                "{modalExcluirItem.descricao}"
+                {`“${modalExcluirItem.descricao}”`}
               </Text>
 
               {modalExcluirItem.total_parcelas > 1 && (

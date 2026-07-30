@@ -23,6 +23,7 @@ import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { fmtReais } from "../../lib/utils";
 import {
   adicionarRecorrencia,
+  dataEfetivaTransacao,
   descricaoTransferencia,
   getContaDestinoTransferencia,
   isTransferencia,
@@ -60,6 +61,7 @@ interface Transacao {
   tipo: string;
   valor: number;
   data_vencimento: string;
+  data_realizacao?: string | null;
   descricao: string;
   categoria_id: number | null;
   conta_id: number;
@@ -159,7 +161,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
 };
 
 export default function Dashboard() {
-  const { isDark, session, showToast, notificacoesAtivas, verificarLimite } = useAppTheme();
+  const { isDark, session, notificacoesAtivas, verificarLimite } = useAppTheme();
   const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
 
@@ -269,7 +271,7 @@ export default function Dashboard() {
   const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas + transferenciasRecebidasAtivas - despesasRealizadas;
 
   const transacoesDoMes = transacoes.filter((t) => {
-    const dataT = new Date(t.data_vencimento);
+    const dataT = new Date(dataEfetivaTransacao(t));
     const dataAjustada = new Date(dataT.getTime() + dataT.getTimezoneOffset() * 60000);
     return (
       dataAjustada.getMonth() === mesAtual.getMonth() &&
@@ -675,14 +677,14 @@ export default function Dashboard() {
           // Transferência para objetivo: cria despesa com descrição "Guardar em: X"
           const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
           if (!caixa) return Alert.alert("Aviso", "Objetivo não encontrado.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
         } else {
           if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: descricaoTransferencia(descFinal, contaDestinoId!), categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: descricaoTransferencia(descFinal, contaDestinoId!), categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
         }
       } else {
         if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
-        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, status: statusFinal, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
+        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
       }
     }
 

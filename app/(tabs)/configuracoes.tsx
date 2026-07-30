@@ -511,7 +511,7 @@ export default function ConfiguracoesScreen() {
                 <MaterialIcons name="favorite" size={40} color="#E76F51" />
                 <Text style={[styles.statusText, { color: Cores.texto, marginTop: 10 }]}>Contas vinculadas com sucesso!</Text>
                 <Text style={[styles.helpText, { color: Cores.secundario, textAlign: "center", marginTop: 5 }]}>
-                  Agora você verá a opção "Compartilhar" ao criar uma Conta Nova.
+                  {"Agora você verá a opção “Compartilhar” ao criar uma Conta Nova."}
                 </Text>
                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#E76F51", marginTop: 20 }]} onPress={() => deletarParceria("Tem certeza que deseja desfazer o vínculo com seu parceiro(a)?")}>
                   <Text style={[styles.actionBtnText, { color: "#E76F51" }]}>Desfazer Vínculo</Text>

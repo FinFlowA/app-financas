@@ -1,5 +1,18 @@
 export type FrequenciaRecorrencia = "semanal" | "mensal" | "anual";
 
+export interface TransacaoComDatas {
+  status?: string | null;
+  data_vencimento?: string | null;
+  data_realizacao?: string | null;
+}
+
+export function dataEfetivaTransacao(transacao: TransacaoComDatas): string {
+  if (transacao.status === "paga") {
+    return transacao.data_realizacao || transacao.data_vencimento || "";
+  }
+  return transacao.data_vencimento || "";
+}
+
 const DESTINO_TRANSFERENCIA_REGEX = /\s*\[Destino:(\d+)\]\s*$/;
 
 export function isTransferencia(descricao?: string | null): boolean {

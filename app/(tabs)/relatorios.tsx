@@ -14,6 +14,7 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import {
+  dataEfetivaTransacao,
   getContaDestinoTransferencia,
   isTransferencia,
 } from "../../lib/transacoes";
@@ -23,6 +24,7 @@ interface Transacao {
   tipo: string;
   status: string;
   data_vencimento: string;
+  data_realizacao?: string | null;
   conta_id: number;
   descricao: string;
 }
@@ -76,7 +78,7 @@ export default function RelatoriosScreen() {
     if (!session?.user?.id) return;
     try {
       const [resT, resC] = await Promise.all([
-        supabase.from("transacoes").select("valor, tipo, status, data_vencimento, conta_id, descricao"),
+        supabase.from("transacoes").select("valor, tipo, status, data_vencimento, data_realizacao, conta_id, descricao"),
         supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
       ]);
       if (resT.data) setTransacoes(resT.data);
@@ -130,7 +132,7 @@ export default function RelatoriosScreen() {
   // All 12 months bar data (paid transactions)
   const todosOsMeses = Array.from({ length: 12 }, (_, m) => {
     const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
-    const trans = transacoesFiltradas.filter(t => (t.data_vencimento || "").startsWith(yyyymm));
+    const trans = transacoesFiltradas.filter(t => dataEfetivaTransacao(t).startsWith(yyyymm));
     return {
       mesIdx: m,
       label: MESES_ABREV[m],
@@ -144,7 +146,7 @@ export default function RelatoriosScreen() {
 
   const saldoRealAte = (dataFim: string): number => {
     return transacoesFiltradas
-      .filter(t => t.status === "paga" && (t.data_vencimento || "") <= dataFim)
+      .filter(t => t.status === "paga" && dataEfetivaTransacao(t) <= dataFim)
       .reduce(
         (saldo, t) => saldo + (t.tipo === "receita" ? Number(t.valor) : -Number(t.valor)),
         saldoInicialTotal,
