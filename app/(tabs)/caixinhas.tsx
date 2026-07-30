@@ -92,15 +92,15 @@ export default function CaixinhasScreen() {
   const { isDark, session, showToast, verificarLimite } = useAppTheme();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
-    textoPrincipal: isDark ? "#ffffff" : "#111827",
-    textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333333" : "#E5E7EB",
-    inputFundo: isDark ? "#2C2C2C" : "#F3F4F6",
-    barraFundo: isDark ? "#333333" : "#E5E7EB",
-    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
-    totalCardBg: isDark ? "#1A1A1A" : "#E5E7EB",
+    fundo: isDark ? "#121212" : "#F5F2EC",
+    textoPrincipal: isDark ? "#ffffff" : "#27313A",
+    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
+    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
+    borda: isDark ? "#333333" : "#E5DED3",
+    inputFundo: isDark ? "#2C2C2C" : "#FAF8F4",
+    barraFundo: isDark ? "#333333" : "#E3DDD4",
+    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
+    totalCardBg: isDark ? "#1A1A1A" : "#EDE8E0",
   };
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);

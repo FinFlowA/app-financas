@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais } from "../../lib/utils";
 import {
   adicionarRecorrencia,
@@ -66,6 +67,13 @@ interface Transacao {
   categoria_id: number | null;
   conta_id: number;
   status: string;
+}
+
+interface CompraCartao {
+  id: number;
+  valor: number;
+  data_compra: string;
+  categoria_id: number | null;
 }
 
 const PALETA_CORES = [
@@ -166,14 +174,14 @@ export default function Dashboard() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
-    textoPrincipal: isDark ? "#ffffff" : "#111827",
-    textoSecundario: isDark ? "#AAAAAA" : "#6B7280",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333333" : "#E5E7EB",
-    inputFundo: isDark ? "#2C2C2C" : "#F3F4F6",
-    pillFundo: isDark ? "#333333" : "#F3F4F6",
-    pillAtivo: isDark ? "#555555" : "#E5E7EB",
+    fundo: isDark ? "#121212" : "#F5F2EC",
+    textoPrincipal: isDark ? "#ffffff" : "#27313A",
+    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
+    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
+    borda: isDark ? "#333333" : "#E5DED3",
+    inputFundo: isDark ? "#2C2C2C" : "#FAF8F4",
+    pillFundo: isDark ? "#333333" : "#EEEAE3",
+    pillAtivo: isDark ? "#555555" : "#E3DDD4",
   };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -248,7 +256,9 @@ export default function Dashboard() {
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
-  const [modoDistribuicao, setModoDistribuicao] = useState<"todos" | "realizados">("todos");
+  const [modoDistribuicao, setModoDistribuicao] = useState<"previstos" | "concluidos">("concluidos");
+  const [comprasCartao, setComprasCartao] = useState<CompraCartao[]>([]);
+  const [temFaturaVencida, setTemFaturaVencida] = useState(false);
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
   const [qtdVencidas, setQtdVencidas] = useState(0);
 
@@ -279,7 +289,12 @@ export default function Dashboard() {
     );
   });
 
-  const transacoesDoMesSemTransferencias = transacoesDoMes.filter((t) => !isTransferencia(t.descricao));
+  const transacoesDoMesSemTransferencias = transacoesDoMes.filter(
+    (t) => !isTransferencia(t.descricao) && !(t.descricao ?? "").includes("[PagFatura:")
+  );
+  const comprasCartaoDoMes = comprasCartao.filter((item) => item.data_compra?.startsWith(
+    `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}`
+  ));
   const receitasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
   const despesasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
   const balancoMensal = receitasDoMes - despesasDoMes;
@@ -293,10 +308,13 @@ export default function Dashboard() {
     ...categorias
       .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
       .map((cat) => {
-        const total = transacoesDoMes
+        const totalTransacoes = transacoesDoMes
           .filter((t) => t.tipo === "despesa" && t.categoria_id === cat.id)
           .reduce((acc, t) => acc + t.valor, 0);
-        return { cor: cat.cor, valor: total, nome: cat.nome };
+        const totalCartao = comprasCartaoDoMes
+          .filter((item) => item.categoria_id === cat.id)
+          .reduce((acc, item) => acc + Number(item.valor), 0);
+        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome };
       })
       .filter((d) => d.valor > 0),
     ...(caixinhaGuardadoTotal > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoTotal, nome: "Objetivos" }] : []),
@@ -315,7 +333,8 @@ export default function Dashboard() {
 
   // Data for "realized only" mode
   const receitasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
-  const despesasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+  const despesasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0)
+    + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0);
 
   const caixinhaGuardadoRealizado = transacoesDoMes
     .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.descricao || "").startsWith("Guardar em: "))
@@ -325,10 +344,13 @@ export default function Dashboard() {
     ...categorias
       .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
       .map((cat) => {
-        const total = transacoesDoMes
+        const totalTransacoes = transacoesDoMes
           .filter(t => t.tipo === "despesa" && t.status === "paga" && t.categoria_id === cat.id)
           .reduce((acc, t) => acc + t.valor, 0);
-        return { cor: cat.cor, valor: total, nome: cat.nome };
+        const totalCartao = comprasCartaoDoMes
+          .filter((item) => item.categoria_id === cat.id)
+          .reduce((acc, item) => acc + Number(item.valor), 0);
+        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome };
       })
       .filter((d) => d.valor > 0),
     ...(caixinhaGuardadoRealizado > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoRealizado, nome: "Objetivos" }] : []),
@@ -350,7 +372,7 @@ export default function Dashboard() {
     if (!session?.user?.id) return;
 
     try {
-      const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes] = await Promise.all([
+      const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
         supabase.from("transacoes").select("*"),    // RLS retorna próprias + de contas compartilhadas
@@ -359,6 +381,7 @@ export default function Dashboard() {
         ),
         supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, cor, icone"),
         supabase.from("cartoes").select("id, nome, dia_vencimento, dia_fechamento").eq("user_id", session.user.id).eq("ativo", true),
+        supabase.from("fatura_itens").select("id, cartao_id, valor, data_compra, mes_fatura, categoria_id, pago").eq("user_id", session.user.id),
       ]);
 
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
@@ -367,6 +390,21 @@ export default function Dashboard() {
       if (resContas.data) setContas(resContas.data);
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
+      if (resFaturas.data) setComprasCartao(resFaturas.data as CompraCartao[]);
+
+      const hoje = new Date();
+      hoje.setHours(0, 0, 0, 0);
+      const cartoesPorId = new Map((resCartoes.data ?? []).map((c: any) => [c.id, c]));
+      const possuiFaturaVencida = (resFaturas.data ?? []).some((item: any) => {
+        if (item.pago) return false;
+        const cartao = cartoesPorId.get(item.cartao_id) as any;
+        if (!cartao) return false;
+        const [ano, mes] = item.mes_fatura.split("-").map(Number);
+        const ultimoDia = new Date(ano, mes, 0).getDate();
+        const vencimento = new Date(ano, mes - 1, Math.min(Number(cartao.dia_vencimento), ultimoDia));
+        return vencimento < hoje;
+      });
+      setTemFaturaVencida(possuiFaturaVencida);
 
       const temParc = resParceria.data ? resParceria.data.length > 0 : false;
       setTemParceiro(temParc);
@@ -724,8 +762,14 @@ export default function Dashboard() {
             </Text>
           </View>
           <TouchableOpacity
-            style={styles.iaBotaoFixo}
-            onPress={() => router.push("/chat-ia")}
+            style={[styles.iaBotaoFixo, !usuarioPodeAcessarIA(session?.user?.email) && { opacity: 0.55 }]}
+            onPress={() => {
+              if (usuarioPodeAcessarIA(session?.user?.email)) {
+                router.push("/chat-ia");
+              } else {
+                Alert.alert("IA em desenvolvimento", "O assistente financeiro ainda está em desenvolvimento e será liberado em breve.");
+              }
+            }}
           >
             <MaterialIcons name="auto-awesome" size={18} color="#FFF" />
             <Text style={styles.iaBotaoTexto}>IA</Text>
@@ -748,14 +792,19 @@ export default function Dashboard() {
               <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={[styles.actionButtonFull, { backgroundColor: "#2563EB" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
+          <TouchableOpacity style={[styles.actionButtonFull, { backgroundColor: "#2563EB", position: "relative" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
             <MaterialIcons name="credit-card" size={15} color="#FFF" style={{ marginRight: 6 }} />
             <Text style={styles.actionButtonText}>Cartão de Crédito</Text>
+            {temFaturaVencida && (
+              <View style={styles.faturaVencidaBadge}>
+                <Text style={styles.faturaVencidaBadgeText}>!</Text>
+              </View>
+            )}
           </TouchableOpacity>
         </View>
 
         {/* CARTÃO DE FLUXO DE CAIXA */}
-        <View style={[styles.balanceCard, { backgroundColor: isDark ? "#1A1A1A" : "#FFFFFF", borderWidth: isDark ? 0 : 1, borderColor: isDark ? "transparent" : "#E5E7EB", shadowColor: isDark ? "transparent" : "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0 : 0.06, shadowRadius: 8, elevation: isDark ? 0 : 2 }]}>
+        <View style={[styles.balanceCard, { backgroundColor: isDark ? "#1A1A1A" : Cores.cardFundo, borderWidth: isDark ? 0 : 1, borderColor: isDark ? "transparent" : Cores.borda, shadowColor: isDark ? "transparent" : "#6B6258", shadowOffset: { width: 0, height: 2 }, shadowOpacity: isDark ? 0 : 0.04, shadowRadius: 8, elevation: isDark ? 0 : 1 }]}>
           <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
             <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.mesBotao}>
               <MaterialIcons name="chevron-left" size={24} color={isDark ? "#FFF" : "#111827"} />
@@ -906,16 +955,16 @@ export default function Dashboard() {
             </Text>
             <View style={{ flexDirection: "row", backgroundColor: Cores.pillFundo, borderRadius: 8, padding: 3 }}>
               <TouchableOpacity
-                onPress={() => setModoDistribuicao("todos")}
-                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: modoDistribuicao === "todos" ? (isDark ? "#444" : "#FFF") : "transparent" }}
+                onPress={() => setModoDistribuicao("concluidos")}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: modoDistribuicao === "concluidos" ? "#2A9D8F" : "transparent" }}
               >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: modoDistribuicao === "todos" ? Cores.textoPrincipal : Cores.textoSecundario }}>Tudo</Text>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: modoDistribuicao === "concluidos" ? "#FFF" : Cores.textoSecundario }}>Concluídos</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                onPress={() => setModoDistribuicao("realizados")}
-                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: modoDistribuicao === "realizados" ? "#2A9D8F" : "transparent" }}
+                onPress={() => setModoDistribuicao("previstos")}
+                style={{ paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, backgroundColor: modoDistribuicao === "previstos" ? (isDark ? "#444" : "#FFF") : "transparent" }}
               >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: modoDistribuicao === "realizados" ? "#FFF" : Cores.textoSecundario }}>Realizados</Text>
+                <Text style={{ fontSize: 12, fontWeight: "600", color: modoDistribuicao === "previstos" ? Cores.textoPrincipal : Cores.textoSecundario }}>Previstos</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -937,13 +986,13 @@ export default function Dashboard() {
               <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Despesas por Categoria</Text>
             </View>
             <BarChartCategorias
-              dados={modoDistribuicao === "realizados" ? dadosDespesasPorCatRealizadas : dadosDespesasPorCat}
-              total={modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes}
+              dados={modoDistribuicao === "concluidos" ? dadosDespesasPorCatRealizadas : dadosDespesasPorCat}
+              total={modoDistribuicao === "concluidos" ? despesasDoMesRealizadas : despesasDoMes + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0)}
               isDark={isDark}
             />
-            {(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes) > 0 && (
+            {(modoDistribuicao === "concluidos" ? despesasDoMesRealizadas : despesasDoMes + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0)) > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: {fmtReais(modoDistribuicao === "realizados" ? despesasDoMesRealizadas : despesasDoMes)}
+                Total: {fmtReais(modoDistribuicao === "concluidos" ? despesasDoMesRealizadas : despesasDoMes + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0))}
               </Text>
             )}
           </View>
@@ -955,13 +1004,13 @@ export default function Dashboard() {
               <Text style={[styles.graficoTitulo, { color: Cores.textoPrincipal }]}>Receitas por Categoria</Text>
             </View>
             <BarChartCategorias
-              dados={modoDistribuicao === "realizados" ? dadosReceitasPorCatRealizadas : dadosReceitasPorCat}
-              total={modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes}
+              dados={modoDistribuicao === "concluidos" ? dadosReceitasPorCatRealizadas : dadosReceitasPorCat}
+              total={modoDistribuicao === "concluidos" ? receitasDoMesRealizadas : receitasDoMes}
               isDark={isDark}
             />
-            {(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes) > 0 && (
+            {(modoDistribuicao === "concluidos" ? receitasDoMesRealizadas : receitasDoMes) > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: {fmtReais(modoDistribuicao === "realizados" ? receitasDoMesRealizadas : receitasDoMes)}
+                Total: {fmtReais(modoDistribuicao === "concluidos" ? receitasDoMesRealizadas : receitasDoMes)}
               </Text>
             )}
           </View>
@@ -1469,20 +1518,6 @@ export default function Dashboard() {
                   <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "transferencia" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Transferência</Text>
                 </TouchableOpacity>
               </View>
-              {frequencia === "unica" && (
-                <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
-                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
-                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
-                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Repetição:</Text>
               <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
                 {(["unica", "parcelada", "fixa"] as const).map((freq) => (
@@ -1514,6 +1549,32 @@ export default function Dashboard() {
                   </View>
                 </>
               )}
+              {frequencia === "parcelada" && (
+                <>
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Quantidade de parcelas:</Text>
+                  <TextInput
+                    style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                    placeholder="Ex: 3"
+                    placeholderTextColor={Cores.textoSecundario}
+                    value={numParcelas}
+                    onChangeText={setNumParcelas}
+                    keyboardType="numeric"
+                  />
+                </>
+              )}
+              {frequencia === "unica" && (
+                <>
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
+                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
 
               <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
 
@@ -1523,13 +1584,10 @@ export default function Dashboard() {
               </TouchableOpacity>
               {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
               <View style={styles.rowInputs}>
-                <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center", flex: 1, marginRight: frequencia === "parcelada" ? 10 : 0 }]}>
+                <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center", flex: 1 }]}>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
                   <TextInput style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="decimal-pad" />
                 </View>
-                {frequencia === "parcelada" && (
-                  <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal, width: 80 }]} placeholder="Vezes" placeholderTextColor={Cores.textoSecundario} value={numParcelas} onChangeText={setNumParcelas} keyboardType="numeric" />
-                )}
               </View>
               {frequencia === "parcelada" && valorTransacao && numParcelas && !isNaN(parseFloat(valorTransacao)) && !isNaN(parseInt(numParcelas)) && (
                 <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: -10, marginBottom: 10, textAlign: "right" }}>
@@ -1614,6 +1672,12 @@ const styles = StyleSheet.create({
   actionRow: { flexDirection: "row", gap: 10 },
   actionButton: { flex: 1, flexDirection: "row", paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   actionButtonFull: { flexDirection: "row", paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  faturaVencidaBadge: {
+    position: "absolute", right: 8, top: 6, width: 20, height: 20,
+    borderRadius: 10, backgroundColor: "#DC2626", borderWidth: 2, borderColor: "#FFF",
+    alignItems: "center", justifyContent: "center",
+  },
+  faturaVencidaBadgeText: { color: "#FFF", fontSize: 12, fontWeight: "900", lineHeight: 14 },
   actionButtonText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
   mesBotao: { padding: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20 },
   mesBotaoModal: { padding: 8, backgroundColor: "rgba(0,0,0,0.05)", borderRadius: 20 },

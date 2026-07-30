@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -15,6 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../lib/supabase";
+import { usuarioPodeAcessarIA } from "../constants/features";
 import { useAppTheme } from "./_layout";
 
 import { verificarRateLimit } from "../lib/anti-spam";
@@ -265,6 +267,7 @@ Formato obrigatório:
 
 export default function ChatIA() {
   const { isDark, session, plano, limites, tentarAcaoIA, mostrarModalLimite } = useAppTheme();
+  const iaBetaLiberada = usuarioPodeAcessarIA(session?.user?.email);
   const router = useRouter();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -288,7 +291,7 @@ export default function ChatIA() {
   }[]>([]);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
+    fundo: isDark ? "#121212" : "#F5F2EC",
     textoPrincipal: isDark ? "#ffffff" : "#1A1A1A",
     textoSecundario: isDark ? "#AAAAAA" : "#666666",
     header: isDark ? "#1E1E1E" : "#F8F9FA",
@@ -1162,6 +1165,10 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   const enviarMensagem = async () => {
+    if (!iaBetaLiberada) {
+      Alert.alert("IA em desenvolvimento", "O assistente financeiro ainda está em desenvolvimento e será liberado em breve.");
+      return;
+    }
     if (!input.trim() || carregando) return;
     const agora = Date.now();
     if (agora - ultimoEnvioRef.current < 3000) return;
@@ -1461,17 +1468,18 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
         <View style={[styles.inputArea, { backgroundColor: Cores.header, borderTopColor: Cores.borda }]}>
           <TextInput
             style={[styles.input, { backgroundColor: Cores.fundo, color: Cores.textoPrincipal, borderColor: Cores.borda }]}
-            placeholder="Digite sua mensagem..."
+            placeholder={iaBetaLiberada ? "Digite sua mensagem..." : "IA em desenvolvimento"}
             placeholderTextColor={Cores.textoSecundario}
             value={input}
             onChangeText={setInput}
             onSubmitEditing={enviarMensagem}
             multiline
+            editable={iaBetaLiberada}
           />
           <TouchableOpacity
-            style={[styles.btnEnviar, { backgroundColor: input.trim() ? "#2A9D8F" : "#555" }]}
+            style={[styles.btnEnviar, { backgroundColor: iaBetaLiberada && input.trim() ? "#2A9D8F" : "#555" }]}
             onPress={enviarMensagem}
-            disabled={!input.trim() || carregando}
+            disabled={!iaBetaLiberada || !input.trim() || carregando}
           >
             <MaterialIcons name="send" size={20} color="#FFF" />
           </TouchableOpacity>

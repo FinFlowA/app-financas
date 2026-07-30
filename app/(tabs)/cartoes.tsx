@@ -158,13 +158,13 @@ export default function CartoesScreen() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
-    texto: isDark ? "#FFFFFF" : "#111827",
-    secundario: isDark ? "#AAAAAA" : "#526071",
-    card: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333" : "#D6DEE8",
-    input: isDark ? "#2C2C2C" : "#F8FAFC",
-    pillFundo: isDark ? "#2C2C2C" : "#F1F5F9",
+    fundo: isDark ? "#121212" : "#F5F2EC",
+    texto: isDark ? "#FFFFFF" : "#27313A",
+    secundario: isDark ? "#AAAAAA" : "#68727D",
+    card: isDark ? "#1E1E1E" : "#FFFDF9",
+    borda: isDark ? "#333" : "#E5DED3",
+    input: isDark ? "#2C2C2C" : "#FAF8F4",
+    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
   };
 
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
@@ -189,6 +189,7 @@ export default function CartoesScreen() {
   const [descCompra, setDescCompra] = useState("");
   const [valorCompra, setValorCompra] = useState("");
   const [parcelasCompra, setParcelasCompra] = useState("1");
+  const [tipoCompra, setTipoCompra] = useState<"unica" | "parcelada" | "fixa">("unica");
   const [dataCompra, setDataCompra] = useState(new Date());
   const [mostrarDataPicker, setMostrarDataPicker] = useState(false);
   const [loadingCompra, setLoadingCompra] = useState(false);
@@ -223,6 +224,7 @@ export default function CartoesScreen() {
 
   // Modal excluir item de fatura — substitui Alert
   const [modalExcluirItem, setModalExcluirItem] = useState<FaturaItem | null>(null);
+  const [estornoPendente, setEstornoPendente] = useState<{ cartaoId: number; mes: string } | null>(null);
 
   // Cartões arquivados
   const [cartoesArquivados, setCartoesArquivados] = useState<Cartao[]>([]);
@@ -250,7 +252,12 @@ export default function CartoesScreen() {
       const mesAtual = mesAtualStr();
       const cartoesComLimite = resCartoes.data.map((c: any) => {
         const limiteUsado = resItens.data!
-          .filter((i: any) => i.cartao_id === c.id && i.mes_fatura >= mesAtual && !i.pago)
+          .filter((i: any) =>
+            i.cartao_id === c.id
+            && i.mes_fatura >= mesAtual
+            && !i.pago
+            && (!(i.descricao ?? "").endsWith("(Fixa)") || i.mes_fatura === mesAtual)
+          )
           .reduce((acc: number, i: any) => acc + Number(i.valor), 0);
         return {
           nome: c.nome,
@@ -277,7 +284,12 @@ export default function CartoesScreen() {
   const calcularLimiteUsado = (cartaoId: number): number => {
     const mes = mesAtualStr();
     return itens
-      .filter((i) => i.cartao_id === cartaoId && i.mes_fatura >= mes && !i.pago)
+      .filter((i) =>
+        i.cartao_id === cartaoId
+        && i.mes_fatura >= mes
+        && !i.pago
+        && (!i.descricao.endsWith("(Fixa)") || i.mes_fatura === mes)
+      )
       .reduce((acc, i) => acc + Number(i.valor), 0);
   };
 
@@ -326,10 +338,13 @@ export default function CartoesScreen() {
     if (!descCompra.trim()) return Alert.alert("Aviso", "Informe a descrição da compra.");
     const valor = parseFloat(valorCompra.replace(",", "."));
     if (isNaN(valor) || valor <= 0) return Alert.alert("Aviso", "Informe um valor válido.");
-    const parcelas = parseInt(parcelasCompra) || 1;
-    if (parcelas < 1 || parcelas > 48) return Alert.alert("Aviso", "Número de parcelas inválido (1–48).");
+    const parcelasInformadas = parseInt(parcelasCompra) || 1;
+    if (tipoCompra === "parcelada" && (parcelasInformadas < 2 || parcelasInformadas > 48)) {
+      return Alert.alert("Aviso", "Número de parcelas inválido (2–48).");
+    }
+    const repeticoes = tipoCompra === "fixa" ? 60 : tipoCompra === "parcelada" ? parcelasInformadas : 1;
 
-    const valorParcela = +(valor / parcelas).toFixed(2);
+    const valorParcela = tipoCompra === "parcelada" ? +(valor / parcelasInformadas).toFixed(2) : valor;
     const mesPrimeiro = mesParaFatura(dataCompra, cartaoAberto.dia_fechamento);
     const [anoFatura, mesFatura] = mesPrimeiro.split("-").map(Number);
     const ultimoDia = new Date(anoFatura, mesFatura, 0).getDate();
@@ -343,10 +358,20 @@ export default function CartoesScreen() {
     const itensInserir: any[] = [];
     let grupoPrimeiroId: number | null = null;
 
-    for (let i = 0; i < parcelas; i++) {
+    for (let i = 0; i < repeticoes; i++) {
       const mes = adicionarMeses(mesPrimeiro, i);
-      const dataCompraStr = dataCompra.toISOString().slice(0, 10);
-      const desc = parcelas > 1 ? `${descCompra} (${i + 1}/${parcelas})` : descCompra;
+      const dataOcorrencia = tipoCompra === "fixa"
+        ? new Date(dataCompra.getFullYear(), dataCompra.getMonth() + i, Math.min(
+            dataCompra.getDate(),
+            new Date(dataCompra.getFullYear(), dataCompra.getMonth() + i + 1, 0).getDate()
+          ))
+        : dataCompra;
+      const dataCompraStr = `${dataOcorrencia.getFullYear()}-${String(dataOcorrencia.getMonth() + 1).padStart(2, "0")}-${String(dataOcorrencia.getDate()).padStart(2, "0")}`;
+      const desc = tipoCompra === "parcelada"
+        ? `${descCompra} (${i + 1}/${parcelasInformadas})`
+        : tipoCompra === "fixa"
+          ? `${descCompra} (Fixa)`
+          : descCompra;
       itensInserir.push({
         cartao_id: cartaoAberto.id,
         user_id: session.user.id,
@@ -355,7 +380,7 @@ export default function CartoesScreen() {
         data_compra: dataCompraStr,
         mes_fatura: mes,
         parcela_atual: i + 1,
-        total_parcelas: parcelas,
+        total_parcelas: tipoCompra === "parcelada" ? parcelasInformadas : 1,
         grupo_parcela_id: null,
         categoria_id: categCompraId,
         pago: false,
@@ -381,7 +406,7 @@ export default function CartoesScreen() {
     await supabase.from("fatura_itens").update({ grupo_parcela_id: grupoPrimeiroId }).eq("id", grupoPrimeiroId);
 
     // Insere demais parcelas
-    if (parcelas > 1) {
+    if (repeticoes > 1) {
       const demais = itensInserir.slice(1).map((item) => ({
         ...item,
         grupo_parcela_id: grupoPrimeiroId,
@@ -396,9 +421,9 @@ export default function CartoesScreen() {
     }
 
     setLoadingCompra(false);
-    setDescCompra(""); setValorCompra(""); setParcelasCompra("1"); setDataCompra(new Date()); setCategCompraId(null);
+    setDescCompra(""); setValorCompra(""); setParcelasCompra("2"); setTipoCompra("unica"); setDataCompra(new Date()); setCategCompraId(null);
     setModalNovaCompra(false);
-    showToast(`Compra adicionada${parcelas > 1 ? ` em ${parcelas}x` : ""} ✓`, "success");
+    showToast(tipoCompra === "fixa" ? "Compra fixa mensal adicionada ✓" : `Compra adicionada${tipoCompra === "parcelada" ? ` em ${parcelasInformadas}x` : ""} ✓`, "success");
     carregarDados();
   };
 
@@ -527,24 +552,21 @@ export default function CartoesScreen() {
   };
 
   const estornarFatura = async (cartaoId: number, mes: string) => {
+    setEstornoPendente({ cartaoId, mes });
+  };
+
+  const confirmarEstornoFatura = async () => {
+    if (!estornoPendente) return;
+    const { cartaoId, mes } = estornoPendente;
     const nomeCartao = cartoes.find(c => c.id === cartaoId)?.nome ?? "";
     const descPagamento = `Fatura ${nomeCartao} - ${formatarMes(mes)}`;
-
-    Alert.alert("Estornar Pagamento", `Desfazer o pagamento da fatura ${formatarMes(mes)}?`, [
-      { text: "Cancelar", style: "cancel" },
-      {
-        text: "Estornar",
-        style: "destructive",
-        onPress: async () => {
-          await Promise.all([
-            supabase.from("fatura_itens").update({ pago: false }).eq("cartao_id", cartaoId).eq("mes_fatura", mes).eq("pago", true),
-            supabase.from("transacoes").delete().eq("user_id", session!.user.id).eq("descricao", descPagamento),
-          ]);
-          showToast("Pagamento estornado", "success");
-          carregarDados();
-        },
-      },
+    setEstornoPendente(null);
+    await Promise.all([
+      supabase.from("fatura_itens").update({ pago: false }).eq("cartao_id", cartaoId).eq("mes_fatura", mes).eq("pago", true),
+      supabase.from("transacoes").delete().eq("user_id", session!.user.id).like("descricao", `${descPagamento}%`),
     ]);
+    showToast("Pagamento estornado", "success");
+    carregarDados();
   };
 
   // ─── Editar cartão ─────────────────────────────────────────────────────────
@@ -995,6 +1017,31 @@ export default function CartoesScreen() {
                 </TouchableOpacity>
               </View>
 
+              <Text style={[estilos.label, { color: Cores.secundario }]}>Tipo da compra</Text>
+              <View style={[estilos.tipoCompraRow, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                {([
+                  ["unica", "Única"],
+                  ["parcelada", "Parcelada"],
+                  ["fixa", "Fixa mensal"],
+                ] as const).map(([tipo, label]) => (
+                  <TouchableOpacity
+                    key={tipo}
+                    style={[estilos.tipoCompraBtn, tipoCompra === tipo && { backgroundColor: "#2563EB" }]}
+                    onPress={() => {
+                      setTipoCompra(tipo);
+                      if (tipo === "parcelada" && Number(parcelasCompra) < 2) setParcelasCompra("2");
+                    }}
+                  >
+                    <Text style={{ color: tipoCompra === tipo ? "#FFF" : Cores.secundario, fontSize: 12, fontWeight: "700" }}>{label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {tipoCompra === "fixa" && (
+                <Text style={{ color: Cores.secundario, fontSize: 12, lineHeight: 17, marginBottom: 14 }}>
+                  O valor será lançado mensalmente nas próximas faturas.
+                </Text>
+              )}
+
               <Text style={[estilos.label, { color: Cores.secundario }]}>Descrição</Text>
               <TextInput
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
@@ -1016,23 +1063,24 @@ export default function CartoesScreen() {
                     keyboardType="decimal-pad"
                   />
                 </View>
-                <View style={{ width: 12 }} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[estilos.label, { color: Cores.secundario }]}>Parcelas</Text>
-                  <TextInput
-                    style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                    placeholder="Ex: 3"
-                    placeholderTextColor={Cores.secundario}
-                    value={parcelasCompra}
-                    onChangeText={setParcelasCompra}
-                    keyboardType="number-pad"
-                    maxLength={2}
-                  />
-                </View>
+                {tipoCompra === "parcelada" && <><View style={{ width: 12 }} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.label, { color: Cores.secundario }]}>Parcelas</Text>
+                    <TextInput
+                      style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
+                      placeholder="Ex: 3"
+                      placeholderTextColor={Cores.secundario}
+                      value={parcelasCompra}
+                      onChangeText={setParcelasCompra}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                    />
+                  </View>
+                </>}
               </View>
 
               {/* Preview de parcelas */}
-              {parseFloat(valorCompra.replace(",", ".")) > 0 && parseInt(parcelasCompra) > 1 && (
+              {tipoCompra === "parcelada" && parseFloat(valorCompra.replace(",", ".")) > 0 && parseInt(parcelasCompra) > 1 && (
                 <View style={[estilos.previewParcelas, { backgroundColor: Cores.pillFundo }]}>
                   <Text style={[estilos.previewText, { color: Cores.secundario }]}>
                     {parseInt(parcelasCompra)}x de{" "}
@@ -1329,7 +1377,7 @@ export default function CartoesScreen() {
                 {`“${modalExcluirItem.descricao}”`}
               </Text>
 
-              {modalExcluirItem.total_parcelas > 1 && (
+              {(modalExcluirItem.total_parcelas > 1 || modalExcluirItem.descricao.endsWith("(Fixa)")) && (
                 <TouchableOpacity
                   style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]}
                   onPress={async () => {
@@ -1338,7 +1386,7 @@ export default function CartoesScreen() {
                   }}
                 >
                   <Text style={estilos.opcaoModalBtnText}>
-                    Excluir só esta ({modalExcluirItem.parcela_atual}/{modalExcluirItem.total_parcelas})
+                    {modalExcluirItem.total_parcelas > 1 ? `Excluir só esta (${modalExcluirItem.parcela_atual}/${modalExcluirItem.total_parcelas})` : "Excluir somente este mês"}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -1348,7 +1396,7 @@ export default function CartoesScreen() {
                 onPress={async () => {
                   const item = modalExcluirItem;
                   setModalExcluirItem(null);
-                  if (item.total_parcelas > 1) {
+                  if (item.total_parcelas > 1 || item.descricao.endsWith("(Fixa)")) {
                     const ids = itens
                       .filter(i => i.grupo_parcela_id === (item.grupo_parcela_id || item.id))
                       .map(i => i.id);
@@ -1360,7 +1408,7 @@ export default function CartoesScreen() {
               >
                 <MaterialIcons name="delete-forever" size={18} color="#FFF" />
                 <Text style={estilos.opcaoModalBtnText}>
-                  {modalExcluirItem.total_parcelas > 1 ? "Excluir todas as parcelas" : "Excluir"}
+                  {modalExcluirItem.descricao.endsWith("(Fixa)") ? "Excluir todos os meses" : modalExcluirItem.total_parcelas > 1 ? "Excluir todas as parcelas" : "Excluir"}
                 </Text>
               </TouchableOpacity>
 
@@ -1368,6 +1416,31 @@ export default function CartoesScreen() {
                 style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]}
                 onPress={() => setModalExcluirItem(null)}
               >
+                <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {estornoPendente && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setEstornoPendente(null)}>
+          <View style={estilos.modalFaturaOverlay}>
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card, borderTopWidth: 4, borderTopColor: "#F59E0B" }]}>
+              <View style={{ alignItems: "center", marginBottom: 14 }}>
+                <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#F59E0B22", alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name="undo" size={30} color="#F59E0B" />
+                </View>
+              </View>
+              <Text style={[estilos.modalTitulo, { color: Cores.texto, textAlign: "center" }]}>Estornar pagamento</Text>
+              <Text style={{ color: Cores.secundario, textAlign: "center", fontSize: 14, lineHeight: 20, marginVertical: 12 }}>
+                A fatura de {formatarMes(estornoPendente.mes)} voltará a ficar em aberto.
+              </Text>
+              <TouchableOpacity style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]} onPress={confirmarEstornoFatura}>
+                <MaterialIcons name="undo" size={18} color="#FFF" />
+                <Text style={estilos.opcaoModalBtnText}>Confirmar estorno</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)}>
                 <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
               </TouchableOpacity>
             </View>
@@ -1401,6 +1474,8 @@ const estilos = StyleSheet.create({
     borderRadius: 20,
   },
   btnNovoText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
+  tipoCompraRow: { flexDirection: "row", borderRadius: 10, borderWidth: 1, padding: 3, marginBottom: 12 },
+  tipoCompraBtn: { flex: 1, paddingVertical: 9, paddingHorizontal: 5, borderRadius: 8, alignItems: "center" },
 
   emptyCard: {
     margin: 20,

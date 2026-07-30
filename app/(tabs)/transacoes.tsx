@@ -38,6 +38,7 @@ interface Conta {
   id: number;
   nome: string;
   saldo_inicial: number;
+  arquivado?: boolean;
 }
 interface FaturaGrupo {
   cartao_id: number;
@@ -47,6 +48,7 @@ interface FaturaGrupo {
   total: number;
   pago: boolean;
   itens_ids: number[];
+  dia_vencimento: number;
 }
 interface Transacao {
   id: number;
@@ -89,16 +91,16 @@ export default function TransacoesScreen() {
   const router = useRouter();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
-    textoPrincipal: isDark ? "#ffffff" : "#111827",
-    textoSecundario: isDark ? "#AAAAAA" : "#526071",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFFFF",
-    blocoData: isDark ? "#2C2C2C" : "#F1F5F9",
-    borda: isDark ? "#333333" : "#D6DEE8",
-    pillFundo: isDark ? "#2C2C2C" : "#F1F5F9",
-    headerTabela: isDark ? "#252525" : "#E8EEF5",
-    rowPar: isDark ? "#161616" : "#F9FAFB",
-    rowImpar: isDark ? "#1C1C1C" : "#FFFFFF",
+    fundo: isDark ? "#121212" : "#F5F2EC",
+    textoPrincipal: isDark ? "#ffffff" : "#27313A",
+    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
+    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
+    blocoData: isDark ? "#2C2C2C" : "#EEEAE3",
+    borda: isDark ? "#333333" : "#E5DED3",
+    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
+    headerTabela: isDark ? "#252525" : "#EDE8E0",
+    rowPar: isDark ? "#161616" : "#FAF8F4",
+    rowImpar: isDark ? "#1C1C1C" : "#FFFDF9",
   };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -106,6 +108,8 @@ export default function TransacoesScreen() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [faturaGrupos, setFaturaGrupos] = useState<FaturaGrupo[]>([]);
   const [faturaAbrirCartao, setFaturaAbrirCartao] = useState<FaturaGrupo | null>(null);
+  const [faturaEstornar, setFaturaEstornar] = useState<FaturaGrupo | null>(null);
+  const [transacaoDetalhe, setTransacaoDetalhe] = useState<Transacao | null>(null);
 
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
@@ -168,7 +172,7 @@ export default function TransacoesScreen() {
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),
         supabase.from("transacoes").select("*"),
-        supabase.from("cartoes").select("id, nome, cor").eq("user_id", session.user.id).eq("ativo", true),
+        supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, valor, mes_fatura, pago").eq("user_id", session.user.id),
       ]);
       if (resCategorias.data) setCategorias(resCategorias.data);
@@ -177,8 +181,8 @@ export default function TransacoesScreen() {
 
       // Agrupar fatura_itens por (cartao_id, mes_fatura)
       if (resCartoes.data && resFaturas.data) {
-        const cartaoMap: Record<number, { nome: string; cor: string }> = {};
-        resCartoes.data.forEach((c: any) => { cartaoMap[c.id] = { nome: c.nome, cor: c.cor }; });
+        const cartaoMap: Record<number, { nome: string; cor: string; dia_vencimento: number }> = {};
+        resCartoes.data.forEach((c: any) => { cartaoMap[c.id] = { nome: c.nome, cor: c.cor, dia_vencimento: c.dia_vencimento }; });
 
         const grupos: Record<string, FaturaGrupo> = {};
         resFaturas.data.forEach((item: any) => {
@@ -194,6 +198,7 @@ export default function TransacoesScreen() {
               total: 0,
               pago: true,
               itens_ids: [],
+              dia_vencimento: cartaoMap[item.cartao_id]?.dia_vencimento ?? 1,
             };
           }
           grupos[key].total += Number(item.valor);
@@ -465,6 +470,11 @@ export default function TransacoesScreen() {
   const alternarStatus = async (id: number, statusAtual: string, _tipo: string) => {
     const transacao = transacoes.find((t) => t.id === id);
     if (!transacao) return;
+    const conta = contas.find((c) => c.id === transacao.conta_id);
+    if (statusAtual !== "paga" && conta?.arquivado) {
+      Alert.alert("Conta arquivada", "Reative a conta antes de concluir este lançamento.");
+      return;
+    }
     if (statusAtual === "paga") {
       aplicarStatus(transacao, "pendente");
       return;
@@ -489,6 +499,8 @@ export default function TransacoesScreen() {
 
   const transacoesDoMes = transacoes
     .filter((t) => {
+      const contaDaTransacao = contas.find((conta) => conta.id === t.conta_id);
+      if (t.status === "paga" && contaDaTransacao?.arquivado) return false;
       const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
       if (filtroVencidas) {
         const p = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
@@ -516,7 +528,16 @@ export default function TransacoesScreen() {
   const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
   const temMais = transacoesPaginadas.length < transacoesDoMes.length;
 
-  const faturaGruposDoMes = faturaGrupos.filter(g => g.mes_fatura === mesSelecionado);
+  const faturaGruposDoMes = faturaGrupos.filter((g) => {
+    if (g.mes_fatura !== mesSelecionado) return false;
+    if (filtroStatus === "concluidos" && !g.pago) return false;
+    if (filtroStatus === "pendentes" && g.pago) return false;
+    if (!filtroVencidas) return true;
+    const [ano, mes] = g.mes_fatura.split("-").map(Number);
+    const ultimoDia = new Date(ano, mes, 0).getDate();
+    const vencimento = new Date(ano, mes - 1, Math.min(g.dia_vencimento, ultimoDia));
+    return !g.pago && vencimento < hojeRef;
+  });
 
   const totalReceitas = transacoesDoMes
     .filter((t) => t.tipo === "receita" && !t.descricao.includes("[Transf.]"))
@@ -722,7 +743,6 @@ export default function TransacoesScreen() {
           ) : (
             transacoesPaginadas.map((t, index) => {
               const conta = contas.find((c) => c.id === t.conta_id);
-              const categoria = categorias.find((c) => c.id === t.categoria_id);
               const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
               const partes = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
               const isPendente = t.status === "pendente";
@@ -730,14 +750,12 @@ export default function TransacoesScreen() {
               const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
               const isVencida = isPendente && dataT < hoje;
               const transferencia = isTransferencia(t.descricao);
-              const contaDestinoId = getContaDestinoTransferencia(t.descricao);
-              const contaDestino = contas.find((c) => c.id === contaDestinoId);
               const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
               const prefixoValor = t.tipo === "receita" ? "+" : "-";
               const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
 
               return (
-                <View
+                <TouchableOpacity
                   key={t.id}
                   style={[styles.transacaoCard, {
                     backgroundColor: isVencida
@@ -749,6 +767,8 @@ export default function TransacoesScreen() {
                     borderLeftWidth: isVencida ? 3 : 0,
                     borderLeftColor: "#E76F51",
                   }]}
+                  onPress={() => setTransacaoDetalhe(t)}
+                  activeOpacity={0.75}
                 >
                   {/* Coluna esquerda: data */}
                   <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
@@ -775,13 +795,6 @@ export default function TransacoesScreen() {
                           <Text style={[styles.badgeText, { color: estiloConta.text }]} numberOfLines={1}>{conta.nome}</Text>
                         </View>
                       )}
-                      {/* Badge categoria */}
-                      {categoria && (
-                        <View style={[styles.badge, { backgroundColor: categoria.cor + "33" }]}>
-                          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: categoria.cor, marginRight: 4 }} />
-                          <Text style={[styles.badgeText, { color: categoria.cor }]} numberOfLines={1}>{categoria.nome}</Text>
-                        </View>
-                      )}
                       {isVencida && (
                         <View style={[styles.pendentePill, { backgroundColor: "#E76F5133" }]}>
                           <Text style={[styles.pendenteText, { color: "#E76F51" }]}>Vencida</Text>
@@ -792,17 +805,6 @@ export default function TransacoesScreen() {
                           <Text style={styles.pendenteText}>Pendente</Text>
                         </View>
                       )}
-                      {transferencia && (
-                        <View style={styles.transferPill}>
-                          <MaterialIcons name="swap-horiz" size={9} color="#F4A261" />
-                          <Text style={styles.transferText}>Transf.</Text>
-                        </View>
-                      )}
-                      {contaDestino && (
-                        <View style={styles.transferPill}>
-                          <Text style={styles.transferText}>→ {contaDestino.nome}</Text>
-                        </View>
-                      )}
                     </View>
                   </View>
 
@@ -811,23 +813,9 @@ export default function TransacoesScreen() {
                     <Text style={[styles.valorText, { color: isPendente ? Cores.textoSecundario : corValor }]} numberOfLines={1} adjustsFontSizeToFit>
                       {prefixoValor} {fmtReais(t.valor)}
                     </Text>
-                    <View style={{ flexDirection: "row", marginTop: 6, gap: 4 }}>
-                      <TouchableOpacity onPress={() => abrirEditarTransacao(t)} style={styles.acaoBtn}>
-                        <MaterialIcons name="edit" size={20} color="#457B9D" />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => alternarStatus(t.id, t.status, t.tipo)} style={styles.acaoBtn}>
-                        <MaterialIcons
-                          name={isPendente ? "radio-button-unchecked" : "check-circle"}
-                          size={22}
-                          color={isPendente ? Cores.textoSecundario : "#2A9D8F"}
-                        />
-                      </TouchableOpacity>
-                      <TouchableOpacity onPress={() => deletarTransacao(t.id)} style={styles.acaoBtn}>
-                        <MaterialIcons name="delete-outline" size={22} color={isDark ? "#FF6B6B" : "#D32F2F"} />
-                      </TouchableOpacity>
-                    </View>
+                    <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginTop: 5 }} />
                   </View>
-                </View>
+                </TouchableOpacity>
               );
             })
           )}
@@ -862,17 +850,7 @@ export default function TransacoesScreen() {
                   }]}
                   onPress={() => {
                     if (g.pago) {
-                      Alert.alert(`Fatura ${g.cartao_nome}`, `Fatura de ${formatarMesAno(g.mes_fatura)} já está paga.\n\nDeseja estornar?`, [
-                        { text: "Não", style: "cancel" },
-                        { text: "Estornar", style: "destructive", onPress: async () => {
-                          const descricao = `Fatura ${g.cartao_nome} - ${formatarMesAno(g.mes_fatura)}`;
-                          await Promise.all([
-                            supabase.from("fatura_itens").update({ pago: false }).in("id", g.itens_ids),
-                            supabase.from("transacoes").delete().eq("user_id", session!.user.id).eq("descricao", descricao),
-                          ]);
-                          carregarDados();
-                        }},
-                      ]);
+                      setFaturaEstornar(g);
                     } else {
                       setFaturaAbrirCartao(g);
                     }
@@ -954,6 +932,87 @@ export default function TransacoesScreen() {
               </TouchableOpacity>
               <TouchableOpacity style={{ minHeight: 48, borderRadius: 11, backgroundColor: Cores.blocoData, alignItems: "center", justifyContent: "center" }} onPress={() => setFaturaAbrirCartao(null)}>
                 <Text style={{ color: Cores.textoSecundario, fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {transacaoDetalhe && (() => {
+        const t = transacaoDetalhe;
+        const conta = contas.find((c) => c.id === t.conta_id);
+        const categoria = categorias.find((c) => c.id === t.categoria_id);
+        const destinoId = getContaDestinoTransferencia(t.descricao);
+        const destino = contas.find((c) => c.id === destinoId);
+        const transferencia = isTransferencia(t.descricao);
+        const concluida = t.status === "paga";
+        return (
+          <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoDetalhe(null)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51" }]}>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, textAlign: "left", marginBottom: 4 }]}>Detalhes do lançamento</Text>
+                    <Text style={{ color: Cores.textoSecundario, fontSize: 13 }}>{descricaoVisivel(t.descricao)}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setTransacaoDetalhe(null)} style={{ padding: 6 }}>
+                    <MaterialIcons name="close" size={24} color={Cores.textoSecundario} />
+                  </TouchableOpacity>
+                </View>
+                <View style={{ backgroundColor: Cores.blocoData, borderRadius: 12, padding: 14, gap: 10 }}>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Valor</Text><Text style={{ color: t.tipo === "receita" ? "#2A9D8F" : "#E76F51", fontWeight: "800" }}>{fmtReais(t.valor)}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Status</Text><Text style={{ color: concluida ? "#2A9D8F" : "#F59E0B", fontWeight: "700" }}>{concluida ? "Concluído" : "Previsto"}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data agendada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_vencimento.split("-").reverse().join("/")}</Text></View>
+                  {t.data_realizacao && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data realizada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_realizacao.split("-").reverse().join("/")}</Text></View>}
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Conta</Text><Text style={{ color: Cores.textoPrincipal }}>{conta?.nome ?? "Não informada"}</Text></View>
+                  {destino && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Destino</Text><Text style={{ color: Cores.textoPrincipal }}>{destino.nome}</Text></View>}
+                  {categoria && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Categoria</Text><Text style={{ color: categoria.cor, fontWeight: "700" }}>{categoria.nome}</Text></View>}
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Tipo</Text><Text style={{ color: Cores.textoPrincipal }}>{transferencia ? "Transferência" : t.tipo === "receita" ? "Receita" : "Despesa"}</Text></View>
+                </View>
+                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 18, gap: 10 }}>
+                  <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#457B9D22" }]} onPress={() => { setTransacaoDetalhe(null); abrirEditarTransacao(t); }}>
+                    <MaterialIcons name="edit" size={20} color="#457B9D" /><Text style={{ color: "#457B9D", fontWeight: "700" }}>Editar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => { setTransacaoDetalhe(null); alternarStatus(t.id, t.status, t.tipo); }}>
+                    <MaterialIcons name={concluida ? "undo" : "check-circle"} size={20} color="#2A9D8F" /><Text style={{ color: "#2A9D8F", fontWeight: "700" }}>{concluida ? "Reabrir" : "Concluir"}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#E76F5122" }]} onPress={() => { setTransacaoDetalhe(null); deletarTransacao(t.id); }}>
+                    <MaterialIcons name="delete-outline" size={20} color="#E76F51" /><Text style={{ color: "#E76F51", fontWeight: "700" }}>Excluir</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
+
+      {faturaEstornar && (
+        <Modal animationType="fade" transparent visible onRequestClose={() => setFaturaEstornar(null)}>
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: "#F59E0B" }]}>
+              <View style={{ alignItems: "center", marginBottom: 12 }}>
+                <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: "#F59E0B22", alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name="undo" size={30} color="#F59E0B" />
+                </View>
+              </View>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>Estornar pagamento</Text>
+              <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 20, marginBottom: 20 }}>
+                A fatura de {faturaEstornar.cartao_nome} — {formatarMesAno(faturaEstornar.mes_fatura)} voltará a ficar em aberto.
+              </Text>
+              <TouchableOpacity style={{ backgroundColor: "#F59E0B", minHeight: 50, borderRadius: 11, alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={async () => {
+                const g = faturaEstornar;
+                setFaturaEstornar(null);
+                const descricao = `Fatura ${g.cartao_nome} - ${formatarMesAno(g.mes_fatura)}`;
+                await Promise.all([
+                  supabase.from("fatura_itens").update({ pago: false }).in("id", g.itens_ids),
+                  supabase.from("transacoes").delete().eq("user_id", session!.user.id).like("descricao", `${descricao}%`),
+                ]);
+                carregarDados();
+              }}>
+                <Text style={{ color: "#FFF", fontWeight: "800" }}>Confirmar estorno</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ backgroundColor: Cores.pillFundo, minHeight: 48, borderRadius: 11, alignItems: "center", justifyContent: "center" }} onPress={() => setFaturaEstornar(null)}>
+                <Text style={{ color: Cores.textoSecundario, fontWeight: "700" }}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1371,4 +1430,6 @@ const styles = StyleSheet.create({
   contaTag: { fontSize: 11, fontWeight: "700" },
   transacaoDesc: { fontSize: 13, fontWeight: "600" },
   transacaoValor: { fontSize: 14, fontWeight: "700", textAlign: "right" },
+  detalheLinha: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  detalheAcao: { flex: 1, minHeight: 54, borderRadius: 10, alignItems: "center", justifyContent: "center", gap: 3 },
 });

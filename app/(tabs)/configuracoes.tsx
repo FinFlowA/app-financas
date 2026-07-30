@@ -31,13 +31,13 @@ export default function ConfiguracoesScreen() {
   const meuId = session?.user?.id;
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
-    texto: isDark ? "#ffffff" : "#111827",
-    secundario: isDark ? "#AAAAAA" : "#6B7280",
-    card: isDark ? "#1E1E1E" : "#FFFFFF",
-    borda: isDark ? "#333" : "#E5E7EB",
-    input: isDark ? "#2C2C2C" : "#F3F4F6",
-    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
+    fundo: isDark ? "#121212" : "#F5F2EC",
+    texto: isDark ? "#ffffff" : "#27313A",
+    secundario: isDark ? "#AAAAAA" : "#68727D",
+    card: isDark ? "#1E1E1E" : "#FFFDF9",
+    borda: isDark ? "#333" : "#E5DED3",
+    input: isDark ? "#2C2C2C" : "#FAF8F4",
+    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
   };
 
   // Parceria
@@ -463,7 +463,7 @@ export default function ConfiguracoesScreen() {
                 </Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="E-mail cadastrado no FinFlow (ex: nome@gmail.com)"
+                  placeholder="E-mail cadastrado no FinFlow"
                   placeholderTextColor={Cores.secundario}
                   value={emailConvite}
                   onChangeText={(v) => setEmailConvite(v.toLowerCase().trim())}

@@ -51,13 +51,13 @@ export default function RelatoriosScreen() {
   const { isDark, session } = useAppTheme();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#EAF0F6",
-    textoPrincipal: isDark ? "#ffffff" : "#1A1A1A",
-    textoSecundario: isDark ? "#AAAAAA" : "#666666",
-    cardFundo: isDark ? "#1E1E1E" : "#F8F9FA",
-    borda: isDark ? "#333333" : "#EEEEEE",
-    pillFundo: isDark ? "#2C2C2C" : "#F0F0F0",
-    linhaGuia: isDark ? "#2C2C2C" : "#E8E8E8",
+    fundo: isDark ? "#121212" : "#F5F2EC",
+    textoPrincipal: isDark ? "#ffffff" : "#27313A",
+    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
+    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
+    borda: isDark ? "#333333" : "#E5DED3",
+    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
+    linhaGuia: isDark ? "#2C2C2C" : "#E3DDD4",
     linhaBalance: "#457B9D",
   };
 
