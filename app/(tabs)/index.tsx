@@ -253,9 +253,15 @@ export default function Dashboard() {
     .filter((t) => t.tipo === "receita" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
     .reduce((acc, curr) => acc + curr.valor, 0);
   const despesasRealizadas = transacoes
-    .filter((t) => t.tipo === "despesa" && t.status === "paga" && contasAtivasIds.has(t.conta_id) && !(isTransferencia(t.descricao) && getContaDestinoTransferencia(t.descricao) !== null))
+    .filter((t) => t.tipo === "despesa" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
     .reduce((acc, curr) => acc + curr.valor, 0);
-  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+  const transferenciasRecebidasAtivas = transacoes
+    .filter((t) => {
+      const contaDestinoId = getContaDestinoTransferencia(t.descricao);
+      return t.status === "paga" && contaDestinoId !== null && contasAtivasIds.has(contaDestinoId);
+    })
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas + transferenciasRecebidasAtivas - despesasRealizadas;
 
   const transacoesDoMes = transacoes.filter((t) => {
     const dataT = new Date(t.data_vencimento);
