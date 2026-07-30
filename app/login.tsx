@@ -440,14 +440,14 @@ export default function LoginScreen() {
               Ao criar uma conta, você concorda com nossos{" "}
               <Text
                 style={styles.consentimentoLink}
-                onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/app-financas/#termos")}
+                onPress={() => WebBrowser.openBrowserAsync("https://gbrielh.github.io/finflow-legal/#termos")}
               >
                 Termos de Uso
               </Text>
               {" "}e{" "}
               <Text
                 style={styles.consentimentoLink}
-                onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/app-financas/#privacidade")}
+                onPress={() => WebBrowser.openBrowserAsync("https://gbrielh.github.io/finflow-legal/#privacidade")}
               >
                 Política de Privacidade
               </Text>
@@ -460,14 +460,14 @@ export default function LoginScreen() {
         <View style={styles.legalBtnRow}>
           <TouchableOpacity
             style={styles.legalBtn}
-            onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/app-financas/#privacidade")}
+            onPress={() => WebBrowser.openBrowserAsync("https://gbrielh.github.io/finflow-legal/#privacidade")}
           >
             <Text style={styles.legalBtnText}>Política de Privacidade</Text>
           </TouchableOpacity>
           <View style={styles.legalSeparador} />
           <TouchableOpacity
             style={styles.legalBtn}
-            onPress={() => WebBrowser.openBrowserAsync("https://luishpalacio.github.io/app-financas/#termos")}
+            onPress={() => WebBrowser.openBrowserAsync("https://gbrielh.github.io/finflow-legal/#termos")}
           >
             <Text style={styles.legalBtnText}>Termos de Uso</Text>
           </TouchableOpacity>
