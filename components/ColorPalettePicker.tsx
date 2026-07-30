@@ -1,4 +1,3 @@
-import { LinearGradient } from "expo-linear-gradient";
 import React, { useMemo, useRef, useState } from "react";
 import { PanResponder, StyleSheet, Text, View } from "react-native";
 
@@ -36,6 +35,14 @@ export default function ColorPalettePicker({ value, onChange, dark = false }: Pr
     onPanResponderGrant: (e) => changeRef.current(e.nativeEvent.locationX, e.nativeEvent.locationY),
     onPanResponderMove: (e) => changeRef.current(e.nativeEvent.locationX, e.nativeEvent.locationY),
   }), []);
+  const cells = useMemo(() => Array.from({ length: 12 }, (_, row) =>
+    Array.from({ length: 24 }, (_, column) => {
+      const y = row / 11;
+      const saturation = y <= 0.5 ? y * 2 : 1;
+      const brightness = y <= 0.5 ? 1 : 1 - (y - 0.5) * 2;
+      return hsvToHex((column / 24) * 360, saturation, Math.max(0.08, brightness));
+    })
+  ), []);
 
   return (
     <View>
@@ -45,13 +52,11 @@ export default function ColorPalettePicker({ value, onChange, dark = false }: Pr
         style={styles.palette}
         accessibilityLabel="Paleta de cor personalizada"
       >
-        <LinearGradient
-          colors={["#FF0000", "#FFFF00", "#00FF00", "#00FFFF", "#0000FF", "#FF00FF", "#FF0000"]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <LinearGradient colors={["#FFFFFF", "transparent", "#000000"]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+        {cells.map((row, rowIndex) => (
+          <View key={rowIndex} style={styles.row}>
+            {row.map((color, columnIndex) => <View key={columnIndex} style={{ flex: 1, backgroundColor: color }} />)}
+          </View>
+        ))}
         <View style={[styles.cursor, { left: point.x * size.width - 10, top: point.y * size.height - 10 }]} />
       </View>
       <View style={[styles.result, { backgroundColor: dark ? "#252525" : "#F4F4F4" }]}>
@@ -65,6 +70,7 @@ export default function ColorPalettePicker({ value, onChange, dark = false }: Pr
 
 const styles = StyleSheet.create({
   palette: { height: 150, borderRadius: 14, overflow: "hidden", marginTop: 10 },
+  row: { flex: 1, flexDirection: "row" },
   cursor: { position: "absolute", width: 20, height: 20, borderRadius: 10, borderWidth: 3, borderColor: "#FFF", shadowColor: "#000", shadowOpacity: 0.4, shadowRadius: 3, elevation: 4 },
   result: { marginTop: 8, borderRadius: 10, padding: 10, flexDirection: "row", alignItems: "center", gap: 8 },
   swatch: { width: 24, height: 24, borderRadius: 12, borderWidth: 1, borderColor: "rgba(127,127,127,.35)" },
