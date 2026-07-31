@@ -44,6 +44,7 @@ import {
 } from "../lib/planos";
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
+import { RELEASE_NOTES } from "../lib/release-notes";
 
 // ERROR BOUNDARY
 class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
@@ -201,11 +202,10 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (__DEV__ || !Updates.updateId) return;
-    const chave = "@finflow_ultima_atualizacao_exibida";
+    const chave = "@finflow_ultimas_novidades_exibidas";
     AsyncStorage.getItem(chave).then((ultima) => {
-      if (ultima !== Updates.updateId) {
+      if (ultima !== RELEASE_NOTES.id) {
         setModalAtualizacao("novidades");
-        AsyncStorage.setItem(chave, Updates.updateId!);
       }
     });
   }, []);
@@ -572,19 +572,20 @@ export default function RootLayout() {
                   Veja o que mudou nesta versão:
                 </Text>
                 <View style={[styles.updateList, { backgroundColor: isDark ? "#252B2A" : "#EEF7F5", borderColor: isDark ? "#334744" : "#D4EAE5" }]}>
-                  {[
-                    "Concluídos mais discretos e fáceis de identificar",
-                    "Escolha de cores mais simples e sem códigos",
-                    "Pagamento de fatura direto pelo histórico",
-                    "Avisos de atualização renovados",
-                  ].map((item) => (
+                  {RELEASE_NOTES.items.map((item) => (
                     <View key={item} style={styles.updateItem}>
                       <MaterialIcons name="check-circle" size={18} color="#2A9D8F" />
                       <Text style={{ flex: 1, color: isDark ? "#DDD" : "#34404B", fontSize: 13, lineHeight: 19 }}>{item}</Text>
                     </View>
                   ))}
                 </View>
-                <TouchableOpacity style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]} onPress={() => setModalAtualizacao(null)}>
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]}
+                  onPress={async () => {
+                    await AsyncStorage.setItem("@finflow_ultimas_novidades_exibidas", RELEASE_NOTES.id);
+                    setModalAtualizacao(null);
+                  }}
+                >
                   <MaterialIcons name="check" size={18} color="#FFF" />
                   <Text style={styles.modalLimiteBtnText}>Continuar</Text>
                 </TouchableOpacity>

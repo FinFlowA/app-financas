@@ -246,7 +246,13 @@ export default function CartoesScreen() {
 
     if (resCartoes.data) setCartoes(resCartoes.data);
     if (resItens.data) setItens(resItens.data);
-    if (resCats.data) setCategorias((resCats.data as Categoria[]).filter((c) => c.ativa !== false && c.ativa !== 0));
+    if (resCats.data) {
+      setCategorias(
+        (resCats.data as Categoria[])
+          .filter((c) => c.ativa !== false && c.ativa !== 0)
+          .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }))
+      );
+    }
     if (resContas.data) setContas(resContas.data as ContaSimples[]);
     if (resArquivados.data) setCartoesArquivados(resArquivados.data);
 

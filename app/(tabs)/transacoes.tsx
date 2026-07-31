@@ -177,7 +177,11 @@ export default function TransacoesScreen() {
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, valor, mes_fatura, pago").eq("user_id", session.user.id),
       ]);
-      if (resCategorias.data) setCategorias(resCategorias.data);
+      if (resCategorias.data) {
+        setCategorias([...resCategorias.data].sort((a, b) =>
+          a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
+        ));
+      }
       if (resContas.data) setContas(resContas.data);
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
 

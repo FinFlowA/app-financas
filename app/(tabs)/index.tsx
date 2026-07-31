@@ -394,7 +394,11 @@ export default function Dashboard() {
 
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
 
-      if (resCategorias.data) setCategorias(resCategorias.data);
+      if (resCategorias.data) {
+        setCategorias([...resCategorias.data].sort((a, b) =>
+          a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
+        ));
+      }
       if (resContas.data) setContas(resContas.data);
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
@@ -466,7 +470,11 @@ export default function Dashboard() {
       const caixCache = await AsyncStorage.getItem("@cache_caixinhas");
       const parcCache = await AsyncStorage.getItem("@cache_parceiro");
 
-      if (catCache) setCategorias(JSON.parse(catCache));
+      if (catCache) {
+        setCategorias(JSON.parse(catCache).sort((a: Categoria, b: Categoria) =>
+          a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
+        ));
+      }
       if (conCache) setContas(JSON.parse(conCache));
       if (transCache) {
         const anoAtual = new Date().getFullYear();
