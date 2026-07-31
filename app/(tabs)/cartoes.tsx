@@ -152,6 +152,17 @@ function formatarMes(mes: string): string {
   return `${meses[m - 1]}/${ano}`;
 }
 
+function dataVencimentoFatura(mes: string, diaVencimento: number): Date {
+  const [ano, mesNumero] = mes.split("-").map(Number);
+  const ultimoDiaDoMes = new Date(ano, mesNumero, 0).getDate();
+  return new Date(ano, mesNumero - 1, Math.min(diaVencimento, ultimoDiaDoMes), 23, 59, 59, 999);
+}
+
+function formatarDiaMesVencimento(mes: string, diaVencimento: number): string {
+  const data = dataVencimentoFatura(mes, diaVencimento);
+  return `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}`;
+}
+
 // ─── Componente Principal ─────────────────────────────────────────────────────
 
 export default function CartoesScreen() {
@@ -322,6 +333,29 @@ export default function CartoesScreen() {
         && (!i.descricao.endsWith("(Fixa)") || i.mes_fatura === mes)
       )
       .reduce((acc, i) => acc + Number(i.valor), 0);
+  };
+
+  const obterFaturaDoCard = (cartao: Cartao) => {
+    const mesAtual = mesAtualStr();
+    const itensDaFaturaAtual = itens.filter(
+      (item) => item.cartao_id === cartao.id && item.mes_fatura === mesAtual,
+    );
+    const faturaAtualFoiPaga =
+      itensDaFaturaAtual.length > 0 &&
+      itensDaFaturaAtual.every((item) => item.pago);
+    const vencimentoAtualPassou =
+      new Date().getTime() > dataVencimentoFatura(mesAtual, cartao.dia_vencimento).getTime();
+    const mesExibido =
+      faturaAtualFoiPaga && vencimentoAtualPassou
+        ? proximoMesStr(mesAtual)
+        : mesAtual;
+
+    return {
+      mes: mesExibido,
+      total: calcularTotalFatura(cartao.id, mesExibido),
+      proxima: mesExibido !== mesAtual,
+      vencimento: formatarDiaMesVencimento(mesExibido, cartao.dia_vencimento),
+    };
   };
 
   // ─── Criar cartão ──────────────────────────────────────────────────────────
@@ -717,7 +751,7 @@ export default function CartoesScreen() {
         ) : (
           <View style={estilos.cartoesLista}>
             {cartoes.map((c) => {
-              const total = calcularTotalFatura(c.id, mesAtualStr());
+              const faturaCard = obterFaturaDoCard(c);
               const usado = calcularLimiteUsado(c.id);
               const disponivel = Math.max(0, c.limite - usado);
               const bloqueado = c.bloqueado_plano;
@@ -728,7 +762,7 @@ export default function CartoesScreen() {
                   onPress={() => {
                     if (bloqueado) return;
                     setCartaoAberto(c);
-                    setMesFaturaAtivo(mesAtualStr());
+                    setMesFaturaAtivo(faturaCard.mes);
                     setModalFaturaVisivel(true);
                   }}
                   onLongPress={() => !bloqueado && opcoesCartao(c)}
@@ -745,11 +779,13 @@ export default function CartoesScreen() {
                     <Text style={[estilos.cartaoFaturaLabel, { marginTop: 4 }]}>Bloqueado — faça upgrade</Text>
                   ) : (
                     <>
-                      <Text style={estilos.cartaoFaturaLabel}>Fatura atual</Text>
-                      <Text style={estilos.cartaoFatura}>{fmtReais(total)}</Text>
+                      <Text style={estilos.cartaoFaturaLabel}>
+                        {faturaCard.proxima ? "Próxima fatura" : "Fatura atual"}
+                      </Text>
+                      <Text style={estilos.cartaoFatura}>{fmtReais(faturaCard.total)}</Text>
                       <View style={estilos.cartaoRodapeCol}>
                         <Text style={estilos.cartaoLimite}>Disponível: {fmtReais(disponivel)}</Text>
-                        <Text style={estilos.cartaoVenc}>Vence dia {c.dia_vencimento}</Text>
+                        <Text style={estilos.cartaoVenc}>Vencimento: {faturaCard.vencimento}</Text>
                       </View>
                     </>
                   )}
