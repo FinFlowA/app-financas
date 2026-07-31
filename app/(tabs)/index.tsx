@@ -6,7 +6,9 @@ import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -21,8 +23,7 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
-import { fmtReais } from "../../lib/utils";
-import ColorPalettePicker from "../../components/ColorPalettePicker";
+import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import {
   adicionarRecorrencia,
   dataEfetivaTransacao,
@@ -72,8 +73,11 @@ interface Transacao {
 
 interface CompraCartao {
   id: number;
+  cartao_id: number;
   valor: number;
   data_compra: string;
+  mes_fatura: string;
+  pago: boolean;
   categoria_id: number | null;
 }
 
@@ -86,6 +90,14 @@ const PALETA_CORES = [
   "#8AB17D",
   "#457B9D",
   "#8A05BE",
+  "#E63946",
+  "#1D3557",
+  "#EC7000",
+  "#CC092F",
+  "#005CA9",
+  "#6D597A",
+  "#B56576",
+  "#3A86FF",
 ];
 
 const LISTA_ICONES = [
@@ -258,6 +270,7 @@ export default function Dashboard() {
   const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">("unica");
   const [frequenciaFixa, setFrequenciaFixa] = useState<FrequenciaRecorrencia>("mensal");
   const [numParcelas, setNumParcelas] = useState("");
+  const [modoValorParcelado, setModoValorParcelado] = useState<"total" | "parcela">("parcela");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
@@ -306,7 +319,10 @@ export default function Dashboard() {
   ));
   const receitasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
   const despesasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
-  const balancoMensal = receitasDoMes - despesasDoMes;
+  const receitasRealizadasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasRealizadasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
+  const balancoMensal = receitasRealizadasDoMes - despesasRealizadasDoMes;
+  const balancoAgendadoMensal = receitasDoMes - despesasDoMes;
 
   // Dados para os gráficos de pizza
   const caixinhaGuardadoTotal = transacoesDoMes
@@ -388,7 +404,7 @@ export default function Dashboard() {
         supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
-        supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, cor, icone"),
+        supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, data_prazo, cor, icone"),
         supabase.from("cartoes").select("id, nome, dia_vencimento, dia_fechamento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, valor, data_compra, mes_fatura, categoria_id, pago").eq("user_id", session.user.id),
       ]);
@@ -396,13 +412,13 @@ export default function Dashboard() {
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
 
       if (resCategorias.data) {
-        setCategorias([...resCategorias.data].sort((a, b) =>
+        setCategorias(resCategorias.data.map((c: Categoria) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })).sort((a, b) =>
           a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
         ));
       }
-      if (resContas.data) setContas(resContas.data);
+      if (resContas.data) setContas(resContas.data.map((c: Conta) => ({ ...c, cor: c.cor && PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[6] })));
       if (resTransacoes.data) setTransacoes(resTransacoes.data);
-      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
+      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data.map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })));
       if (resFaturas.data) setComprasCartao(resFaturas.data as CompraCartao[]);
 
       const hoje = new Date();
@@ -461,7 +477,11 @@ export default function Dashboard() {
             nome: c.nome,
             dia_vencimento: c.dia_vencimento,
             dia_fechamento: c.dia_fechamento,
-          })) ?? []
+            faturas_pendentes: [...new Set((resFaturas.data ?? [])
+              .filter((item: any) => item.cartao_id === c.id && !item.pago)
+              .map((item: any) => item.mes_fatura))] as string[],
+          })) ?? [],
+          true
         );
       }
     } catch {
@@ -524,7 +544,7 @@ export default function Dashboard() {
   const abrirEditarCategoria = (cat: Categoria) => {
     setCatEditando(cat);
     setNomeEditCat(cat.nome);
-    setCorEditCat(cat.cor);
+    setCorEditCat(PALETA_CORES.includes(cat.cor) ? cat.cor : PALETA_CORES[0]);
     setIconeEditCat(cat.icone);
   };
 
@@ -618,7 +638,7 @@ export default function Dashboard() {
     setNomeEditConta(conta.nome);
     setSaldoEditConta(String(conta.saldo_inicial));
     setCompartilhadoEditConta(conta.compartilhado);
-    setCorEditConta(conta.cor || PALETA_CORES[0]);
+    setCorEditConta(conta.cor && PALETA_CORES.includes(conta.cor) ? conta.cor : PALETA_CORES[6]);
     setEditandoSaldoConta(false);
     setModalEditarContaVisivel(true);
   };
@@ -698,7 +718,7 @@ export default function Dashboard() {
     const mesStr = `${dataSelecionada.getFullYear()}-${String(dataSelecionada.getMonth() + 1).padStart(2, "0")}`;
     const lancsMes = transacoes.filter(t => (t.data_vencimento || "").startsWith(mesStr)).length;
     if (!verificarLimite("lancamentosMes", lancsMes)) return;
-    const valorNum = parseFloat(valorTransacao.replace(",", "."));
+    const valorNum = valorDaEntradaMoeda(valorTransacao);
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "O valor deve ser maior que zero.");
 
     let totalRepeticoes = 1;
@@ -707,7 +727,9 @@ export default function Dashboard() {
     if (frequencia === "parcelada") {
       totalRepeticoes = parseInt(numParcelas);
       if (isNaN(totalRepeticoes) || totalRepeticoes < 2) return Alert.alert("Aviso", "Número de parcelas inválido.");
-      // valorNum já é o valor de cada parcela — não dividir
+      valorFinal = modoValorParcelado === "total"
+        ? Number((valorNum / totalRepeticoes).toFixed(2))
+        : valorNum;
     } else if (frequencia === "fixa") {
       totalRepeticoes = frequenciaFixa === "semanal" ? 260 : frequenciaFixa === "anual" ? 5 : 60;
     }
@@ -785,7 +807,7 @@ export default function Dashboard() {
 
     setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
     setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
-    setNumParcelas("2"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+    setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
     setModalTransVisivel(false);
     carregarDados();
   };
@@ -895,6 +917,9 @@ export default function Dashboard() {
             <Text style={{ color: isDark ? "#999" : "#6B7280", fontSize: 12 }}>Balanço do Mês</Text>
             <Text style={{ color: balancoMensal >= 0 ? "#10B981" : "#EF4444", fontWeight: "bold", fontSize: 20 }}>
               {fmtReais(balancoMensal)}
+            </Text>
+            <Text style={{ color: isDark ? "#888" : "#7B8490", fontSize: 11, marginTop: 3 }}>
+              Total agendado no mês: {fmtReais(balancoAgendadoMensal)}
             </Text>
           </View>
         </View>
@@ -1196,7 +1221,6 @@ export default function Dashboard() {
                   />
                 ))}
               </View>
-              <ColorPalettePicker value={corEditConta} onChange={setCorEditConta} dark={isDark} />
 
               {/* Editar saldo inicial com confirmação */}
               <TouchableOpacity
@@ -1296,7 +1320,6 @@ export default function Dashboard() {
                 />
               ))}
             </View>
-            <ColorPalettePicker value={corNovaConta} onChange={setCorNovaConta} dark={isDark} />
 
             {/* Preview da conta */}
             <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
@@ -1349,7 +1372,6 @@ export default function Dashboard() {
                     />
                   ))}
                 </View>
-                <ColorPalettePicker value={corEditCat} onChange={setCorEditCat} dark={isDark} />
                 <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                   {LISTA_ICONES.map((icone) => (
@@ -1444,7 +1466,6 @@ export default function Dashboard() {
                 <TouchableOpacity key={cor} style={[styles.colorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setCorSelecionada(cor)} />
               ))}
             </View>
-            <ColorPalettePicker value={corSelecionada} onChange={setCorSelecionada} dark={isDark} />
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
               {LISTA_ICONES.map((icone) => (
@@ -1587,7 +1608,7 @@ export default function Dashboard() {
 
       {/* MODAL NOVA TRANSAÇÃO */}
       <Modal animationType="slide" transparent visible={modalTransVisivel} onRequestClose={() => setModalTransVisivel(false)}>
-        <View style={styles.modalOverlay}>
+        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Transação</Text>
@@ -1657,11 +1678,19 @@ export default function Dashboard() {
               <View style={styles.rowInputs}>
                 <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center", flex: 1 }]}>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
-                  <TextInput style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={setValorTransacao} keyboardType="decimal-pad" />
+                  <TextInput style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))} keyboardType="number-pad" selectTextOnFocus />
                 </View>
               </View>
               {frequencia === "parcelada" && (
                 <>
+                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>O valor informado representa:</Text>
+                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+                    {(["parcela", "total"] as const).map((modo) => (
+                      <TouchableOpacity key={modo} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, modoValorParcelado === modo && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setModoValorParcelado(modo)}>
+                        <Text style={[styles.freqButtonText, { color: modoValorParcelado === modo ? Cores.textoPrincipal : Cores.textoSecundario }]}>{modo === "parcela" ? "Valor da parcela" : "Valor total"}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
                   <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Número de parcelas:</Text>
                   <TextInput
                     style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
@@ -1673,9 +1702,11 @@ export default function Dashboard() {
                   />
                 </>
               )}
-              {frequencia === "parcelada" && valorTransacao && numParcelas && !isNaN(parseFloat(valorTransacao)) && !isNaN(parseInt(numParcelas)) && (
+              {frequencia === "parcelada" && valorTransacao && numParcelas && valorDaEntradaMoeda(valorTransacao) > 0 && !isNaN(parseInt(numParcelas)) && (
                 <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: -10, marginBottom: 10, textAlign: "right" }}>
-                  Total: {fmtReais(parseFloat(valorTransacao.replace(",", ".")) * parseInt(numParcelas))}
+                  {modoValorParcelado === "parcela"
+                    ? `Total: ${fmtReais(valorDaEntradaMoeda(valorTransacao) * parseInt(numParcelas))}`
+                    : `${parseInt(numParcelas)}x de ${fmtReais(valorDaEntradaMoeda(valorTransacao) / parseInt(numParcelas))}`}
                 </Text>
               )}
 
@@ -1729,7 +1760,7 @@ export default function Dashboard() {
               </View>
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
       <Modal animationType="fade" transparent visible={modalIaEmBreve} onRequestClose={() => setModalIaEmBreve(false)}>
         <View style={styles.modalOverlay}>

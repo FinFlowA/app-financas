@@ -21,3 +21,19 @@ export const fmtReaisSemCentavo = (valor: number): string => {
     maximumFractionDigits: 2,
   })}`;
 };
+
+/** Formata a digitação como centavos: 1 -> 0,01; 123456 -> 1.234,56. */
+export const formatarEntradaMoeda = (texto: string): string => {
+  const digitos = texto.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  const centavos = Number(digitos || "0");
+  return (centavos / 100).toLocaleString("pt-BR", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+};
+
+export const valorDaEntradaMoeda = (texto: string): number => {
+  const normalizado = texto.replace(/\./g, "").replace(",", ".");
+  const valor = Number(normalizado);
+  return Number.isFinite(valor) ? valor : 0;
+};

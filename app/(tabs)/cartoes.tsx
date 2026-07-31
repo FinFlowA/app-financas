@@ -52,7 +52,9 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -63,9 +65,8 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
-import { fmtReais } from "../../lib/utils";
+import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
-import ColorPalettePicker from "../../components/ColorPalettePicker";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -115,6 +116,8 @@ const CORES_CARTAO = [
   "#457B9D", "#2A9D8F", "#8A05BE", "#E76F51",
   "#F4A261", "#264653", "#8AB17D", "#E63946",
   "#1D3557", "#333333",
+  "#E9C46A", "#EC7000", "#CC092F", "#005CA9",
+  "#6D597A", "#B56576", "#3A86FF", "#8338EC",
 ];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -203,6 +206,7 @@ export default function CartoesScreen() {
   const [descCompra, setDescCompra] = useState("");
   const [valorCompra, setValorCompra] = useState("");
   const [parcelasCompra, setParcelasCompra] = useState("1");
+  const [modoValorParcelado, setModoValorParcelado] = useState<"total" | "parcela">("total");
   const [tipoCompra, setTipoCompra] = useState<"unica" | "parcelada" | "fixa">("unica");
   const [dataCompra, setDataCompra] = useState(new Date());
   const [mostrarDataPicker, setMostrarDataPicker] = useState(false);
@@ -255,7 +259,7 @@ export default function CartoesScreen() {
       supabase.from("cartoes").select("*").eq("user_id", session.user.id).eq("ativo", false).order("id"),
     ]);
 
-    if (resCartoes.data) setCartoes(resCartoes.data);
+    if (resCartoes.data) setCartoes(resCartoes.data.map((c: Cartao) => ({ ...c, cor: CORES_CARTAO.includes(c.cor) ? c.cor : CORES_CARTAO[0] })));
     if (resItens.data) setItens(resItens.data);
     if (resCats.data) {
       setCategorias(
@@ -265,7 +269,7 @@ export default function CartoesScreen() {
       );
     }
     if (resContas.data) setContas(resContas.data as ContaSimples[]);
-    if (resArquivados.data) setCartoesArquivados(resArquivados.data);
+    if (resArquivados.data) setCartoesArquivados(resArquivados.data.map((c: Cartao) => ({ ...c, cor: CORES_CARTAO.includes(c.cor) ? c.cor : CORES_CARTAO[0] })));
 
     // Alerta de limite próximo do máximo para cada cartão
     if (resCartoes.data && resItens.data && session?.user?.id) {
@@ -343,10 +347,8 @@ export default function CartoesScreen() {
     const faturaAtualFoiPaga =
       itensDaFaturaAtual.length > 0 &&
       itensDaFaturaAtual.every((item) => item.pago);
-    const vencimentoAtualPassou =
-      new Date().getTime() > dataVencimentoFatura(mesAtual, cartao.dia_vencimento).getTime();
     const mesExibido =
-      faturaAtualFoiPaga && vencimentoAtualPassou
+      faturaAtualFoiPaga
         ? proximoMesStr(mesAtual)
         : mesAtual;
 
@@ -401,7 +403,7 @@ export default function CartoesScreen() {
   const salvarCompra = async () => {
     if (!cartaoAberto) return;
     if (!descCompra.trim()) return Alert.alert("Aviso", "Informe a descrição da compra.");
-    const valor = parseFloat(valorCompra.replace(",", "."));
+    const valor = valorDaEntradaMoeda(valorCompra);
     if (isNaN(valor) || valor <= 0) return Alert.alert("Aviso", "Informe um valor válido.");
     const parcelasInformadas = parseInt(parcelasCompra) || 1;
     if (tipoCompra === "parcelada" && (parcelasInformadas < 2 || parcelasInformadas > 48)) {
@@ -409,7 +411,9 @@ export default function CartoesScreen() {
     }
     const repeticoes = tipoCompra === "fixa" ? 60 : tipoCompra === "parcelada" ? parcelasInformadas : 1;
 
-    const valorParcela = tipoCompra === "parcelada" ? +(valor / parcelasInformadas).toFixed(2) : valor;
+    const valorParcela = tipoCompra === "parcelada" && modoValorParcelado === "total"
+      ? +(valor / parcelasInformadas).toFixed(2)
+      : valor;
     const mesPrimeiro = mesParaFatura(dataCompra, cartaoAberto.dia_fechamento);
     const [anoFatura, mesFatura] = mesPrimeiro.split("-").map(Number);
     const ultimoDia = new Date(anoFatura, mesFatura, 0).getDate();
@@ -486,7 +490,7 @@ export default function CartoesScreen() {
     }
 
     setLoadingCompra(false);
-    setDescCompra(""); setValorCompra(""); setParcelasCompra("2"); setTipoCompra("unica"); setDataCompra(new Date()); setCategCompraId(null);
+    setDescCompra(""); setValorCompra(""); setParcelasCompra("2"); setModoValorParcelado("total"); setTipoCompra("unica"); setDataCompra(new Date()); setCategCompraId(null);
     setModalNovaCompra(false);
     showToast(tipoCompra === "fixa" ? "Compra fixa mensal adicionada ✓" : `Compra adicionada${tipoCompra === "parcelada" ? ` em ${parcelasInformadas}x` : ""} ✓`, "success");
     carregarDados();
@@ -639,7 +643,7 @@ export default function CartoesScreen() {
   const abrirEditarCartao = (c: Cartao) => {
     setCartaoEditando(c);
     setEditNome(c.nome);
-    setEditCor(c.cor);
+    setEditCor(CORES_CARTAO.includes(c.cor) ? c.cor : CORES_CARTAO[0]);
     setEditLimite(c.limite.toString());
     setEditVenc(c.dia_vencimento.toString());
     setEditFecha(c.dia_fechamento.toString());
@@ -1047,7 +1051,6 @@ export default function CartoesScreen() {
                   ))}
                 </View>
               </ScrollView>
-              <ColorPalettePicker value={corCartao} onChange={setCorCartao} dark={isDark} />
 
               <View style={estilos.modalBtns}>
                 <TouchableOpacity
@@ -1074,7 +1077,7 @@ export default function CartoesScreen() {
       {/* Modal: Nova Compra */}
       {modalNovaCompra && cartaoAberto && (
         <Modal animationType="slide" transparent visible onRequestClose={() => setModalNovaCompra(false)}>
-          <View style={estilos.modalOverlay}>
+          <KeyboardAvoidingView style={estilos.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View style={[estilos.modalContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
                 <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>
@@ -1110,6 +1113,19 @@ export default function CartoesScreen() {
                 </Text>
               )}
 
+              {tipoCompra === "parcelada" && (
+                <>
+                  <Text style={[estilos.label, { color: Cores.secundario }]}>O valor informado representa</Text>
+                  <View style={[estilos.tipoCompraRow, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                    {(["total", "parcela"] as const).map((modo) => (
+                      <TouchableOpacity key={modo} style={[estilos.tipoCompraBtn, modoValorParcelado === modo && { backgroundColor: "#2563EB" }]} onPress={() => setModoValorParcelado(modo)}>
+                        <Text style={{ color: modoValorParcelado === modo ? "#FFF" : Cores.secundario, fontSize: 12, fontWeight: "700" }}>{modo === "total" ? "Valor total" : "Valor da parcela"}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
               <Text style={[estilos.label, { color: Cores.secundario }]}>Descrição</Text>
               <TextInput
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
@@ -1121,14 +1137,15 @@ export default function CartoesScreen() {
 
               <View style={estilos.doisCampos}>
                 <View style={{ flex: 1 }}>
-                  <Text style={[estilos.label, { color: Cores.secundario }]}>Valor Total (R$)</Text>
+                  <Text style={[estilos.label, { color: Cores.secundario }]}>{tipoCompra === "parcelada" && modoValorParcelado === "parcela" ? "Valor da Parcela (R$)" : "Valor Total (R$)"}</Text>
                   <TextInput
                     style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
                     placeholder="Ex: 120,00"
                     placeholderTextColor={Cores.secundario}
                     value={valorCompra}
-                    onChangeText={setValorCompra}
-                    keyboardType="decimal-pad"
+                    onChangeText={(texto) => setValorCompra(formatarEntradaMoeda(texto))}
+                    keyboardType="number-pad"
+                    selectTextOnFocus
                   />
                 </View>
                 {tipoCompra === "parcelada" && <><View style={{ width: 12 }} />
@@ -1148,13 +1165,12 @@ export default function CartoesScreen() {
               </View>
 
               {/* Preview de parcelas */}
-              {tipoCompra === "parcelada" && parseFloat(valorCompra.replace(",", ".")) > 0 && parseInt(parcelasCompra) > 1 && (
+              {tipoCompra === "parcelada" && valorDaEntradaMoeda(valorCompra) > 0 && parseInt(parcelasCompra) > 1 && (
                 <View style={[estilos.previewParcelas, { backgroundColor: Cores.pillFundo }]}>
                   <Text style={[estilos.previewText, { color: Cores.secundario }]}>
-                    {parseInt(parcelasCompra)}x de{" "}
-                    <Text style={{ color: Cores.texto, fontWeight: "bold" }}>
-                      {fmtReais(parseFloat(valorCompra.replace(",", ".")) / parseInt(parcelasCompra))}
-                    </Text>
+                    {modoValorParcelado === "total"
+                      ? <>{parseInt(parcelasCompra)}x de <Text style={{ color: Cores.texto, fontWeight: "bold" }}>{fmtReais(valorDaEntradaMoeda(valorCompra) / parseInt(parcelasCompra))}</Text></>
+                      : <>Total: <Text style={{ color: Cores.texto, fontWeight: "bold" }}>{fmtReais(valorDaEntradaMoeda(valorCompra) * parseInt(parcelasCompra))}</Text></>}
                   </Text>
                 </View>
               )}
@@ -1209,7 +1225,7 @@ export default function CartoesScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
@@ -1370,7 +1386,6 @@ export default function CartoesScreen() {
                   ))}
                 </View>
               </ScrollView>
-              <ColorPalettePicker value={editCor} onChange={setEditCor} dark={isDark} />
 
               <View style={estilos.modalBtns}>
                 <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalEditarCartao(false)}>

@@ -20,7 +20,6 @@ import { supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { fmtReais } from "../../lib/utils";
 import { useAppTheme } from "../_layout";
-import ColorPalettePicker from "../../components/ColorPalettePicker";
 
 interface Caixinha {
   id: number;
@@ -79,6 +78,8 @@ const PALETA_CORES = [
   "#2A9D8F","#E9C46A","#F4A261","#E76F51",
   "#264653","#8AB17D","#8A05BE","#EC7000",
   "#457B9D","#CC092F","#005CA9","#1D3557",
+  "#E63946","#6D597A","#B56576","#3A86FF",
+  "#8338EC","#FF006E","#3A5A40","#D97706",
 ];
 
 const LISTA_ICONES = [
@@ -166,7 +167,7 @@ export default function CaixinhasScreen() {
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
       ]);
-      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data);
+      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data.map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })));
       if (resContas.data) setContas(resContas.data);
       const parceria = resParceria.data?.[0];
       setTemParceiro(!!parceria);
@@ -242,7 +243,7 @@ export default function CaixinhasScreen() {
     setModalOpcoesVisivel(false);
     setNomeEditCaixa(caixa.nome);
     setMetaEditCaixa(Number(caixa.meta_valor).toFixed(2).replace(".", ","));
-    setCorEditCaixa(caixa.cor);
+    setCorEditCaixa(PALETA_CORES.includes(caixa.cor) ? caixa.cor : PALETA_CORES[0]);
     setIconeEditCaixa(caixa.icone);
     setCompartilhadoEditCaixa(caixa.compartilhado ?? false);
     if (caixa.data_prazo) {
@@ -663,7 +664,6 @@ export default function CaixinhasScreen() {
                   />
                 ))}
               </View>
-              <ColorPalettePicker value={corEditCaixa} onChange={setCorEditCaixa} dark={isDark} />
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -780,7 +780,6 @@ export default function CaixinhasScreen() {
                   />
                 ))}
               </View>
-              <ColorPalettePicker value={corSelecionada} onChange={setCorSelecionada} dark={isDark} />
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (

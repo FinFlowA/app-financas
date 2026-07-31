@@ -48,6 +48,7 @@ interface FaturaGrupo {
   total: number;
   pago: boolean;
   itens_ids: number[];
+  itens: { id: number; descricao: string; valor: number }[];
   dia_vencimento: number;
 }
 interface Transacao {
@@ -175,7 +176,7 @@ export default function TransacoesScreen() {
         supabase.from("contas").select("*"),
         supabase.from("transacoes").select("*"),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
-        supabase.from("fatura_itens").select("id, cartao_id, valor, mes_fatura, pago").eq("user_id", session.user.id),
+        supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago").eq("user_id", session.user.id),
       ]);
       if (resCategorias.data) {
         setCategorias([...resCategorias.data].sort((a, b) =>
@@ -204,12 +205,14 @@ export default function TransacoesScreen() {
               total: 0,
               pago: true,
               itens_ids: [],
+              itens: [],
               dia_vencimento: cartaoMap[item.cartao_id]?.dia_vencimento ?? 1,
             };
           }
           grupos[key].total += Number(item.valor);
           if (!item.pago) grupos[key].pago = false;
           grupos[key].itens_ids.push(item.id);
+          grupos[key].itens.push({ id: item.id, descricao: item.descricao || "", valor: Number(item.valor) });
         });
         setFaturaGrupos(Object.values(grupos));
       }
@@ -546,15 +549,23 @@ export default function TransacoesScreen() {
   const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
   const temMais = transacoesPaginadas.length < transacoesDoMes.length;
 
-  const faturaGruposDoMes = faturaGrupos.filter((g) => {
-    if (g.mes_fatura !== mesSelecionado) return false;
-    if (filtroStatus === "concluidos" && !g.pago) return false;
-    if (filtroStatus === "pendentes" && g.pago) return false;
-    if (!filtroVencidas) return true;
+  const faturaGruposDoMes = faturaGrupos.flatMap((g) => {
+    if (g.mes_fatura !== mesSelecionado) return [];
+    if (filtroStatus === "concluidos" && !g.pago) return [];
+    if (filtroStatus === "pendentes" && g.pago) return [];
+    if (filtroVencidas) {
     const [ano, mes] = g.mes_fatura.split("-").map(Number);
     const ultimoDia = new Date(ano, mes, 0).getDate();
     const vencimento = new Date(ano, mes - 1, Math.min(g.dia_vencimento, ultimoDia));
-    return !g.pago && vencimento < hojeRef;
+      if (g.pago || vencimento >= hojeRef) return [];
+    }
+    if (!termoBusca) return [g];
+    const itensEncontrados = g.itens.filter((item) => normalizar(item.descricao).includes(termoBusca));
+    if (itensEncontrados.length === 0) return [];
+    return [{
+      ...g,
+      total: itensEncontrados.reduce((total, item) => total + item.valor, 0),
+    }];
   });
 
   const totalReceitas = transacoesDoMes
@@ -859,12 +870,14 @@ export default function TransacoesScreen() {
                     borderLeftColor: g.cartao_cor,
                   }]}
                   onPress={() => {
+                    if (termoBusca) return;
                     if (g.pago) {
                       setFaturaEstornar(g);
                     } else {
                       router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(g.cartao_id), mesFatura: g.mes_fatura } } as any);
                     }
                   }}
+                  disabled={Boolean(termoBusca)}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
