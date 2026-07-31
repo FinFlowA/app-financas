@@ -124,6 +124,7 @@ export const ThemeContext = createContext({
   billingEnabled: false,
   limitsEnabled: false,
   temCadastroPendente: false,
+  temPopupPrioritario: false,
   refreshEntitlement: async () => {},
 });
 
@@ -142,6 +143,7 @@ export default function RootLayout() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
   const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
+  const [modalNotificacoes, setModalNotificacoes] = useState<"pergunta" | "ativado" | null>(null);
   const [decisoesCaixinha, setDecisoesCaixinha] = useState<DecisaoCaixinha[]>([]);
   const [definindoSaldoCaixinha, setDefinindoSaldoCaixinha] = useState(false);
   const [saldoCaixinha, setSaldoCaixinha] = useState("");
@@ -468,25 +470,7 @@ export default function RootLayout() {
     const chave = `@notificacoes_perguntado_${uid}`;
     AsyncStorage.getItem(chave).then((val) => {
       if (val !== null) return;
-      AsyncStorage.setItem(chave, "true");
-      Alert.alert(
-        "🔔 Notificações",
-        "Deseja receber lembretes de lançamentos vencendo e avisos semanais para manter suas finanças em dia?",
-        [
-          { text: "Não, obrigado", style: "cancel" },
-          {
-            text: "Sim, quero!",
-            onPress: async () => {
-              const concedida = await pedirPermissaoNotificacoes();
-              if (concedida) {
-                setNotificacoesAtivas(true);
-                await AsyncStorage.setItem(`@notificacoes_enabled_${uid}`, "true");
-                Alert.alert("Ativado!", "Você receberá notificações sobre seus lançamentos.");
-              }
-            },
-          },
-        ]
-      );
+      setModalNotificacoes("pergunta");
     });
   }, [session?.user?.id]);
 
@@ -681,6 +665,11 @@ export default function RootLayout() {
           billingEnabled: entitlement.billingEnabled,
           limitsEnabled: entitlement.limitsEnabled,
           temCadastroPendente: pendenciasCadastro.length > 0,
+          temPopupPrioritario:
+            pendenciasCadastro.length > 0 ||
+            decisoesCaixinha.length > 0 ||
+            modalAtualizacao !== null ||
+            modalNotificacoes !== null,
           refreshEntitlement,
           verificarLimite, mostrarModalLimite,
           iaAcoesHoje, tentarAcaoIA,
@@ -901,7 +890,15 @@ export default function RootLayout() {
         </View>
       </Modal>
 
-      <Modal animationType="fade" transparent visible={pendenciasCadastro.length === 0 && modalAtualizacao !== null}>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={
+          pendenciasCadastro.length === 0 &&
+          decisoesCaixinha.length === 0 &&
+          modalAtualizacao !== null
+        }
+      >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
             <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
@@ -950,6 +947,84 @@ export default function RootLayout() {
                   <Text style={styles.modalLimiteBtnText}>Continuar</Text>
                 </TouchableOpacity>
               </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={
+          pendenciasCadastro.length === 0 &&
+          decisoesCaixinha.length === 0 &&
+          modalAtualizacao === null &&
+          modalNotificacoes !== null
+        }
+        onRequestClose={async () => {
+          if (modalNotificacoes === "pergunta" && session?.user?.id) {
+            await AsyncStorage.setItem(`@notificacoes_perguntado_${session.user.id}`, "true");
+          }
+          setModalNotificacoes(null);
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
+              <MaterialIcons
+                name={modalNotificacoes === "ativado" ? "notifications-active" : "notifications-none"}
+                size={34}
+                color="#2A9D8F"
+              />
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
+              {modalNotificacoes === "ativado" ? "Notificações ativadas" : "Ativar notificações?"}
+            </Text>
+            <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
+              {modalNotificacoes === "ativado"
+                ? "Você receberá lembretes importantes sobre seus lançamentos."
+                : "Deseja receber lembretes de lançamentos próximos do vencimento e outros avisos financeiros?"}
+            </Text>
+
+            {modalNotificacoes === "pergunta" ? (
+              <>
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 14 }]}
+                  onPress={async () => {
+                    const uid = session?.user?.id;
+                    if (!uid) return setModalNotificacoes(null);
+                    const concedida = await pedirPermissaoNotificacoes();
+                    await AsyncStorage.setItem(`@notificacoes_perguntado_${uid}`, "true");
+                    if (!concedida) return setModalNotificacoes(null);
+                    setNotificacoesAtivas(true);
+                    await AsyncStorage.setItem(`@notificacoes_enabled_${uid}`, "true");
+                    setModalNotificacoes("ativado");
+                  }}
+                >
+                  <MaterialIcons name="notifications-active" size={18} color="#FFF" />
+                  <Text style={styles.modalLimiteBtnText}>Sim, ativar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnFechar, { backgroundColor: isDark ? "#2C2C2C" : "#F3F4F6", marginTop: 8 }]}
+                  onPress={async () => {
+                    if (session?.user?.id) {
+                      await AsyncStorage.setItem(`@notificacoes_perguntado_${session.user.id}`, "true");
+                    }
+                    setModalNotificacoes(null);
+                  }}
+                >
+                  <Text style={[styles.modalLimiteBtnFecharText, { color: isDark ? "#AAA" : "#6B7280" }]}>
+                    Agora não
+                  </Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity
+                style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 14 }]}
+                onPress={() => setModalNotificacoes(null)}
+              >
+                <Text style={styles.modalLimiteBtnText}>Entendi</Text>
+              </TouchableOpacity>
             )}
           </View>
         </View>

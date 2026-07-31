@@ -176,7 +176,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
 };
 
 export default function Dashboard() {
-  const { isDark, session, notificacoesAtivas, verificarLimite, temCadastroPendente } = useAppTheme();
+  const { isDark, session, notificacoesAtivas, verificarLimite, temPopupPrioritario } = useAppTheme();
   const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
 
@@ -268,6 +268,7 @@ export default function Dashboard() {
   const [comprasCartao, setComprasCartao] = useState<CompraCartao[]>([]);
   const [temFaturaVencida, setTemFaturaVencida] = useState(false);
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
+  const [confirmarEdicaoSaldo, setConfirmarEdicaoSaldo] = useState(false);
   const [qtdVencidas, setQtdVencidas] = useState(0);
 
   // --- Cálculos ---
@@ -1202,14 +1203,7 @@ export default function Dashboard() {
                 style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, backgroundColor: Cores.pillFundo, borderRadius: 8, marginBottom: 15 }}
                 onPress={() => {
                   if (!editandoSaldoConta) {
-                    Alert.alert(
-                      "Editar Saldo Inicial",
-                      "Alterar o saldo inicial afeta o cálculo do saldo da conta. Confirma?",
-                      [
-                        { text: "Cancelar", style: "cancel" },
-                        { text: "Sim, editar", onPress: () => setEditandoSaldoConta(true) },
-                      ]
-                    );
+                    setConfirmarEdicaoSaldo(true);
                   } else {
                     setEditandoSaldoConta(false);
                   }
@@ -1524,7 +1518,7 @@ export default function Dashboard() {
       <Modal
         animationType="fade"
         transparent
-        visible={modalVencidosVisivel && !temCadastroPendente}
+        visible={modalVencidosVisivel && !temPopupPrioritario}
         onRequestClose={() => setModalVencidosVisivel(false)}
       >
         <View style={styles.modalOverlay}>
@@ -1548,6 +1542,44 @@ export default function Dashboard() {
               onPress={() => setModalVencidosVisivel(false)}
             >
               <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={confirmarEdicaoSaldo}
+        onRequestClose={() => setConfirmarEdicaoSaldo(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: "#457B9D" }]}>
+            <View style={{ alignItems: "center", marginBottom: 14 }}>
+              <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#457B9D22", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
+                <MaterialIcons name="account-balance-wallet" size={30} color="#457B9D" />
+              </View>
+              <Text style={{ color: Cores.textoPrincipal, fontSize: 18, fontWeight: "bold" }}>
+                Editar saldo inicial
+              </Text>
+            </View>
+            <Text style={{ color: Cores.textoSecundario, textAlign: "center", fontSize: 14, lineHeight: 21, marginBottom: 22 }}>
+              Alterar o saldo inicial afeta o cálculo do saldo atual e dos relatórios desta conta. Deseja continuar?
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: "#457B9D", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 9 }}
+              onPress={() => {
+                setConfirmarEdicaoSaldo(false);
+                setEditandoSaldoConta(true);
+              }}
+            >
+              <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Sim, editar saldo</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ backgroundColor: Cores.pillFundo, paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+              onPress={() => setConfirmarEdicaoSaldo(false)}
+            >
+              <Text style={{ color: Cores.textoSecundario, fontWeight: "bold", fontSize: 15 }}>Cancelar</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -120,10 +120,12 @@ export default function LoginScreen() {
       if (idade !== null && idade < 18) {
         await supabase.auth.signOut();
         setLoading(false);
-        return Alert.alert(
-          "Acesso não permitido",
-          "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-        );
+        setModalErro({
+          titulo: "Acesso não permitido",
+          mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
+          cor: "#E76F51",
+        });
+        return;
       }
       router.replace("/(tabs)");
     }
@@ -159,10 +161,11 @@ export default function LoginScreen() {
     if (idade === null)
       return Alert.alert("Data inválida", "Informe uma data de nascimento válida no formato DD/MM/AAAA.");
     if (idade < 18)
-      return Alert.alert(
-        "Cadastro não permitido",
-        "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-      );
+      return setModalErro({
+        titulo: "Cadastro não permitido",
+        mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
+        cor: "#E76F51",
+      });
     if (!aceitouTermos)
       return Alert.alert(
         "Aceite necessário",
@@ -193,10 +196,11 @@ export default function LoginScreen() {
         "Este e-mail já está em uso. Faça login ou recupere sua senha.",
       );
     } else {
-      Alert.alert(
-        "Conta Criada com Sucesso!",
-        `Bem-vindo(a), ${nome}!\n\nUm e-mail de confirmação foi enviado para ${email}. Verifique sua caixa de entrada e confirme para ativar sua conta.`,
-      );
+      setModalErro({
+        titulo: "Conta criada com sucesso!",
+        mensagem: `Bem-vindo(a), ${nome}!\n\nEnviamos um e-mail de confirmação para ${email}. Verifique sua caixa de entrada para ativar sua conta.`,
+        cor: "#2A9D8F",
+      });
       setIsLogin(true);
       setPassword("");
       setConfirmPassword("");
