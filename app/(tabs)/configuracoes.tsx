@@ -1,8 +1,8 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -92,12 +92,12 @@ export default function ConfiguracoesScreen() {
     setParceria(aceito ?? data[0]);
   }, [meuEmail, meuId]);
 
-  useFocusEffect(useCallback(() => {
+  useEffect(() => {
     carregarParceria();
     setNomeEdit(nomeMetadata || nomeCompletoMetadata || "");
     setTelefoneEdit(telefoneMetadata || "");
     setEmailEdit(meuEmail);
-  }, [carregarParceria, meuEmail, nomeCompletoMetadata, nomeMetadata, telefoneMetadata]));
+  }, [carregarParceria, meuEmail, nomeCompletoMetadata, nomeMetadata, telefoneMetadata]);
 
   const enviarConvite = async () => {
     const emailNormalizado = emailConvite.toLowerCase().trim();
