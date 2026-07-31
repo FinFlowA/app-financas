@@ -76,6 +76,16 @@ export async function agendarNotificacoesDoApp(
 
     try { await Notif.setBadgeCountAsync(0); } catch {}
 
+    // O dashboard envia o conjunto completo de dados e pode reorganizar a agenda.
+    // O cancelamento precisa acontecer antes dos alertas imediatos para não apagá-los.
+    if (transacoes.length > 0) {
+      const chaveAgendado = `@notif_agendado_${userId}_${hojeStr}`;
+      const jaAgendadoHoje = await AsyncStorage.getItem(chaveAgendado);
+      if (jaAgendadoHoje) return;
+      await Notif.cancelAllScheduledNotificationsAsync();
+      await AsyncStorage.setItem(chaveAgendado, "1");
+    }
+
     // Alertas imediatos de limite de cartão próximo do máximo (dedup por cartão/dia)
     if (cartoes && cartoes.length > 0) {
       for (const cartao of cartoes) {
@@ -126,15 +136,8 @@ export async function agendarNotificacoesDoApp(
       }
     }
 
-    // Guard mestre: cancelamento + reagendamento completo só UMA VEZ por dia
-    // Apenas o dashboard envia transações, caixinhas e cartões juntos.
-    // Uma tela com dados parciais não pode apagar a agenda completa.
+    // Telas com dados parciais não devem alterar a agenda completa.
     if (transacoes.length === 0) return;
-    const chaveAgendado = `@notif_agendado_${userId}_${hojeStr}`;
-    const jaAgendadoHoje = await AsyncStorage.getItem(chaveAgendado);
-    if (jaAgendadoHoje) return; // já reagendou tudo hoje — evita duplicatas de noon/caixinha
-    await AsyncStorage.setItem(chaveAgendado, "1");
-    await Notif.cancelAllScheduledNotificationsAsync();
 
     // Vencendo hoje (8h e 19h)
     const vencendoHoje = transacoes.filter((t) => {
@@ -173,28 +176,6 @@ export async function agendarNotificacoesDoApp(
       }
     }
 
-    // Notificações diárias ao meio-dia com mensagens variadas (próximos 7 dias)
-    const mensagensNoon = [
-      "Olha seu extrato! Lembre-se de registrar todas as suas transações.",
-      "Mantenha o controle das suas finanças. Confira seus lançamentos agora!",
-      "Hora de verificar sua situação financeira. Abra o FinFlow!",
-      "Registre seus gastos enquanto estão frescos na memória.",
-      "Você está no controle das suas finanças? Confira agora no FinFlow!",
-      "Pequenos registros fazem grandes diferenças. Abra o FinFlow!",
-      "Faça uma pausa e confira seu saldo no FinFlow.",
-    ];
-    for (let dia = 0; dia < 7; dia++) {
-      const alvo = new Date(agora);
-      alvo.setDate(alvo.getDate() + dia);
-      alvo.setHours(12, 0, 0, 0);
-      if (alvo <= agora) continue;
-      const segundos = Math.floor((alvo.getTime() - agora.getTime()) / 1000);
-      const idx = alvo.getDay() % mensagensNoon.length;
-      await Notif.scheduleNotificationAsync({
-        content: { ...notifBase(), title: "📊 FinFlow — Revisão Diária", body: mensagensNoon[idx] },
-        trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
-      });
-    }
     // Notificações de prazo das caixinhas
     if (caixinhas && caixinhas.length > 0) {
       const MARCOS_DIAS = [30, 7, 3, 1, 0];
@@ -257,17 +238,26 @@ export async function agendarNotificacoesDoApp(
           }
         }
 
-        // Fechamento: 2 dias antes
-        const dataFecha = dataNotifCartao(cartao.dia_fechamento, 2, 9);
-        if (dataFecha) {
+        // Fechamento: 2 dias antes e no próprio dia
+        const eventosFechamento = [
+          {
+            diasAntes: 2,
+            titulo: `📋 ${cartao.nome} — Fatura fecha em 2 dias`,
+            corpo: "Últimos dias para incluir compras nesta fatura.",
+          },
+          {
+            diasAntes: 0,
+            titulo: `🔒 ${cartao.nome} — Fatura fechou hoje`,
+            corpo: "As próximas compras serão lançadas na fatura seguinte.",
+          },
+        ];
+        for (const ev of eventosFechamento) {
+          const dataFecha = dataNotifCartao(cartao.dia_fechamento, ev.diasAntes, 9);
+          if (!dataFecha) continue;
           const segundos = Math.floor((dataFecha.getTime() - agora.getTime()) / 1000);
           if (segundos > 0) {
             await Notif.scheduleNotificationAsync({
-              content: {
-                ...notifBase(),
-                title: `📋 ${cartao.nome} — Fatura fecha em 2 dias`,
-                body: "Últimos dias para incluir compras nesta fatura.",
-              },
+              content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
               trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
             });
           }
