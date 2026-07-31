@@ -344,11 +344,12 @@ export default function CartoesScreen() {
     const itensDaFaturaAtual = itens.filter(
       (item) => item.cartao_id === cartao.id && item.mes_fatura === mesAtual,
     );
-    const faturaAtualFoiPaga =
-      itensDaFaturaAtual.length > 0 &&
+    const faturaAtualFoiPagaOuZerada =
+      itensDaFaturaAtual.length === 0 ||
+      calcularTotalFatura(cartao.id, mesAtual) === 0 ||
       itensDaFaturaAtual.every((item) => item.pago);
     const mesExibido =
-      faturaAtualFoiPaga
+      faturaAtualFoiPagaOuZerada
         ? proximoMesStr(mesAtual)
         : mesAtual;
 
@@ -1034,7 +1035,7 @@ export default function CartoesScreen() {
               </View>
 
               <Text style={[estilos.label, { color: Cores.secundario }]}>Cor do Cartão</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ marginBottom: 16, maxWidth: "100%" }} contentContainerStyle={{ paddingRight: 12 }}>
                 <View style={{ flexDirection: "row", gap: 10 }}>
                   {CORES_CARTAO.map((cor) => (
                     <TouchableOpacity
@@ -1176,7 +1177,7 @@ export default function CartoesScreen() {
               )}
 
               <Text style={[estilos.label, { color: Cores.secundario }]}>Categoria</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ marginBottom: 16, maxWidth: "100%" }} contentContainerStyle={{ paddingRight: 12 }}>
                 <View style={{ flexDirection: "row", gap: 8 }}>
                   {categorias.filter(c => c.tipo === "despesa" || c.tipo === "ambos").map((cat) => (
                     <TouchableOpacity

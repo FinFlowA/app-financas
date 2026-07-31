@@ -919,7 +919,7 @@ export default function Dashboard() {
               {fmtReais(balancoMensal)}
             </Text>
             <Text style={{ color: isDark ? "#888" : "#7B8490", fontSize: 11, marginTop: 3 }}>
-              Total agendado no mês: {fmtReais(balancoAgendadoMensal)}
+              Previsto até o fim do mês: {fmtReais(balancoAgendadoMensal)}
             </Text>
           </View>
         </View>
@@ -1212,7 +1212,7 @@ export default function Dashboard() {
               />
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor da Conta:</Text>
-              <View style={styles.colorPalette}>
+              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (
                   <TouchableOpacity
                     key={cor}
@@ -1220,7 +1220,7 @@ export default function Dashboard() {
                     onPress={() => setCorEditConta(cor)}
                   />
                 ))}
-              </View>
+              </ScrollView>
 
               {/* Editar saldo inicial com confirmação */}
               <TouchableOpacity
@@ -1311,7 +1311,7 @@ export default function Dashboard() {
             />
 
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor da Conta*:</Text>
-            <View style={styles.colorPalette}>
+            <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
               {PALETA_CORES.map((cor) => (
                 <TouchableOpacity
                   key={cor}
@@ -1319,7 +1319,7 @@ export default function Dashboard() {
                   onPress={() => setCorNovaConta(cor)}
                 />
               ))}
-            </View>
+            </ScrollView>
 
             {/* Preview da conta */}
             <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
@@ -1363,7 +1363,7 @@ export default function Dashboard() {
                   onChangeText={setNomeEditCat}
                 />
                 <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-                <View style={styles.colorPalette}>
+                <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
                   {PALETA_CORES.map((cor) => (
                     <TouchableOpacity
                       key={cor}
@@ -1371,7 +1371,7 @@ export default function Dashboard() {
                       onPress={() => setCorEditCat(cor)}
                     />
                   ))}
-                </View>
+                </ScrollView>
                 <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
                 <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                   {LISTA_ICONES.map((icone) => (
@@ -1461,11 +1461,11 @@ export default function Dashboard() {
               onChangeText={setNomeCategoria}
             />
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-            <View style={styles.colorPalette}>
+            <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
               {PALETA_CORES.map((cor) => (
                 <TouchableOpacity key={cor} style={[styles.colorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setCorSelecionada(cor)} />
               ))}
-            </View>
+            </ScrollView>
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
               {LISTA_ICONES.map((icone) => (
@@ -1839,7 +1839,7 @@ modalContent: { width: "95%", padding: 20, borderRadius: 16, elevation: 5 },
   datePickerText: { fontSize: 16, fontWeight: "500" },
   rowInputs: { flexDirection: "row", justifyContent: "space-between" },
   colorLabel: { fontSize: 14, fontWeight: "500", marginBottom: 10 },
-  colorPalette: { flexDirection: "row", justifyContent: "space-between", marginBottom: 20 },
+  colorPalette: { flexDirection: "row", gap: 8, paddingRight: 12, marginBottom: 20 },
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },

@@ -5,12 +5,10 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2026-07-31-parcelas-historico-alertas",
+  id: "2026-07-31-fatura-zerada-e-cores",
   items: [
-    "Compras parceladas agora aceitam o valor total ou o valor de cada parcela",
-    "Busca do histórico filtra corretamente os itens e o valor das faturas",
-    "Balanço mensal separa o realizado do total agendado",
-    "Valores recebem formatação monetária automática durante a digitação",
-    "Cores ganharam mais opções fixas e as notificações pendentes foram revisadas",
+    "O cartão agora mostra a próxima fatura quando a atual estiver paga ou zerada",
+    "A seleção de cores cabe na tela e pode ser arrastada para os lados",
+    "O balanço identifica claramente o valor previsto até o fim do mês",
   ],
 } as const;

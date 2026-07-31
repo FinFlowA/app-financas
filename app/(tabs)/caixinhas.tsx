@@ -655,7 +655,7 @@ export default function CaixinhasScreen() {
                 </View>
               )}
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-              <View style={styles.colorPalette}>
+              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (
                   <TouchableOpacity
                     key={cor}
@@ -663,7 +663,7 @@ export default function CaixinhasScreen() {
                     onPress={() => setCorEditCaixa(cor)}
                   />
                 ))}
-              </View>
+              </ScrollView>
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -771,7 +771,7 @@ export default function CaixinhasScreen() {
               )}
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-              <View style={styles.colorPalette}>
+              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (
                   <TouchableOpacity
                     key={cor}
@@ -779,7 +779,7 @@ export default function CaixinhasScreen() {
                     onPress={() => setCorSelecionada(cor)}
                   />
                 ))}
-              </View>
+              </ScrollView>
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -1001,7 +1001,7 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 20 },
   colorLabel: { fontSize: 14, fontWeight: "500", marginBottom: 10 },
-  colorPalette: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
+  colorPalette: { flexDirection: "row", gap: 8, paddingRight: 12, marginBottom: 20 },
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   modalButtons: { flexDirection: "row", justifyContent: "space-around" },
