@@ -270,7 +270,11 @@ export default function ConfiguracoesScreen() {
         if (temHardware && temBiometria) {
           const result = await LocalAuthentication.authenticateAsync({ promptMessage: "Confirme sua identidade para apagar a conta" });
           if (!result.success) {
-            Alert.alert("Cancelado", "Autenticação necessária para apagar a conta.");
+            setModalInfo({
+              titulo: "Exclusão cancelada",
+              mensagem: "Sua conta e seus dados continuam seguros. Para excluir a conta, é necessário confirmar sua identidade.",
+              cor: "#2A9D8F",
+            });
             return;
           }
         } else {

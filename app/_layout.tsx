@@ -123,6 +123,7 @@ export const ThemeContext = createContext({
   tentarAcaoIA: async (): Promise<boolean> => false,
   billingEnabled: false,
   limitsEnabled: false,
+  temCadastroPendente: false,
   refreshEntitlement: async () => {},
 });
 
@@ -679,6 +680,7 @@ export default function RootLayout() {
           limites: entitlement.limitsEnabled ? LIMITES_PLANOS[plano] : LIMITES_DESENVOLVIMENTO,
           billingEnabled: entitlement.billingEnabled,
           limitsEnabled: entitlement.limitsEnabled,
+          temCadastroPendente: pendenciasCadastro.length > 0,
           refreshEntitlement,
           verificarLimite, mostrarModalLimite,
           iaAcoesHoje, tentarAcaoIA,

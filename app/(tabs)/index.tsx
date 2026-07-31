@@ -176,7 +176,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; va
 };
 
 export default function Dashboard() {
-  const { isDark, session, notificacoesAtivas, verificarLimite } = useAppTheme();
+  const { isDark, session, notificacoesAtivas, verificarLimite, temCadastroPendente } = useAppTheme();
   const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
 
@@ -743,7 +743,24 @@ export default function Dashboard() {
     }
 
     setLoadingTrans(true);
-    const { error } = await supabase.from("transacoes").insert(novasTransacoes);
+    let respostaInsercao = await supabase.from("transacoes").insert(novasTransacoes);
+    const erroTransitorio =
+      respostaInsercao.error &&
+      (
+        respostaInsercao.status === 401 ||
+        respostaInsercao.status === 408 ||
+        respostaInsercao.status === 429 ||
+        respostaInsercao.status >= 500 ||
+        respostaInsercao.error.code === "PGRST301"
+      );
+
+    // O servidor rejeita o lote inteiro nesses casos. Renovar a sessão e
+    // repetir uma vez evita que uma indisponibilidade breve chegue ao usuário.
+    if (erroTransitorio) {
+      await supabase.auth.refreshSession();
+      respostaInsercao = await supabase.from("transacoes").insert(novasTransacoes);
+    }
+    const { error } = respostaInsercao;
     if (!error && caixinhaDestinoId && statusBd === "paga") {
       // Atualiza saldo do objetivo para transações já pagas
       const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
@@ -753,7 +770,17 @@ export default function Dashboard() {
       }
     }
     setLoadingTrans(false);
-    if (error) return Alert.alert("Erro", "Falha ao guardar os registos na nuvem.");
+    if (error) {
+      console.error("Falha ao salvar transação", {
+        code: error.code,
+        status: respostaInsercao.status,
+        details: error.details,
+      });
+      return Alert.alert(
+        "Não foi possível salvar",
+        "Nenhum lançamento foi criado. Confira sua conexão e tente novamente.",
+      );
+    }
 
     setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
     setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
@@ -1494,7 +1521,12 @@ export default function Dashboard() {
       </Modal>
 
       {/* MODAL LANÇAMENTOS VENCIDOS */}
-      <Modal animationType="fade" transparent visible={modalVencidosVisivel} onRequestClose={() => setModalVencidosVisivel(false)}>
+      <Modal
+        animationType="fade"
+        transparent
+        visible={modalVencidosVisivel && !temCadastroPendente}
+        onRequestClose={() => setModalVencidosVisivel(false)}
+      >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 4, borderTopColor: "#E76F51" }]}>
             <View style={{ alignItems: "center", marginBottom: 15 }}>
