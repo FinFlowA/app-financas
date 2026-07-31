@@ -5,8 +5,9 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2026-07-30-cadastro-e-parcerias",
+  id: "2026-07-30-cadastro-pendente",
   items: [
+    "Contas antigas agora recebem um aviso para completar informações obrigatórias",
     "Cadastro agora confirma idade mínima e aceite dos documentos",
     "Separação de parceria com decisão segura sobre cada caixinha",
     "Melhorias de estabilidade e atualização das informações legais",

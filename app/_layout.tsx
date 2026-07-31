@@ -49,6 +49,14 @@ import {
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
+import {
+  dataNascimentoParaISO,
+  formatarDataNascimento,
+  idadeEmAnos,
+  LEGAL_DOCUMENT_VERSION,
+  listarPendenciasCadastro,
+  type PendenciaCadastro,
+} from "../lib/legal";
 
 type DecisaoCaixinha = {
   id: number;
@@ -62,9 +70,20 @@ type DecisaoCaixinha = {
 };
 
 // ERROR BOUNDARY
-class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
+class ErrorBoundary extends Component<
+  { children: ReactNode; resetKey: string },
+  { temErro: boolean }
+> {
   state = { temErro: false };
   static getDerivedStateFromError() { return { temErro: true }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("Erro não tratado no FinFlow:", error, info.componentStack);
+  }
+  componentDidUpdate(prevProps: { children: ReactNode; resetKey: string }) {
+    if (this.state.temErro && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ temErro: false });
+    }
+  }
   render() {
     if (this.state.temErro) {
       return (
@@ -134,6 +153,11 @@ export default function RootLayout() {
   const [definindoSaldoCaixinha, setDefinindoSaldoCaixinha] = useState(false);
   const [saldoCaixinha, setSaldoCaixinha] = useState("");
   const [resolvendoCaixinha, setResolvendoCaixinha] = useState(false);
+  const [pendenciasCadastro, setPendenciasCadastro] = useState<PendenciaCadastro[]>([]);
+  const [nascimentoPendente, setNascimentoPendente] = useState("");
+  const [termosPendentesAceitos, setTermosPendentesAceitos] = useState(false);
+  const [salvandoCadastroPendente, setSalvandoCadastroPendente] = useState(false);
+  const [erroCadastroPendente, setErroCadastroPendente] = useState("");
 
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
@@ -286,6 +310,68 @@ export default function RootLayout() {
 
     return () => subscription.unsubscribe();
   }, [carregarConfiguracoes, router]);
+
+  const verificarCadastroPendente = useCallback(() => {
+    const metadata = session?.user?.user_metadata as Record<string, unknown> | undefined;
+    setPendenciasCadastro(listarPendenciasCadastro(metadata));
+    setErroCadastroPendente("");
+  }, [session?.user?.user_metadata]);
+
+  useEffect(() => {
+    if (!session?.user?.id) {
+      setPendenciasCadastro([]);
+      return;
+    }
+    verificarCadastroPendente();
+  }, [session?.user?.id, verificarCadastroPendente]);
+
+  const concluirCadastroPendente = async () => {
+    if (salvandoCadastroPendente) return;
+
+    const precisaNascimento = pendenciasCadastro.includes("data_nascimento");
+    const precisaTermos = pendenciasCadastro.includes("termos");
+    const nascimentoISO = precisaNascimento
+      ? dataNascimentoParaISO(nascimentoPendente)
+      : null;
+
+    if (precisaNascimento && !nascimentoISO) {
+      setErroCadastroPendente("Informe uma data de nascimento válida.");
+      return;
+    }
+    if (nascimentoISO && (idadeEmAnos(nascimentoISO) ?? -1) < 18) {
+      setErroCadastroPendente("O FinFlow é destinado somente a maiores de 18 anos.");
+      return;
+    }
+    if (precisaTermos && !termosPendentesAceitos) {
+      setErroCadastroPendente("É necessário aceitar os Termos de Uso e a Política de Privacidade.");
+      return;
+    }
+
+    setSalvandoCadastroPendente(true);
+    setErroCadastroPendente("");
+    const metadataAtual = session?.user?.user_metadata ?? {};
+    const { data, error } = await supabase.auth.updateUser({
+      data: {
+        ...metadataAtual,
+        ...(nascimentoISO ? { data_nascimento: nascimentoISO } : {}),
+        ...(precisaTermos ? {
+          termos_aceitos_em: new Date().toISOString(),
+          termos_versao: LEGAL_DOCUMENT_VERSION,
+        } : {}),
+      },
+    });
+    setSalvandoCadastroPendente(false);
+
+    if (error || !data.user) {
+      setErroCadastroPendente("Não foi possível salvar. Confira sua conexão e tente novamente.");
+      return;
+    }
+
+    setNascimentoPendente("");
+    setTermosPendentesAceitos(false);
+    setPendenciasCadastro(listarPendenciasCadastro(data.user.user_metadata));
+    showToast("Cadastro atualizado com segurança ✓", "success");
+  };
 
   // Load per-user notification preference
   useEffect(() => {
@@ -593,7 +679,7 @@ export default function RootLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <ErrorBoundary>
+      <ErrorBoundary resetKey={segments.join("/")}>
         <ThemeContext.Provider value={{
           isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast,
           notificacoesAtivas, toggleNotificacoes,
@@ -629,7 +715,103 @@ export default function RootLayout() {
       <Modal
         animationType="fade"
         transparent
-        visible={decisoesCaixinha.length > 0}
+        visible={Boolean(session?.user?.id) && pendenciasCadastro.length > 0}
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
+              <MaterialIcons name="person-outline" size={34} color="#2A9D8F" />
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
+              Complete seu cadastro
+            </Text>
+            <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
+              Precisamos confirmar algumas informações obrigatórias antes de você continuar.
+            </Text>
+
+            {pendenciasCadastro.includes("data_nascimento") && (
+              <View style={{ width: "100%", marginTop: 8 }}>
+                <Text style={{ color: isDark ? "#DDD" : "#34404B", fontSize: 13, fontWeight: "600", marginBottom: 7 }}>
+                  Data de nascimento
+                </Text>
+                <TextInput
+                  style={{
+                    width: "100%",
+                    borderWidth: 1,
+                    borderColor: isDark ? "#444" : "#D4E0DC",
+                    backgroundColor: isDark ? "#292929" : "#F8FAF9",
+                    color: isDark ? "#FFF" : "#17212B",
+                    borderRadius: 12,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    fontSize: 16,
+                  }}
+                  placeholder="DD/MM/AAAA"
+                  placeholderTextColor={isDark ? "#888" : "#8A949E"}
+                  keyboardType="number-pad"
+                  value={nascimentoPendente}
+                  onChangeText={(valor) => setNascimentoPendente(formatarDataNascimento(valor))}
+                  maxLength={10}
+                  editable={!salvandoCadastroPendente}
+                />
+                <Text style={{ color: isDark ? "#999" : "#75808A", fontSize: 11, marginTop: 6 }}>
+                  O FinFlow é destinado a pessoas com 18 anos ou mais.
+                </Text>
+              </View>
+            )}
+
+            {pendenciasCadastro.includes("termos") && (
+              <View style={{ width: "100%", marginTop: 18 }}>
+                <TouchableOpacity
+                  style={{ flexDirection: "row", alignItems: "flex-start" }}
+                  onPress={() => setTermosPendentesAceitos((aceito) => !aceito)}
+                  disabled={salvandoCadastroPendente}
+                >
+                  <MaterialIcons
+                    name={termosPendentesAceitos ? "check-box" : "check-box-outline-blank"}
+                    size={24}
+                    color={termosPendentesAceitos ? "#2A9D8F" : (isDark ? "#888" : "#75808A")}
+                  />
+                  <Text style={{ flex: 1, color: isDark ? "#DDD" : "#34404B", fontSize: 13, lineHeight: 19, marginLeft: 9 }}>
+                    Li e concordo com os Termos de Uso e a Política de Privacidade vigentes.
+                  </Text>
+                </TouchableOpacity>
+                <View style={{ flexDirection: "row", marginTop: 10, marginLeft: 33 }}>
+                  <TouchableOpacity onPress={() => Linking.openURL("https://finflowa.github.io/finflow-legal/#termos")}>
+                    <Text style={{ color: "#2A9D8F", fontSize: 12, fontWeight: "700" }}>Ver termos</Text>
+                  </TouchableOpacity>
+                  <Text style={{ color: isDark ? "#666" : "#A0A7AE", marginHorizontal: 8 }}>•</Text>
+                  <TouchableOpacity onPress={() => Linking.openURL("https://finflowa.github.io/finflow-legal/#privacidade")}>
+                    <Text style={{ color: "#2A9D8F", fontSize: 12, fontWeight: "700" }}>Ver privacidade</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
+            {erroCadastroPendente ? (
+              <Text style={{ color: "#E76F51", fontSize: 12, lineHeight: 17, textAlign: "center", marginTop: 16 }}>
+                {erroCadastroPendente}
+              </Text>
+            ) : null}
+
+            <TouchableOpacity
+              style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]}
+              onPress={concluirCadastroPendente}
+              disabled={salvandoCadastroPendente}
+            >
+              {salvandoCadastroPendente
+                ? <ActivityIndicator color="#FFF" />
+                : <Text style={styles.modalLimiteBtnText}>Salvar e continuar</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={pendenciasCadastro.length === 0 && decisoesCaixinha.length > 0}
         onRequestClose={() => {}}
       >
         <View style={styles.modalOverlay}>
@@ -725,7 +907,7 @@ export default function RootLayout() {
         </View>
       </Modal>
 
-      <Modal animationType="fade" transparent visible={modalAtualizacao !== null}>
+      <Modal animationType="fade" transparent visible={pendenciasCadastro.length === 0 && modalAtualizacao !== null}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
             <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>

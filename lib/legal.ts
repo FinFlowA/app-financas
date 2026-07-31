@@ -1,5 +1,26 @@
 export const LEGAL_DOCUMENT_VERSION = "2026-07-30";
 
+export type PendenciaCadastro = "data_nascimento" | "termos";
+
+export function listarPendenciasCadastro(
+  metadata: Record<string, unknown> | null | undefined,
+): PendenciaCadastro[] {
+  const pendencias: PendenciaCadastro[] = [];
+
+  if (typeof metadata?.data_nascimento !== "string" || !metadata.data_nascimento) {
+    pendencias.push("data_nascimento");
+  }
+
+  if (
+    typeof metadata?.termos_aceitos_em !== "string" ||
+    metadata?.termos_versao !== LEGAL_DOCUMENT_VERSION
+  ) {
+    pendencias.push("termos");
+  }
+
+  return pendencias;
+}
+
 export function formatarDataNascimento(valor: string): string {
   const numeros = valor.replace(/\D/g, "").slice(0, 8);
   if (numeros.length <= 2) return numeros;

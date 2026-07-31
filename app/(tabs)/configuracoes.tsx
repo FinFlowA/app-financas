@@ -30,6 +30,9 @@ export default function ConfiguracoesScreen() {
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
+  const nomeMetadata = session?.user?.user_metadata?.nome_usuario;
+  const nomeCompletoMetadata = session?.user?.user_metadata?.full_name;
+  const telefoneMetadata = session?.user?.user_metadata?.telefone;
 
   const Cores = {
     fundo: isDark ? "#121212" : "#F5F2EC",
@@ -90,11 +93,10 @@ export default function ConfiguracoesScreen() {
 
   useFocusEffect(useCallback(() => {
     carregarParceria();
-    const meta = session?.user?.user_metadata;
-    setNomeEdit(meta?.nome_usuario || meta?.full_name || "");
-    setTelefoneEdit(meta?.telefone || "");
+    setNomeEdit(nomeMetadata || nomeCompletoMetadata || "");
+    setTelefoneEdit(telefoneMetadata || "");
     setEmailEdit(meuEmail);
-  }, [carregarParceria, meuEmail, session?.user?.user_metadata]));
+  }, [carregarParceria, meuEmail, nomeCompletoMetadata, nomeMetadata, telefoneMetadata]));
 
   const enviarConvite = async () => {
     const emailNormalizado = emailConvite.toLowerCase().trim();
