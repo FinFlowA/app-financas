@@ -376,7 +376,7 @@ export default function Dashboard() {
     .sort((a, b) => b.valor - a.valor);
 
   // --- Dados ---
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
 
     try {
@@ -463,7 +463,7 @@ export default function Dashboard() {
           })) ?? []
         );
       }
-    } catch (error) {
+    } catch {
       const catCache = await AsyncStorage.getItem("@cache_categorias");
       const conCache = await AsyncStorage.getItem("@cache_contas");
       const transCache = await AsyncStorage.getItem("@cache_transacoes");
@@ -485,9 +485,9 @@ export default function Dashboard() {
       if (parcCache) setTemParceiro(JSON.parse(parcCache));
       setIsOffline(true);
     }
-  };
+  }, [notificacoesAtivas, session?.user?.id]);
 
-  useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
+  useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
   const calcularSaldoConta = (conta: Conta) => {
     const transDaConta = transacoes.filter((t) => t.conta_id === conta.id && t.status === "paga");

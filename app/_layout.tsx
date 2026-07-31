@@ -11,6 +11,7 @@ import * as Updates from "expo-updates";
 import React, {
   Component,
   ReactNode,
+  useCallback,
   createContext,
   useContext,
   useEffect,
@@ -21,9 +22,12 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
+  DeviceEventEmitter,
   Modal,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   useColorScheme,
   View,
@@ -45,6 +49,17 @@ import {
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
+
+type DecisaoCaixinha = {
+  id: number;
+  nome: string;
+  meta_valor: number;
+  saldo_total: number;
+  saldo_disponivel: number;
+  cor: string;
+  icone: string;
+  data_prazo: string | null;
+};
 
 // ERROR BOUNDARY
 class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
@@ -115,6 +130,10 @@ export default function RootLayout() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
   const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
+  const [decisoesCaixinha, setDecisoesCaixinha] = useState<DecisaoCaixinha[]>([]);
+  const [definindoSaldoCaixinha, setDefinindoSaldoCaixinha] = useState(false);
+  const [saldoCaixinha, setSaldoCaixinha] = useState("");
+  const [resolvendoCaixinha, setResolvendoCaixinha] = useState(false);
 
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
@@ -150,6 +169,45 @@ export default function RootLayout() {
     }, 1800);
   };
 
+  const autenticar = useCallback(async () => {
+    const result = await LocalAuthentication.authenticateAsync({
+      promptMessage: "Acesse sua Carteira",
+      fallbackLabel: "Usar senha padrão",
+    });
+    if (result.success) setIsUnlocked(true);
+  }, []);
+
+  const verificarBiometria = useCallback(async () => {
+    const temHardware = await LocalAuthentication.hasHardwareAsync();
+    const temBiometria = await LocalAuthentication.isEnrolledAsync();
+    if (temHardware && temBiometria) {
+      autenticar();
+    } else {
+      setIsUnlocked(true);
+    }
+  }, [autenticar]);
+
+  const carregarConfiguracoes = useCallback(async () => {
+    try {
+      const temaSalvo = await AsyncStorage.getItem("@dark_mode");
+      if (temaSalvo !== null) setIsDark(temaSalvo === "true");
+
+      const biometriaSalva = await AsyncStorage.getItem("@biometric_enabled");
+      const biometriaAtiva = biometriaSalva === "true";
+      setIsBiometricEnabled(biometriaAtiva);
+
+      if (biometriaAtiva) {
+        verificarBiometria();
+      } else {
+        setIsUnlocked(true);
+      }
+    } catch {
+      setIsUnlocked(true);
+    } finally {
+      setIsReady(true);
+    }
+  }, [verificarBiometria]);
+
   // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
   useEffect(() => {
@@ -181,7 +239,7 @@ export default function RootLayout() {
         }
       });
     }
-  }, [url]);
+  }, [router, url]);
 
   // Verifica atualizações OTA ao abrir o app
   useEffect(() => {
@@ -227,7 +285,7 @@ export default function RootLayout() {
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [carregarConfiguracoes, router]);
 
   // Load per-user notification preference
   useEffect(() => {
@@ -236,6 +294,71 @@ export default function RootLayout() {
       setNotificacoesAtivas(val === "true");
     });
   }, [session?.user?.id]);
+
+  const carregarDecisoesCaixinha = useCallback(async () => {
+    if (!session?.user?.id) {
+      setDecisoesCaixinha([]);
+      return;
+    }
+    const { data, error } = await supabase.rpc("get_minhas_decisoes_caixinha");
+    if (!error && data) setDecisoesCaixinha(data as DecisaoCaixinha[]);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    carregarDecisoesCaixinha();
+
+    const eventoLocal = DeviceEventEmitter.addListener(
+      "finflow:parceria-dissolvida",
+      carregarDecisoesCaixinha,
+    );
+    const eventoApp = AppState.addEventListener("change", (estado) => {
+      if (estado === "active") carregarDecisoesCaixinha();
+    });
+
+    return () => {
+      eventoLocal.remove();
+      eventoApp.remove();
+    };
+  }, [carregarDecisoesCaixinha, session?.user?.id]);
+
+  const resolverDecisaoCaixinha = async (manter: boolean) => {
+    const decisao = decisoesCaixinha[0];
+    if (!decisao || resolvendoCaixinha) return;
+
+    let saldo: number | null = null;
+    if (manter) {
+      saldo = Number(saldoCaixinha.replace(",", "."));
+      if (!Number.isFinite(saldo) || saldo < 0 || saldo > Number(decisao.saldo_disponivel)) {
+        Alert.alert(
+          "Saldo inválido",
+          `Informe um valor entre R$ 0,00 e R$ ${Number(decisao.saldo_disponivel).toFixed(2).replace(".", ",")}.`,
+        );
+        return;
+      }
+    }
+
+    setResolvendoCaixinha(true);
+    const { error } = await supabase.rpc("resolver_decisao_caixinha", {
+      p_decisao_id: decisao.id,
+      p_manter: manter,
+      p_saldo: saldo,
+    });
+    setResolvendoCaixinha(false);
+
+    if (error) {
+      await carregarDecisoesCaixinha();
+      Alert.alert(
+        "Não foi possível concluir",
+        "O saldo disponível pode ter mudado. Confira o valor e tente novamente.",
+      );
+      return;
+    }
+
+    setDefinindoSaldoCaixinha(false);
+    setSaldoCaixinha("");
+    await carregarDecisoesCaixinha();
+  };
 
   const refreshEntitlement = async () => {
     if (!session?.user?.id) return;
@@ -261,8 +384,9 @@ export default function RootLayout() {
 
   // Solicita permissão de notificação na primeira sessão do usuário neste dispositivo
   useEffect(() => {
-    if (!session) return;
-    const chave = `@notificacoes_perguntado_${session.user.id}`;
+    const uid = session?.user?.id;
+    if (!uid) return;
+    const chave = `@notificacoes_perguntado_${uid}`;
     AsyncStorage.getItem(chave).then((val) => {
       if (val !== null) return;
       AsyncStorage.setItem(chave, "true");
@@ -277,7 +401,7 @@ export default function RootLayout() {
               const concedida = await pedirPermissaoNotificacoes();
               if (concedida) {
                 setNotificacoesAtivas(true);
-                await AsyncStorage.setItem(`@notificacoes_enabled_${session.user.id}`, "true");
+                await AsyncStorage.setItem(`@notificacoes_enabled_${uid}`, "true");
                 Alert.alert("Ativado!", "Você receberá notificações sobre seus lançamentos.");
               }
             },
@@ -300,7 +424,7 @@ export default function RootLayout() {
     } else if (session && inAuthGroup) {
       router.replace("/(tabs)");
     }
-  }, [session, isReady, isAuthReady, segments]);
+  }, [session, isReady, isAuthReady, router, segments]);
 
   const setPlano = async (novoPlano: TipoPlano) => {
     // Compatibilidade temporária com telas antigas. O plano só pode mudar por
@@ -419,27 +543,6 @@ export default function RootLayout() {
     return true;
   };
 
-  const carregarConfiguracoes = async () => {
-    try {
-      const temaSalvo = await AsyncStorage.getItem("@dark_mode");
-      if (temaSalvo !== null) setIsDark(temaSalvo === "true");
-
-      const biometriaSalva = await AsyncStorage.getItem("@biometric_enabled");
-      const biometriaAtiva = biometriaSalva === "true";
-      setIsBiometricEnabled(biometriaAtiva);
-
-      if (biometriaAtiva) {
-        verificarBiometria();
-      } else {
-        setIsUnlocked(true);
-      }
-    } catch {
-      setIsUnlocked(true);
-    } finally {
-      setIsReady(true);
-    }
-  };
-
   const toggleNotificacoes = async (value: boolean) => {
     if (value) {
       const concedida = await pedirPermissaoNotificacoes();
@@ -450,24 +553,6 @@ export default function RootLayout() {
     }
     setNotificacoesAtivas(value);
     await AsyncStorage.setItem(`@notificacoes_enabled_${session?.user?.id}`, value ? "true" : "false");
-  };
-
-  const verificarBiometria = async () => {
-    const temHardware = await LocalAuthentication.hasHardwareAsync();
-    const temBiometria = await LocalAuthentication.isEnrolledAsync();
-    if (temHardware && temBiometria) {
-      autenticar();
-    } else {
-      setIsUnlocked(true);
-    }
-  };
-
-  const autenticar = async () => {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "Acesse sua Carteira",
-      fallbackLabel: "Usar senha padrão",
-    });
-    if (result.success) setIsUnlocked(true);
   };
 
   const toggleTheme = async () => {
@@ -540,6 +625,105 @@ export default function RootLayout() {
       >
         <Text style={styles.toastText}>{toastMsg}</Text>
       </Animated.View>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={decisoesCaixinha.length > 0}
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
+              <MaterialIcons name="savings" size={34} color="#2A9D8F" />
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
+              Caixinha após a parceria
+            </Text>
+            <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
+              {definindoSaldoCaixinha
+                ? `Defina quanto do saldo de “${decisoesCaixinha[0]?.nome ?? ""}” ficará na sua caixinha individual.`
+                : `A parceria foi encerrada. Deseja continuar com a caixinha “${decisoesCaixinha[0]?.nome ?? ""}”?`}
+            </Text>
+
+            <View style={[styles.updateList, { backgroundColor: isDark ? "#252B2A" : "#EEF7F5", borderColor: isDark ? "#334744" : "#D4EAE5" }]}>
+              <Text style={{ color: isDark ? "#DDD" : "#34404B", fontSize: 13 }}>
+                Saldo total na separação: R$ {Number(decisoesCaixinha[0]?.saldo_total ?? 0).toFixed(2).replace(".", ",")}
+              </Text>
+              <Text style={{ color: isDark ? "#DDD" : "#34404B", fontSize: 13, marginTop: 6 }}>
+                Disponível para você: R$ {Number(decisoesCaixinha[0]?.saldo_disponivel ?? 0).toFixed(2).replace(".", ",")}
+              </Text>
+            </View>
+
+            {definindoSaldoCaixinha ? (
+              <>
+                <TextInput
+                  style={{
+                    width: "100%",
+                    marginTop: 14,
+                    borderWidth: 1,
+                    borderColor: isDark ? "#444" : "#D4E0DC",
+                    backgroundColor: isDark ? "#292929" : "#F8FAF9",
+                    color: isDark ? "#FFF" : "#17212B",
+                    borderRadius: 12,
+                    paddingHorizontal: 14,
+                    paddingVertical: 12,
+                    fontSize: 16,
+                  }}
+                  placeholder="Saldo que ficará com você"
+                  placeholderTextColor={isDark ? "#888" : "#8A949E"}
+                  keyboardType="decimal-pad"
+                  value={saldoCaixinha}
+                  onChangeText={setSaldoCaixinha}
+                  editable={!resolvendoCaixinha}
+                />
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 14 }]}
+                  onPress={() => resolverDecisaoCaixinha(true)}
+                  disabled={resolvendoCaixinha}
+                >
+                  {resolvendoCaixinha
+                    ? <ActivityIndicator color="#FFF" />
+                    : <Text style={styles.modalLimiteBtnText}>Confirmar saldo</Text>}
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: isDark ? "#333" : "#E8ECEA", marginTop: 8 }]}
+                  onPress={() => {
+                    setDefinindoSaldoCaixinha(false);
+                    setSaldoCaixinha("");
+                  }}
+                  disabled={resolvendoCaixinha}
+                >
+                  <Text style={[styles.modalLimiteBtnText, { color: isDark ? "#FFF" : "#34404B" }]}>Voltar</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]}
+                  onPress={() => {
+                    setSaldoCaixinha(
+                      Number(decisoesCaixinha[0]?.saldo_disponivel ?? 0).toFixed(2).replace(".", ","),
+                    );
+                    setDefinindoSaldoCaixinha(true);
+                  }}
+                >
+                  <Text style={styles.modalLimiteBtnText}>Sim, continuar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#E76F51", marginTop: 8 }]}
+                  onPress={() => resolverDecisaoCaixinha(false)}
+                  disabled={resolvendoCaixinha}
+                >
+                  {resolvendoCaixinha
+                    ? <ActivityIndicator color="#FFF" />
+                    : <Text style={styles.modalLimiteBtnText}>Não, descartar</Text>}
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
 
       <Modal animationType="fade" transparent visible={modalAtualizacao !== null}>
         <View style={styles.modalOverlay}>

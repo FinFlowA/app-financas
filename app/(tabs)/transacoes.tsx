@@ -167,7 +167,7 @@ export default function TransacoesScreen() {
     setMesSelecionado(`${novoAno}-${mesNum}`);
   };
 
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     try {
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
@@ -216,7 +216,7 @@ export default function TransacoesScreen() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [session?.user?.id]);
 
   useFocusEffect(useCallback(() => {
     setTransacaoConfirmar(null);
@@ -225,7 +225,7 @@ export default function TransacoesScreen() {
     setTimeout(() => {
       mesesScrollRef.current?.scrollTo({ x: mesAtualIdx * 72, animated: true });
     }, 150);
-  }, [session]));
+  }, [carregarDados, mesAtualIdx]));
 
   const executarDeleteUma = async (transacao: Transacao) => {
     const pagamentoFatura = (transacao.descricao ?? "").match(/\[PagFatura:(\d+):(\d{4}-\d{2}):([^:\]]+)(?::(\d+))?\]/);

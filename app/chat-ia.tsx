@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -299,7 +299,7 @@ export default function ChatIA() {
     bolhaSistema: "#E9C46A",
   };
 
-  const carregarContexto = async () => {
+  const carregarContexto = useCallback(async () => {
     if (!session?.user?.id) return;
     const uid = session.user.id;
 
@@ -339,7 +339,7 @@ export default function ChatIA() {
         `Mês atual (${mesAtual}): Receitas pagas R$${totalReceitas.toFixed(2)}, Despesas pagas R$${totalDespesas.toFixed(2)}, Saldo das contas: ${saldoContas}`
       );
     }
-  };
+  }, [session?.user?.id]);
 
   const promptSistema = () => {
     const contasList = contasUsuario.length > 0
@@ -389,10 +389,10 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     if (!session?.user?.id) return;
     try {
       await supabase.from("chat_historico").insert({ user_id: session.user.id, role, texto, created_at: new Date().toISOString() });
-    } catch (e) {}
+    } catch {}
   };
 
-  const inicializarChat = async () => {
+  const inicializarChat = useCallback(async () => {
     const boasVindas: Mensagem = {
       id: "1",
       role: "ia",
@@ -410,16 +410,16 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       }
     } catch {}
     setMensagens([boasVindas]);
-  };
+  }, [session?.user?.id]);
 
-  useEffect(() => { inicializarChat(); carregarContexto(); }, []);
+  useEffect(() => { inicializarChat(); carregarContexto(); }, [carregarContexto, inicializarChat]);
   useEffect(() => {
     if (mensagens.length > 0) {
       const hoje = new Date().toDateString();
       AsyncStorage.setItem(`@historico_chat_${session?.user?.id}`, JSON.stringify(mensagens));
       AsyncStorage.setItem(`@historico_chat_date_${session?.user?.id}`, hoje);
     }
-  }, [mensagens]);
+  }, [mensagens, session?.user?.id]);
 
   const mapearIcone = (icone: string): string => {
     const n = (icone || "").toLowerCase();
@@ -1254,7 +1254,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       try {
         const jsonMatch = conteudo.match(/\{[\s\S]*\}/);
         respostaIA = JSON.parse(jsonMatch ? jsonMatch[0] : conteudo);
-      } catch (e) {
+      } catch {
         respostaIA = { intent: "query", status: "collecting_data", data: {}, missing_fields: [], message: "Não entendi. Pode reformular sua pergunta sobre finanças?" };
       }
 

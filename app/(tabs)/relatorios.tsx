@@ -74,7 +74,7 @@ export default function RelatoriosScreen() {
 
   const projScrollRef = useRef<ScrollView>(null);
 
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     try {
       const [resT, resC] = await Promise.all([
@@ -84,9 +84,9 @@ export default function RelatoriosScreen() {
       if (resT.data) setTransacoes(resT.data);
       if (resC.data) setContas(resC.data.filter((c) => !c.arquivado));
     } catch (e) { console.error(e); }
-  };
+  }, [session?.user?.id]);
 
-  useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
+  useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
   const alterarAno = (dir: number) => {
     const novoAno = anoSelecionado + dir;

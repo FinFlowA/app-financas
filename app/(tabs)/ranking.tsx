@@ -82,7 +82,7 @@ export default function RankingScreen() {
   const [catSelecionada, setCatSelecionada] = useState<Categoria | null>(null);
   const [valorMetaInput, setValorMetaInput] = useState("");
 
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     try {
       await db.execAsync(
         `CREATE TABLE IF NOT EXISTS metas (categoria_id INTEGER PRIMARY KEY, valor REAL);`,
@@ -97,12 +97,12 @@ export default function RankingScreen() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [db]);
 
   useFocusEffect(
     useCallback(() => {
       carregarDados();
-    }, []),
+    }, [carregarDados]),
   );
 
   const anoAtual = new Date().getFullYear();
@@ -189,7 +189,7 @@ export default function RankingScreen() {
       setValorMetaInput("");
       setCatSelecionada(null);
       carregarDados();
-    } catch (error) {
+    } catch {
       Alert.alert("Erro", "Não foi possível guardar a meta.");
     }
   };

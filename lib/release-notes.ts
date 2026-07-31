@@ -5,10 +5,10 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2026-07-30-notificacoes-financeiras",
+  id: "2026-07-30-cadastro-e-parcerias",
   items: [
-    "Novo aviso no dia em que a fatura do cartão fecha",
-    "Alertas de movimentações vencidas ficaram mais confiáveis",
-    "Lembrete genérico de revisão ao meio-dia foi removido",
+    "Cadastro agora confirma idade mínima e aceite dos documentos",
+    "Separação de parceria com decisão segura sobre cada caixinha",
+    "Melhorias de estabilidade e atualização das informações legais",
   ],
 } as const;

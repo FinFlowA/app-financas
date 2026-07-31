@@ -17,13 +17,21 @@ import {
   View,
 } from "react-native";
 import { supabase } from "../lib/supabase";
+import {
+  dataNascimentoParaISO,
+  formatarDataNascimento,
+  idadeEmAnos,
+  LEGAL_DOCUMENT_VERSION,
+} from "../lib/legal";
 
 export default function LoginScreen() {
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
+  const [dataNascimento, setDataNascimento] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [aceitouTermos, setAceitouTermos] = useState(false);
   const [loading, setLoading] = useState(false);
 
   const [isLogin, setIsLogin] = useState(true);
@@ -83,7 +91,7 @@ export default function LoginScreen() {
       );
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
@@ -107,16 +115,26 @@ export default function LoginScreen() {
         });
       }
     } else {
+      const nascimento = data.user?.user_metadata?.data_nascimento;
+      const idade = nascimento ? idadeEmAnos(nascimento) : null;
+      if (idade !== null && idade < 18) {
+        await supabase.auth.signOut();
+        setLoading(false);
+        return Alert.alert(
+          "Acesso não permitido",
+          "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
+        );
+      }
       router.replace("/(tabs)");
     }
     setLoading(false);
   }
 
   async function signUpWithEmail() {
-    if (!nome || !email || !password)
+    if (!nome || !email || !dataNascimento || !password)
       return Alert.alert(
         "Aviso",
-        "Preencha todos os campos obrigatórios (Nome, E-mail e Senha).",
+        "Preencha todos os campos obrigatórios: nome, e-mail, data de nascimento e senha.",
       );
     if (!validarEmail(email))
       return Alert.alert(
@@ -136,6 +154,21 @@ export default function LoginScreen() {
         "A senha deve ter pelo menos 6 caracteres.",
       );
 
+    const nascimentoISO = dataNascimentoParaISO(dataNascimento);
+    const idade = nascimentoISO ? idadeEmAnos(nascimentoISO) : null;
+    if (idade === null)
+      return Alert.alert("Data inválida", "Informe uma data de nascimento válida no formato DD/MM/AAAA.");
+    if (idade < 18)
+      return Alert.alert(
+        "Cadastro não permitido",
+        "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
+      );
+    if (!aceitouTermos)
+      return Alert.alert(
+        "Aceite necessário",
+        "Para criar sua conta, você precisa ler e concordar com os Termos de Uso e a Política de Privacidade.",
+      );
+
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
       email: email,
@@ -145,6 +178,9 @@ export default function LoginScreen() {
         data: {
           nome_usuario: nome,
           telefone: telefone.trim(),
+          data_nascimento: nascimentoISO,
+          termos_aceitos_em: new Date().toISOString(),
+          termos_versao: LEGAL_DOCUMENT_VERSION,
         },
       },
     });
@@ -166,6 +202,8 @@ export default function LoginScreen() {
       setConfirmPassword("");
       setNome("");
       setTelefone("");
+      setDataNascimento("");
+      setAceitouTermos(false);
     }
     setLoading(false);
   }
@@ -256,6 +294,27 @@ export default function LoginScreen() {
               onChangeText={setNome}
               value={nome}
               autoCapitalize="words"
+            />
+          </View>
+        )}
+
+        {/* DATA DE NASCIMENTO — obrigatória no cadastro */}
+        {!isLogin && !isRecuperandoSenha && (
+          <View style={styles.inputContainer}>
+            <MaterialIcons
+              name="cake"
+              size={20}
+              color="#666"
+              style={styles.inputIcon}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Data de nascimento (DD/MM/AAAA)"
+              placeholderTextColor="#999"
+              onChangeText={(valor) => setDataNascimento(formatarDataNascimento(valor))}
+              value={dataNascimento}
+              keyboardType="number-pad"
+              maxLength={10}
             />
           </View>
         )}
@@ -436,8 +495,23 @@ export default function LoginScreen() {
         {/* CONSENTIMENTO LGPD — exibido apenas no cadastro */}
         {!isLogin && !isRecuperandoSenha && (
           <View style={styles.consentimentoContainer}>
+            <TouchableOpacity
+              style={styles.consentimentoCheckRow}
+              onPress={() => setAceitouTermos((valor) => !valor)}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: aceitouTermos }}
+            >
+              <MaterialIcons
+                name={aceitouTermos ? "check-box" : "check-box-outline-blank"}
+                size={24}
+                color={aceitouTermos ? "#2A9D8F" : "#888"}
+              />
+              <Text style={styles.consentimentoCheckTexto}>
+                Li e concordo com os documentos abaixo.
+              </Text>
+            </TouchableOpacity>
             <Text style={styles.consentimentoTexto}>
-              Ao criar uma conta, você concorda com nossos{" "}
+              Consulte nossos{" "}
               <Text
                 style={styles.consentimentoLink}
                 onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
@@ -574,6 +648,8 @@ const styles = StyleSheet.create({
   switchButton: { marginTop: 20, alignItems: "center" },
   switchButtonText: { color: "#F4A261", fontSize: 14, fontWeight: "600" },
   consentimentoContainer: { marginTop: 20, paddingHorizontal: 4 },
+  consentimentoCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
+  consentimentoCheckTexto: { flex: 1, color: "#DDD", fontSize: 13, fontWeight: "600" },
   consentimentoTexto: { color: "#888", fontSize: 12, textAlign: "center", lineHeight: 18 },
   consentimentoLink: { color: "#2A9D8F", textDecorationLine: "underline" },
   legalBtnRow: {

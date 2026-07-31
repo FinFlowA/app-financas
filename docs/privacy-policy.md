@@ -1,113 +1,92 @@
 # Política de Privacidade — FinFlow
 
-**Última atualização:** 14 de maio de 2026
+**Última atualização:** 30 de julho de 2026
 
-## 1. Quem Somos
+## 1. Responsáveis pelo tratamento
 
-O **FinFlow** é um aplicativo de controle financeiro pessoal desenvolvido e mantido por **Luís Henrique Palácio** ("nós", "nosso").
+O **FinFlow** é um aplicativo de organização financeira pessoal desenvolvido e mantido por **Luís Henrique Palácio e Gabriel Henrique**, responsáveis pelas decisões sobre o tratamento descrito nesta Política.
 
-**Responsável pelo Tratamento de Dados:**
-- Nome: Luís Henrique Palácio
-- E-mail de contato: luispalacio1617@gmail.com
-- Aplicativo: FinFlow (`com.luishpalacio.meuappfinancas`)
+Contato: **Finflowfinancas@gmail.com**
 
----
+## 2. Dados tratados
 
-## 2. Dados que Coletamos
+| Categoria | Exemplos | Finalidade principal |
+|---|---|---|
+| Cadastro e perfil | Nome, e-mail, telefone opcional, data de nascimento e identificador da conta | Criar, autenticar, recuperar e personalizar a conta, registrar o aceite dos documentos e confirmar a idade mínima. |
+| Dados financeiros inseridos | Contas, saldos, receitas, despesas, categorias, objetivos, cartões, compras e faturas | Entregar as funções de organização financeira solicitadas. |
+| Compartilhamento | Convites, vínculo com parceiro e registros compartilhados | Operar a função compartilhada quando ambos optarem por utilizá-la. |
+| Suporte | Feedback, sugestões, reclamações e mensagens | Responder solicitações e melhorar o serviço. |
+| Dispositivo | Permissão de notificação, preferências locais e dados técnicos necessários | Programar lembretes locais, guardar preferências e proteger a sessão. |
+| Interações com IA | Perguntas e contexto financeiro necessário à resposta | Fornecer o assistente quando estiver disponível e for acionado. |
 
-### 2.1 Dados fornecidos pelo usuário
-| Dado | Finalidade | Base Legal |
-|------|-----------|-----------|
-| Nome completo | Personalização da interface | Consentimento |
-| Endereço de e-mail | Autenticação e recuperação de acesso | Execução de contrato |
-| Número de telefone | Identificação opcional do perfil | Consentimento |
-| Dados financeiros (contas, lançamentos, categorias, caixinhas, cartões) | Prestação do serviço principal | Execução de contrato |
+As notificações financeiras atuais são programadas localmente no aparelho. O FinFlow não registra token de notificação push no servidor enquanto esse recurso não estiver implementado.
 
-### 2.2 Dados coletados automaticamente
-- **Dados de uso:** frequência de acesso, funcionalidades utilizadas (sem identificação individual)
-- **Dados de dispositivo:** modelo, sistema operacional (via Expo SDK — para notificações)
-- **Tokens de notificação push** (quando o usuário autoriza)
+### Biometria
 
-### 2.3 Dados biométricos
-O FinFlow pode utilizar autenticação biométrica (impressão digital ou reconhecimento facial) como camada adicional de segurança. **Os dados biométricos são processados exclusivamente pelo sistema operacional do dispositivo e nunca transmitidos a nossos servidores.**
+O FinFlow apenas pede ao sistema operacional que confirme a identidade do usuário. Impressão digital e reconhecimento facial permanecem no dispositivo e não são recebidos pelo FinFlow.
 
----
+## 3. Bases legais e usos
 
-## 3. Como Usamos seus Dados
+Dados necessários à conta e às funções escolhidas são tratados principalmente para executar o serviço solicitado. Permissões opcionais, como notificações, dependem da escolha do usuário. Obrigações legais, segurança, prevenção a fraude e defesa de direitos podem justificar tratamentos específicos quando aplicável.
 
-- **Prestação do serviço:** armazenar e sincronizar suas informações financeiras entre dispositivos
-- **Segurança:** autenticação, controle de acesso e detecção de uso indevido
-- **Notificações:** enviar lembretes de vencimentos e alertas financeiros (somente com permissão)
-- **IA do FinFlow:** seus dados financeiros são enviados à API da Groq (modelo LLaMA) exclusivamente para responder suas perguntas dentro do app. Não armazenamos respostas da IA de forma identificável
-- **Melhoria do produto:** análise agregada e anônima de funcionalidades mais usadas
+O FinFlow não utiliza os dados financeiros para conceder crédito, vender produtos financeiros ou tomar decisões automatizadas com efeitos jurídicos sobre o usuário.
 
----
+## 4. Fornecedores e transferência internacional
 
-## 4. Compartilhamento de Dados
+O FinFlow não vende dados pessoais. Conforme as funções utilizadas, dados podem ser processados por:
 
-Seus dados **nunca são vendidos** a terceiros. Compartilhamos somente com:
+- **Supabase:** autenticação e banco de dados;
+- **Expo:** distribuição técnica e atualizações do aplicativo;
+- **Groq:** mensagens do assistente de IA, somente quando o recurso estiver disponível e for acionado.
 
-| Parceiro | Finalidade | Política |
-|---------|-----------|---------|
-| **Supabase (AWS)** | Banco de dados e autenticação | [supabase.com/privacy](https://supabase.com/privacy) |
-| **Groq** | Processamento de IA (LLaMA) | [groq.com/privacy](https://groq.com/privacy) |
-| **Expo** | Build, atualizações OTA e notificações push | [expo.dev/privacy](https://expo.dev/privacy) |
+Fornecedores podem processar dados fora do Brasil, observadas medidas contratuais e técnicas compatíveis com a legislação. Dados também poderão ser divulgados para cumprir obrigação legal, ordem válida de autoridade ou proteger direitos e segurança.
 
-Todos os parceiros estão sujeitos a acordos de processamento de dados compatíveis com a LGPD.
+## 5. Conta compartilhada
 
----
+O compartilhamento é opcional. Após aceitar o vínculo, cada participante poderá visualizar e interagir com os registros definidos como compartilhados.
 
-## 5. Conta Conjunta (Parceria)
+Quando uma parceria for encerrada:
 
-Ao vincular sua conta com a de um parceiro(a):
-- Dados das contas compartilhadas ficam visíveis para ambos
-- O vínculo pode ser desfeito a qualquer momento nas Configurações
-- Ao desfazer, cada usuário mantém apenas seus próprios dados
+- cada conta deixa de ser compartilhada e permanece com o usuário que a criou;
+- cada participante decide individualmente se deseja manter cada caixinha compartilhada;
+- quem optar por manter informa o saldo que permanecerá em sua caixinha individual;
+- a soma dos saldos destinados aos participantes não pode ultrapassar o saldo total existente no momento da separação;
+- quem optar por não manter terá sua decisão registrada como descarte, sem criação de uma caixinha individual.
 
----
+## 6. Retenção e segurança
 
-## 6. Retenção e Segurança
+Os dados são mantidos enquanto a conta estiver ativa e pelo tempo necessário às finalidades informadas, ao cumprimento de obrigações legais, à prevenção de fraude e ao exercício de direitos. Após pedido de exclusão, são excluídos ou anonimizados, ressalvadas hipóteses legais de retenção e cópias temporárias de segurança.
 
-- Seus dados são mantidos enquanto você tiver uma conta ativa no FinFlow
-- Utilizamos criptografia em trânsito (TLS 1.3) e em repouso (AES-256 via Supabase/AWS)
-- O acesso ao banco de dados é protegido por Row Level Security (RLS) — cada usuário acessa somente seus próprios dados
-- Após a exclusão da conta, todos os dados são removidos permanentemente em até 30 dias
+São adotadas medidas razoáveis de segurança, incluindo autenticação, conexões protegidas e controles de acesso. Nenhum sistema é totalmente imune; incidentes relevantes serão tratados conforme a legislação.
 
----
+## 7. Direitos sob a LGPD
 
-## 7. Seus Direitos (LGPD — Lei nº 13.709/2018)
+O usuário pode solicitar:
 
-Conforme a Lei Geral de Proteção de Dados, você tem direito a:
+- confirmação do tratamento e acesso;
+- correção de dados incompletos, inexatos ou desatualizados;
+- anonimização, bloqueio ou eliminação de dados desnecessários ou irregulares;
+- portabilidade, conforme regulamentação aplicável;
+- informações sobre compartilhamento e sobre a possibilidade de não consentir;
+- revogação do consentimento e eliminação dos dados tratados com essa base, quando cabível;
+- oposição a tratamento irregular;
+- revisão de decisões unicamente automatizadas, quando houver.
 
-- **Acesso:** solicitar cópia dos seus dados pessoais
-- **Correção:** corrigir dados incompletos ou desatualizados (disponível nas Configurações do app)
-- **Exclusão:** apagar sua conta e todos os dados — disponível em Configurações → "Apagar Minha Conta"
-- **Portabilidade:** solicitar exportação dos seus dados em formato legível
-- **Revogação do consentimento:** desativar notificações ou revogar permissões nas Configurações
-- **Oposição:** contestar o uso dos seus dados para finalidades específicas
-- **Informação:** saber com quem seus dados são compartilhados (veja Seção 4)
+O perfil, as notificações, a parceria e a exclusão da conta podem ser controlados no aplicativo. Para outros pedidos, utilize **Finflowfinancas@gmail.com**. A identidade do solicitante poderá ser confirmada antes do atendimento.
 
-Para exercer qualquer direito, entre em contato: **luispalacio1617@gmail.com**
+## 8. Idade mínima
 
----
+O FinFlow é destinado exclusivamente a pessoas com **18 anos ou mais**. A data de nascimento é solicitada no cadastro para confirmar esse requisito. Cadastros que indiquem idade inferior a 18 anos não são permitidos.
 
-## 8. Crianças e Adolescentes
+## 9. Atualizações
 
-O FinFlow não é direcionado a menores de 18 anos. Não coletamos intencionalmente dados de crianças ou adolescentes. Caso identifiquemos tais dados, eles serão excluídos imediatamente.
-
----
-
-## 9. Alterações nesta Política
-
-Podemos atualizar esta Política periodicamente. Notificaremos você por e-mail ou notificação no app sobre mudanças significativas. O uso continuado do FinFlow após a notificação constitui aceitação das alterações.
-
----
+Esta Política pode mudar para refletir alterações no produto ou na legislação. Mudanças relevantes serão comunicadas de modo adequado, e a versão vigente permanecerá na página oficial.
 
 ## 10. Contato
 
-Dúvidas, solicitações de dados ou reclamações:
+Dúvidas, solicitações de privacidade ou reclamações:
 
-- **E-mail:** luispalacio1617@gmail.com
-- **Assunto recomendado:** [FinFlow - Privacidade]
+- **E-mail:** Finflowfinancas@gmail.com
+- **Assunto recomendado:** `[FinFlow - Privacidade]`
 
-Você também pode registrar reclamações junto à **Autoridade Nacional de Proteção de Dados (ANPD)**: [www.gov.br/anpd](https://www.gov.br/anpd)
+Se uma solicitação relativa à LGPD não for solucionada, o titular poderá recorrer à Autoridade Nacional de Proteção de Dados e aos órgãos de defesa do consumidor, conforme aplicável.

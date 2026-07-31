@@ -1,134 +1,89 @@
 # Termos de Uso — FinFlow
 
-**Última atualização:** 14 de maio de 2026
+**Última atualização:** 30 de julho de 2026
 
----
+## 1. Aceitação
 
-## 1. Aceitação dos Termos
+Antes de criar uma conta, o usuário deve marcar a opção de que leu e concorda com estes Termos e com a Política de Privacidade. O FinFlow registra a versão dos documentos e a data do aceite junto ao cadastro.
 
-Ao criar uma conta ou utilizar o aplicativo **FinFlow**, você concorda com estes Termos de Uso. Se não concordar com qualquer parte, não utilize o aplicativo.
+Se não concordar, o usuário não deve criar nem utilizar uma conta.
 
-**Desenvolvedor:** Luís Henrique Palácio
-**Contato:** luispalacio1617@gmail.com
-**Identificador:** `com.luishpalacio.meuappfinancas`
+## 2. O serviço
 
----
+O FinFlow ajuda a registrar e visualizar contas, movimentações, categorias, objetivos, cartões, compras, faturas, projeções, relatórios, lembretes e registros compartilhados com parceiro autorizado. Algumas funções podem estar em desenvolvimento, teste ou limitadas por plano.
 
-## 2. Descrição do Serviço
+> O FinFlow é uma ferramenta de organização. Não é banco, instituição de pagamento, corretora, consultoria contábil ou de investimentos e não movimenta dinheiro por conta própria.
 
-O FinFlow é um aplicativo de controle financeiro pessoal que permite:
-- Gerenciar contas bancárias e saldo
-- Registrar e categorizar receitas e despesas
-- Gerenciar objetivos de poupança (caixinhas)
-- Acompanhar cartões de crédito e faturas
-- Utilizar inteligência artificial para organização financeira (planos pagos)
-- Compartilhar informações financeiras com um parceiro(a) autorizado
+## 3. Conta, idade e segurança
 
----
+- O serviço é destinado somente a pessoas com 18 anos ou mais.
+- A data de nascimento deve ser informada corretamente no cadastro.
+- O usuário deve fornecer dados corretos e atualizados.
+- Senha, dispositivo e sessão devem ser protegidos.
+- O acesso não pode ser cedido ou comercializado.
+- Uso não autorizado deve ser comunicado ao canal de contato.
 
-## 3. Cadastro e Conta
+O usuário é responsável pelos registros inseridos e por conferir valores, datas, saldos e projeções antes de tomar decisões.
 
-- Você deve fornecer informações verdadeiras ao se cadastrar
-- É responsável pela segurança da sua senha e acesso à conta
-- O FinFlow não é responsável por acessos não autorizados decorrentes de negligência do usuário
-- Uma conta é de uso pessoal e intransferível
-- Menores de 18 anos não estão autorizados a utilizar o app sem supervisão de responsável legal
+## 4. Planos
 
----
+O aplicativo poderá oferecer planos com limites e recursos diferentes. Preço, periodicidade, cobrança, renovação, cancelamento e eventual reembolso serão apresentados antes da contratação.
 
-## 4. Planos e Assinaturas
+Enquanto não houver meio de pagamento ativo e confirmação expressa da compra, exibir plano ou preço no aplicativo não representa cobrança.
 
-### 4.1 Plano Free
-- Gratuito, sem prazo de expiração
-- Sujeito a limitações de funcionalidade descritas no app
+## 5. Uso permitido
 
-### 4.2 Planos Pagos (Smart e Premium)
-- Cobrados mensalmente ou anualmente conforme escolha do usuário
-- Renovação automática salvo cancelamento antes do próximo ciclo
-- Preços sujeitos a alteração com aviso prévio de 30 dias
-- **Política de reembolso:** reembolsos são processados conforme as regras da plataforma de pagamento utilizada (App Store ou Google Play)
+É proibido:
 
-### 4.3 Cancelamento
-- Você pode cancelar a assinatura a qualquer momento
-- O acesso premium permanece ativo até o fim do período pago
-- Após o cancelamento, a conta retorna automaticamente ao plano Free
+- utilizar o serviço para fins ilícitos ou fraudulentos;
+- acessar contas sem autorização;
+- explorar falhas ou introduzir código malicioso;
+- interferir na infraestrutura;
+- automatizar acessos abusivos;
+- copiar ou distribuir o produto em desacordo com a lei.
 
----
+## 6. Assistente de IA
 
-## 5. Uso Aceitável
+Quando disponível, o assistente poderá gerar respostas imprecisas. Seu conteúdo é informativo e não constitui recomendação financeira, jurídica, contábil ou de investimento. Informações importantes devem ser conferidas, com auxílio de profissional qualificado quando necessário.
 
-Você se compromete a **NÃO**:
-- Utilizar o app para fins ilegais ou fraudulentos
-- Tentar acessar contas de outros usuários
-- Realizar engenharia reversa, descompilar ou distribuir o aplicativo
-- Sobrecarregar os servidores com requisições automatizadas (bots, scripts)
-- Inserir informações falsas com intenção de prejudicar terceiros
-- Compartilhar sua conta com outras pessoas não autorizadas
+## 7. Parceria e dados compartilhados
 
----
+Convite e aceite devem ser voluntários. Cada participante responde pelo que compartilha e pelas ações realizadas em sua conta.
 
-## 6. Inteligência Artificial (IA)
+Ao encerrar a parceria:
 
-- A IA do FinFlow é uma ferramenta de **auxílio** ao controle financeiro
-- **Não constitui aconselhamento financeiro profissional**
-- As sugestões da IA são orientações gerais baseadas nos seus dados cadastrados
-- Decisões financeiras importantes devem ser tomadas com orientação de profissionais qualificados
-- O FinFlow não se responsabiliza por perdas decorrentes de decisões baseadas exclusivamente nas análises da IA
+- cada conta compartilhada permanece com quem a criou;
+- cada usuário decide se manterá ou descartará sua versão de cada caixinha compartilhada;
+- quem mantiver deverá definir o saldo que permanecerá na caixinha individual;
+- os saldos definidos pelos participantes, somados, não poderão superar o saldo total registrado no momento da separação.
 
----
+## 8. Disponibilidade e mudanças
 
-## 7. Conta Conjunta
+O serviço pode passar por manutenção ou indisponibilidade temporária. Recursos podem ser corrigidos, alterados ou descontinuados, preservados os direitos aplicáveis e com comunicação quando necessária.
 
-- A funcionalidade de conta conjunta exige consentimento explícito de ambos os usuários
-- Cada usuário é responsável pelos dados que insere em contas compartilhadas
-- A dissolução do vínculo pode ser solicitada por qualquer uma das partes a qualquer momento
+## 9. Propriedade intelectual
 
----
+Nome, identidade, interfaces, textos e software são protegidos e pertencem aos respectivos titulares. É concedida somente licença pessoal, limitada, revogável, não exclusiva e intransferível para uso regular do aplicativo.
 
-## 8. Propriedade Intelectual
+## 10. Responsabilidades
 
-- O aplicativo FinFlow, incluindo interface, código-fonte, marca e design, é propriedade exclusiva do desenvolvedor
-- O usuário recebe uma licença limitada, não exclusiva e intransferível para uso pessoal do aplicativo
-- É proibida qualquer reprodução, distribuição ou criação de obras derivadas sem autorização expressa
+Os resultados dependem dos dados inseridos e podem sofrer falhas. Na extensão permitida pela lei, o FinFlow não responde por decisões tomadas exclusivamente com base em projeções, relatórios ou respostas automáticas, nem por eventos fora de controle razoável.
 
----
+Nada nestes Termos afasta direitos ou garantias obrigatórios do consumidor.
 
-## 9. Limitação de Responsabilidade
+## 11. Encerramento
 
-O FinFlow é fornecido "como está". O desenvolvedor não garante:
-- Disponibilidade ininterrupta do serviço
-- Ausência total de erros ou falhas
-- Precisão absoluta dos cálculos financeiros apresentados
+O acesso pode ser limitado em caso de fraude, risco de segurança, determinação legal, idade incompatível ou violação destes Termos. O usuário pode solicitar a exclusão nas configurações; ela é permanente, ressalvadas retenções legalmente permitidas.
 
-Em nenhuma hipótese o desenvolvedor será responsável por danos indiretos, incidentais ou consequenciais decorrentes do uso do aplicativo.
+## 12. Alterações
 
----
+Mudanças relevantes serão informadas e, quando exigido, será solicitado novo aceite. A versão vigente e sua data permanecerão disponíveis na página oficial.
 
-## 10. Suspensão e Exclusão de Conta
+## 13. Lei e conflitos
 
-Reservamos o direito de suspender ou encerrar contas que:
-- Violem estes Termos
-- Apresentem atividade suspeita ou fraudulenta
-- Sejam inativas por período superior a 24 meses
+Aplicam-se as leis brasileiras. Permanecem preservados os direitos do consumidor, inclusive o foro legalmente competente de seu domicílio quando aplicável.
 
-O usuário pode excluir sua conta a qualquer momento em: **Configurações → Apagar Minha Conta**.
+## 14. Contato
 
----
-
-## 11. Alterações nos Termos
-
-Podemos alterar estes Termos com aviso prévio de **30 dias** via e-mail ou notificação no app. O uso continuado após o prazo constitui aceitação das novas condições.
-
----
-
-## 12. Lei Aplicável e Foro
-
-Estes Termos são regidos pelas leis brasileiras. Fica eleito o foro da comarca de domicílio do usuário para resolução de conflitos, conforme o Código de Defesa do Consumidor (Lei nº 8.078/1990).
-
----
-
-## 13. Contato
-
-Dúvidas sobre estes Termos:
-- **E-mail:** luispalacio1617@gmail.com
-- **Assunto recomendado:** [FinFlow - Termos]
+- **Responsáveis:** Luís Henrique Palácio e Gabriel Henrique
+- **E-mail:** Finflowfinancas@gmail.com

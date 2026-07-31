@@ -156,7 +156,7 @@ export default function CaixinhasScreen() {
   const [caixaHistorico, setCaixaHistorico] = useState<Caixinha | null>(null);
   const [filtroUsuarioHistorico, setFiltroUsuarioHistorico] = useState<string>("");
 
-  const carregarDados = async () => {
+  const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     try {
       const [resCaixinhas, resContas, resParceria] = await Promise.all([
@@ -192,9 +192,9 @@ export default function CaixinhasScreen() {
     } catch (error) {
       console.error(error);
     }
-  };
+  }, [session?.user?.id]);
 
-  useFocusEffect(useCallback(() => { carregarDados(); }, [session]));
+  useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
   const totalGuardado = caixinhas.reduce((acc, curr) => acc + Number(curr.saldo_atual), 0);
 
