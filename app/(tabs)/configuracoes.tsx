@@ -30,9 +30,10 @@ export default function ConfiguracoesScreen() {
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
-  const nomeMetadata = session?.user?.user_metadata?.nome_usuario;
-  const nomeCompletoMetadata = session?.user?.user_metadata?.full_name;
-  const telefoneMetadata = session?.user?.user_metadata?.telefone;
+  const metadata = session?.user?.user_metadata;
+  const nomeMetadata = typeof metadata?.nome_usuario === "string" ? metadata.nome_usuario : "";
+  const nomeCompletoMetadata = typeof metadata?.full_name === "string" ? metadata.full_name : "";
+  const telefoneMetadata = typeof metadata?.telefone === "string" ? metadata.telefone : "";
 
   const Cores = {
     fundo: isDark ? "#121212" : "#F5F2EC",
@@ -341,7 +342,7 @@ export default function ConfiguracoesScreen() {
     }
   };
 
-  const nomeUsuario = session?.user?.user_metadata?.nome_usuario || session?.user?.user_metadata?.full_name || session?.user?.email?.split("@")[0] || "Usuário";
+  const nomeUsuario = nomeMetadata || nomeCompletoMetadata || session?.user?.email?.split("@")[0] || "Usuário";
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -366,9 +367,8 @@ export default function ConfiguracoesScreen() {
           <TouchableOpacity
             style={[styles.perfilCard, { backgroundColor: Cores.card, borderColor: Cores.borda }]}
             onPress={() => {
-              const meta = session?.user?.user_metadata;
-              setNomeEdit(meta?.nome_usuario || meta?.full_name || "");
-              setTelefoneEdit(meta?.telefone || "");
+              setNomeEdit(nomeMetadata || nomeCompletoMetadata);
+              setTelefoneEdit(telefoneMetadata);
               setEmailEdit(meuEmail);
               setNovaSenha(""); setNovaSenhaConfirm("");
               setMostrarNovaSenha(false); setMostrarConfirmSenha(false);
