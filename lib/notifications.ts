@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 
+const NOTIFICATION_SCHEDULE_VERSION = "2026-07-30-v2";
+
 // Importação lazy para não travar o app se o módulo falhar
 let Notif: any = null;
 try {
@@ -79,7 +81,7 @@ export async function agendarNotificacoesDoApp(
     // O dashboard envia o conjunto completo de dados e pode reorganizar a agenda.
     // O cancelamento precisa acontecer antes dos alertas imediatos para não apagá-los.
     if (transacoes.length > 0) {
-      const chaveAgendado = `@notif_agendado_${userId}_${hojeStr}`;
+      const chaveAgendado = `@notif_agendado_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
       const jaAgendadoHoje = await AsyncStorage.getItem(chaveAgendado);
       if (jaAgendadoHoje) return;
       await Notif.cancelAllScheduledNotificationsAsync();
@@ -90,7 +92,7 @@ export async function agendarNotificacoesDoApp(
     if (cartoes && cartoes.length > 0) {
       for (const cartao of cartoes) {
         if (cartao.limite && cartao.limite_usado && cartao.limite_usado / cartao.limite > 0.8) {
-          const chaveLimite = `@notif_limite_${userId}_${cartao.nome}_${hojeStr}`;
+          const chaveLimite = `@notif_limite_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${cartao.nome}_${hojeStr}`;
           const jaNotificouLimite = await AsyncStorage.getItem(chaveLimite);
           if (!jaNotificouLimite) {
             await AsyncStorage.setItem(chaveLimite, "1");
@@ -116,7 +118,7 @@ export async function agendarNotificacoesDoApp(
       const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
       return d < hoje;
     });
-    const chaveVencidos = `@notif_vencidos_${userId}_${hojeStr}`;
+    const chaveVencidos = `@notif_vencidos_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
     const jaNotificouVencidos = await AsyncStorage.getItem(chaveVencidos);
     if (vencidas.length > 0 && !jaNotificouVencidos) {
       await AsyncStorage.setItem(chaveVencidos, "1");
