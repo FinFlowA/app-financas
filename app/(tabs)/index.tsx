@@ -918,7 +918,7 @@ export default function Dashboard() {
             <Text style={{ color: balancoMensal >= 0 ? "#10B981" : "#EF4444", fontWeight: "bold", fontSize: 20 }}>
               {fmtReais(balancoMensal)}
             </Text>
-            <Text style={{ color: isDark ? "#888" : "#7B8490", fontSize: 11, marginTop: 3 }}>
+            <Text style={{ color: balancoAgendadoMensal < 0 ? (isDark ? "#F28B82" : "#C96A6A") : (isDark ? "#888" : "#7B8490"), fontSize: 11, marginTop: 3 }}>
               Previsto até o fim do mês: {fmtReais(balancoAgendadoMensal)}
             </Text>
           </View>

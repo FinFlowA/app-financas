@@ -5,10 +5,8 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2026-07-31-fatura-zerada-e-cores",
+  id: "2026-07-31-balanco-previsto-negativo",
   items: [
-    "O cartão agora mostra a próxima fatura quando a atual estiver paga ou zerada",
-    "A seleção de cores cabe na tela e pode ser arrastada para os lados",
-    "O balanço identifica claramente o valor previsto até o fim do mês",
+    "O valor previsto negativo agora aparece em vermelho suave para facilitar a identificação",
   ],
 } as const;
