@@ -1,8 +1,8 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -30,10 +30,6 @@ export default function ConfiguracoesScreen() {
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
-  const metadata = session?.user?.user_metadata;
-  const nomeMetadata = typeof metadata?.nome_usuario === "string" ? metadata.nome_usuario : "";
-  const nomeCompletoMetadata = typeof metadata?.full_name === "string" ? metadata.full_name : "";
-  const telefoneMetadata = typeof metadata?.telefone === "string" ? metadata.telefone : "";
 
   const Cores = {
     fundo: isDark ? "#121212" : "#F5F2EC",
@@ -77,7 +73,7 @@ export default function ConfiguracoesScreen() {
   const [mensagemFeedback, setMensagemFeedback] = useState("");
   const [loadingFeedback, setLoadingFeedback] = useState(false);
 
-  const carregarParceria = useCallback(async () => {
+  const carregarParceria = async () => {
     if (!meuId || !meuEmail) return;
     const { data } = await supabase
       .from("parcerias")
@@ -90,14 +86,20 @@ export default function ConfiguracoesScreen() {
     // Prioriza: aceito > pendente mais recente
     const aceito = data.find((p) => p.status === "aceito");
     setParceria(aceito ?? data[0]);
-  }, [meuEmail, meuId]);
+  };
 
-  useEffect(() => {
+  // Mantém o mesmo ciclo de montagem da última versão estável desta tela.
+  // `session` é a fonte única dos dados de perfil durante o foco da aba.
+  useFocusEffect(useCallback(() => {
     carregarParceria();
-    setNomeEdit(nomeMetadata || nomeCompletoMetadata || "");
-    setTelefoneEdit(telefoneMetadata || "");
+    const meta = session?.user?.user_metadata;
+    setNomeEdit(typeof meta?.nome_usuario === "string"
+      ? meta.nome_usuario
+      : typeof meta?.full_name === "string" ? meta.full_name : "");
+    setTelefoneEdit(typeof meta?.telefone === "string" ? meta.telefone : "");
     setEmailEdit(meuEmail);
-  }, [carregarParceria, meuEmail, nomeCompletoMetadata, nomeMetadata, telefoneMetadata]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]));
 
   const enviarConvite = async () => {
     const emailNormalizado = emailConvite.toLowerCase().trim();
@@ -342,7 +344,15 @@ export default function ConfiguracoesScreen() {
     }
   };
 
-  const nomeUsuario = nomeMetadata || nomeCompletoMetadata || session?.user?.email?.split("@")[0] || "Usuário";
+  const nomeUsuario =
+    (typeof session?.user?.user_metadata?.nome_usuario === "string"
+      ? session.user.user_metadata.nome_usuario
+      : "") ||
+    (typeof session?.user?.user_metadata?.full_name === "string"
+      ? session.user.user_metadata.full_name
+      : "") ||
+    session?.user?.email?.split("@")[0] ||
+    "Usuário";
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -367,8 +377,11 @@ export default function ConfiguracoesScreen() {
           <TouchableOpacity
             style={[styles.perfilCard, { backgroundColor: Cores.card, borderColor: Cores.borda }]}
             onPress={() => {
-              setNomeEdit(nomeMetadata || nomeCompletoMetadata);
-              setTelefoneEdit(telefoneMetadata);
+              const meta = session?.user?.user_metadata;
+              setNomeEdit(typeof meta?.nome_usuario === "string"
+                ? meta.nome_usuario
+                : typeof meta?.full_name === "string" ? meta.full_name : "");
+              setTelefoneEdit(typeof meta?.telefone === "string" ? meta.telefone : "");
               setEmailEdit(meuEmail);
               setNovaSenha(""); setNovaSenhaConfirm("");
               setMostrarNovaSenha(false); setMostrarConfirmSenha(false);

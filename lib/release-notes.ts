@@ -5,8 +5,9 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2026-07-30-estabilidade-configuracoes",
+  id: "2026-07-31-restaura-ajustes",
   items: [
+    "Restaurado o ciclo estável de abertura da aba Ajustes",
     "Corrigida a abertura da tela de Configurações em contas antigas",
     "Contas antigas agora recebem um aviso para completar informações obrigatórias",
     "Cadastro agora confirma idade mínima e aceite dos documentos",

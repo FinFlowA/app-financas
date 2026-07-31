@@ -70,25 +70,11 @@ type DecisaoCaixinha = {
 };
 
 // ERROR BOUNDARY
-class ErrorBoundary extends Component<
-  { children: ReactNode; resetKey: string },
-  { temErro: boolean; rotaComErro: string | null }
-> {
-  state = { temErro: false, rotaComErro: null };
+class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
+  state = { temErro: false };
   static getDerivedStateFromError() { return { temErro: true }; }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    this.setState({ rotaComErro: this.props.resetKey });
     console.error("Erro não tratado no FinFlow:", error, info.componentStack);
-  }
-  componentDidUpdate(prevProps: { children: ReactNode; resetKey: string }) {
-    if (
-      this.state.temErro &&
-      this.state.rotaComErro !== null &&
-      prevProps.resetKey !== this.props.resetKey &&
-      this.props.resetKey !== this.state.rotaComErro
-    ) {
-      this.setState({ temErro: false, rotaComErro: null });
-    }
   }
   render() {
     if (this.state.temErro) {
@@ -103,7 +89,7 @@ class ErrorBoundary extends Component<
           </Text>
           <TouchableOpacity
             style={{ marginTop: 24, backgroundColor: "#2A9D8F", paddingHorizontal: 24, paddingVertical: 12, borderRadius: 10 }}
-            onPress={() => this.setState({ temErro: false, rotaComErro: null })}
+            onPress={() => this.setState({ temErro: false })}
           >
             <Text style={{ color: "#FFF", fontWeight: "bold" }}>Tentar novamente</Text>
           </TouchableOpacity>
@@ -685,7 +671,7 @@ export default function RootLayout() {
 
   return (
     <View style={{ flex: 1 }}>
-      <ErrorBoundary resetKey={segments.join("/")}>
+      <ErrorBoundary>
         <ThemeContext.Provider value={{
           isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast,
           notificacoesAtivas, toggleNotificacoes,
