@@ -1,4 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
@@ -28,6 +29,7 @@ import {
   LEGAL_DOCUMENT_VERSION,
 } from "../lib/legal";
 import { useAppTheme } from "./_layout";
+import { PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
 
 type AuthTheme = ReturnType<typeof finFlowTheme>;
 type MaterialIconName = React.ComponentProps<typeof MaterialIcons>["name"];
@@ -98,6 +100,7 @@ export default function LoginScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [aceitouTermos, setAceitouTermos] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [emailPendenteConfirmacao, setEmailPendenteConfirmacao] = useState("");
 
   const [isLogin, setIsLogin] = useState(true);
   const [isRecuperandoSenha, setIsRecuperandoSenha] = useState(false);
@@ -117,6 +120,12 @@ export default function LoginScreen() {
       setViewportWidth(window.width);
     });
     return () => subscription.remove();
+  }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem(PENDING_EMAIL_CONFIRMATION_KEY)
+      .then((valor) => setEmailPendenteConfirmacao(valor ?? ""))
+      .catch(() => setEmailPendenteConfirmacao(""));
   }, []);
 
   useEffect(() => {
@@ -163,13 +172,27 @@ export default function LoginScreen() {
         "Digite um e-mail válido (ex: nome@dominio.com).",
       );
 
+    const emailNormalizado = email.trim().toLowerCase();
     setLoading(true);
     const { data, error } = await supabase.auth.signInWithPassword({
-      email,
+      email: emailNormalizado,
       password,
     });
 
     if (error) {
+      const emailNaoConfirmado = error.code === "email_not_confirmed"
+        || /email not confirmed/i.test(error.message);
+      if (emailNaoConfirmado) {
+        setEmailPendenteConfirmacao(emailNormalizado);
+        await AsyncStorage.setItem(PENDING_EMAIL_CONFIRMATION_KEY, emailNormalizado);
+        setModalErro({
+          titulo: "Confirme seu e-mail",
+          mensagem: `Sua conta ainda está aguardando a confirmação de ${emailNormalizado}. Verifique também a caixa de spam.`,
+          cor: FinFlowColors.primary,
+        });
+        setLoading(false);
+        return;
+      }
       const novasTentativas = tentativasFalhadas + 1;
       setTentativasFalhadas(novasTentativas);
       if (novasTentativas >= 3) {
@@ -200,6 +223,8 @@ export default function LoginScreen() {
         });
         return;
       }
+      await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+      setEmailPendenteConfirmacao("");
       router.replace("/(tabs)");
     }
     setLoading(false);
@@ -229,6 +254,13 @@ export default function LoginScreen() {
         "A senha deve ter pelo menos 6 caracteres.",
       );
 
+    const telefoneDigitos = telefone.replace(/\D/g, "");
+    if (telefoneDigitos.length !== 10 && telefoneDigitos.length !== 11)
+      return Alert.alert(
+        "Telefone inválido",
+        "Informe um telefone com DDD e 10 ou 11 dígitos.",
+      );
+
     const nascimentoISO = dataNascimentoParaISO(dataNascimento);
     const idade = nascimentoISO ? idadeEmAnos(nascimentoISO) : null;
     if (idade === null)
@@ -245,9 +277,10 @@ export default function LoginScreen() {
         "Para criar sua conta, você precisa ler e concordar com os Termos de Uso e a Política de Privacidade.",
       );
 
+    const emailNormalizado = email.trim().toLowerCase();
     setLoading(true);
     const { data, error } = await supabase.auth.signUp({
-      email: email,
+      email: emailNormalizado,
       password: password,
       options: {
         emailRedirectTo: "meuappfinancas://email-confirmed",
@@ -270,9 +303,11 @@ export default function LoginScreen() {
         "Este e-mail já está em uso. Faça login ou recupere sua senha.",
       );
     } else {
+      await AsyncStorage.setItem(PENDING_EMAIL_CONFIRMATION_KEY, emailNormalizado);
+      setEmailPendenteConfirmacao(emailNormalizado);
       setModalErro({
-        titulo: "Conta criada com sucesso!",
-        mensagem: `Bem-vindo(a), ${nome}!\n\nEnviamos um e-mail de confirmação para ${email}. Verifique sua caixa de entrada para ativar sua conta.`,
+        titulo: "Confirme seu e-mail",
+        mensagem: `Sua conta foi criada, ${nome}!\n\nEnviamos um link para ${emailNormalizado}. Abra o e-mail e confirme a conta antes de entrar. Se não encontrar, verifique a caixa de spam.`,
         cor: "#2A9D8F",
       });
       setIsLogin(true);
@@ -293,8 +328,9 @@ export default function LoginScreen() {
         "Digite o seu e-mail no campo acima para enviarmos o link de recuperação.",
       );
 
+    const emailNormalizado = email.trim().toLowerCase();
     setLoading(true);
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    const { error } = await supabase.auth.resetPasswordForEmail(emailNormalizado, {
       redirectTo: "meuappfinancas://reset-password",
     });
     setLoading(false);
@@ -308,6 +344,34 @@ export default function LoginScreen() {
       );
       setIsRecuperandoSenha(false);
     }
+  }
+
+  async function reenviarConfirmacao() {
+    const emailDestino = (emailPendenteConfirmacao || email).trim().toLowerCase();
+    if (!validarEmail(emailDestino)) {
+      setModalErro({
+        titulo: "Informe seu e-mail",
+        mensagem: "Digite o e-mail usado no cadastro para reenviar a confirmação.",
+        cor: FinFlowColors.orange,
+      });
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: emailDestino,
+      options: { emailRedirectTo: "meuappfinancas://email-confirmed" },
+    });
+    setLoading(false);
+    setModalErro(error ? {
+      titulo: "Não foi possível reenviar",
+      mensagem: "Aguarde alguns instantes e tente novamente.",
+      cor: FinFlowColors.red,
+    } : {
+      titulo: "E-mail reenviado",
+      mensagem: `Enviamos uma nova confirmação para ${emailDestino}. Verifique também a caixa de spam.`,
+      cor: FinFlowColors.primary,
+    });
   }
 
   const trocarTela = () => {
@@ -451,6 +515,23 @@ export default function LoginScreen() {
                     >
                       <Text style={[styles.modeTabText, { color: !isLogin ? theme.primary : theme.textMuted }]}>Criar conta</Text>
                     </TouchableOpacity>
+                  </View>
+                )}
+
+                {isLogin && !isRecuperandoSenha && emailPendenteConfirmacao !== "" && (
+                  <View style={[styles.pendingEmailCard, { backgroundColor: theme.primarySoft, borderColor: `${theme.primary}45` }]}>
+                    <View style={[styles.pendingEmailIcon, { backgroundColor: `${theme.primary}1F` }]}>
+                      <MaterialIcons name="mark-email-unread" size={20} color={theme.primary} />
+                    </View>
+                    <View style={styles.pendingEmailCopy}>
+                      <Text style={[styles.pendingEmailTitle, { color: theme.text }]}>Confirmação de e-mail pendente</Text>
+                      <Text style={[styles.pendingEmailText, { color: theme.textMuted }]} numberOfLines={2}>
+                        Verifique {emailPendenteConfirmacao} e também a caixa de spam.
+                      </Text>
+                      <TouchableOpacity onPress={reenviarConfirmacao} disabled={loading} style={styles.pendingEmailAction}>
+                        <Text style={[styles.pendingEmailActionText, { color: theme.primary }]}>Reenviar confirmação</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}
 
@@ -697,26 +778,28 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                <View style={[styles.legalDivider, { backgroundColor: theme.border }]} />
-
-                {/* BOTÕES LEGAIS — sempre visíveis */}
-                <View style={styles.legalBtnRow}>
-                  <TouchableOpacity
-                    style={styles.legalBtn}
-                    onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#privacidade")}
-                  >
-                    <MaterialIcons name="privacy-tip" size={14} color={theme.primary} />
-                    <Text style={[styles.legalBtnText, { color: theme.primary }]}>Privacidade</Text>
-                  </TouchableOpacity>
-                  <View style={[styles.legalSeparador, { backgroundColor: theme.border }]} />
-                  <TouchableOpacity
-                    style={styles.legalBtn}
-                    onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
-                  >
-                    <MaterialIcons name="description" size={14} color={theme.primary} />
-                    <Text style={[styles.legalBtnText, { color: theme.primary }]}>Termos de Uso</Text>
-                  </TouchableOpacity>
-                </View>
+                {(isLogin || isRecuperandoSenha) && (
+                  <>
+                    <View style={[styles.legalDivider, { backgroundColor: theme.border }]} />
+                    <View style={styles.legalBtnRow}>
+                      <TouchableOpacity
+                        style={styles.legalBtn}
+                        onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#privacidade")}
+                      >
+                        <MaterialIcons name="privacy-tip" size={14} color={theme.primary} />
+                        <Text style={[styles.legalBtnText, { color: theme.primary }]}>Privacidade</Text>
+                      </TouchableOpacity>
+                      <View style={[styles.legalSeparador, { backgroundColor: theme.border }]} />
+                      <TouchableOpacity
+                        style={styles.legalBtn}
+                        onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
+                      >
+                        <MaterialIcons name="description" size={14} color={theme.primary} />
+                        <Text style={[styles.legalBtnText, { color: theme.primary }]}>Termos de Uso</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </>
+                )}
               </View>
             </View>
           </View>
@@ -858,8 +941,10 @@ const styles = StyleSheet.create({
   formPanel: { borderWidth: 1 },
   formPanelMobile: {
     zIndex: 3,
+    width: "94%",
+    boxSizing: "border-box",
+    alignSelf: "center",
     marginTop: -38,
-    marginHorizontal: 14,
     paddingHorizontal: 21,
     paddingTop: 26,
     paddingBottom: 22,
@@ -885,6 +970,13 @@ const styles = StyleSheet.create({
   modeTabs: { flexDirection: "row", padding: 4, borderRadius: 16, borderWidth: 1, marginBottom: 22 },
   modeTab: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   modeTabText: { fontSize: 13, fontWeight: "800" },
+  pendingEmailCard: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 16, borderWidth: 1, marginBottom: 20 },
+  pendingEmailIcon: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  pendingEmailCopy: { flex: 1, minWidth: 0 },
+  pendingEmailTitle: { fontSize: 12, lineHeight: 17, fontWeight: "800" },
+  pendingEmailText: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  pendingEmailAction: { alignSelf: "flex-start", paddingVertical: 5, paddingRight: 8, marginTop: 2 },
+  pendingEmailActionText: { fontSize: 11, lineHeight: 15, fontWeight: "800" },
   recuperacaoBadge: {
     flexDirection: "row",
     alignItems: "center",

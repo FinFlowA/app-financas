@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
+  DeviceEventEmitter,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -23,7 +24,7 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
-import { finFlowTheme } from "../../constants/finflow-design";
+import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import {
   adicionarRecorrencia,
@@ -82,6 +83,15 @@ interface CompraCartao {
   categoria_id: number | null;
 }
 
+interface DadoDistribuicaoCategoria {
+  cor: string;
+  valor: number;
+  nome: string;
+  icone?: string;
+}
+
+type TipoFinanceiro = "receita" | "despesa";
+
 const PALETA_CORES = [
   "#2A9D8F",
   "#E9C46A",
@@ -129,7 +139,7 @@ const mesesEmPortugues = [
 ];
 
 // Gráfico de barras horizontais por categoria
-const BarChartCategorias = ({ dados, total, isDark }: { dados: { cor: string; valor: number; nome: string; icone?: string }[]; total: number; isDark: boolean }) => {
+const BarChartCategorias = ({ dados, total, isDark }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean }) => {
   if (total === 0 || dados.length === 0) return (
     <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 20 }}>
       <MaterialIcons name="bar-chart" size={32} color={isDark ? "#333" : "#DDD"} />
@@ -259,6 +269,8 @@ export default function Dashboard() {
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
+  const [assinaturaAvisosVisualizada, setAssinaturaAvisosVisualizada] = useState("");
+  const [leituraAvisosCarregada, setLeituraAvisosCarregada] = useState(false);
   const [modalContasHomeVisivel, setModalContasHomeVisivel] = useState(false);
   const [contasSelecionadasHomeIds, setContasSelecionadasHomeIds] = useState<number[] | null>(null);
   const [contasHomeRascunhoIds, setContasHomeRascunhoIds] = useState<number[]>([]);
@@ -370,112 +382,160 @@ export default function Dashboard() {
   hojeAvisos.setHours(0, 0, 0, 0);
   const limiteAvisos = new Date(hojeAvisos);
   limiteAvisos.setDate(limiteAvisos.getDate() + 7);
-  const qtdVencidasHome = transacoesEscopoHome.filter((transacao) => {
+  const transacoesVencidasHome = transacoesEscopoHome.filter((transacao) => {
     if (transacao.status !== "pendente") return false;
     const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
     return new Date(ano, mes - 1, dia) < hojeAvisos;
-  }).length;
-  const qtdProximosVencimentos = transacoesEscopoHome.filter((transacao) => {
+  });
+  const transacoesProximasHome = transacoesEscopoHome.filter((transacao) => {
     if (transacao.status !== "pendente") return false;
     const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
     const vencimento = new Date(ano, mes - 1, dia);
     return vencimento >= hojeAvisos && vencimento <= limiteAvisos;
-  }).length;
+  });
+  const qtdVencidasHome = transacoesVencidasHome.length;
+  const qtdProximosVencimentos = transacoesProximasHome.length;
   const temFaturaVencidaHome = escopoHomeEhTodas && temFaturaVencida;
+  const assinaturaAvisosAtual = [
+    `atrasados:${transacoesVencidasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
+    `proximos:${transacoesProximasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
+    `fatura:${temFaturaVencidaHome ? "1" : "0"}`,
+  ].join("|");
+  const temAvisosFinanceiros = qtdVencidasHome > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome;
+  const mostrarBadgeAvisos = leituraAvisosCarregada
+    && temAvisosFinanceiros
+    && assinaturaAvisosVisualizada !== assinaturaAvisosAtual;
 
-  // Dados para os gráficos de pizza
-  const caixinhaGuardadoTotal = transacoesDoMes
-    .filter(t => t.tipo === "despesa" && (t.descricao || "").startsWith("Guardar em: "))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const pagamentosFaturaDoMes = escopoHomeEhTodas ? 0 : transacoesDoMes
-    .filter(t => t.tipo === "despesa" && isPagamentoFatura(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const transferenciasSaidaDoMes = transacoesDoMesConsideradas
-    .filter(t => t.tipo === "despesa" && isTransferencia(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const transferenciasEntradaDoMes = transacoesDoMesConsideradas
-    .filter(t => t.tipo === "receita" && isTransferencia(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
+  React.useEffect(() => {
+    let efeitoAtivo = true;
+    const userId = session?.user?.id;
+    setLeituraAvisosCarregada(false);
 
-  const dadosDespesasPorCat = [
-    ...categorias
-      .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
-      .map((cat) => {
-        const totalTransacoes = transacoesDoMes
-          .filter((t) => t.tipo === "despesa" && !isTransferencia(t.descricao) && !isPagamentoFatura(t.descricao) && t.categoria_id === cat.id)
-          .reduce((acc, t) => acc + t.valor, 0);
-        const totalCartao = comprasCartaoDoMes
-          .filter((item) => item.categoria_id === cat.id)
-          .reduce((acc, item) => acc + Number(item.valor), 0);
-        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome, icone: cat.icone };
+    if (!userId) {
+      setAssinaturaAvisosVisualizada("");
+      setLeituraAvisosCarregada(true);
+      return () => { efeitoAtivo = false; };
+    }
+
+    void AsyncStorage.getItem(`@finflow_avisos_home_visualizados:${userId}`)
+      .then((assinaturaSalva) => {
+        if (!efeitoAtivo) return;
+        setAssinaturaAvisosVisualizada(assinaturaSalva ?? "");
       })
-      .filter((d) => d.valor > 0),
-    ...(caixinhaGuardadoTotal > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoTotal, nome: "Objetivos", icone: "savings" }] : []),
-    ...(transferenciasSaidaDoMes > 0 ? [{ cor: "#F4A261", valor: transferenciasSaidaDoMes, nome: "Transferências", icone: "swap-horiz" }] : []),
-    ...(pagamentosFaturaDoMes > 0 ? [{ cor: "#805AD5", valor: pagamentosFaturaDoMes, nome: "Fatura do cartão", icone: "credit-card" }] : []),
-  ].sort((a, b) => b.valor - a.valor);
-
-  const dadosReceitasPorCat = [
-    ...categorias
-      .filter((c) => c.tipo === "receita" && c.ativa !== 0)
-      .map((cat) => {
-        const total = transacoesDoMes
-          .filter((t) => t.tipo === "receita" && !isTransferencia(t.descricao) && t.categoria_id === cat.id)
-          .reduce((acc, t) => acc + t.valor, 0);
-        return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
+      .catch(() => {
+        if (efeitoAtivo) setAssinaturaAvisosVisualizada("");
       })
-      .filter((d) => d.valor > 0),
-    ...(transferenciasEntradaDoMes > 0 ? [{ cor: "#F4A261", valor: transferenciasEntradaDoMes, nome: "Transferências", icone: "swap-horiz" }] : []),
-  ].sort((a, b) => b.valor - a.valor);
+      .finally(() => {
+        if (efeitoAtivo) setLeituraAvisosCarregada(true);
+      });
 
-  // Data for "realized only" mode
-  const receitasDoMesRealizadas = transacoesDoMesConsideradas.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
-  const despesasDoMesRealizadas = transacoesDoMesConsideradas.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0)
-    + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0);
+    return () => { efeitoAtivo = false; };
+  }, [session?.user?.id]);
 
-  const caixinhaGuardadoRealizado = transacoesDoMes
-    .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.descricao || "").startsWith("Guardar em: "))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const pagamentosFaturaRealizados = escopoHomeEhTodas ? 0 : transacoesDoMes
-    .filter(t => t.tipo === "despesa" && t.status === "paga" && isPagamentoFatura(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const transferenciasSaidaRealizadas = transacoesDoMesConsideradas
-    .filter(t => t.tipo === "despesa" && t.status === "paga" && isTransferencia(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const transferenciasEntradaRealizadas = transacoesDoMesConsideradas
-    .filter(t => t.tipo === "receita" && t.status === "paga" && isTransferencia(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
+  // Cada movimentação entra em exatamente um bucket. Assim, categorias
+  // arquivadas preservam o histórico e registros legados nunca somem do gráfico.
+  const categoriasPorId = new Map(categorias.map((categoria) => [String(categoria.id), categoria]));
+  const nomeCategoriaNormalizado = (nome?: string | null) => (nome ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLocaleLowerCase("pt-BR");
+  const categoriaCompativel = (categoria: Categoria, tipo: TipoFinanceiro) => {
+    const tipoCategoria = (categoria.tipo ?? "").trim().toLocaleLowerCase("pt-BR");
+    return tipoCategoria === tipo || tipoCategoria === "ambos";
+  };
+  const categoriaOutrosPara = (tipo: TipoFinanceiro) => categorias
+    .filter((categoria) => nomeCategoriaNormalizado(categoria.nome) === "outros" && categoriaCompativel(categoria, tipo))
+    .sort((a, b) => {
+      const aExata = a.tipo === tipo ? 1 : 0;
+      const bExata = b.tipo === tipo ? 1 : 0;
+      const aAtiva = a.ativa !== 0 ? 1 : 0;
+      const bAtiva = b.ativa !== 0 ? 1 : 0;
+      return bExata - aExata || bAtiva - aAtiva;
+    })[0];
 
-  const dadosDespesasPorCatRealizadas = [
-    ...categorias
-      .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
-      .map((cat) => {
-        const totalTransacoes = transacoesDoMes
-          .filter(t => t.tipo === "despesa" && t.status === "paga" && !isTransferencia(t.descricao) && !isPagamentoFatura(t.descricao) && t.categoria_id === cat.id)
-          .reduce((acc, t) => acc + t.valor, 0);
-        const totalCartao = comprasCartaoDoMes
-          .filter((item) => item.categoria_id === cat.id)
-          .reduce((acc, item) => acc + Number(item.valor), 0);
-        return { cor: cat.cor, valor: totalTransacoes + totalCartao, nome: cat.nome, icone: cat.icone };
-      })
-      .filter((d) => d.valor > 0),
-    ...(caixinhaGuardadoRealizado > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoRealizado, nome: "Objetivos", icone: "savings" }] : []),
-    ...(transferenciasSaidaRealizadas > 0 ? [{ cor: "#F4A261", valor: transferenciasSaidaRealizadas, nome: "Transferências", icone: "swap-horiz" }] : []),
-    ...(pagamentosFaturaRealizados > 0 ? [{ cor: "#805AD5", valor: pagamentosFaturaRealizados, nome: "Fatura do cartão", icone: "credit-card" }] : []),
-  ].sort((a, b) => b.valor - a.valor);
+  const montarDistribuicao = (tipo: TipoFinanceiro, somenteRealizadas: boolean) => {
+    const buckets = new Map<string, DadoDistribuicaoCategoria>();
+    const categoriaOutros = categoriaOutrosPara(tipo);
 
-  const dadosReceitasPorCatRealizadas = [
-    ...categorias
-      .filter((c) => c.tipo === "receita" && c.ativa !== 0)
-      .map((cat) => {
-        const total = transacoesDoMes
-          .filter(t => t.tipo === "receita" && t.status === "paga" && !isTransferencia(t.descricao) && t.categoria_id === cat.id)
-          .reduce((acc, t) => acc + t.valor, 0);
-        return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
-      })
-      .filter((d) => d.valor > 0),
-    ...(transferenciasEntradaRealizadas > 0 ? [{ cor: "#F4A261", valor: transferenciasEntradaRealizadas, nome: "Transferências", icone: "swap-horiz" }] : []),
-  ].sort((a, b) => b.valor - a.valor);
+    const somarBucket = (chave: string, dados: Omit<DadoDistribuicaoCategoria, "valor">, valorBruto: number) => {
+      const valor = Number(valorBruto);
+      if (!Number.isFinite(valor) || valor === 0) return;
+      const existente = buckets.get(chave);
+      if (existente) {
+        existente.valor += valor;
+      } else {
+        buckets.set(chave, { ...dados, valor });
+      }
+    };
+
+    const somarOutros = (valor: number) => somarBucket("especial:outros", {
+      nome: "Outros",
+      cor: categoriaOutros?.cor || "#6D7280",
+      icone: categoriaOutros?.icone || "label",
+    }, valor);
+
+    const somarCategoriaOuOutros = (categoriaId: number | null, valor: number) => {
+      const categoria = categoriaId == null ? undefined : categoriasPorId.get(String(categoriaId));
+      if (!categoria || !categoriaCompativel(categoria, tipo)) {
+        somarOutros(valor);
+        return;
+      }
+      if (nomeCategoriaNormalizado(categoria.nome) === "outros") {
+        somarOutros(valor);
+        return;
+      }
+      somarBucket(`categoria:${categoria.id}`, {
+        nome: categoria.nome,
+        cor: categoria.cor,
+        icone: categoria.icone,
+      }, valor);
+    };
+
+    transacoesDoMesConsideradas.forEach((transacao) => {
+      if (transacao.tipo !== tipo || (somenteRealizadas && transacao.status !== "paga")) return;
+
+      if (isTransferencia(transacao.descricao)) {
+        somarBucket("especial:transferencias", { nome: "Transferências", cor: "#F4A261", icone: "swap-horiz" }, transacao.valor);
+        return;
+      }
+      if (tipo === "despesa" && isPagamentoFatura(transacao.descricao)) {
+        somarBucket("especial:fatura", { nome: "Fatura do cartão", cor: "#805AD5", icone: "credit-card" }, transacao.valor);
+        return;
+      }
+
+      const descricao = (transacao.descricao ?? "").trim();
+      const movimentacaoObjetivo = tipo === "despesa"
+        ? descricao.toLocaleLowerCase("pt-BR").startsWith("guardar em:")
+        : descricao.toLocaleLowerCase("pt-BR").startsWith("resgate de:");
+      if (movimentacaoObjetivo) {
+        somarBucket("especial:objetivos", { nome: "Objetivos", cor: "#264653", icone: "savings" }, transacao.valor);
+        return;
+      }
+
+      somarCategoriaOuOutros(transacao.categoria_id, transacao.valor);
+    });
+
+    // A compra no cartão é realizada na data da compra, mesmo que a fatura ainda
+    // esteja em aberto. O pagamento da fatura é excluído na visão consolidada.
+    if (tipo === "despesa") {
+      comprasCartaoDoMes.forEach((item) => somarCategoriaOuOutros(item.categoria_id, Number(item.valor)));
+    }
+
+    return [...buckets.values()]
+      .filter((item) => item.valor > 0)
+      .sort((a, b) => b.valor - a.valor || a.nome.localeCompare(b.nome, "pt-BR"));
+  };
+
+  const dadosDespesasPorCat = montarDistribuicao("despesa", false);
+  const dadosReceitasPorCat = montarDistribuicao("receita", false);
+  const dadosDespesasPorCatRealizadas = montarDistribuicao("despesa", true);
+  const dadosReceitasPorCatRealizadas = montarDistribuicao("receita", true);
+  const totalDistribuicao = (dados: DadoDistribuicaoCategoria[]) => dados.reduce((total, item) => total + item.valor, 0);
+  const totalDespesasPorCat = totalDistribuicao(dadosDespesasPorCat);
+  const totalReceitasPorCat = totalDistribuicao(dadosReceitasPorCat);
+  const totalDespesasPorCatRealizadas = totalDistribuicao(dadosDespesasPorCatRealizadas);
+  const totalReceitasPorCatRealizadas = totalDistribuicao(dadosReceitasPorCatRealizadas);
 
   // --- Dados ---
   const carregarDados = useCallback(async () => {
@@ -593,6 +653,13 @@ export default function Dashboard() {
   }, [notificacoesAtivas, session?.user?.id]);
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
+      void carregarDados();
+    });
+    return () => subscription.remove();
+  }, [carregarDados]);
 
   const calcularSaldoConta = (conta: Conta) => {
     const transDaConta = transacoes.filter((t) => t.conta_id === conta.id && t.status === "paga");
@@ -938,6 +1005,19 @@ export default function Dashboard() {
     setModalContasHomeVisivel(false);
   };
 
+  const abrirAvisosFinanceiros = () => {
+    setModalNotificacoesHome(true);
+    setAssinaturaAvisosVisualizada(assinaturaAvisosAtual);
+
+    const userId = session?.user?.id;
+    if (userId) {
+      void AsyncStorage.setItem(
+        `@finflow_avisos_home_visualizados:${userId}`,
+        assinaturaAvisosAtual,
+      ).catch((error) => console.warn("Não foi possível registrar a leitura dos avisos:", error));
+    }
+  };
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
@@ -956,9 +1036,9 @@ export default function Dashboard() {
                 <MaterialIcons name="keyboard-arrow-down" size={16} color="rgba(255,255,255,0.8)" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.homeBell} onPress={() => setModalNotificacoesHome(true)}>
+            <TouchableOpacity style={styles.homeBell} onPress={abrirAvisosFinanceiros} accessibilityLabel="Abrir avisos financeiros">
               <MaterialIcons name={notificacoesAtivas ? "notifications-active" : "notifications-none"} size={22} color="#FFF" />
-              {(qtdVencidasHome > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome) && <View style={styles.homeBellBadge} />}
+              {mostrarBadgeAvisos && <View style={styles.homeBellBadge} />}
             </TouchableOpacity>
           </View>
           <Text style={styles.homeBalanceLabel}>Saldo geral</Text>
@@ -1165,12 +1245,12 @@ export default function Dashboard() {
             </View>
             <BarChartCategorias
               dados={modoDistribuicao === "concluidos" ? dadosDespesasPorCatRealizadas : dadosDespesasPorCat}
-              total={modoDistribuicao === "concluidos" ? despesasDoMesRealizadas : despesasDoMes + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0)}
+              total={modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat}
               isDark={isDark}
             />
-            {(modoDistribuicao === "concluidos" ? despesasDoMesRealizadas : despesasDoMes + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0)) > 0 && (
+            {(modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat) > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: {fmtReais(modoDistribuicao === "concluidos" ? despesasDoMesRealizadas : despesasDoMes + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0))}
+                Total: {fmtReais(modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat)}
               </Text>
             )}
           </View>
@@ -1183,12 +1263,12 @@ export default function Dashboard() {
             </View>
             <BarChartCategorias
               dados={modoDistribuicao === "concluidos" ? dadosReceitasPorCatRealizadas : dadosReceitasPorCat}
-              total={modoDistribuicao === "concluidos" ? receitasDoMesRealizadas : receitasDoMes}
+              total={modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat}
               isDark={isDark}
             />
-            {(modoDistribuicao === "concluidos" ? receitasDoMesRealizadas : receitasDoMes) > 0 && (
+            {(modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat) > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: {fmtReais(modoDistribuicao === "concluidos" ? receitasDoMesRealizadas : receitasDoMes)}
+                Total: {fmtReais(modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat)}
               </Text>
             )}
           </View>
@@ -1361,16 +1441,22 @@ export default function Dashboard() {
 
             <View style={styles.notificationList}>
               {qtdVencidasHome > 0 && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/transacoes" as any); }}>
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
+                  setModalNotificacoesHome(false);
+                  router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+                }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E76F5122" }]}><MaterialIcons name="warning-amber" size={20} color="#E76F51" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Lançamentos atrasados</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencidasHome} pendência{qtdVencidasHome === 1 ? "" : "s"} precisa{qtdVencidasHome === 1 ? "" : "m"} de atenção.</Text></View>
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
                 </TouchableOpacity>
               )}
               {qtdProximosVencimentos > 0 && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/transacoes" as any); }}>
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
+                  setModalNotificacoesHome(false);
+                  router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
+                }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E9C46A22" }]}><MaterialIcons name="event" size={20} color="#C99B25" /></View>
-                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Próximos 7 dias</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdProximosVencimentos} lançamento{qtdProximosVencimentos === 1 ? "" : "s"} previsto{qtdProximosVencimentos === 1 ? "" : "s"}.</Text></View>
+                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Próximos 7 dias</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdProximosVencimentos} lançamento{qtdProximosVencimentos === 1 ? "" : "s"} pendente{qtdProximosVencimentos === 1 ? "" : "s"}.</Text></View>
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
                 </TouchableOpacity>
               )}
@@ -1925,29 +2011,42 @@ export default function Dashboard() {
 
       {/* MODAL NOVA TRANSAÇÃO */}
       <Modal animationType="slide" transparent visible={modalTransVisivel} onRequestClose={() => setModalTransVisivel(false)}>
-        <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Transação</Text>
-              <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                <TouchableOpacity style={[styles.typeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>
+        <KeyboardAvoidingView style={styles.transactionOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+          <View style={[styles.transactionSheet, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={[styles.transactionHandle, { backgroundColor: Cores.borda }]} />
+            <View style={styles.transactionHeader}>
+              <View style={[styles.transactionHeaderIcon, { backgroundColor: Cores.pillAtivo }]}>
+                <MaterialIcons name="swap-horiz" size={24} color={novoTema.primary} />
+              </View>
+              <View style={styles.transactionHeaderCopy}>
+                <Text style={[styles.transactionTitle, { color: Cores.textoPrincipal }]}>Nova transação</Text>
+                <Text style={[styles.transactionSubtitle, { color: Cores.textoSecundario }]}>Registre ou agende uma movimentação.</Text>
+              </View>
+              <TouchableOpacity style={[styles.transactionClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalTransVisivel(false)} accessibilityLabel="Fechar">
+                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView contentContainerStyle={styles.transactionForm} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Tipo de movimentação</Text>
+              <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
+                <TouchableOpacity style={[styles.typeButton, styles.transactionTypeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>
                   <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesa</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.typeButton, tipoTransacao === "receita" && styles.incomeSelected]} onPress={() => { setTipoTransacao("receita"); setCatSelecionadaId(null); }}>
+                <TouchableOpacity style={[styles.typeButton, styles.transactionTypeButton, tipoTransacao === "receita" && styles.incomeSelected]} onPress={() => { setTipoTransacao("receita"); setCatSelecionadaId(null); }}>
                   <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receita</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.typeButton, tipoTransacao === "transferencia" && styles.transferSelected]} onPress={() => setTipoTransacao("transferencia")}>
+                <TouchableOpacity style={[styles.typeButton, styles.transactionTypeButton, tipoTransacao === "transferencia" && styles.transferSelected]} onPress={() => setTipoTransacao("transferencia")}>
                   <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.typeButtonText, tipoTransacao === "transferencia" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Transferência</Text>
                 </TouchableOpacity>
               </View>
-              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Repetição:</Text>
-              <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+              <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Repetição</Text>
+              <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
                 {(["unica", "parcelada", "fixa"] as const).map((freq) => (
-                  <TouchableOpacity key={freq} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequencia === freq && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => {
+                  <TouchableOpacity key={freq} style={[styles.freqButton, styles.transactionChoice, frequencia === freq && { backgroundColor: novoTema.primary }]} onPress={() => {
                     setFrequencia(freq);
                     if (freq !== "unica") setFoiPago(false);
                   }}>
-                    <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, frequencia === freq ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>
+                    <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, frequencia === freq ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>
                       {freq === "unica" ? "Única" : freq === "parcelada" ? "Parcelada" : "Fixa"}
                     </Text>
                   </TouchableOpacity>
@@ -1955,15 +2054,15 @@ export default function Dashboard() {
               </View>
               {frequencia === "fixa" && (
                 <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Periodicidade:</Text>
-                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+                  <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Periodicidade</Text>
+                  <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
                     {(["semanal", "mensal", "anual"] as const).map((periodo) => (
                       <TouchableOpacity
                         key={periodo}
-                        style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, frequenciaFixa === periodo && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]}
+                        style={[styles.freqButton, styles.transactionChoice, frequenciaFixa === periodo && { backgroundColor: novoTema.primary }]}
                         onPress={() => setFrequenciaFixa(periodo)}
                       >
-                        <Text style={[styles.freqButtonText, { color: frequenciaFixa === periodo ? Cores.textoPrincipal : Cores.textoSecundario }]}>
+                        <Text style={[styles.freqButtonText, { color: frequenciaFixa === periodo ? "#FFF" : Cores.textoSecundario }]}>
                           {periodo === "semanal" ? "Semanal" : periodo === "mensal" ? "Mensal" : "Anual"}
                         </Text>
                       </TouchableOpacity>
@@ -1973,44 +2072,49 @@ export default function Dashboard() {
               )}
               {frequencia === "unica" && (
                 <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Status:</Text>
-                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
-                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(true)}>
-                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
+                  <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Status</Text>
+                  <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
+                    <TouchableOpacity style={[styles.freqButton, styles.transactionChoice, foiPago && { backgroundColor: novoTema.primary }]} onPress={() => setFoiPago(true)}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, !foiPago && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setFoiPago(false)}>
-                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: Cores.textoPrincipal } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
+                    <TouchableOpacity style={[styles.freqButton, styles.transactionChoice, !foiPago && { backgroundColor: novoTema.primary }]} onPress={() => setFoiPago(false)}>
+                      <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
                     </TouchableOpacity>
                   </View>
                 </>
               )}
 
-              <TextInput style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
+              <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Detalhes</Text>
+              <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}>
+                <MaterialIcons name="notes" size={19} color={Cores.textoSecundario} />
+                <TextInput style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
+              </View>
 
-              <TouchableOpacity style={[styles.input, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]} onPress={() => setMostrarCalendario(true)}>
-                <MaterialIcons name="calendar-today" size={20} color={Cores.textoSecundario} style={{ marginRight: 8 }} />
+              <TouchableOpacity style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]} onPress={() => setMostrarCalendario(true)}>
+                <MaterialIcons name="calendar-today" size={19} color={novoTema.primary} />
                 <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
+                <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginLeft: "auto" }} />
               </TouchableOpacity>
               {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
               <View style={styles.rowInputs}>
-                <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center", flex: 1 }]}>
-                  <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
-                  <TextInput style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))} keyboardType="number-pad" selectTextOnFocus />
+                <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flex: 1 }]}>
+                  <View style={[styles.transactionCurrency, { backgroundColor: Cores.pillAtivo }]}><Text style={{ color: novoTema.primary, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
+                  <TextInput style={[styles.transactionTextInput, { color: Cores.textoPrincipal, fontSize: 17, fontWeight: "700" }]} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))} keyboardType="number-pad" selectTextOnFocus />
                 </View>
               </View>
               {frequencia === "parcelada" && (
                 <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>O valor informado representa:</Text>
-                  <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
+                  <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>O valor informado representa</Text>
+                  <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
                     {(["parcela", "total"] as const).map((modo) => (
-                      <TouchableOpacity key={modo} style={[styles.freqButton, { backgroundColor: Cores.pillFundo }, modoValorParcelado === modo && { backgroundColor: Cores.pillAtivo, borderBottomWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setModoValorParcelado(modo)}>
-                        <Text style={[styles.freqButtonText, { color: modoValorParcelado === modo ? Cores.textoPrincipal : Cores.textoSecundario }]}>{modo === "parcela" ? "Valor da parcela" : "Valor total"}</Text>
+                      <TouchableOpacity key={modo} style={[styles.freqButton, styles.transactionChoice, modoValorParcelado === modo && { backgroundColor: novoTema.primary }]} onPress={() => setModoValorParcelado(modo)}>
+                        <Text style={[styles.freqButtonText, { color: modoValorParcelado === modo ? "#FFF" : Cores.textoSecundario }]}>{modo === "parcela" ? "Valor da parcela" : "Valor total"}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Número de parcelas:</Text>
+                  <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Número de parcelas</Text>
                   <TextInput
-                    style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
+                    style={[styles.transactionPlainInput, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
                     placeholder="Ex: 3"
                     placeholderTextColor={Cores.textoSecundario}
                     value={numParcelas}
@@ -2027,11 +2131,11 @@ export default function Dashboard() {
                 </Text>
               )}
 
-              <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de Origem (Sai):" : "Qual Conta?"}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
+              <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
                 {contas.filter(c => !c.arquivado).map((conta) => (
-                  <TouchableOpacity key={conta.id} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, contaSelecionadaId === conta.id && { borderColor: "#457B9D", borderWidth: 2 }]} onPress={() => setContaSelecionadaId(conta.id)}>
-                    <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? "#457B9D" : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                  <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? FinFlowColors.blue : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
+                    <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? FinFlowColors.blue : Cores.textoSecundario} style={{ marginRight: 6 }} />
                     <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
                   </TouchableOpacity>
                 ))}
@@ -2039,16 +2143,16 @@ export default function Dashboard() {
 
               {tipoTransacao === "transferencia" ? (
                 <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Conta de Destino (Entra):</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
+                  <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Conta ou objetivo de destino</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
                     {contas.filter(c => !c.arquivado).map((conta) => (
-                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, !caixinhaDestinoId && contaDestinoId === conta.id && { borderColor: "#2A9D8F", borderWidth: 2 }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
-                        <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? "#2A9D8F" : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: !caixinhaDestinoId && contaDestinoId === conta.id ? novoTema.primary : Cores.borda }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
+                        <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? novoTema.primary : Cores.textoSecundario} style={{ marginRight: 6 }} />
                         <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
                       </TouchableOpacity>
                     ))}
                     {caixinhas.map((caixa) => (
-                      <TouchableOpacity key={`caixa-dest-${caixa.id}`} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, caixinhaDestinoId === caixa.id && { borderColor: caixa.cor, borderWidth: 2 }]} onPress={() => { setCaixinhaDestinoId(caixa.id); setContaDestinoId(null); }}>
+                      <TouchableOpacity key={`caixa-dest-${caixa.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: caixinhaDestinoId === caixa.id ? caixa.cor : Cores.borda }]} onPress={() => { setCaixinhaDestinoId(caixa.id); setContaDestinoId(null); }}>
                         <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: caixa.cor, alignItems: "center", justifyContent: "center", marginRight: 6 }}>
                           <MaterialIcons name={caixa.icone as any} size={11} color="#FFF" />
                         </View>
@@ -2059,10 +2163,10 @@ export default function Dashboard() {
                 </>
               ) : (
                 <>
-                  <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Categoria:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll}>
+                  <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Categoria</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
                     {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).map((cat) => (
-                      <TouchableOpacity key={cat.id} style={[styles.catPill, { backgroundColor: Cores.pillFundo }, catSelecionadaId === cat.id && { borderColor: cat.cor, borderWidth: 2 }]} onPress={() => setCatSelecionadaId(cat.id)}>
+                      <TouchableOpacity key={cat.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: catSelecionadaId === cat.id ? cat.cor : Cores.borda }]} onPress={() => setCatSelecionadaId(cat.id)}>
                         <View style={[styles.colorDot, { backgroundColor: cat.cor }]} />
                         <Text style={{ color: Cores.textoPrincipal }}>{cat.nome}</Text>
                       </TouchableOpacity>
@@ -2071,9 +2175,9 @@ export default function Dashboard() {
                 </>
               )}
 
-              <View style={styles.modalButtons}>
-                <Button title="Cancelar" color="#999" onPress={() => setModalTransVisivel(false)} disabled={loadingTrans} />
-                <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color="#2A9D8F" onPress={salvarTransacao} disabled={loadingTrans} />
+              <View style={styles.transactionActions}>
+                <Button title="Cancelar" color={Cores.textoSecundario} onPress={() => setModalTransVisivel(false)} disabled={loadingTrans} style={styles.transactionActionButton} />
+                <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color={novoTema.primary} onPress={salvarTransacao} disabled={loadingTrans} style={styles.transactionActionButton} />
               </View>
             </ScrollView>
           </View>
@@ -2182,7 +2286,48 @@ const styles = StyleSheet.create({
   graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
-modalContent: { width: "92%", maxWidth: 520, padding: 22, borderRadius: 22, elevation: 10 },
+  modalContent: { width: "92%", maxWidth: 520, padding: 22, borderRadius: 22, elevation: 10 },
+  transactionOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "flex-end", alignItems: "center" },
+  transactionSheet: {
+    width: "100%",
+    maxWidth: 620,
+    maxHeight: "94%",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    paddingTop: 12,
+    ...FinFlowShadow,
+  },
+  transactionHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 12 },
+  transactionHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 16 },
+  transactionHeaderIcon: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  transactionHeaderCopy: { flex: 1, minWidth: 0, paddingHorizontal: 11 },
+  transactionTitle: { fontSize: 20, fontWeight: "900", letterSpacing: -0.3 },
+  transactionSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  transactionClose: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  transactionForm: { paddingHorizontal: 20, paddingBottom: 26 },
+  transactionSectionLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.45, textTransform: "uppercase", marginBottom: 8 },
+  transactionSelector: { minHeight: 50, borderRadius: FinFlowRadius.medium, padding: 4, marginBottom: 18 },
+  transactionTypeButton: { minHeight: 40, borderRadius: 12 },
+  transactionChoice: { minHeight: 40, borderRadius: 12 },
+  transactionInputWrap: {
+    minHeight: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: FinFlowRadius.medium,
+    paddingHorizontal: 13,
+    marginBottom: 13,
+  },
+  transactionTextInput: { flex: 1, minHeight: 52, fontSize: 15 },
+  transactionCurrency: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  transactionPlainInput: { minHeight: 52, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 14, fontSize: 15, marginBottom: 14 },
+  transactionChipRow: { paddingRight: 12 },
+  transactionChip: { minHeight: 42, borderWidth: 1.5, paddingHorizontal: 13, marginRight: 9 },
+  transactionActions: { flexDirection: "row", gap: 10, marginTop: 8 },
+  transactionActionButton: { flex: 1, minWidth: 0, borderRadius: FinFlowRadius.medium },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
   notificationPanel: { width: "92%", maxWidth: 520, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
   notificationHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },

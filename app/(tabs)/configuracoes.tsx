@@ -21,7 +21,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
-import { formatarTelefone } from "../../lib/legal";
 import {
   obterPreferenciasNotificacoes,
   PREFERENCIAS_NOTIFICACOES_PADRAO,
@@ -74,16 +73,7 @@ export default function ConfiguracoesScreen() {
   // Edição de perfil
   const [modalPerfilVisivel, setModalPerfilVisivel] = useState(false);
   const [nomeEdit, setNomeEdit] = useState("");
-  const [emailEdit, setEmailEdit] = useState("");
-  const [telefoneEdit, setTelefoneEdit] = useState("");
   const [loadingPerfil, setLoadingPerfil] = useState(false);
-  const [abaPerfilAtiva, setAbaPerfilAtiva] = useState<"dados" | "senha">("dados");
-
-  // Senha
-  const [novaSenha, setNovaSenha] = useState("");
-  const [novaSenhaConfirm, setNovaSenhaConfirm] = useState("");
-  const [mostrarNovaSenha, setMostrarNovaSenha] = useState(false);
-  const [mostrarConfirmSenha, setMostrarConfirmSenha] = useState(false);
 
   const [modalConfirmarAcao, setModalConfirmarAcao] = useState<{
     titulo: string; mensagem: string; labelConfirm: string; cor?: string;
@@ -132,8 +122,6 @@ export default function ConfiguracoesScreen() {
     setNomeEdit(typeof meta?.nome_usuario === "string"
       ? meta.nome_usuario
       : typeof meta?.full_name === "string" ? meta.full_name : "");
-    setTelefoneEdit(typeof meta?.telefone === "string" ? formatarTelefone(meta.telefone) : "");
-    setEmailEdit(meuEmail);
     if (meuId) {
       void obterPreferenciasNotificacoes(meuId).then(setPreferenciasNotificacoes);
     }
@@ -339,42 +327,14 @@ export default function ConfiguracoesScreen() {
   const salvarPerfil = async () => {
     if (nomeEdit.trim() === "") return Alert.alert("Aviso", "O nome não pode ficar vazio.");
     setLoadingPerfil(true);
-
-    const updates: any = { data: { nome_usuario: nomeEdit.trim(), telefone: telefoneEdit.trim() } };
-
-    if (emailEdit.trim().toLowerCase() !== meuEmail.toLowerCase() && emailEdit.trim() !== "") {
-      Alert.alert(
-        "Confirmação de E-mail",
-        `Um link de confirmação será enviado para "${emailEdit.trim()}". Verifique sua caixa de entrada para confirmar a alteração.`,
-        [{ text: "OK" }]
-      );
-      const { error: emailError } = await supabase.auth.updateUser({ email: emailEdit.trim().toLowerCase() });
-      if (emailError) {
-        setLoadingPerfil(false);
-        return Alert.alert("Erro", "Não foi possível atualizar o e-mail. " + emailError.message);
-      }
-    }
-
-    const { error } = await supabase.auth.updateUser(updates);
+    const metadataAtual = session?.user?.user_metadata ?? {};
+    const { error } = await supabase.auth.updateUser({
+      data: { ...metadataAtual, nome_usuario: nomeEdit.trim() },
+    });
     setLoadingPerfil(false);
 
     if (error) Alert.alert("Erro", "Não foi possível salvar as alterações.");
     else { showToast("Perfil atualizado ✓", "success"); setModalPerfilVisivel(false); }
-  };
-
-  const alterarSenha = async () => {
-    if (novaSenha.length < 6) return Alert.alert("Aviso", "A nova senha deve ter pelo menos 6 caracteres.");
-    if (novaSenha !== novaSenhaConfirm) return Alert.alert("Aviso", "As senhas não conferem. Verifique e tente novamente.");
-
-    setLoadingPerfil(true);
-    const { error } = await supabase.auth.updateUser({ password: novaSenha });
-    setLoadingPerfil(false);
-    if (error) Alert.alert("Erro", "Não foi possível alterar a senha. " + error.message);
-    else {
-      showToast("Senha alterada com sucesso ✓", "success");
-      setNovaSenha(""); setNovaSenhaConfirm("");
-      setModalPerfilVisivel(false);
-    }
   };
 
   const confirmarApagarConta = () => {
@@ -619,11 +579,6 @@ export default function ConfiguracoesScreen() {
               setNomeEdit(typeof meta?.nome_usuario === "string"
                 ? meta.nome_usuario
                 : typeof meta?.full_name === "string" ? meta.full_name : "");
-              setTelefoneEdit(typeof meta?.telefone === "string" ? formatarTelefone(meta.telefone) : "");
-              setEmailEdit(meuEmail);
-              setNovaSenha(""); setNovaSenhaConfirm("");
-              setMostrarNovaSenha(false); setMostrarConfirmSenha(false);
-              setAbaPerfilAtiva("dados");
               setModalPerfilVisivel(true);
             }}
             activeOpacity={0.8}
@@ -648,6 +603,20 @@ export default function ConfiguracoesScreen() {
           {/* PREFERÊNCIAS */}
           <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 20 }]}>PREFERÊNCIAS</Text>
           <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+            <TouchableOpacity
+              style={[styles.configRow, { borderBottomWidth: 1, borderBottomColor: Cores.borda }]}
+              onPress={() => router.push("/seguranca" as any)}
+              activeOpacity={0.75}
+            >
+              <View style={styles.configLeft}>
+                <MaterialIcons name="manage-accounts" size={24} color="#2A9D8F" />
+                <View>
+                  <Text style={[styles.configText, { color: Cores.texto }]}>Dados de acesso</Text>
+                  <Text style={[styles.configSubtext, { color: Cores.secundario }]}>E-mail, telefone e senha</Text>
+                </View>
+              </View>
+              <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
+            </TouchableOpacity>
             <View style={[styles.configRow, { borderBottomWidth: 1, borderBottomColor: Cores.borda }]}>
               <View style={styles.configLeft}>
                 <MaterialIcons name={isDark ? "dark-mode" : "light-mode"} size={24} color={isDark ? "#E9C46A" : "#F4A261"} />
@@ -658,7 +627,10 @@ export default function ConfiguracoesScreen() {
             <View style={[styles.configRow, { borderBottomWidth: 1, borderBottomColor: Cores.borda }]}>
               <View style={styles.configLeft}>
                 <MaterialIcons name={isBiometricEnabled ? "lock" : "lock-open"} size={24} color={isBiometricEnabled ? "#457B9D" : "#999"} />
-                <Text style={[styles.configText, { color: Cores.texto }]}>Segurança (Biometria)</Text>
+                <View>
+                  <Text style={[styles.configText, { color: Cores.texto }]}>Bloqueio do app</Text>
+                  <Text style={[styles.configSubtext, { color: Cores.secundario }]}>Biometria ao abrir o FinFlow</Text>
+                </View>
               </View>
               <Switch value={isBiometricEnabled} onValueChange={handleBiometricToggle} trackColor={{ false: "#767577", true: "#457B9D" }} />
             </View>
@@ -980,123 +952,29 @@ export default function ConfiguracoesScreen() {
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.card }]}>
             <Text style={[styles.modalTitle, { color: Cores.texto }]}>Editar Perfil</Text>
-
-            <View style={[styles.abaSelector, { backgroundColor: Cores.pillFundo }]}>
-              <TouchableOpacity
-                style={[styles.abaBtn, abaPerfilAtiva === "dados" && { backgroundColor: Cores.card }]}
-                onPress={() => setAbaPerfilAtiva("dados")}
-              >
-                <Text style={[styles.abaBtnText, { color: abaPerfilAtiva === "dados" ? Cores.texto : Cores.secundario }]}>Dados</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.abaBtn, abaPerfilAtiva === "senha" && { backgroundColor: Cores.card }]}
-                onPress={() => setAbaPerfilAtiva("senha")}
-              >
-                <Text style={[styles.abaBtnText, { color: abaPerfilAtiva === "senha" ? Cores.texto : Cores.secundario }]}>Senha</Text>
-              </TouchableOpacity>
-            </View>
-
-            {abaPerfilAtiva === "dados" ? (
-              <>
-                <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Nome</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="Seu nome"
-                  placeholderTextColor={Cores.secundario}
-                  value={nomeEdit}
-                  onChangeText={setNomeEdit}
-                />
-                <Text style={[styles.inputLabel, { color: Cores.secundario }]}>E-mail</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="Seu e-mail"
-                  placeholderTextColor={Cores.secundario}
-                  value={emailEdit}
-                  onChangeText={setEmailEdit}
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
-                {emailEdit.trim().toLowerCase() !== meuEmail.toLowerCase() && (
-                  <Text style={{ color: "#F4A261", fontSize: 11, marginTop: -10, marginBottom: 12 }}>
-                    Um link de confirmação será enviado ao novo e-mail.
-                  </Text>
-                )}
-                <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Telefone</Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="(00) 00000-0000"
-                  placeholderTextColor={Cores.secundario}
-                  value={telefoneEdit}
-                  onChangeText={(valor) => setTelefoneEdit(formatarTelefone(valor))}
-                  keyboardType="phone-pad"
-                  maxLength={15}
-                />
-                {loadingPerfil ? (
-                  <ActivityIndicator size="small" color="#2A9D8F" style={{ marginTop: 10 }} />
-                ) : (
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPerfilVisivel(false)}>
-                      <Text style={[styles.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#2A9D8F" }]} onPress={salvarPerfil}>
-                      <Text style={[styles.modalBtnText, { color: "#FFF" }]}>Salvar</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </>
+            <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Nome</Text>
+            <TextInput
+              style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
+              placeholder="Seu nome"
+              placeholderTextColor={Cores.secundario}
+              value={nomeEdit}
+              onChangeText={setNomeEdit}
+              autoCapitalize="words"
+            />
+            <Text style={{ color: Cores.secundario, fontSize: 11, lineHeight: 16, marginBottom: 14 }}>
+              E-mail, telefone e senha ficam protegidos na área Dados de acesso.
+            </Text>
+            {loadingPerfil ? (
+              <ActivityIndicator size="small" color="#2A9D8F" style={{ marginTop: 10 }} />
             ) : (
-              <>
-                <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Nova Senha</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 15 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1, backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto, marginBottom: 0 }]}
-                    placeholder="Mínimo 6 caracteres"
-                    placeholderTextColor={Cores.secundario}
-                    value={novaSenha}
-                    onChangeText={setNovaSenha}
-                    secureTextEntry={!mostrarNovaSenha}
-                  />
-                  <TouchableOpacity onPress={() => setMostrarNovaSenha((v) => !v)} style={{ padding: 12 }}>
-                    <MaterialIcons name={mostrarNovaSenha ? "visibility-off" : "visibility"} size={20} color={Cores.secundario} />
-                  </TouchableOpacity>
-                </View>
-
-                <Text style={[styles.inputLabel, { color: Cores.secundario }]}>Confirmar Nova Senha</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 5 }}>
-                  <TextInput
-                    style={[styles.input, { flex: 1, backgroundColor: Cores.input, borderColor: novaSenhaConfirm.length > 0 && novaSenha !== novaSenhaConfirm ? "#E76F51" : Cores.borda, color: Cores.texto, marginBottom: 0 }]}
-                    placeholder="Repita a nova senha"
-                    placeholderTextColor={Cores.secundario}
-                    value={novaSenhaConfirm}
-                    onChangeText={setNovaSenhaConfirm}
-                    secureTextEntry={!mostrarConfirmSenha}
-                  />
-                  <TouchableOpacity onPress={() => setMostrarConfirmSenha((v) => !v)} style={{ padding: 12 }}>
-                    <MaterialIcons name={mostrarConfirmSenha ? "visibility-off" : "visibility"} size={20} color={Cores.secundario} />
-                  </TouchableOpacity>
-                </View>
-                {novaSenhaConfirm.length > 0 && novaSenha !== novaSenhaConfirm && (
-                  <Text style={{ color: "#E76F51", fontSize: 12, marginBottom: 10 }}>As senhas não conferem</Text>
-                )}
-                {novaSenhaConfirm.length > 0 && novaSenha === novaSenhaConfirm && (
-                  <Text style={{ color: "#2A9D8F", fontSize: 12, marginBottom: 10 }}>Senhas conferem ✓</Text>
-                )}
-                <Text style={[{ color: Cores.secundario, fontSize: 12, marginBottom: 15 }]}>
-                  Um link de confirmação pode ser enviado para o seu e-mail.
-                </Text>
-                {loadingPerfil ? (
-                  <ActivityIndicator size="small" color="#2A9D8F" style={{ marginTop: 10 }} />
-                ) : (
-                  <View style={styles.modalButtons}>
-                    <TouchableOpacity style={[styles.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPerfilVisivel(false)}>
-                      <Text style={[styles.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#457B9D" }]} onPress={alterarSenha}>
-                      <Text style={[styles.modalBtnText, { color: "#FFF" }]}>Alterar</Text>
-                    </TouchableOpacity>
-                  </View>
-                )}
-              </>
+              <View style={styles.modalButtons}>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPerfilVisivel(false)}>
+                  <Text style={[styles.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[styles.modalBtn, { backgroundColor: "#2A9D8F" }]} onPress={salvarPerfil}>
+                  <Text style={[styles.modalBtnText, { color: "#FFF" }]}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
             )}
           </View>
         </View>
@@ -1130,10 +1008,8 @@ const styles = StyleSheet.create({
     right: 0,
     height: FinFlowTabHeader.expandedHeight,
     paddingHorizontal: 18,
-    paddingTop: 22,
-    paddingBottom: 38,
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
   },
   headerCompactContent: {

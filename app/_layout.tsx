@@ -49,6 +49,8 @@ import {
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
+import { garantirCategoriaOutros } from "../lib/default-categories";
+import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
@@ -256,6 +258,15 @@ export default function RootLayout() {
 
   // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
+  const iniciarFluxoRecuperacaoSenha = useCallback(async (userId?: string) => {
+    if (!userId) return;
+    await AsyncStorage.setItem(
+      PASSWORD_RECOVERY_FLOW_KEY,
+      JSON.stringify(criarFluxoRecuperacaoSenha(userId)),
+    );
+    router.replace("/reset-password" as any);
+  }, [router]);
+
   useEffect(() => {
     if (!url) return;
 
@@ -264,9 +275,17 @@ export default function RootLayout() {
       const parsed = new URL(url);
       const code = parsed.searchParams.get("code");
       if (code) {
-        supabase.auth.exchangeCodeForSession(code).catch((e) =>
-          console.log("Erro ao trocar código:", e)
-        );
+        supabase.auth.exchangeCodeForSession(code)
+          .then(({ data, error }) => {
+            if (error) {
+              console.log("Erro ao trocar código:", error);
+              return;
+            }
+            if (url.includes("email-confirmed") && data.user?.email_confirmed_at) {
+              router.replace("/email-confirmed" as any);
+            }
+          })
+          .catch((e) => console.log("Erro ao trocar código:", e));
         return;
       }
     } catch {}
@@ -279,13 +298,19 @@ export default function RootLayout() {
       supabase.auth.setSession({
         access_token: params.access_token,
         refresh_token: params.refresh_token,
-      }).then(() => {
+      }).then(({ data, error }) => {
+        if (error) {
+          console.log("Erro ao abrir link de autenticação:", error);
+          return;
+        }
         if (params.type === "signup") {
           router.replace("/email-confirmed" as any);
+        } else if (params.type === "recovery") {
+          void iniciarFluxoRecuperacaoSenha(data.session?.user.id);
         }
       });
     }
-  }, [router, url]);
+  }, [iniciarFluxoRecuperacaoSenha, router, url]);
 
   // Verifica atualizações OTA ao abrir o app
   useEffect(() => {
@@ -326,12 +351,14 @@ export default function RootLayout() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       setSession(session);
       if (event === "PASSWORD_RECOVERY") {
-        router.replace("/reset-password" as any);
+        void iniciarFluxoRecuperacaoSenha(session?.user.id);
+      } else if (event === "SIGNED_OUT") {
+        void AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [carregarConfiguracoes, router]);
+  }, [carregarConfiguracoes, iniciarFluxoRecuperacaoSenha]);
 
   const verificarCadastroPendente = useCallback(() => {
     const metadata = session?.user?.user_metadata as Record<string, unknown> | undefined;
@@ -346,6 +373,16 @@ export default function RootLayout() {
     }
     verificarCadastroPendente();
   }, [session?.user?.id, verificarCadastroPendente]);
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+    garantirCategoriaOutros(uid)
+      .then(() => DeviceEventEmitter.emit("finflow:categorias-padrao-prontas"))
+      .catch((error) => {
+        console.warn("Não foi possível garantir a categoria Outros:", error);
+      });
+  }, [session?.user?.id]);
 
   const tutorialMarcadoPendente = session?.user?.user_metadata?.tutorial_pendente === true;
   const tutorialStatus = tutorialUsuario.userId === session?.user?.id
@@ -960,6 +997,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="reset-password" />
               <Stack.Screen name="email-confirmed" />
+              <Stack.Screen name="seguranca" />
               <Stack.Screen name="planos" />
             </Stack>
             <StatusBar style={isDark ? "light" : "dark"} />

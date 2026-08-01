@@ -1,10 +1,11 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Animated,
   Alert,
+  DeviceEventEmitter,
   Modal,
   ScrollView,
   StyleSheet,
@@ -50,8 +51,9 @@ interface FaturaGrupo {
   total: number;
   pago: boolean;
   itens_ids: number[];
-  itens: { id: number; descricao: string; valor: number }[];
+  itens: { id: number; descricao: string; valor: number; categoria_id: number | null }[];
   dia_vencimento: number;
+  filtrada?: boolean;
 }
 interface Transacao {
   id: number;
@@ -93,9 +95,16 @@ const HEADER_EXPANDED_HEIGHT = FinFlowTabHeader.expandedHeight;
 const HEADER_COMPACT_HEIGHT = FinFlowTabHeader.compactHeight;
 const HEADER_COLLAPSE_DISTANCE = HEADER_EXPANDED_HEIGHT - HEADER_COMPACT_HEIGHT;
 
+const chaveDataLocal = (data: Date) =>
+  `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+
+const formatarDataCurta = (data: Date) =>
+  `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}`;
+
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ filtroPeriodo?: "proximos-7-dias" | "atrasados" | string }>();
   const novoTema = finFlowTheme(isDark);
 
   const Cores = {
@@ -123,6 +132,7 @@ export default function TransacoesScreen() {
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
   const [filtroTipo, setFiltroTipo] = useState<"todas" | "receita" | "despesa" | "transferencia">("todas");
   const [filtroVencidas, setFiltroVencidas] = useState(false);
+  const [filtroProximosSeteDias, setFiltroProximosSeteDias] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes">("todos");
   const [busca, setBusca] = useState("");
   const [paginaAtual, setPaginaAtual] = useState(1);
@@ -131,6 +141,7 @@ export default function TransacoesScreen() {
   const [modalFiltroConta, setModalFiltroConta] = useState(false);
   const [modalFiltroCat, setModalFiltroCat] = useState(false);
   const [modalFiltroTipo, setModalFiltroTipo] = useState(false);
+  const [modalFiltroAno, setModalFiltroAno] = useState(false);
 
   // Edit transaction modal
   const [modalEditarTransVisivel, setModalEditarTransVisivel] = useState(false);
@@ -167,18 +178,24 @@ export default function TransacoesScreen() {
     `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
   );
   const mesesScrollRef = useRef<any>(null);
+  const paginaScrollRef = useRef<any>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
   const alterarAno = (direcao: number) => {
+    setFiltroProximosSeteDias(false);
+    setFiltroVencidas(false);
     const novoAno = anoSelecionado + direcao;
     setAnoSelecionado(novoAno);
     const mesNum = mesSelecionado.split("-")[1];
     setMesSelecionado(`${novoAno}-${mesNum}`);
+    setPaginaAtual(1);
   };
 
   const alterarMes = (direcao: number) => {
+    setFiltroProximosSeteDias(false);
+    setFiltroVencidas(false);
     const [ano, mes] = mesSelecionado.split("-").map(Number);
     const proximo = new Date(ano, mes - 1 + direcao, 1);
     const novoAno = proximo.getFullYear();
@@ -196,7 +213,7 @@ export default function TransacoesScreen() {
         supabase.from("contas").select("*"),
         supabase.from("transacoes").select("*"),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
-        supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago").eq("user_id", session.user.id),
+        supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
       ]);
       if (resCategorias.data) {
         setCategorias([...resCategorias.data].sort((a, b) =>
@@ -232,7 +249,12 @@ export default function TransacoesScreen() {
           grupos[key].total += Number(item.valor);
           if (!item.pago) grupos[key].pago = false;
           grupos[key].itens_ids.push(item.id);
-          grupos[key].itens.push({ id: item.id, descricao: item.descricao || "", valor: Number(item.valor) });
+          grupos[key].itens.push({
+            id: item.id,
+            descricao: item.descricao || "",
+            valor: Number(item.valor),
+            categoria_id: item.categoria_id ?? null,
+          });
         });
         setFaturaGrupos(Object.values(grupos));
       }
@@ -249,6 +271,34 @@ export default function TransacoesScreen() {
       mesesScrollRef.current?.scrollTo({ x: mesAtualIdx * 72, animated: true });
     }, 150);
   }, [carregarDados, mesAtualIdx]));
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
+      void carregarDados();
+    });
+    return () => subscription.remove();
+  }, [carregarDados]);
+
+  React.useEffect(() => {
+    const filtroRecebido = params.filtroPeriodo;
+    if (filtroRecebido !== "proximos-7-dias" && filtroRecebido !== "atrasados") return;
+
+    const agora = new Date();
+    setAnoSelecionado(agora.getFullYear());
+    setMesSelecionado(`${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`);
+    setFiltroContas([]);
+    setFiltroCategorias([]);
+    setFiltroTipo("todas");
+    setFiltroVencidas(filtroRecebido === "atrasados");
+    setFiltroStatus("todos");
+    setBusca("");
+    setPaginaAtual(1);
+    setFiltroProximosSeteDias(filtroRecebido === "proximos-7-dias");
+    router.setParams({ filtroPeriodo: "" });
+    requestAnimationFrame(() => paginaScrollRef.current?.scrollTo({ y: 0, animated: true }));
+    // O parâmetro do sino é consumido uma vez; os filtros podem ser alterados livremente depois.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.filtroPeriodo]);
 
   const executarDeleteUma = async (transacao: Transacao) => {
     const pagamentoFatura = (transacao.descricao ?? "").match(/\[PagFatura:(\d+):(\d{4}-\d{2}):([^:\]]+)(?::(\d+))?\]/);
@@ -380,6 +430,32 @@ export default function TransacoesScreen() {
   const descricaoBase = (desc: string) =>
     descricaoBaseRecorrencia(desc);
 
+  const ehMovimentoInternoSemCategoria = (t: Transacao) => {
+    const descricao = t.descricao ?? "";
+    return isTransferencia(descricao)
+      || descricao.startsWith("Guardar em: ")
+      || descricao.startsWith("Resgate de: ")
+      || descricao.includes("[PagFatura:");
+  };
+
+  const validarCategoriaEdicao = () => {
+    if (!transacaoEditando || ehMovimentoInternoSemCategoria(transacaoEditando)) return true;
+    if (transacaoEditando.tipo !== "receita" && transacaoEditando.tipo !== "despesa") return true;
+
+    const categoria = categorias.find((item) => item.id === editCategoriaId);
+    const categoriaCompativel = categoria
+      && categoria.ativa !== 0
+      && (categoria.tipo === transacaoEditando.tipo || categoria.tipo === "ambos");
+
+    if (categoriaCompativel) return true;
+
+    Alert.alert(
+      "Categoria obrigatória",
+      `Selecione uma categoria ativa de ${transacaoEditando.tipo === "receita" ? "receita" : "despesa"} antes de salvar.`,
+    );
+    return false;
+  };
+
   const abrirEditarTransacao = (t: Transacao) => {
     setTransacaoEditando(t);
     setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : t.descricao);
@@ -394,6 +470,7 @@ export default function TransacoesScreen() {
 
   const executarEdicao = async (apenasEsta: boolean) => {
     if (!transacaoEditando) return;
+    if (!validarCategoriaEdicao()) return;
     const valorNum = parseFloat(editValor.replace(",", "."));
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
     const dataFormatada = `${editData.getFullYear()}-${String(editData.getMonth() + 1).padStart(2, "0")}-${String(editData.getDate()).padStart(2, "0")}`;
@@ -437,6 +514,7 @@ export default function TransacoesScreen() {
 
   const salvarEdicaoTransacao = async () => {
     if (!transacaoEditando) return;
+    if (!validarCategoriaEdicao()) return;
     const valorNum = parseFloat(editValor.replace(",", "."));
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
 
@@ -547,41 +625,90 @@ export default function TransacoesScreen() {
   };
 
   const hojeRef = new Date(); hojeRef.setHours(0, 0, 0, 0);
+  const limiteProximosSeteDias = new Date(hojeRef);
+  limiteProximosSeteDias.setDate(limiteProximosSeteDias.getDate() + 7);
+  const chaveHoje = chaveDataLocal(hojeRef);
+  const chaveLimiteProximosSeteDias = chaveDataLocal(limiteProximosSeteDias);
 
   const normalizar = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const termoBusca = normalizar(busca.trim());
 
+  const passaFiltrosBasicosHistorico = (t: Transacao) => {
+    const contaDaTransacao = contas.find((conta) => conta.id === t.conta_id);
+    if (t.status === "paga" && contaDaTransacao?.arquivado) return false;
+
+    const transferencia = isTransferencia(t.descricao);
+    const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
+    const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
+    const passaCategoria = filtroCategorias.length === 0
+      || (!transferencia && t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
+
+    let passaTipo = true;
+    if (filtroTipo === "transferencia") passaTipo = transferencia;
+    else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !transferencia;
+    else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !transferencia;
+
+    return passaConta && passaCategoria && passaTipo && passaBusca;
+  };
+
+  const quantidadeAtrasadasNoEscopo = transacoes.filter((t) => {
+    const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
+    return t.status === "pendente"
+      && Boolean(dataSegura)
+      && dataSegura < chaveHoje
+      && passaFiltrosBasicosHistorico(t);
+  }).length;
+
+  const timestampDataLocal = (valor: string) => {
+    const [ano, mes, dia] = valor.slice(0, 10).split("-").map(Number);
+    if (!ano || !mes || !dia) return Number.NaN;
+    return new Date(ano, mes - 1, dia).getTime();
+  };
+  const hojeTimestamp = hojeRef.getTime();
+
   const transacoesDoMes = transacoes
     .filter((t) => {
-      const contaDaTransacao = contas.find((conta) => conta.id === t.conta_id);
-      if (t.status === "paga" && contaDaTransacao?.arquivado) return false;
-      const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
+      const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
+      const passaFiltrosBasicos = passaFiltrosBasicosHistorico(t);
       if (filtroVencidas) {
-        const p = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
-        const d = new Date(+p[0], +p[1] - 1, +p[2]);
-        return t.status === "pendente" && d < hojeRef && passaBusca;
+        return t.status === "pendente" && Boolean(dataSegura) && dataSegura < chaveHoje && passaFiltrosBasicos;
       }
-      const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
-      const dataSegura = dataEfetivaTransacao(t) || new Date().toISOString().split("T")[0];
-      const passaMes = dataSegura.startsWith(mesSelecionado);
-      const isTransferencia = t.descricao.includes("[Transf.]");
-      const passaCategoria = filtroCategorias.length === 0
-        || (!isTransferencia && t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
-      let passaTipo = true;
-      if (filtroTipo === "transferencia") passaTipo = isTransferencia;
-      else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !isTransferencia;
-      else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !isTransferencia;
+      if (filtroProximosSeteDias) {
+        return t.status === "pendente"
+          && Boolean(dataSegura)
+          && dataSegura >= chaveHoje
+          && dataSegura <= chaveLimiteProximosSeteDias
+          && passaFiltrosBasicos;
+      }
+
+      const passaMes = (dataSegura || chaveHoje).startsWith(mesSelecionado);
       let passaStatus = true;
       if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
-      return passaConta && passaCategoria && passaMes && passaTipo && passaStatus && passaBusca;
+      return passaFiltrosBasicos && passaMes && passaStatus;
     })
-    .sort((a, b) => dataEfetivaTransacao(b).localeCompare(dataEfetivaTransacao(a)));
+    .sort((a, b) => {
+      const dataA = timestampDataLocal(dataEfetivaTransacao(a));
+      const dataB = timestampDataLocal(dataEfetivaTransacao(b));
+      const distanciaA = Number.isFinite(dataA) ? Math.abs(dataA - hojeTimestamp) : Number.POSITIVE_INFINITY;
+      const distanciaB = Number.isFinite(dataB) ? Math.abs(dataB - hojeTimestamp) : Number.POSITIVE_INFINITY;
+
+      if (distanciaA !== distanciaB) return distanciaA - distanciaB;
+
+      const aVencida = Number.isFinite(dataA) && dataA < hojeTimestamp;
+      const bVencida = Number.isFinite(dataB) && dataB < hojeTimestamp;
+      if (aVencida !== bVencida) return aVencida ? -1 : 1;
+      if (dataA !== dataB) return aVencida ? dataB - dataA : dataA - dataB;
+      return b.id - a.id;
+    });
 
   const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
   const temMais = transacoesPaginadas.length < transacoesDoMes.length;
 
   const faturaGruposDoMes = faturaGrupos.flatMap((g) => {
+    if (filtroProximosSeteDias) return [];
+    // Compras no cartão ainda não possuem uma conta bancária associada.
+    if (filtroContas.length > 0) return [];
     if (g.mes_fatura !== mesSelecionado) return [];
     if (filtroStatus === "concluidos" && !g.pago) return [];
     if (filtroStatus === "pendentes" && g.pago) return [];
@@ -591,12 +718,21 @@ export default function TransacoesScreen() {
     const vencimento = new Date(ano, mes - 1, Math.min(g.dia_vencimento, ultimoDia));
       if (g.pago || vencimento >= hojeRef) return [];
     }
-    if (!termoBusca) return [g];
-    const itensEncontrados = g.itens.filter((item) => normalizar(item.descricao).includes(termoBusca));
+    let itensEncontrados = g.itens;
+    if (filtroCategorias.length > 0) {
+      itensEncontrados = itensEncontrados.filter((item) =>
+        item.categoria_id !== null && filtroCategorias.includes(item.categoria_id),
+      );
+    }
+    if (termoBusca) {
+      itensEncontrados = itensEncontrados.filter((item) => normalizar(item.descricao).includes(termoBusca));
+    }
+    if (!termoBusca && filtroCategorias.length === 0) return [g];
     if (itensEncontrados.length === 0) return [];
     return [{
       ...g,
       total: itensEncontrados.reduce((total, item) => total + item.valor, 0),
+      filtrada: true,
     }];
   });
 
@@ -608,14 +744,50 @@ export default function TransacoesScreen() {
     .reduce((acc, t) => acc + t.valor, 0);
 
   const mesesDoAno = Array.from({ length: 12 }, (_, i) => `${anoSelecionado}-${String(i + 1).padStart(2, "0")}`);
+  const anosDisponiveis = Array.from(new Set([
+    anoAtualNum,
+    anoSelecionado,
+    ...transacoes.map((transacao) => Number(dataEfetivaTransacao(transacao).slice(0, 4))).filter(Number.isFinite),
+    ...faturaGrupos.map((fatura) => Number(fatura.mes_fatura.slice(0, 4))).filter(Number.isFinite),
+  ])).sort((a, b) => b - a);
 
-  const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas || filtroStatus !== "todos";
+  const temFiltroAtivo = anoSelecionado !== anoAtualNum
+    || filtroContas.length > 0
+    || filtroCategorias.length > 0
+    || filtroTipo !== "todas"
+    || filtroVencidas
+    || filtroProximosSeteDias
+    || filtroStatus !== "todos";
   const categoriasReceitaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "receita" || (filtroTipo === "receita" && categoria.tipo === "ambos")));
   const categoriasDespesaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "despesa" || (filtroTipo === "despesa" && categoria.tipo === "ambos")));
   const categoriasAmbasVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "ambos");
   const limparFiltros = () => {
-    setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setFiltroStatus("todos"); setBusca(""); setPaginaAtual(1);
+    const mesSelecionadoNumero = mesSelecionado.slice(5, 7);
+    setAnoSelecionado(anoAtualNum);
+    setMesSelecionado(`${anoAtualNum}-${mesSelecionadoNumero}`);
+    setFiltroContas([]);
+    setFiltroCategorias([]);
+    setFiltroTipo("todas");
+    setFiltroVencidas(false);
+    setFiltroProximosSeteDias(false);
+    setFiltroStatus("todos");
+    setBusca("");
+    setPaginaAtual(1);
   };
+  const resumoFiltroTipo = filtroTipo === "todas" ? "Todos" : filtroTipo === "receita" ? "Receitas" : filtroTipo === "despesa" ? "Despesas" : "Transferências";
+  const resumoFiltroContas = filtroContas.length === 0
+    ? "Todas"
+    : filtroContas.length === 1
+      ? contas.find((conta) => conta.id === filtroContas[0])?.nome ?? "1 conta"
+      : `${filtroContas.length} contas`;
+  const resumoFiltroCategorias = filtroTipo === "transferencia"
+    ? "Não se aplica"
+    : filtroCategorias.length === 0
+      ? "Todas"
+      : filtroCategorias.length === 1
+        ? categorias.find((categoria) => categoria.id === filtroCategorias[0])?.nome ?? "1 categoria"
+        : `${filtroCategorias.length} categorias`;
+  const tituloPeriodo = filtroProximosSeteDias ? "Próximos 7 dias" : formatarMesAno(mesSelecionado);
 
   const alturaCabecalho = scrollY.interpolate({
     inputRange: [0, HEADER_COLLAPSE_DISTANCE],
@@ -710,7 +882,7 @@ export default function TransacoesScreen() {
             <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.headerMonthButton} accessibilityLabel="Mês anterior">
               <MaterialIcons name="chevron-left" size={25} color="#FFF" />
             </TouchableOpacity>
-            <Text style={styles.headerMonthText}>{formatarMesAno(mesSelecionado)}</Text>
+            <Text style={styles.headerMonthText}>{tituloPeriodo}</Text>
             <TouchableOpacity onPress={() => alterarMes(1)} style={styles.headerMonthButton} accessibilityLabel="Próximo mês">
               <MaterialIcons name="chevron-right" size={25} color="#FFF" />
             </TouchableOpacity>
@@ -761,7 +933,7 @@ export default function TransacoesScreen() {
                 <MaterialIcons name="chevron-left" size={19} color="#FFF" />
               </TouchableOpacity>
               <Text style={styles.compactMonthText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
-                {formatarMesAno(mesSelecionado)}
+                {tituloPeriodo}
               </Text>
               <TouchableOpacity onPress={() => alterarMes(1)} style={styles.compactMonthButton} accessibilityLabel="Próximo mês">
                 <MaterialIcons name="chevron-right" size={19} color="#FFF" />
@@ -780,6 +952,7 @@ export default function TransacoesScreen() {
       </Animated.View>
 
       <Animated.ScrollView
+        ref={paginaScrollRef}
         style={styles.mainScroll}
         contentContainerStyle={styles.mainScrollContent}
         onScroll={onScrollHistorico}
@@ -807,45 +980,114 @@ export default function TransacoesScreen() {
           { key: "pendentes", label: "Pendentes" },
           { key: "atrasados", label: "Atrasados" },
         ] as const).map((item) => {
-          const ativo = item.key === "atrasados" ? filtroVencidas : (!filtroVencidas && filtroStatus === item.key);
+          const ativo = !filtroProximosSeteDias && (item.key === "atrasados" ? filtroVencidas : (!filtroVencidas && filtroStatus === item.key));
           return (
             <TouchableOpacity
               key={item.key}
               onPress={() => {
+                setFiltroProximosSeteDias(false);
                 setFiltroVencidas(item.key === "atrasados");
                 setFiltroStatus(item.key === "atrasados" ? "todos" : item.key);
                 setPaginaAtual(1);
               }}
               style={[styles.statusFilter, { backgroundColor: ativo ? "#23977F" : Cores.cardFundo, borderColor: ativo ? "#23977F" : Cores.borda }]}
             >
-              <Text style={[styles.statusFilterText, { color: ativo ? "#FFF" : Cores.textoSecundario }]}>{item.label}</Text>
+              <View style={styles.statusFilterContent}>
+                {item.key === "atrasados" && quantidadeAtrasadasNoEscopo > 0 && (
+                  <MaterialIcons name="warning-amber" size={14} color={ativo ? "#FFF" : "#E76F51"} />
+                )}
+                <Text style={[styles.statusFilterText, { color: ativo ? "#FFF" : Cores.textoSecundario }]}>{item.label}</Text>
+              </View>
             </TouchableOpacity>
           );
         })}
       </View>
 
+      {filtroProximosSeteDias && (
+        <View style={[styles.periodFilterBanner, { backgroundColor: novoTema.primarySoft, borderColor: novoTema.primary }]}>
+          <View style={styles.periodFilterIcon}>
+            <MaterialIcons name="date-range" size={20} color={novoTema.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.periodFilterTitle, { color: Cores.textoPrincipal }]}>Pendentes dos próximos 7 dias</Text>
+            <Text style={[styles.periodFilterText, { color: Cores.textoSecundario }]}>De {formatarDataCurta(hojeRef)} até {formatarDataCurta(limiteProximosSeteDias)}</Text>
+          </View>
+          <TouchableOpacity onPress={() => { setFiltroProximosSeteDias(false); setPaginaAtual(1); }} style={styles.periodFilterClose} accessibilityLabel="Remover filtro dos próximos 7 dias">
+            <MaterialIcons name="close" size={19} color={novoTema.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* FILTROS */}
-      <View style={styles.filterButtonsRow}>
-        <TouchableOpacity style={[styles.mainFilterButton, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalFiltroTipo(true)}>
-          <MaterialIcons name="swap-vert" size={18} color={filtroTipo !== "todas" ? "#F4A261" : Cores.textoSecundario} />
-          <Text style={[styles.mainFilterText, { color: filtroTipo !== "todas" ? "#F4A261" : Cores.textoSecundario }]} numberOfLines={1}>
-            {filtroTipo === "todas" ? "Tipo" : filtroTipo === "receita" ? "Receitas" : filtroTipo === "despesa" ? "Despesas" : "Transf."}
-          </Text>
-        </TouchableOpacity>
+      <View style={[styles.filtersPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+        <View style={styles.filtersPanelHeader}>
+          <View style={styles.filtersPanelHeading}>
+            <View style={[styles.filtersPanelIcon, { backgroundColor: novoTema.primarySoft }]}>
+              <MaterialIcons name="tune" size={17} color={novoTema.primary} />
+            </View>
+            <View>
+              <Text style={[styles.filtersPanelTitle, { color: Cores.textoPrincipal }]}>Refinar histórico</Text>
+              <Text style={[styles.filtersPanelSubtitle, { color: Cores.textoSecundario }]}>Ano, tipo, conta e categoria</Text>
+            </View>
+          </View>
+          {temFiltroAtivo && (
+            <TouchableOpacity onPress={limparFiltros} style={[styles.clearFiltersButton, { backgroundColor: Cores.pillFundo }]}>
+              <MaterialIcons name="restart-alt" size={15} color="#E76F51" />
+              <Text style={styles.clearFiltersText}>Limpar</Text>
+            </TouchableOpacity>
+          )}
+        </View>
 
-        <TouchableOpacity style={[styles.mainFilterButton, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalFiltroConta(true)}>
-          <MaterialIcons name="account-balance-wallet" size={18} color={filtroContas.length > 0 ? "#457B9D" : Cores.textoSecundario} />
-          <Text style={[styles.mainFilterText, { color: filtroContas.length > 0 ? "#457B9D" : Cores.textoSecundario }]} numberOfLines={1}>
-            Contas {filtroContas.length > 0 ? `(${filtroContas.length})` : ""}
-          </Text>
-        </TouchableOpacity>
+        <View style={styles.filterButtonsRow}>
+          <TouchableOpacity
+            style={[styles.mainFilterButton, { backgroundColor: anoSelecionado !== anoAtualNum ? "#805AD514" : Cores.pillFundo, borderColor: anoSelecionado !== anoAtualNum ? "#805AD5" : Cores.borda }]}
+            onPress={() => setModalFiltroAno(true)}
+            accessibilityLabel={`Filtrar por ano. Seleção atual: ${anoSelecionado}`}
+          >
+            <View style={styles.mainFilterLabelRow}>
+              <MaterialIcons name="calendar-today" size={15} color={anoSelecionado !== anoAtualNum ? "#805AD5" : Cores.textoSecundario} />
+              <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>ANO</Text>
+            </View>
+            <Text style={[styles.mainFilterValue, { color: anoSelecionado !== anoAtualNum ? "#805AD5" : Cores.textoPrincipal }]}>{anoSelecionado}</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity disabled={filtroTipo === "transferencia"} style={[styles.mainFilterButton, { backgroundColor: Cores.pillFundo, opacity: filtroTipo === "transferencia" ? 0.45 : 1 }]} onPress={() => setModalFiltroCat(true)}>
-          <MaterialIcons name={filtroTipo === "transferencia" ? "label-off" : "label"} size={18} color={filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario} />
-          <Text style={[styles.mainFilterText, { color: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario }]} numberOfLines={1}>
-            {filtroTipo === "transferencia" ? "Sem categ." : `Categ. ${filtroCategorias.length > 0 ? `(${filtroCategorias.length})` : ""}`}
-          </Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.mainFilterButton, { backgroundColor: filtroTipo !== "todas" ? "#F4A26114" : Cores.pillFundo, borderColor: filtroTipo !== "todas" ? "#F4A261" : Cores.borda }]}
+            onPress={() => setModalFiltroTipo(true)}
+            accessibilityLabel={`Filtrar por tipo. Seleção atual: ${resumoFiltroTipo}`}
+          >
+            <View style={styles.mainFilterLabelRow}>
+              <MaterialIcons name="swap-vert" size={15} color={filtroTipo !== "todas" ? "#F4A261" : Cores.textoSecundario} />
+              <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>TIPO</Text>
+            </View>
+            <Text style={[styles.mainFilterValue, { color: filtroTipo !== "todas" ? "#D98324" : Cores.textoPrincipal }]} numberOfLines={1}>{resumoFiltroTipo}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.mainFilterButton, { backgroundColor: filtroContas.length > 0 ? "#457B9D14" : Cores.pillFundo, borderColor: filtroContas.length > 0 ? "#457B9D" : Cores.borda }]}
+            onPress={() => setModalFiltroConta(true)}
+            accessibilityLabel={`Filtrar por conta. Seleção atual: ${resumoFiltroContas}`}
+          >
+            <View style={styles.mainFilterLabelRow}>
+              <MaterialIcons name="account-balance-wallet" size={15} color={filtroContas.length > 0 ? "#457B9D" : Cores.textoSecundario} />
+              <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>CONTA</Text>
+            </View>
+            <Text style={[styles.mainFilterValue, { color: filtroContas.length > 0 ? "#457B9D" : Cores.textoPrincipal }]} numberOfLines={1}>{resumoFiltroContas}</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            disabled={filtroTipo === "transferencia"}
+            style={[styles.mainFilterButton, { backgroundColor: filtroCategorias.length > 0 ? "#2A9D8F14" : Cores.pillFundo, borderColor: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.borda, opacity: filtroTipo === "transferencia" ? 0.48 : 1 }]}
+            onPress={() => setModalFiltroCat(true)}
+            accessibilityLabel={`Filtrar por categoria. Seleção atual: ${resumoFiltroCategorias}`}
+          >
+            <View style={styles.mainFilterLabelRow}>
+              <MaterialIcons name={filtroTipo === "transferencia" ? "label-off" : "label"} size={15} color={filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario} />
+              <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>CATEGORIA</Text>
+            </View>
+            <Text style={[styles.mainFilterValue, { color: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoPrincipal }]} numberOfLines={1}>{resumoFiltroCategorias}</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* FILTRO DE STATUS */}
@@ -873,16 +1115,6 @@ export default function TransacoesScreen() {
           );
         })}
       </View>}
-
-      {temFiltroAtivo && (
-        <TouchableOpacity
-          onPress={limparFiltros}
-          style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 6, marginHorizontal: 15, marginBottom: 8, borderRadius: 8, backgroundColor: "#E76F5122" }}
-        >
-          <MaterialIcons name="close" size={14} color="#E76F51" />
-          <Text style={{ color: "#E76F51", fontSize: 13, fontWeight: "600", marginLeft: 4 }}>Limpar filtros</Text>
-        </TouchableOpacity>
-      )}
 
       {/* SELETOR DE MÊS */}
       {false && <View style={styles.mesesScrollContainer}>
@@ -930,7 +1162,7 @@ export default function TransacoesScreen() {
           {/* Cabeçalho do mês */}
           <View style={[styles.monthHeader, { backgroundColor: isDark ? "#252525" : "#F8F9FA", borderColor: Cores.borda }]}>
             <Text style={[styles.monthHeaderText, { color: Cores.textoPrincipal }]}>
-              {formatarMesAno(mesSelecionado)}
+              {tituloPeriodo}
             </Text>
             {transacoesDoMes.length > 0 && (
               <Text style={[styles.contadorText, { color: Cores.textoSecundario }]}>
@@ -941,14 +1173,14 @@ export default function TransacoesScreen() {
 
           {transacoesDoMes.length === 0 ? (
             <View style={styles.emptyContainer}>
-              {filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" ? (
+              {temFiltroAtivo || busca.trim().length > 0 ? (
                 <>
                   <MaterialIcons name="search-off" size={40} color={Cores.textoSecundario} style={{ marginBottom: 10 }} />
                   <Text style={[styles.emptyMonthText, { color: Cores.textoSecundario }]}>
                     Nenhum resultado com os filtros aplicados.
                   </Text>
                   <TouchableOpacity
-                    onPress={() => { setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); }}
+                    onPress={limparFiltros}
                     style={{ marginTop: 12, backgroundColor: "#457B9D22", paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}
                   >
                     <Text style={{ color: "#457B9D", fontWeight: "600" }}>Limpar filtros</Text>
@@ -958,7 +1190,7 @@ export default function TransacoesScreen() {
                 <>
                   <MaterialIcons name="receipt-long" size={40} color={Cores.textoSecundario} style={{ marginBottom: 10 }} />
                   <Text style={[styles.emptyMonthText, { color: Cores.textoSecundario }]}>
-                    Nenhuma transação em {formatarMesAno(mesSelecionado)}.
+                    Nenhuma transação em {tituloPeriodo}.
                   </Text>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginTop: 4 }}>
                     Use o botão + no início para adicionar.
@@ -1080,14 +1312,14 @@ export default function TransacoesScreen() {
                     borderLeftColor: g.cartao_cor,
                   }]}
                   onPress={() => {
-                    if (termoBusca) return;
+                    if (g.filtrada) return;
                     if (g.pago) {
                       setFaturaEstornar(g);
                     } else {
                       router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(g.cartao_id), mesFatura: g.mes_fatura } } as any);
                     }
                   }}
-                  disabled={Boolean(termoBusca)}
+                  disabled={Boolean(g.filtrada)}
                   activeOpacity={0.7}
                 >
                   <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
@@ -1108,7 +1340,7 @@ export default function TransacoesScreen() {
                     </Text>
                     <View style={[styles.statusBadge, { backgroundColor: g.pago ? "#D1FAE5" : "#FEE2E2" }]}>
                       <Text style={[styles.statusBadgeText, { color: g.pago ? "#065F46" : "#991B1B" }]}>
-                        {g.pago ? "Paga" : "Em aberto"}
+                        {g.filtrada ? "Resultado filtrado" : g.pago ? "Paga" : "Em aberto"}
                       </Text>
                     </View>
                   </View>
@@ -1199,7 +1431,7 @@ export default function TransacoesScreen() {
                 </View>
                 <View style={{ backgroundColor: Cores.blocoData, borderRadius: 12, padding: 14, gap: 10 }}>
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Valor</Text><Text style={{ color: t.tipo === "receita" ? "#2A9D8F" : "#E76F51", fontWeight: "800" }}>{fmtReais(t.valor)}</Text></View>
-                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Status</Text><Text style={{ color: concluida ? "#2A9D8F" : "#F59E0B", fontWeight: "700" }}>{concluida ? "Concluído" : "Previsto"}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Status</Text><Text style={{ color: concluida ? "#2A9D8F" : "#F59E0B", fontWeight: "700" }}>{concluida ? "Concluído" : "Pendente"}</Text></View>
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data agendada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_vencimento.split("-").reverse().join("/")}</Text></View>
                   {t.data_realizacao && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data realizada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_realizacao.split("-").reverse().join("/")}</Text></View>}
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Conta</Text><Text style={{ color: Cores.textoPrincipal }}>{conta?.nome ?? "Não informada"}</Text></View>
@@ -1395,11 +1627,11 @@ export default function TransacoesScreen() {
               </ScrollView>
 
               {/* Categoria */}
-              {transacaoEditando && !transacaoEditando.descricao.includes("[Transf.]") && (
+              {transacaoEditando && !ehMovimentoInternoSemCategoria(transacaoEditando) && (
                 <>
                   <Text style={{ color: isDark ? "#AAA" : "#666", fontSize: 12, marginBottom: 6 }}>Categoria:</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === transacaoEditando.tipo).map((cat) => (
+                    {categorias.filter((c) => c.ativa !== 0 && (c.tipo === transacaoEditando.tipo || c.tipo === "ambos")).map((cat) => (
                       <TouchableOpacity
                         key={cat.id}
                         style={[styles.filterPill, { backgroundColor: editCategoriaId === cat.id ? cat.cor : (isDark ? "#2C2C2C" : "#F0F0F0"), borderWidth: 1, borderColor: editCategoriaId === cat.id ? cat.cor : (isDark ? "#444" : "#DDD"), marginRight: 8 }]}
@@ -1497,21 +1729,89 @@ export default function TransacoesScreen() {
         </Modal>
       )}
 
+      <Modal animationType="fade" transparent visible={modalFiltroAno} onRequestClose={() => setModalFiltroAno(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1 }]}>
+            <View style={styles.filterModalHeader}>
+              <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#805AD51F" }]}><MaterialIcons name="calendar-today" size={21} color="#805AD5" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Ano do histórico</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Escolha o ano sem perder a navegação mensal.</Text>
+              </View>
+              <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroAno(false)} accessibilityLabel="Fechar filtro por ano">
+                <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.yearFilterStepper, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.yearFilterArrow} accessibilityLabel="Ano anterior">
+                <MaterialIcons name="chevron-left" size={27} color="#805AD5" />
+              </TouchableOpacity>
+              <View style={styles.yearFilterCurrent}>
+                <Text style={[styles.yearFilterLabel, { color: Cores.textoSecundario }]}>ANO SELECIONADO</Text>
+                <Text style={[styles.yearFilterValue, { color: Cores.textoPrincipal }]}>{anoSelecionado}</Text>
+              </View>
+              <TouchableOpacity onPress={() => alterarAno(1)} style={styles.yearFilterArrow} accessibilityLabel="Próximo ano">
+                <MaterialIcons name="chevron-right" size={27} color="#805AD5" />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={[styles.yearFilterAvailableLabel, { color: Cores.textoSecundario }]}>ANOS COM REGISTROS</Text>
+            <View style={styles.yearFilterOptions}>
+              {anosDisponiveis.map((anoDisponivel) => {
+                const selecionado = anoSelecionado === anoDisponivel;
+                return (
+                  <TouchableOpacity
+                    key={anoDisponivel}
+                    onPress={() => {
+                      const mesNum = mesSelecionado.split("-")[1];
+                      setAnoSelecionado(anoDisponivel);
+                      setMesSelecionado(`${anoDisponivel}-${mesNum}`);
+                      setFiltroProximosSeteDias(false);
+                      setFiltroVencidas(false);
+                      setPaginaAtual(1);
+                    }}
+                    style={[styles.yearFilterOption, { backgroundColor: selecionado ? "#805AD5" : Cores.pillFundo, borderColor: selecionado ? "#805AD5" : Cores.borda }]}
+                  >
+                    <Text style={[styles.yearFilterOptionText, { color: selecionado ? "#FFF" : Cores.textoPrincipal }]}>{anoDisponivel}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#805AD5" }]} onPress={() => setModalFiltroAno(false)}>
+              <Text style={styles.modalBotaoTexto}>Aplicar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       <Modal animationType="fade" transparent visible={modalFiltroTipo} onRequestClose={() => setModalFiltroTipo(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Filtrar por Tipo</Text>
-            <View style={styles.wrapContainer}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1 }]}>
+            <View style={styles.filterModalHeader}>
+              <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#F4A2611F" }]}><MaterialIcons name="swap-vert" size={22} color="#F4A261" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Tipo de lançamento</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Escolha uma opção para refinar o histórico.</Text>
+              </View>
+              <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroTipo(false)} accessibilityLabel="Fechar filtro por tipo">
+                <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.filterModalGrid}>
               {[
-                { key: "todas" as const, label: "Mostrar Tudo", bgAtivo: "#457B9D" },
-                { key: "receita" as const, label: "Receitas", bgAtivo: "#2A9D8F" },
-                { key: "despesa" as const, label: "Despesas", bgAtivo: "#E76F51" },
-                { key: "transferencia" as const, label: "Transferências", bgAtivo: "#F4A261" },
+                { key: "todas" as const, label: "Todos", icon: "view-list" as const, bgAtivo: "#457B9D" },
+                { key: "receita" as const, label: "Receitas", icon: "arrow-upward" as const, bgAtivo: "#2A9D8F" },
+                { key: "despesa" as const, label: "Despesas", icon: "arrow-downward" as const, bgAtivo: "#E76F51" },
+                { key: "transferencia" as const, label: "Transferências", icon: "swap-horiz" as const, bgAtivo: "#F4A261" },
               ].map((op) => {
                 const isAtivo = filtroTipo === op.key;
                 return (
-                  <TouchableOpacity key={op.key} style={[styles.filterPill, { backgroundColor: isAtivo ? op.bgAtivo : Cores.pillFundo, borderWidth: 1, borderColor: isAtivo ? op.bgAtivo : Cores.borda }]} onPress={() => selecionarFiltroTipo(op.key)}>
-                    <Text style={[styles.filterPillText, { color: isAtivo ? "#FFF" : Cores.textoPrincipal }]}>{op.label}</Text>
+                  <TouchableOpacity key={op.key} style={[styles.filterModalOption, { backgroundColor: isAtivo ? op.bgAtivo : Cores.pillFundo, borderColor: isAtivo ? op.bgAtivo : Cores.borda }]} onPress={() => selecionarFiltroTipo(op.key)}>
+                    <MaterialIcons name={op.icon} size={18} color={isAtivo ? "#FFF" : op.bgAtivo} />
+                    <Text style={[styles.filterModalOptionText, { color: isAtivo ? "#FFF" : Cores.textoPrincipal }]} numberOfLines={1}>{op.label}</Text>
+                    <MaterialIcons name={isAtivo ? "check-circle" : "radio-button-unchecked"} size={18} color={isAtivo ? "#FFF" : Cores.textoSecundario} />
                   </TouchableOpacity>
                 );
               })}
@@ -1525,18 +1825,35 @@ export default function TransacoesScreen() {
 
       <Modal animationType="fade" transparent visible={modalFiltroConta} onRequestClose={() => setModalFiltroConta(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Filtrar por Conta</Text>
-            <View style={styles.wrapContainer}>
-              <TouchableOpacity style={[styles.filterPill, { backgroundColor: filtroContas.length === 0 ? "#457B9D" : Cores.pillFundo, borderWidth: 1, borderColor: filtroContas.length === 0 ? "#457B9D" : Cores.borda }]} onPress={() => setFiltroContas([])}>
-                <Text style={[styles.filterPillText, { color: filtroContas.length === 0 ? "#FFF" : Cores.textoPrincipal }]}>Todas</Text>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1, maxHeight: "82%" }]}>
+            <View style={styles.filterModalHeader}>
+              <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#457B9D1F" }]}><MaterialIcons name="account-balance-wallet" size={21} color="#457B9D" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Contas</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Selecione uma ou mais contas.</Text>
+              </View>
+              <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroConta(false)} accessibilityLabel="Fechar filtro por conta">
+                <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
               </TouchableOpacity>
-              {contas.map((c) => (
-                <TouchableOpacity key={`fc-${c.id}`} style={[styles.filterPill, { backgroundColor: filtroContas.includes(c.id) ? "#457B9D" : Cores.pillFundo, borderWidth: 1, borderColor: filtroContas.includes(c.id) ? "#457B9D" : Cores.borda }]} onPress={() => toggleFiltroConta(c.id)}>
-                  <Text style={[styles.filterPillText, { color: filtroContas.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
-                </TouchableOpacity>
-              ))}
             </View>
+            <ScrollView style={styles.filterModalScroll} contentContainerStyle={styles.filterModalList} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity style={[styles.filterModalOptionWide, { backgroundColor: filtroContas.length === 0 ? "#457B9D" : Cores.pillFundo, borderColor: filtroContas.length === 0 ? "#457B9D" : Cores.borda }]} onPress={() => { setFiltroContas([]); setPaginaAtual(1); }}>
+                <View style={[styles.filterAccountIcon, { backgroundColor: filtroContas.length === 0 ? "rgba(255,255,255,0.2)" : "#457B9D1F" }]}><MaterialIcons name="select-all" size={18} color={filtroContas.length === 0 ? "#FFF" : "#457B9D"} /></View>
+                <Text style={[styles.filterModalOptionText, { color: filtroContas.length === 0 ? "#FFF" : Cores.textoPrincipal }]}>Todas as contas</Text>
+                <MaterialIcons name={filtroContas.length === 0 ? "check-circle" : "radio-button-unchecked"} size={19} color={filtroContas.length === 0 ? "#FFF" : Cores.textoSecundario} />
+              </TouchableOpacity>
+              {contas.map((c) => {
+                const selecionada = filtroContas.includes(c.id);
+                const estiloConta = getEstiloBanco(c.nome, isDark);
+                return (
+                <TouchableOpacity key={`fc-${c.id}`} style={[styles.filterModalOptionWide, { backgroundColor: selecionada ? "#457B9D" : Cores.pillFundo, borderColor: selecionada ? "#457B9D" : Cores.borda }]} onPress={() => toggleFiltroConta(c.id)}>
+                  <View style={[styles.filterAccountIcon, { backgroundColor: selecionada ? "rgba(255,255,255,0.2)" : estiloConta.bg }]}><MaterialIcons name="account-balance-wallet" size={17} color={selecionada ? "#FFF" : estiloConta.text} /></View>
+                  <Text style={[styles.filterModalOptionText, { color: selecionada ? "#FFF" : Cores.textoPrincipal }]} numberOfLines={1}>{c.nome}</Text>
+                  <MaterialIcons name={selecionada ? "check-circle" : "radio-button-unchecked"} size={19} color={selecionada ? "#FFF" : Cores.textoSecundario} />
+                </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
             <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#457B9D" }]} onPress={() => setModalFiltroConta(false)}>
               <Text style={styles.modalBotaoTexto}>Aplicar</Text>
             </TouchableOpacity>
@@ -1546,16 +1863,27 @@ export default function TransacoesScreen() {
 
       <Modal animationType="fade" transparent visible={modalFiltroCat} onRequestClose={() => setModalFiltroCat(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxHeight: "85%" }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Filtrar por Categoria</Text>
-            <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1, maxHeight: "85%" }]}>
+            <View style={styles.filterModalHeader}>
+              <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#2A9D8F1F" }]}><MaterialIcons name="label" size={21} color="#2A9D8F" /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Categorias</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Combine categorias para refinar os resultados.</Text>
+              </View>
+              <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroCat(false)} accessibilityLabel="Fechar filtro por categoria">
+                <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.filterModalScroll} showsVerticalScrollIndicator={false}>
               {/* Todas */}
-              <View style={[styles.wrapContainer, { marginBottom: 8 }]}>
+              <View style={{ marginBottom: 14 }}>
                 <TouchableOpacity
-                  style={[styles.filterPill, { backgroundColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.borda }]}
-                  onPress={() => setFiltroCategorias([])}
+                  style={[styles.filterModalOptionWide, { backgroundColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.pillFundo, borderColor: filtroCategorias.length === 0 ? "#2A9D8F" : Cores.borda }]}
+                  onPress={() => { setFiltroCategorias([]); setPaginaAtual(1); }}
                 >
-                  <Text style={[styles.filterPillText, { color: filtroCategorias.length === 0 ? "#FFF" : Cores.textoPrincipal }]}>Todas</Text>
+                  <View style={[styles.filterAccountIcon, { backgroundColor: filtroCategorias.length === 0 ? "rgba(255,255,255,0.2)" : "#2A9D8F1F" }]}><MaterialIcons name="select-all" size={18} color={filtroCategorias.length === 0 ? "#FFF" : "#2A9D8F"} /></View>
+                  <Text style={[styles.filterModalOptionText, { color: filtroCategorias.length === 0 ? "#FFF" : Cores.textoPrincipal }]}>Todas as categorias</Text>
+                  <MaterialIcons name={filtroCategorias.length === 0 ? "check-circle" : "radio-button-unchecked"} size={19} color={filtroCategorias.length === 0 ? "#FFF" : Cores.textoSecundario} />
                 </TouchableOpacity>
               </View>
 
@@ -1570,11 +1898,12 @@ export default function TransacoesScreen() {
                     {categoriasReceitaVisiveis.map((c) => (
                       <TouchableOpacity
                         key={`fcat-${c.id}`}
-                        style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
+                        style={[styles.categoryFilterOption, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
                         onPress={() => toggleFiltroCategoria(c.id)}
                       >
                         <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(c.id) ? "#FFF" : c.cor }]} />
-                        <Text style={[styles.filterPillText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                        <Text style={[styles.filterModalOptionText, styles.categoryFilterOptionText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                        {filtroCategorias.includes(c.id) && <MaterialIcons name="check" size={16} color="#FFF" />}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1592,11 +1921,12 @@ export default function TransacoesScreen() {
                     {categoriasDespesaVisiveis.map((c) => (
                       <TouchableOpacity
                         key={`fcat-${c.id}`}
-                        style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
+                        style={[styles.categoryFilterOption, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
                         onPress={() => toggleFiltroCategoria(c.id)}
                       >
                         <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(c.id) ? "#FFF" : c.cor }]} />
-                        <Text style={[styles.filterPillText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                        <Text style={[styles.filterModalOptionText, styles.categoryFilterOptionText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                        {filtroCategorias.includes(c.id) && <MaterialIcons name="check" size={16} color="#FFF" />}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1613,11 +1943,12 @@ export default function TransacoesScreen() {
                     {categoriasAmbasVisiveis.map((categoria) => (
                       <TouchableOpacity
                         key={`fcat-${categoria.id}`}
-                        style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(categoria.id) ? categoria.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(categoria.id) ? categoria.cor : Cores.borda }]}
+                        style={[styles.categoryFilterOption, { backgroundColor: filtroCategorias.includes(categoria.id) ? categoria.cor : Cores.pillFundo, borderColor: filtroCategorias.includes(categoria.id) ? categoria.cor : Cores.borda }]}
                         onPress={() => toggleFiltroCategoria(categoria.id)}
                       >
                         <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(categoria.id) ? "#FFF" : categoria.cor }]} />
-                        <Text style={[styles.filterPillText, { color: filtroCategorias.includes(categoria.id) ? "#FFF" : Cores.textoPrincipal }]}>{categoria.nome}</Text>
+                        <Text style={[styles.filterModalOptionText, styles.categoryFilterOptionText, { color: filtroCategorias.includes(categoria.id) ? "#FFF" : Cores.textoPrincipal }]}>{categoria.nome}</Text>
+                        {filtroCategorias.includes(categoria.id) && <MaterialIcons name="check" size={16} color="#FFF" />}
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1708,11 +2039,27 @@ const styles = StyleSheet.create({
   compactExpense: { width: "100%", color: "#FFC0B5", fontSize: 10, fontWeight: "800", textAlign: "right" },
   statusFilters: { flexDirection: "row", gap: 7, paddingHorizontal: 14, marginTop: 14, marginBottom: 12 },
   statusFilter: { flex: 1, paddingVertical: 8, borderRadius: 18, borderWidth: 1, alignItems: "center" },
+  statusFilterContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
   statusFilterText: { fontSize: 11, fontWeight: "700" },
+  periodFilterBanner: { marginHorizontal: 14, marginBottom: 10, minHeight: 58, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10 },
+  periodFilterIcon: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.36)" },
+  periodFilterTitle: { fontSize: 13, fontWeight: "800" },
+  periodFilterText: { fontSize: 11, marginTop: 2 },
+  periodFilterClose: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
 
-  filterButtonsRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 15, marginBottom: 10 },
-  mainFilterButton: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, paddingHorizontal: 5, borderRadius: 10, marginHorizontal: 4 },
-  mainFilterText: { marginLeft: 4, fontSize: 13, fontWeight: "bold" },
+  filtersPanel: { marginHorizontal: 14, marginBottom: 12, padding: 12, borderWidth: 1, borderRadius: 18 },
+  filtersPanelHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 11 },
+  filtersPanelHeading: { flexDirection: "row", alignItems: "center", gap: 9, flex: 1 },
+  filtersPanelIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  filtersPanelTitle: { fontSize: 13, fontWeight: "800" },
+  filtersPanelSubtitle: { fontSize: 10, marginTop: 1 },
+  clearFiltersButton: { minHeight: 32, paddingHorizontal: 9, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 4 },
+  clearFiltersText: { color: "#E76F51", fontSize: 11, fontWeight: "800" },
+  filterButtonsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  mainFilterButton: { flexGrow: 1, flexBasis: "46%", minWidth: 0, minHeight: 62, justifyContent: "center", paddingVertical: 9, paddingHorizontal: 11, borderRadius: 13, borderWidth: 1 },
+  mainFilterLabelRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 5 },
+  mainFilterLabel: { fontSize: 8, fontWeight: "800", letterSpacing: 0.45 },
+  mainFilterValue: { fontSize: 11, fontWeight: "800" },
 
   anoNavBar: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginHorizontal: 15, marginBottom: 8, borderRadius: 12, paddingVertical: 4 },
   anoNavBtn: { padding: 8 },
@@ -1773,8 +2120,31 @@ const styles = StyleSheet.create({
   wrapContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 25, justifyContent: "center" },
   filterPill: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, flexDirection: "row", alignItems: "center" },
   filterPillText: { fontSize: 14, fontWeight: "500" },
+  filterModalHeader: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 18 },
+  filterModalHeaderIcon: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  filterModalTitle: { fontSize: 17, fontWeight: "900" },
+  filterModalSubtitle: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  filterModalClose: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  filterModalGrid: { gap: 8, marginBottom: 20 },
+  filterModalOption: { width: "100%", minHeight: 48, paddingHorizontal: 12, borderRadius: 13, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 9 },
+  filterModalOptionWide: { width: "100%", minHeight: 50, paddingHorizontal: 11, borderRadius: 13, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 9 },
+  filterModalOptionText: { flex: 1, minWidth: 0, fontSize: 13, fontWeight: "700" },
+  filterModalScroll: { flexShrink: 1, marginBottom: 16 },
+  filterModalList: { gap: 8, paddingBottom: 2 },
+  filterAccountIcon: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  categoryFilterOption: { width: "100%", minWidth: 0, minHeight: 48, paddingHorizontal: 12, paddingVertical: 9, borderRadius: 13, borderWidth: 1, flexDirection: "row", alignItems: "center", gap: 6 },
+  categoryFilterOptionText: { flexShrink: 1, lineHeight: 18 },
   colorDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
-  modalBotaoAplicar: { paddingVertical: 12, borderRadius: 10, alignItems: "center" },
+  yearFilterStepper: { minHeight: 82, borderRadius: 16, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 18 },
+  yearFilterArrow: { width: 54, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
+  yearFilterCurrent: { alignItems: "center", justifyContent: "center" },
+  yearFilterLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 0.6, marginBottom: 2 },
+  yearFilterValue: { fontSize: 25, fontWeight: "900" },
+  yearFilterAvailableLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 0.65, marginBottom: 8 },
+  yearFilterOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
+  yearFilterOption: { minWidth: 72, minHeight: 40, paddingHorizontal: 13, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  yearFilterOptionText: { fontSize: 13, fontWeight: "800" },
+  modalBotaoAplicar: { minHeight: 48, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   modalBotaoTexto: { fontSize: 15, fontWeight: "700", color: "#FFF" },
   catSecaoHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: "#33333322" },
   catSecaoTitulo: { fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },

@@ -52,6 +52,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
+  DeviceEventEmitter,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -67,6 +68,12 @@ import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import {
+  FinFlowColors,
+  FinFlowRadius,
+  FinFlowShadow,
+  finFlowTheme,
+} from "../../constants/finflow-design";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -173,15 +180,18 @@ export default function CartoesScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ pagarCartaoId?: string; mesFatura?: string }>();
   const pagamentoRotaConsumido = useRef("");
+  const novoTema = finFlowTheme(isDark);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F2EC",
-    texto: isDark ? "#FFFFFF" : "#27313A",
-    secundario: isDark ? "#AAAAAA" : "#68727D",
-    card: isDark ? "#1E1E1E" : "#FFFDF9",
-    borda: isDark ? "#333" : "#E5DED3",
-    input: isDark ? "#2C2C2C" : "#FAF8F4",
-    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
+    fundo: novoTema.background,
+    texto: novoTema.text,
+    secundario: novoTema.textMuted,
+    card: novoTema.surface,
+    borda: novoTema.border,
+    input: novoTema.surfaceMuted,
+    pillFundo: novoTema.surfaceMuted,
+    primary: novoTema.primary,
+    primarySoft: novoTema.primarySoft,
   };
 
   const [cartoes, setCartoes] = useState<Cartao[]>([]);
@@ -298,6 +308,13 @@ export default function CartoesScreen() {
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
   useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
+      void carregarDados();
+    });
+    return () => subscription.remove();
+  }, [carregarDados]);
+
+  useEffect(() => {
     const cartaoId = Number(params.pagarCartaoId);
     const mes = params.mesFatura;
     const chave = `${cartaoId}:${mes}`;
@@ -311,7 +328,7 @@ export default function CartoesScreen() {
     setCartaoAberto(cartao);
     setMesFaturaAtivo(mes);
     setMesPagamento(mes);
-    setValorPagamento(total.toFixed(2).replace(".", ","));
+    setValorPagamento(formatarEntradaMoeda(String(Math.round(total * 100))));
     setValorJuros("");
     setContaPagamentoId(contas[0]?.id ?? null);
     setModalFaturaVisivel(true);
@@ -406,6 +423,15 @@ export default function CartoesScreen() {
     if (!descCompra.trim()) return Alert.alert("Aviso", "Informe a descrição da compra.");
     const valor = valorDaEntradaMoeda(valorCompra);
     if (isNaN(valor) || valor <= 0) return Alert.alert("Aviso", "Informe um valor válido.");
+    const categoriaCompra = categorias.find(
+      (categoria) => categoria.id === categCompraId
+        && categoria.tipo === "despesa"
+        && categoria.ativa !== false
+        && categoria.ativa !== 0,
+    );
+    if (!categoriaCompra) {
+      return Alert.alert("Categoria obrigatória", "Selecione uma categoria ativa de despesa antes de salvar a compra.");
+    }
     const parcelasInformadas = parseInt(parcelasCompra) || 1;
     if (tipoCompra === "parcelada" && (parcelasInformadas < 2 || parcelasInformadas > 48)) {
       return Alert.alert("Aviso", "Número de parcelas inválido (2–48).");
@@ -452,7 +478,7 @@ export default function CartoesScreen() {
         parcela_atual: i + 1,
         total_parcelas: tipoCompra === "parcelada" ? parcelasInformadas : 1,
         grupo_parcela_id: null,
-        categoria_id: categCompraId,
+        categoria_id: categoriaCompra.id,
         pago: false,
       });
     }
@@ -503,7 +529,7 @@ export default function CartoesScreen() {
     const totalFatura = calcularTotalFatura(cartaoAberto!.id, mes);
     if (totalFatura === 0) return showToast("Fatura já está zerada", "info");
     setMesPagamento(mes);
-    setValorPagamento(totalFatura.toFixed(2).replace(".", ","));
+    setValorPagamento(formatarEntradaMoeda(String(Math.round(totalFatura * 100))));
     setValorJuros("");
     setContaPagamentoId(contas[0]?.id ?? null);
     setModalPagamento(true);
@@ -512,7 +538,7 @@ export default function CartoesScreen() {
   const confirmarPagamentoFatura = async () => {
     if (!cartaoAberto || !contaPagamentoId) return;
     const totalFatura = calcularTotalFatura(cartaoAberto.id, mesPagamento);
-    const valorPago = Number(valorPagamento.replace(",", "."));
+    const valorPago = valorDaEntradaMoeda(valorPagamento);
     if (!Number.isFinite(valorPago) || valorPago <= 0) {
       Alert.alert("Valor inválido", "Informe quanto foi pago.");
       return;
@@ -561,14 +587,19 @@ export default function CartoesScreen() {
   const registrarPagamentoMenor = async (levarSaldo: boolean) => {
     if (!cartaoAberto || !contaPagamentoId || !session?.user?.id) return;
     const total = calcularTotalFatura(cartaoAberto.id, mesPagamento);
-    const pago = Number(valorPagamento.replace(",", "."));
+    const pago = valorDaEntradaMoeda(valorPagamento);
     const hoje = new Date().toISOString().slice(0, 10);
     let itemVinculado: number | null = null;
     let erro: any = null;
 
     if (levarSaldo) {
       const restante = total - pago;
-      const jurosInformado = Math.max(0, Number(valorJuros.replace(",", ".")) || 0);
+      const jurosInformado = Math.max(
+        0,
+        tipoJuros === "valor"
+          ? valorDaEntradaMoeda(valorJuros)
+          : Number(valorJuros.replace(",", ".")) || 0,
+      );
       const juros = tipoJuros === "percentual" ? restante * jurosInformado / 100 : jurosInformado;
       const atualizado = await supabase.from("fatura_itens").update({ pago: true })
         .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false);
@@ -724,34 +755,69 @@ export default function CartoesScreen() {
   const pctUsado = cartaoAberto && cartaoAberto.limite > 0
     ? Math.min(100, (limiteUsado / cartaoAberto.limite) * 100)
     : 0;
+  const totalFaturas = cartoes.reduce((total, cartao) => total + obterFaturaDoCard(cartao).total, 0);
+  const totalLimiteDisponivel = cartoes.reduce(
+    (total, cartao) => total + Math.max(0, Number(cartao.limite) - calcularLimiteUsado(cartao.id)),
+    0,
+  );
 
   return (
     <SafeAreaView style={[estilos.safeArea, { backgroundColor: Cores.fundo }]}>
-      <ScrollView>
+      <ScrollView contentContainerStyle={estilos.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header */}
-        <View style={estilos.header}>
-          <TouchableOpacity onPress={() => router.back()} style={estilos.voltarBtn}>
-            <MaterialIcons name="arrow-back" size={24} color={Cores.texto} />
-          </TouchableOpacity>
-          <Text style={[estilos.titulo, { color: Cores.texto }]}>Cartões de Crédito</Text>
-          <TouchableOpacity
-            style={[estilos.btnNovo, { backgroundColor: "#457B9D" }]}
-            onPress={() => setModalNovoCartao(true)}
-          >
-            <MaterialIcons name="add" size={18} color="#FFF" />
-            <Text style={estilos.btnNovoText}>Novo</Text>
-          </TouchableOpacity>
+        <View style={[estilos.header, { backgroundColor: novoTema.header }]}>
+          <View style={estilos.headerDecoracaoUm} />
+          <View style={estilos.headerDecoracaoDois} />
+          <View style={estilos.headerTopRow}>
+            <TouchableOpacity onPress={() => router.back()} style={estilos.voltarBtn} accessibilityLabel="Voltar">
+              <MaterialIcons name="arrow-back" size={22} color="#FFF" />
+            </TouchableOpacity>
+            <View style={estilos.headerTitleGroup}>
+              <Text style={estilos.headerEyebrow}>CRÉDITO</Text>
+              <Text style={estilos.titulo}>Cartões de crédito</Text>
+            </View>
+            <TouchableOpacity style={estilos.btnNovo} onPress={() => setModalNovoCartao(true)}>
+              <MaterialIcons name="add" size={19} color="#FFF" />
+              <Text style={estilos.btnNovoText}>Novo</Text>
+            </TouchableOpacity>
+          </View>
+          <Text style={estilos.headerSubtitle}>Acompanhe limites, compras e vencimentos em um só lugar.</Text>
+          <View style={estilos.headerResumo}>
+            <View style={estilos.headerResumoItem}>
+              <Text style={estilos.headerResumoLabel}>Faturas em aberto</Text>
+              <Text style={estilos.headerResumoValor}>{fmtReais(totalFaturas)}</Text>
+            </View>
+            <View style={estilos.headerResumoDivisor} />
+            <View style={estilos.headerResumoItem}>
+              <Text style={estilos.headerResumoLabel}>Limite disponível</Text>
+              <Text style={estilos.headerResumoValor}>{fmtReais(totalLimiteDisponivel)}</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={estilos.sectionHeader}>
+          <View>
+            <Text style={[estilos.sectionTitle, { color: Cores.texto }]}>Seus cartões</Text>
+            <Text style={[estilos.sectionSubtitle, { color: Cores.secundario }]}>
+              {cartoes.length === 1 ? "1 cartão ativo" : `${cartoes.length} cartões ativos`}
+            </Text>
+          </View>
+          <View style={[estilos.sectionIcon, { backgroundColor: Cores.primarySoft }]}>
+            <MaterialIcons name="credit-card" size={20} color={Cores.primary} />
+          </View>
         </View>
 
         {/* Lista de cartões */}
         {cartoes.length === 0 ? (
           <TouchableOpacity
             onPress={() => setModalNovoCartao(true)}
-            style={[estilos.emptyCard, { borderColor: Cores.borda }]}
+            style={[estilos.emptyCard, { borderColor: Cores.borda, backgroundColor: Cores.card }]}
           >
-            <MaterialIcons name="credit-card" size={48} color={Cores.borda} />
-            <Text style={[estilos.emptyTitulo, { color: Cores.secundario }]}>Nenhum cartão cadastrado</Text>
-            <Text style={[estilos.emptySubtitulo, { color: "#457B9D" }]}>Toque para adicionar seu primeiro cartão</Text>
+            <View style={[estilos.emptyIcon, { backgroundColor: Cores.primarySoft }]}>
+              <MaterialIcons name="add-card" size={34} color={Cores.primary} />
+            </View>
+            <Text style={[estilos.emptyTitulo, { color: Cores.texto }]}>Nenhum cartão cadastrado</Text>
+            <Text style={[estilos.emptySubtitulo, { color: Cores.secundario }]}>Toque para adicionar seu primeiro cartão</Text>
           </TouchableOpacity>
         ) : (
           <View style={estilos.cartoesLista}>
@@ -773,12 +839,16 @@ export default function CartoesScreen() {
                   onLongPress={() => !bloqueado && opcoesCartao(c)}
                   activeOpacity={bloqueado ? 1 : 0.85}
                 >
+                  <View style={estilos.cartaoDecoracao} />
                   <View style={estilos.cartaoTopo}>
-                    {bloqueado
-                      ? <MaterialIcons name="lock" size={18} color="rgba(255,255,255,0.9)" />
-                      : <MaterialIcons name="credit-card" size={22} color="rgba(255,255,255,0.8)" />
-                    }
+                    <View style={estilos.cartaoIcone}>
+                      {bloqueado
+                        ? <MaterialIcons name="lock" size={18} color="#FFF" />
+                        : <MaterialIcons name="credit-card" size={20} color="#FFF" />
+                      }
+                    </View>
                     <Text style={estilos.cartaoNome}>{c.nome}</Text>
+                    {!bloqueado && <MaterialIcons name="chevron-right" size={22} color="rgba(255,255,255,0.76)" />}
                   </View>
                   {bloqueado ? (
                     <Text style={[estilos.cartaoFaturaLabel, { marginTop: 4 }]}>Bloqueado — faça upgrade</Text>
@@ -788,9 +858,15 @@ export default function CartoesScreen() {
                         {faturaCard.proxima ? "Próxima fatura" : "Fatura atual"}
                       </Text>
                       <Text style={estilos.cartaoFatura}>{fmtReais(faturaCard.total)}</Text>
-                      <View style={estilos.cartaoRodapeCol}>
-                        <Text style={estilos.cartaoLimite}>Disponível: {fmtReais(disponivel)}</Text>
-                        <Text style={estilos.cartaoVenc}>Vencimento: {faturaCard.vencimento}</Text>
+                      <View style={estilos.cartaoRodape}>
+                        <View style={estilos.cartaoRodapeCol}>
+                          <Text style={estilos.cartaoRodapeLabel}>Limite disponível</Text>
+                          <Text style={estilos.cartaoLimite}>{fmtReais(disponivel)}</Text>
+                        </View>
+                        <View style={[estilos.cartaoRodapeCol, { alignItems: "flex-end" }]}>
+                          <Text style={estilos.cartaoRodapeLabel}>Vencimento</Text>
+                          <Text style={estilos.cartaoVenc}>{faturaCard.vencimento}</Text>
+                        </View>
                       </View>
                     </>
                   )}
@@ -825,11 +901,11 @@ export default function CartoesScreen() {
                   </View>
                 </View>
                 <TouchableOpacity
-                  style={[estilos.desarquivarBtn, { backgroundColor: "#2A9D8F22", borderColor: "#2A9D8F" }]}
+                  style={[estilos.desarquivarBtn, { backgroundColor: `${Cores.primary}18`, borderColor: Cores.primary }]}
                   onPress={() => desarquivarCartao(c)}
                 >
-                  <MaterialIcons name="unarchive" size={14} color="#2A9D8F" />
-                  <Text style={{ color: "#2A9D8F", fontSize: 12, fontWeight: "700" }}>Reativar</Text>
+                  <MaterialIcons name="unarchive" size={14} color={Cores.primary} />
+                  <Text style={{ color: Cores.primary, fontSize: 12, fontWeight: "700" }}>Reativar</Text>
                 </TouchableOpacity>
               </View>
             ))}
@@ -846,13 +922,18 @@ export default function CartoesScreen() {
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               {/* Header */}
               <View style={estilos.faturaHeader}>
-                <View>
-                  <Text style={[estilos.faturaCartaoNome, { color: Cores.texto }]}>{cartaoAberto.nome}</Text>
-                  <Text style={[estilos.faturaTotal, { color: totalFaturaAtiva > 0 ? "#E76F51" : "#2A9D8F" }]}>
-                    {fmtReais(totalFaturaAtiva)}
-                  </Text>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${cartaoAberto.cor}20` }]}>
+                    <MaterialIcons name="credit-card" size={22} color={cartaoAberto.cor} />
+                  </View>
+                  <View>
+                    <Text style={[estilos.faturaCartaoNome, { color: Cores.texto }]}>{cartaoAberto.nome}</Text>
+                    <Text style={[estilos.faturaTotal, { color: totalFaturaAtiva > 0 ? FinFlowColors.red : Cores.primary }]}>
+                      {fmtReais(totalFaturaAtiva)}
+                    </Text>
+                  </View>
                 </View>
-                <TouchableOpacity onPress={() => setModalFaturaVisivel(false)}>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalFaturaVisivel(false)} accessibilityLabel="Fechar fatura">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
@@ -871,12 +952,12 @@ export default function CartoesScreen() {
                       estilos.progressoBar,
                       {
                         width: `${pctUsado}%` as any,
-                        backgroundColor: pctUsado >= 90 ? "#E76F51" : pctUsado >= 70 ? "#F4A261" : "#2A9D8F",
+                        backgroundColor: pctUsado >= 90 ? FinFlowColors.red : pctUsado >= 70 ? FinFlowColors.orange : Cores.primary,
                       },
                     ]}
                   />
                 </View>
-                <Text style={[estilos.limiteDisp, { color: "#2A9D8F" }]}>
+                <Text style={[estilos.limiteDisp, { color: Cores.primary }]}>
                   Disponível: {fmtReais(limiteDisponivel)}
                 </Text>
               </View>
@@ -901,7 +982,7 @@ export default function CartoesScreen() {
               {/* Ações */}
               <View style={estilos.acoesRow}>
                 <TouchableOpacity
-                  style={[estilos.acaoBtn, { backgroundColor: "#2563EB" }]}
+                  style={[estilos.acaoBtn, { backgroundColor: FinFlowColors.blue }]}
                   onPress={() => setModalNovaCompra(true)}
                 >
                   <MaterialIcons name="add-shopping-cart" size={16} color="#FFF" />
@@ -909,7 +990,7 @@ export default function CartoesScreen() {
                 </TouchableOpacity>
                 {totalFaturaAtiva > 0 ? (
                   <TouchableOpacity
-                    style={[estilos.acaoBtn, { backgroundColor: "#10B981" }]}
+                    style={[estilos.acaoBtn, { backgroundColor: Cores.primary }]}
                     onPress={() => iniciarPagamentoFatura(mesFaturaAtivo)}
                   >
                     <MaterialIcons name="check-circle" size={16} color="#FFF" />
@@ -945,11 +1026,11 @@ export default function CartoesScreen() {
                         activeOpacity={0.7}
                       >
                         <View style={estilos.itemFaturaLeft}>
-                          <View style={[estilos.itemStatus, { backgroundColor: item.pago ? "#2A9D8F22" : "#E76F5122" }]}>
+                          <View style={[estilos.itemStatus, { backgroundColor: item.pago ? `${Cores.primary}1F` : `${FinFlowColors.red}1F` }]}>
                             <MaterialIcons
                               name={item.pago ? "check-circle" : "radio-button-unchecked"}
                               size={14}
-                              color={item.pago ? "#2A9D8F" : "#E76F51"}
+                              color={item.pago ? Cores.primary : FinFlowColors.red}
                             />
                           </View>
                           <View style={{ flex: 1 }}>
@@ -978,11 +1059,29 @@ export default function CartoesScreen() {
       {/* Modal: Novo Cartão — centralizado */}
       {modalNovoCartao && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setModalNovoCartao(false)}>
-          <View style={estilos.modalCentradoOverlay}>
+          <KeyboardAvoidingView
+            style={estilos.modalCentradoOverlay}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
             <View style={[estilos.modalCentradoContent, { backgroundColor: Cores.card }]}>
+              <ScrollView
+                style={estilos.modalFormScroll}
+                contentContainerStyle={estilos.modalFormContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                showsVerticalScrollIndicator={false}
+              >
               <View style={estilos.modalHeaderRow}>
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Novo Cartão</Text>
-                <TouchableOpacity onPress={() => setModalNovoCartao(false)}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: Cores.primarySoft }]}>
+                    <MaterialIcons name="add-card" size={22} color={Cores.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Novo cartão</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Informe os dados usados na sua fatura.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalNovoCartao(false)} accessibilityLabel="Fechar">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
@@ -1061,7 +1160,7 @@ export default function CartoesScreen() {
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[estilos.modalBtn, { backgroundColor: "#457B9D" }]}
+                  style={[estilos.modalBtn, { backgroundColor: Cores.primary }]}
                   onPress={salvarNovoCartao}
                   disabled={loadingNovoCartao}
                 >
@@ -1070,8 +1169,9 @@ export default function CartoesScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
@@ -1080,11 +1180,25 @@ export default function CartoesScreen() {
         <Modal animationType="slide" transparent visible onRequestClose={() => setModalNovaCompra(false)}>
           <KeyboardAvoidingView style={estilos.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
             <View style={[estilos.modalContent, { backgroundColor: Cores.card }]}>
+              <View style={[estilos.sheetHandle, { backgroundColor: Cores.borda }]} />
+              <ScrollView
+                style={estilos.modalFormScroll}
+                contentContainerStyle={estilos.modalFormContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                showsVerticalScrollIndicator={false}
+              >
               <View style={estilos.modalHeaderRow}>
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>
-                  Nova Compra — {cartaoAberto.nome}
-                </Text>
-                <TouchableOpacity onPress={() => setModalNovaCompra(false)}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${FinFlowColors.blue}1A` }]}>
+                    <MaterialIcons name="add-shopping-cart" size={22} color={FinFlowColors.blue} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Nova compra</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]} numberOfLines={1}>{cartaoAberto.nome}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalNovaCompra(false)} accessibilityLabel="Fechar">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
@@ -1098,7 +1212,7 @@ export default function CartoesScreen() {
                 ] as const).map(([tipo, label]) => (
                   <TouchableOpacity
                     key={tipo}
-                    style={[estilos.tipoCompraBtn, tipoCompra === tipo && { backgroundColor: "#2563EB" }]}
+                    style={[estilos.tipoCompraBtn, tipoCompra === tipo && { backgroundColor: FinFlowColors.blue }]}
                     onPress={() => {
                       setTipoCompra(tipo);
                       if (tipo === "parcelada" && Number(parcelasCompra) < 2) setParcelasCompra("2");
@@ -1119,7 +1233,7 @@ export default function CartoesScreen() {
                   <Text style={[estilos.label, { color: Cores.secundario }]}>O valor informado representa</Text>
                   <View style={[estilos.tipoCompraRow, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
                     {(["total", "parcela"] as const).map((modo) => (
-                      <TouchableOpacity key={modo} style={[estilos.tipoCompraBtn, modoValorParcelado === modo && { backgroundColor: "#2563EB" }]} onPress={() => setModoValorParcelado(modo)}>
+                      <TouchableOpacity key={modo} style={[estilos.tipoCompraBtn, modoValorParcelado === modo && { backgroundColor: FinFlowColors.blue }]} onPress={() => setModoValorParcelado(modo)}>
                         <Text style={{ color: modoValorParcelado === modo ? "#FFF" : Cores.secundario, fontSize: 12, fontWeight: "700" }}>{modo === "total" ? "Valor total" : "Valor da parcela"}</Text>
                       </TouchableOpacity>
                     ))}
@@ -1179,7 +1293,7 @@ export default function CartoesScreen() {
               <Text style={[estilos.label, { color: Cores.secundario }]}>Categoria</Text>
               <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ marginBottom: 16, maxWidth: "100%" }} contentContainerStyle={{ paddingRight: 12 }}>
                 <View style={{ flexDirection: "row", gap: 8 }}>
-                  {categorias.filter(c => c.tipo === "despesa" || c.tipo === "ambos").map((cat) => (
+                  {categorias.filter(c => c.tipo === "despesa").map((cat) => (
                     <TouchableOpacity
                       key={cat.id}
                       style={[estilos.catPill, { backgroundColor: categCompraId === cat.id ? cat.cor : Cores.pillFundo, borderWidth: 1, borderColor: categCompraId === cat.id ? cat.cor : Cores.borda }]}
@@ -1216,7 +1330,7 @@ export default function CartoesScreen() {
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[estilos.modalBtn, { backgroundColor: "#2563EB" }]}
+                  style={[estilos.modalBtn, { backgroundColor: Cores.primary }]}
                   onPress={salvarCompra}
                   disabled={loadingCompra}
                 >
@@ -1225,6 +1339,7 @@ export default function CartoesScreen() {
                   </Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
           </KeyboardAvoidingView>
         </Modal>
@@ -1233,55 +1348,83 @@ export default function CartoesScreen() {
       {/* Modal: Pagamento da Fatura — selecionar conta */}
       {modalPagamento && cartaoAberto && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setModalPagamento(false)}>
-          <View style={estilos.modalFaturaOverlay}>
+          <KeyboardAvoidingView
+            style={estilos.modalFaturaOverlay}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <ScrollView
+                style={estilos.modalFormScroll}
+                contentContainerStyle={estilos.modalFormContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                showsVerticalScrollIndicator={false}
+              >
               <View style={estilos.modalHeaderRow}>
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagar Fatura</Text>
-                <TouchableOpacity onPress={() => setModalPagamento(false)}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: Cores.primarySoft }]}>
+                    <MaterialIcons name="account-balance-wallet" size={22} color={Cores.primary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagar fatura</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>{cartaoAberto.nome} · {formatarMes(mesPagamento)}</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamento(false)} accessibilityLabel="Fechar">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
 
-              <View style={[{ backgroundColor: Cores.pillFundo, borderRadius: 12, padding: 14, marginBottom: 16, alignItems: "center" }]}>
-                <Text style={{ color: Cores.secundario, fontSize: 12, marginBottom: 4 }}>Valor da Fatura {formatarMes(mesPagamento)}</Text>
-                <Text style={{ color: "#10B981", fontSize: 26, fontWeight: "bold" }}>
+              <View style={[estilos.valorDestaque, { backgroundColor: Cores.primarySoft, borderColor: `${Cores.primary}35` }]}>
+                <View style={[estilos.valorDestaqueIcone, { backgroundColor: `${Cores.primary}1F` }]}>
+                  <MaterialIcons name="receipt-long" size={20} color={Cores.primary} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[estilos.valorDestaqueLabel, { color: Cores.secundario }]}>Total em aberto</Text>
+                  <Text style={[estilos.valorDestaqueNumero, { color: Cores.primary }]}>
                   {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}
-                </Text>
+                  </Text>
+                </View>
               </View>
 
               <Text style={[estilos.label, { color: Cores.secundario }]}>Valor pago (R$)</Text>
               <TextInput
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
                 value={valorPagamento}
-                onChangeText={setValorPagamento}
-                keyboardType="decimal-pad"
+                onChangeText={(texto) => setValorPagamento(formatarEntradaMoeda(texto))}
+                keyboardType="number-pad"
                 placeholder="0,00"
                 placeholderTextColor={Cores.secundario}
+                selectTextOnFocus
               />
 
               <Text style={[estilos.label, { color: Cores.secundario }]}>Pagar com qual conta?</Text>
               {contas.map((conta) => (
                 <TouchableOpacity
                   key={conta.id}
-                  style={[estilos.contaOpcao, { borderColor: contaPagamentoId === conta.id ? "#10B981" : Cores.borda, backgroundColor: contaPagamentoId === conta.id ? "#D1FAE5" : Cores.pillFundo }]}
+                  style={[estilos.contaOpcao, { borderColor: contaPagamentoId === conta.id ? Cores.primary : Cores.borda, backgroundColor: contaPagamentoId === conta.id ? Cores.primarySoft : Cores.pillFundo }]}
                   onPress={() => setContaPagamentoId(conta.id)}
                 >
-                  <MaterialIcons name="account-balance-wallet" size={18} color={contaPagamentoId === conta.id ? "#10B981" : Cores.secundario} />
-                  <Text style={{ color: contaPagamentoId === conta.id ? "#065F46" : Cores.texto, fontWeight: "600", marginLeft: 10, flex: 1 }}>{conta.nome}</Text>
-                  {contaPagamentoId === conta.id && <MaterialIcons name="check-circle" size={18} color="#10B981" />}
+                  <View style={[estilos.opcaoIcone, { backgroundColor: contaPagamentoId === conta.id ? `${Cores.primary}1F` : Cores.input }]}>
+                    <MaterialIcons name="account-balance-wallet" size={18} color={contaPagamentoId === conta.id ? Cores.primary : Cores.secundario} />
+                  </View>
+                  <Text style={{ color: contaPagamentoId === conta.id ? Cores.primary : Cores.texto, fontWeight: "700", marginLeft: 10, flex: 1 }}>{conta.nome}</Text>
+                  {contaPagamentoId === conta.id && <MaterialIcons name="check-circle" size={18} color={Cores.primary} />}
                 </TouchableOpacity>
               ))}
 
-              <View style={{ marginTop: 16, gap: 10 }}>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, flex: 0, minHeight: 50, justifyContent: "center" }]} onPress={() => setModalPagamento(false)}>
+              <View style={estilos.modalBtns}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamento(false)}>
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#10B981", flex: 0, minHeight: 52, justifyContent: "center" }]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId}>
-                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar Pagamento</Text>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary }, !contaPagamentoId && estilos.botaoDesabilitado]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId}>
+                  <MaterialIcons name="check" size={18} color="#FFF" />
+                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar</Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
@@ -1291,27 +1434,45 @@ export default function CartoesScreen() {
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagamento menor que a fatura</Text>
-                <TouchableOpacity onPress={() => setModalPagamentoParcial(false)}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
+                    <MaterialIcons name="call-split" size={22} color={FinFlowColors.orange} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Pagamento parcial</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Escolha como tratar o saldo restante.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamentoParcial(false)} accessibilityLabel="Fechar">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
-              <Text style={{ color: Cores.secundario, lineHeight: 20, marginBottom: 14 }}>
-                Você pagou {fmtReais(Number(valorPagamento.replace(",", ".")) || 0)} de {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}. Escolha como tratar o restante.
-              </Text>
-              <TouchableOpacity style={[estilos.contaOpcao, { borderColor: "#2563EB", backgroundColor: Cores.pillFundo }]} onPress={() => registrarPagamentoMenor(false)}>
-                <View>
-                  <Text style={{ color: Cores.texto, fontWeight: "700" }}>Pagamento parcial</Text>
-                  <Text style={{ color: Cores.secundario, fontSize: 12, marginTop: 3 }}>A fatura atual continua aberta com o saldo restante.</Text>
+              <View style={[estilos.resumoPagamento, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                <Text style={[estilos.resumoPagamentoTexto, { color: Cores.secundario }]}>Valor informado</Text>
+                <Text style={[estilos.resumoPagamentoValor, { color: Cores.texto }]}>{fmtReais(valorDaEntradaMoeda(valorPagamento))}</Text>
+                <Text style={[estilos.resumoPagamentoTexto, { color: Cores.secundario }]}>de {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}</Text>
+              </View>
+              <TouchableOpacity style={[estilos.opcaoAcaoCard, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]} onPress={() => registrarPagamentoMenor(false)}>
+                <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.blue}1A` }]}>
+                  <MaterialIcons name="payments" size={20} color={FinFlowColors.blue} />
                 </View>
-              </TouchableOpacity>
-              <TouchableOpacity style={[estilos.contaOpcao, { borderColor: "#F59E0B", backgroundColor: Cores.pillFundo, marginTop: 8 }]} onPress={() => { setModalPagamentoParcial(false); setModalJuros(true); }}>
-                <View>
-                  <Text style={{ color: Cores.texto, fontWeight: "700" }}>Levar saldo para a próxima fatura</Text>
-                  <Text style={{ color: Cores.secundario, fontSize: 12, marginTop: 3 }}>O restante e os juros serão lançados no próximo mês.</Text>
+                <View style={estilos.opcaoTexto}>
+                  <Text style={[estilos.opcaoTitulo, { color: Cores.texto }]}>Manter fatura em aberto</Text>
+                  <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>Registra o pagamento parcial e mantém o restante nesta fatura.</Text>
                 </View>
+                <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
               </TouchableOpacity>
-              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, marginTop: 14, flex: 0, minHeight: 50, justifyContent: "center" }]} onPress={() => setModalPagamentoParcial(false)}>
+              <TouchableOpacity style={[estilos.opcaoAcaoCard, { borderColor: `${FinFlowColors.orange}66`, backgroundColor: Cores.pillFundo }]} onPress={() => { setModalPagamentoParcial(false); setModalJuros(true); }}>
+                <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
+                  <MaterialIcons name="event-repeat" size={20} color={FinFlowColors.orange} />
+                </View>
+                <View style={estilos.opcaoTexto}>
+                  <Text style={[estilos.opcaoTitulo, { color: Cores.texto }]}>Levar para a próxima fatura</Text>
+                  <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>Transfere o saldo restante e permite informar juros.</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color={FinFlowColors.orange} />
+              </TouchableOpacity>
+              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, marginTop: 4, flex: 0 }]} onPress={() => setModalPagamentoParcial(false)}>
                 <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Voltar</Text>
               </TouchableOpacity>
             </View>
@@ -1321,40 +1482,84 @@ export default function CartoesScreen() {
 
       {modalJuros && cartaoAberto && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setModalJuros(false)}>
-          <View style={estilos.modalFaturaOverlay}>
+          <KeyboardAvoidingView
+            style={estilos.modalFaturaOverlay}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Juros do saldo restante</Text>
-                <TouchableOpacity onPress={() => setModalJuros(false)}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
+                    <MaterialIcons name="percent" size={22} color={FinFlowColors.orange} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Juros do saldo</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Opcional · pode permanecer zerado.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalJuros(false)} accessibilityLabel="Fechar">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
-              <Text style={{ color: Cores.secundario, lineHeight: 20, marginBottom: 14 }}>
+              <Text style={[estilos.dialogoTexto, { color: Cores.secundario }]}>
                 Informe os juros cobrados pelo banco. Este campo é opcional e pode ficar zerado.
               </Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+              <View style={[estilos.tipoCompraRow, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
                 {(["valor", "percentual"] as const).map((tipo) => (
-                  <TouchableOpacity key={tipo} onPress={() => setTipoJuros(tipo)} style={{ paddingHorizontal: 16, paddingVertical: 10, borderRadius: 9, backgroundColor: tipoJuros === tipo ? "#2563EB" : Cores.pillFundo }}>
+                  <TouchableOpacity
+                    key={tipo}
+                    onPress={() => { setTipoJuros(tipo); setValorJuros(""); }}
+                    style={[estilos.tipoCompraBtn, tipoJuros === tipo && { backgroundColor: Cores.primary }]}
+                  >
                     <Text style={{ color: tipoJuros === tipo ? "#FFF" : Cores.texto, fontWeight: "700" }}>{tipo === "valor" ? "Valor em R$" : "Percentual %"}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
-              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} value={valorJuros} onChangeText={setValorJuros} keyboardType="decimal-pad" placeholder={tipoJuros === "valor" ? "0,00 (opcional)" : "0% (opcional)"} placeholderTextColor={Cores.secundario} />
-              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#10B981", flex: 0, minHeight: 52, justifyContent: "center" }]} onPress={() => { setModalJuros(false); registrarPagamentoMenor(true); }}>
+              <Text style={[estilos.label, { color: Cores.secundario }]}>{tipoJuros === "valor" ? "Valor dos juros (R$)" : "Percentual dos juros (%)"}</Text>
+              <TextInput
+                style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
+                value={valorJuros}
+                onChangeText={(texto) => setValorJuros(tipoJuros === "valor" ? formatarEntradaMoeda(texto) : texto.replace(/[^0-9,]/g, ""))}
+                keyboardType={tipoJuros === "valor" ? "number-pad" : "decimal-pad"}
+                placeholder={tipoJuros === "valor" ? "0,00 (opcional)" : "0 (opcional)"}
+                placeholderTextColor={Cores.secundario}
+                selectTextOnFocus
+              />
+              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary, flex: 0 }]} onPress={() => { setModalJuros(false); registrarPagamentoMenor(true); }}>
+                <MaterialIcons name="arrow-forward" size={18} color="#FFF" />
                 <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar e lançar na próxima fatura</Text>
               </TouchableOpacity>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
       {modalEditarCartao && cartaoEditando && (
         <Modal animationType="slide" transparent visible onRequestClose={() => setModalEditarCartao(false)}>
-          <View style={estilos.modalOverlay}>
+          <KeyboardAvoidingView
+            style={estilos.modalOverlay}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
             <View style={[estilos.modalContent, { backgroundColor: Cores.card }]}>
+              <View style={[estilos.sheetHandle, { backgroundColor: Cores.borda }]} />
+              <ScrollView
+                style={estilos.modalFormScroll}
+                contentContainerStyle={estilos.modalFormContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                showsVerticalScrollIndicator={false}
+              >
               <View style={estilos.modalHeaderRow}>
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Editar Cartão</Text>
-                <TouchableOpacity onPress={() => setModalEditarCartao(false)}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${cartaoEditando.cor}20` }]}>
+                    <MaterialIcons name="edit" size={22} color={cartaoEditando.cor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Editar cartão</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Atualize os dados e o ciclo da fatura.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalEditarCartao(false)} accessibilityLabel="Fechar">
                   <MaterialIcons name="close" size={24} color={Cores.secundario} />
                 </TouchableOpacity>
               </View>
@@ -1392,12 +1597,13 @@ export default function CartoesScreen() {
                 <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalEditarCartao(false)}>
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: "#2563EB" }]} onPress={salvarEdicaoCartao} disabled={loadingEditar}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary }]} onPress={salvarEdicaoCartao} disabled={loadingEditar}>
                   <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>{loadingEditar ? "Salvando..." : "Salvar"}</Text>
                 </TouchableOpacity>
               </View>
+              </ScrollView>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 
@@ -1406,42 +1612,70 @@ export default function CartoesScreen() {
         <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesCartao(null)}>
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 20, gap: 10 }}>
-                <View style={[{ width: 14, height: 14, borderRadius: 7, backgroundColor: modalOpcoesCartao.cor }]} />
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>{modalOpcoesCartao.nome}</Text>
+              <View style={estilos.modalHeaderRow}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${modalOpcoesCartao.cor}20` }]}>
+                    <MaterialIcons name="credit-card" size={22} color={modalOpcoesCartao.cor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>{modalOpcoesCartao.nome}</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Gerencie os dados e a situação do cartão.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalOpcoesCartao(null)} accessibilityLabel="Fechar">
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
               </View>
 
               <TouchableOpacity
-                style={[estilos.opcaoModalBtn, { backgroundColor: "#2563EB" }]}
+                style={[estilos.opcaoAcaoCard, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}
                 onPress={() => { setModalOpcoesCartao(null); abrirEditarCartao(modalOpcoesCartao); }}
               >
-                <MaterialIcons name="edit" size={18} color="#FFF" />
-                <Text style={estilos.opcaoModalBtnText}>Editar Cartão</Text>
+                <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.blue}1A` }]}>
+                  <MaterialIcons name="edit" size={20} color={FinFlowColors.blue} />
+                </View>
+                <View style={estilos.opcaoTexto}>
+                  <Text style={[estilos.opcaoTitulo, { color: Cores.texto }]}>Editar cartão</Text>
+                  <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>Nome, limite, datas e cor.</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
               </TouchableOpacity>
 
               {itens.some(i => i.cartao_id === modalOpcoesCartao.id) ? (
                 <TouchableOpacity
-                  style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]}
+                  style={[estilos.opcaoAcaoCard, { backgroundColor: Cores.pillFundo, borderColor: `${FinFlowColors.orange}66` }]}
                   onPress={() => arquivarCartaoConfirm(modalOpcoesCartao)}
                 >
-                  <MaterialIcons name="archive" size={18} color="#FFF" />
-                  <Text style={estilos.opcaoModalBtnText}>Arquivar Cartão</Text>
+                  <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
+                    <MaterialIcons name="archive" size={20} color={FinFlowColors.orange} />
+                  </View>
+                  <View style={estilos.opcaoTexto}>
+                    <Text style={[estilos.opcaoTitulo, { color: Cores.texto }]}>Arquivar cartão</Text>
+                    <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>Oculta o cartão e preserva o histórico.</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={22} color={FinFlowColors.orange} />
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={[estilos.opcaoModalBtn, { backgroundColor: "#EF4444" }]}
+                  style={[estilos.opcaoAcaoCard, { backgroundColor: Cores.pillFundo, borderColor: `${FinFlowColors.red}66` }]}
                   onPress={() => deletarCartaoConfirm(modalOpcoesCartao)}
                 >
-                  <MaterialIcons name="delete-outline" size={18} color="#FFF" />
-                  <Text style={estilos.opcaoModalBtnText}>Excluir Cartão</Text>
+                  <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.red}1A` }]}>
+                    <MaterialIcons name="delete-outline" size={20} color={FinFlowColors.red} />
+                  </View>
+                  <View style={estilos.opcaoTexto}>
+                    <Text style={[estilos.opcaoTitulo, { color: FinFlowColors.red }]}>Excluir cartão</Text>
+                    <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>Remove definitivamente este cartão vazio.</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={22} color={FinFlowColors.red} />
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity
-                style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]}
+                style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, flex: 0, marginTop: 4 }]}
                 onPress={() => setModalOpcoesCartao(null)}
               >
-                <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
+                <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1453,30 +1687,46 @@ export default function CartoesScreen() {
         <Modal animationType="fade" transparent visible onRequestClose={() => setModalExcluirItem(null)}>
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 8 }}>
-                <MaterialIcons name="delete-outline" size={22} color="#EF4444" style={{ marginRight: 10 }} />
-                <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Excluir Compra</Text>
+              <View style={estilos.modalHeaderRow}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${FinFlowColors.red}1A` }]}>
+                    <MaterialIcons name="delete-outline" size={22} color={FinFlowColors.red} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Excluir compra</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Esta ação altera o total da fatura.</Text>
+                  </View>
+                </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalExcluirItem(null)} accessibilityLabel="Fechar">
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
               </View>
-              <Text style={{ color: Cores.secundario, fontSize: 14, marginBottom: 20 }} numberOfLines={2}>
-                {`“${modalExcluirItem.descricao}”`}
-              </Text>
+              <View style={[estilos.itemConfirmacao, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                <MaterialIcons name="shopping-bag" size={19} color={Cores.secundario} />
+                <Text style={[estilos.itemConfirmacaoTexto, { color: Cores.texto }]} numberOfLines={2}>{modalExcluirItem.descricao}</Text>
+              </View>
 
               {(modalExcluirItem.total_parcelas > 1 || modalExcluirItem.descricao.endsWith("(Fixa)")) && (
                 <TouchableOpacity
-                  style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]}
+                  style={[estilos.opcaoAcaoCard, { backgroundColor: Cores.pillFundo, borderColor: `${FinFlowColors.orange}66` }]}
                   onPress={async () => {
                     setModalExcluirItem(null);
                     await executarExclusao([modalExcluirItem.id]);
                   }}
                 >
-                  <Text style={estilos.opcaoModalBtnText}>
-                    {modalExcluirItem.total_parcelas > 1 ? `Excluir só esta (${modalExcluirItem.parcela_atual}/${modalExcluirItem.total_parcelas})` : "Excluir somente este mês"}
-                  </Text>
+                  <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
+                    <MaterialIcons name="event" size={20} color={FinFlowColors.orange} />
+                  </View>
+                  <View style={estilos.opcaoTexto}>
+                    <Text style={[estilos.opcaoTitulo, { color: Cores.texto }]}>{modalExcluirItem.total_parcelas > 1 ? `Excluir só esta (${modalExcluirItem.parcela_atual}/${modalExcluirItem.total_parcelas})` : "Excluir somente este mês"}</Text>
+                    <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>As demais cobranças serão preservadas.</Text>
+                  </View>
+                  <MaterialIcons name="chevron-right" size={22} color={FinFlowColors.orange} />
                 </TouchableOpacity>
               )}
 
               <TouchableOpacity
-                style={[estilos.opcaoModalBtn, { backgroundColor: "#EF4444" }]}
+                style={[estilos.opcaoAcaoCard, { backgroundColor: Cores.pillFundo, borderColor: `${FinFlowColors.red}66` }]}
                 onPress={async () => {
                   const item = modalExcluirItem;
                   setModalExcluirItem(null);
@@ -1490,17 +1740,21 @@ export default function CartoesScreen() {
                   }
                 }}
               >
-                <MaterialIcons name="delete-forever" size={18} color="#FFF" />
-                <Text style={estilos.opcaoModalBtnText}>
-                  {modalExcluirItem.descricao.endsWith("(Fixa)") ? "Excluir todos os meses" : modalExcluirItem.total_parcelas > 1 ? "Excluir todas as parcelas" : "Excluir"}
-                </Text>
+                <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.red}1A` }]}>
+                  <MaterialIcons name="delete-forever" size={20} color={FinFlowColors.red} />
+                </View>
+                <View style={estilos.opcaoTexto}>
+                  <Text style={[estilos.opcaoTitulo, { color: FinFlowColors.red }]}>{modalExcluirItem.descricao.endsWith("(Fixa)") ? "Excluir todos os meses" : modalExcluirItem.total_parcelas > 1 ? "Excluir todas as parcelas" : "Excluir compra"}</Text>
+                  <Text style={[estilos.opcaoDescricao, { color: Cores.secundario }]}>Esta opção não poderá ser desfeita.</Text>
+                </View>
+                <MaterialIcons name="chevron-right" size={22} color={FinFlowColors.red} />
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]}
+                style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo, flex: 0, marginTop: 4 }]}
                 onPress={() => setModalExcluirItem(null)}
               >
-                <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
+                <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1510,23 +1764,34 @@ export default function CartoesScreen() {
       {estornoPendente && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setEstornoPendente(null)}>
           <View style={estilos.modalFaturaOverlay}>
-            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card, borderTopWidth: 4, borderTopColor: "#F59E0B" }]}>
-              <View style={{ alignItems: "center", marginBottom: 14 }}>
-                <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#F59E0B22", alignItems: "center", justifyContent: "center" }}>
-                  <MaterialIcons name="undo" size={30} color="#F59E0B" />
+            <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
+              <View style={estilos.modalHeaderRow}>
+                <View style={estilos.modalTitleGroup}>
+                  <View style={[estilos.modalHeaderIcon, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
+                    <MaterialIcons name="undo" size={22} color={FinFlowColors.orange} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Estornar pagamento</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>A fatura voltará a ficar em aberto.</Text>
+                  </View>
                 </View>
+                <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)} accessibilityLabel="Fechar">
+                  <MaterialIcons name="close" size={24} color={Cores.secundario} />
+                </TouchableOpacity>
               </View>
-              <Text style={[estilos.modalTitulo, { color: Cores.texto, textAlign: "center" }]}>Estornar pagamento</Text>
-              <Text style={{ color: Cores.secundario, textAlign: "center", fontSize: 14, lineHeight: 20, marginVertical: 12 }}>
-                A fatura de {formatarMes(estornoPendente.mes)} voltará a ficar em aberto.
-              </Text>
-              <TouchableOpacity style={[estilos.opcaoModalBtn, { backgroundColor: "#F59E0B" }]} onPress={confirmarEstornoFatura}>
-                <MaterialIcons name="undo" size={18} color="#FFF" />
-                <Text style={estilos.opcaoModalBtnText}>Confirmar estorno</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[estilos.opcaoModalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)}>
-                <Text style={[estilos.opcaoModalBtnText, { color: Cores.secundario }]}>Cancelar</Text>
-              </TouchableOpacity>
+              <View style={[estilos.avisoCard, { backgroundColor: `${FinFlowColors.orange}12`, borderColor: `${FinFlowColors.orange}55` }]}>
+                <MaterialIcons name="info-outline" size={20} color={FinFlowColors.orange} />
+                <Text style={[estilos.avisoCardTexto, { color: Cores.secundario }]}>A fatura de <Text style={{ color: Cores.texto, fontWeight: "800" }}>{formatarMes(estornoPendente.mes)}</Text> voltará a ficar em aberto e o lançamento de pagamento será removido do histórico.</Text>
+              </View>
+              <View style={estilos.modalBtns}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)}>
+                  <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: FinFlowColors.orange }]} onPress={confirmarEstornoFatura}>
+                  <MaterialIcons name="undo" size={18} color="#FFF" />
+                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Estornar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
         </Modal>
@@ -1539,90 +1804,151 @@ export default function CartoesScreen() {
 
 const estilos = StyleSheet.create({
   safeArea: { flex: 1 },
+  scrollContent: { paddingBottom: 34 },
   header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: 20,
-    paddingTop: 28,
-    paddingBottom: 10,
+    position: "relative",
+    overflow: "hidden",
+    marginHorizontal: 12,
+    marginTop: 6,
+    minHeight: 206,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 17,
+    borderRadius: 26,
+    ...FinFlowShadow,
   },
-  voltarBtn: { padding: 4 },
-  titulo: { fontSize: 24, fontWeight: "bold", flex: 1, textAlign: "center" },
+  headerDecoracaoUm: {
+    position: "absolute",
+    width: 300,
+    height: 125,
+    right: -138,
+    top: 48,
+    borderRadius: 160,
+    backgroundColor: "rgba(255,255,255,0.09)",
+    transform: [{ rotate: "-10deg" }],
+  },
+  headerDecoracaoDois: {
+    position: "absolute",
+    width: 240,
+    height: 92,
+    left: -125,
+    bottom: -18,
+    borderRadius: 130,
+    backgroundColor: "rgba(2,60,51,0.14)",
+    transform: [{ rotate: "11deg" }],
+  },
+  headerTopRow: { flexDirection: "row", alignItems: "center", zIndex: 2 },
+  voltarBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.15)" },
+  headerTitleGroup: { flex: 1, paddingHorizontal: 12 },
+  headerEyebrow: { color: "rgba(255,255,255,0.68)", fontSize: 9, fontWeight: "900", letterSpacing: 1.35 },
+  titulo: { color: "#FFF", fontSize: 21, fontWeight: "900", letterSpacing: -0.35, marginTop: 1 },
+  headerSubtitle: { color: "rgba(255,255,255,0.78)", fontSize: 11, lineHeight: 16, marginTop: 15, zIndex: 2 },
   btnNovo: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 6,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
+    minHeight: 40,
+    paddingHorizontal: 13,
+    borderRadius: FinFlowRadius.pill,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
   },
-  btnNovoText: { color: "#FFF", fontWeight: "bold", fontSize: 14 },
-  tipoCompraRow: { flexDirection: "row", borderRadius: 10, borderWidth: 1, padding: 3, marginBottom: 12 },
-  tipoCompraBtn: { flex: 1, paddingVertical: 9, paddingHorizontal: 5, borderRadius: 8, alignItems: "center" },
+  btnNovoText: { color: "#FFF", fontWeight: "800", fontSize: 12 },
+  headerResumo: { flexDirection: "row", alignItems: "center", marginTop: 17, padding: 12, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.12)", zIndex: 2 },
+  headerResumoItem: { flex: 1 },
+  headerResumoDivisor: { width: 1, height: 34, backgroundColor: "rgba(255,255,255,0.18)", marginHorizontal: 14 },
+  headerResumoLabel: { color: "rgba(255,255,255,0.68)", fontSize: 9, fontWeight: "700", marginBottom: 3 },
+  headerResumoValor: { color: "#FFF", fontSize: 16, fontWeight: "900" },
+  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginHorizontal: 18, marginTop: 23, marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: "900" },
+  sectionSubtitle: { fontSize: 10, marginTop: 2 },
+  sectionIcon: { width: 38, height: 38, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  tipoCompraRow: { flexDirection: "row", borderRadius: FinFlowRadius.medium, borderWidth: 1, padding: 4, marginBottom: 14 },
+  tipoCompraBtn: { flex: 1, minHeight: 38, paddingHorizontal: 5, borderRadius: 12, alignItems: "center", justifyContent: "center" },
 
   emptyCard: {
-    margin: 20,
-    borderRadius: 16,
-    borderWidth: 2,
+    marginHorizontal: 16,
+    borderRadius: FinFlowRadius.large,
+    borderWidth: 1.5,
     borderStyle: "dashed",
     alignItems: "center",
-    paddingVertical: 40,
+    paddingHorizontal: 24,
+    paddingVertical: 34,
   },
-  emptyTitulo: { fontSize: 16, fontWeight: "600", marginTop: 12 },
-  emptySubtitulo: { fontSize: 13, marginTop: 4 },
+  emptyIcon: { width: 64, height: 64, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 14 },
+  emptyTitulo: { fontSize: 16, fontWeight: "800" },
+  emptySubtitulo: { fontSize: 12, lineHeight: 17, marginTop: 5, textAlign: "center" },
 
   cartoesLista: { paddingHorizontal: 16, gap: 12, marginBottom: 4 },
   cartaoCard: {
-    borderRadius: 16,
-    padding: 16,
+    position: "relative",
+    overflow: "hidden",
+    minHeight: 176,
+    borderRadius: 22,
+    padding: 18,
     justifyContent: "space-between",
+    shadowColor: "#061A15",
+    shadowOffset: { width: 0, height: 7 },
+    shadowOpacity: 0.19,
+    shadowRadius: 12,
+    elevation: 5,
   },
-  cartaoTopo: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  cartaoNome: { color: "#FFF", fontWeight: "bold", fontSize: 15, flex: 1 },
-  cartaoFaturaLabel: { color: "rgba(255,255,255,0.7)", fontSize: 11 },
-  cartaoFatura: { color: "#FFF", fontSize: 22, fontWeight: "bold", marginBottom: 8 },
+  cartaoDecoracao: { position: "absolute", width: 190, height: 190, borderRadius: 95, right: -77, top: -92, backgroundColor: "rgba(255,255,255,0.10)" },
+  cartaoTopo: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 16 },
+  cartaoIcone: { width: 36, height: 36, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.16)" },
+  cartaoNome: { color: "#FFF", fontWeight: "800", fontSize: 16, flex: 1 },
+  cartaoFaturaLabel: { color: "rgba(255,255,255,0.70)", fontSize: 10, fontWeight: "600" },
+  cartaoFatura: { color: "#FFF", fontSize: 25, fontWeight: "900", letterSpacing: -0.35, marginTop: 2, marginBottom: 14 },
+  cartaoRodape: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", paddingTop: 10, borderTopWidth: 1, borderTopColor: "rgba(255,255,255,0.16)" },
   cartaoRodapeCol: { gap: 2 },
-  cartaoLimite: { color: "rgba(255,255,255,0.8)", fontSize: 11 },
-  cartaoVenc: { color: "rgba(255,255,255,0.8)", fontSize: 11 },
+  cartaoRodapeLabel: { color: "rgba(255,255,255,0.62)", fontSize: 9, fontWeight: "600" },
+  cartaoLimite: { color: "rgba(255,255,255,0.94)", fontSize: 11, fontWeight: "800" },
+  cartaoVenc: { color: "rgba(255,255,255,0.94)", fontSize: 11, fontWeight: "800" },
 
   modalFaturaOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
+    backgroundColor: "rgba(2,12,15,0.78)",
     justifyContent: "center",
     alignItems: "center",
     padding: 16,
   },
   modalFaturaContent: {
     width: "100%",
-    borderRadius: 20,
-    padding: 20,
-    maxHeight: "85%",
+    maxWidth: 560,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: "rgba(128,145,138,0.22)",
+    padding: 22,
+    maxHeight: "88%",
+    ...FinFlowShadow,
   },
   faturaHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 16,
+    marginBottom: 18,
   },
-  faturaCartaoNome: { fontSize: 16, fontWeight: "bold", marginBottom: 4 },
-  faturaTotal: { fontSize: 28, fontWeight: "bold" },
+  faturaCartaoNome: { fontSize: 15, fontWeight: "800", marginBottom: 5 },
+  faturaTotal: { fontSize: 29, fontWeight: "900", letterSpacing: -0.45 },
 
-  limiteContainer: { borderRadius: 10, padding: 12, marginBottom: 16 },
+  limiteContainer: { borderRadius: 17, padding: 14, marginBottom: 17 },
   limiteRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
   limiteLbl: { fontSize: 12 },
   limiteVal: { fontSize: 12, fontWeight: "600" },
-  progressoBg: { height: 6, borderRadius: 3, overflow: "hidden", marginBottom: 6 },
-  progressoBar: { height: 6, borderRadius: 3 },
+  progressoBg: { height: 7, borderRadius: 4, overflow: "hidden", marginBottom: 7 },
+  progressoBar: { height: 7, borderRadius: 4 },
   limiteDisp: { fontSize: 12, fontWeight: "bold" },
 
   mesNav: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    minHeight: 42,
+    marginBottom: 13,
   },
-  mesTitulo: { fontSize: 15, fontWeight: "bold" },
+  mesTitulo: { fontSize: 14, fontWeight: "800" },
 
   acoesRow: { flexDirection: "row", gap: 10, marginBottom: 16 },
   acaoBtn: {
@@ -1631,10 +1957,11 @@ const estilos = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
+    minHeight: 46,
+    paddingHorizontal: 8,
+    borderRadius: 14,
   },
-  acaoBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 13 },
+  acaoBtnText: { color: "#FFF", fontWeight: "800", fontSize: 12 },
 
   faturaVazia: { alignItems: "center", paddingVertical: 28 },
   faturaVaziaText: { fontSize: 14, marginTop: 8 },
@@ -1644,7 +1971,8 @@ const estilos = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
+    minHeight: 58,
+    paddingVertical: 11,
     borderBottomWidth: 1,
   },
   itemFaturaLeft: { flexDirection: "row", alignItems: "center", flex: 1, gap: 10 },
@@ -1654,80 +1982,127 @@ const estilos = StyleSheet.create({
   itemValor: { fontSize: 15, fontWeight: "bold" },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(2,12,15,0.78)",
     justifyContent: "flex-end",
   },
   modalContent: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 24,
-    maxHeight: "92%",
+    width: "100%",
+    maxWidth: 620,
+    alignSelf: "center",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: "rgba(128,145,138,0.22)",
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 24,
+    maxHeight: "94%",
+    ...FinFlowShadow,
   },
+  modalFormScroll: { width: "100%" },
+  modalFormContent: { paddingBottom: 2 },
   modalHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 18,
   },
-  modalTitulo: { fontSize: 18, fontWeight: "bold" },
-  label: { fontSize: 12, fontWeight: "600", marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 },
+  modalTitleGroup: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 11 },
+  modalHeaderIcon: { width: 44, height: 44, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  modalSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  modalClose: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", marginLeft: 10 },
+  sheetHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 15 },
+  modalTitulo: { fontSize: 19, fontWeight: "900", letterSpacing: -0.25 },
+  label: { fontSize: 11, fontWeight: "800", marginBottom: 7, letterSpacing: 0.15 },
   input: {
     borderWidth: 1,
-    borderRadius: 10,
+    borderRadius: FinFlowRadius.medium,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    minHeight: 52,
+    paddingVertical: 13,
     fontSize: 15,
-    marginBottom: 16,
+    marginBottom: 17,
   },
   doisCampos: { flexDirection: "row" },
-  corCirculo: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
-  corSelecionada: { borderWidth: 3, borderColor: "#FFF" },
-  modalBtns: { flexDirection: "row", gap: 10, marginTop: 8 },
-  modalBtn: { flex: 1, paddingVertical: 14, borderRadius: 10, alignItems: "center" },
-  modalBtnText: { fontWeight: "bold", fontSize: 15 },
-  previewParcelas: { borderRadius: 8, padding: 10, marginBottom: 16, alignItems: "center" },
+  corCirculo: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  corSelecionada: { borderWidth: 3, borderColor: "#FFF", transform: [{ scale: 1.06 }] },
+  modalBtns: { flexDirection: "row", gap: 10, marginTop: 10 },
+  modalBtn: { flex: 1, minHeight: 50, paddingHorizontal: 10, borderRadius: FinFlowRadius.medium, flexDirection: "row", gap: 7, alignItems: "center", justifyContent: "center" },
+  modalBtnText: { fontWeight: "800", fontSize: 13 },
+  botaoDesabilitado: { opacity: 0.45 },
+  previewParcelas: { borderRadius: 14, padding: 11, marginBottom: 16, alignItems: "center" },
   previewText: { fontSize: 13 },
-  catPill: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20 },
+  catPill: { minHeight: 38, paddingHorizontal: 13, paddingVertical: 8, borderRadius: FinFlowRadius.pill, justifyContent: "center" },
   contaOpcao: {
     flexDirection: "row",
     alignItems: "center",
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 2,
+    minHeight: 58,
+    padding: 13,
+    borderRadius: FinFlowRadius.medium,
+    borderWidth: 1.5,
     marginBottom: 10,
   },
+  valorDestaque: {
+    minHeight: 80,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 18,
+    borderWidth: 1,
+    padding: 14,
+    marginBottom: 18,
+  },
+  valorDestaqueIcone: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  valorDestaqueLabel: { fontSize: 10, fontWeight: "700", marginBottom: 2 },
+  valorDestaqueNumero: { fontSize: 24, fontWeight: "900", letterSpacing: -0.35 },
+  resumoPagamento: { flexDirection: "row", alignItems: "baseline", justifyContent: "center", gap: 5, borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 16 },
+  resumoPagamentoTexto: { fontSize: 11, fontWeight: "600" },
+  resumoPagamentoValor: { fontSize: 18, fontWeight: "900" },
+  dialogoTexto: { fontSize: 13, lineHeight: 19, marginBottom: 16 },
+  opcaoAcaoCard: {
+    minHeight: 68,
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: FinFlowRadius.medium,
+    padding: 12,
+    marginBottom: 10,
+  },
+  opcaoIcone: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  opcaoTexto: { flex: 1, minWidth: 0, paddingHorizontal: 11 },
+  opcaoTitulo: { fontSize: 13, fontWeight: "800" },
+  opcaoDescricao: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  itemConfirmacao: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 54, borderWidth: 1, borderRadius: 15, padding: 12, marginBottom: 16 },
+  itemConfirmacaoTexto: { flex: 1, fontSize: 13, fontWeight: "700" },
+  avisoCard: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderWidth: 1, borderRadius: 16, padding: 14, marginBottom: 6 },
+  avisoCardTexto: { flex: 1, fontSize: 12, lineHeight: 18 },
   // Modal centralizado (novo cartão)
   modalCentradoOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.7)",
+    backgroundColor: "rgba(2,12,15,0.78)",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
   },
   modalCentradoContent: {
     width: "100%",
-    borderRadius: 20,
-    padding: 24,
+    maxWidth: 540,
+    borderRadius: 26,
+    borderWidth: 1,
+    borderColor: "rgba(128,145,138,0.22)",
+    padding: 22,
     maxHeight: "90%",
+    ...FinFlowShadow,
   },
-  // Opções modais (substituem Alert)
-  opcaoModalBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 10,
-  },
-  opcaoModalBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
   // Arquivados
   cartaoArquivado: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 14,
-    borderRadius: 12,
+    minHeight: 60,
+    padding: 13,
+    borderRadius: FinFlowRadius.medium,
     borderWidth: 1,
     marginBottom: 8,
   },

@@ -5,9 +5,12 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-01-hotfix-foco-login",
+  id: "2.0.0-2026-08-01-projecao-objetivos",
   items: [
-    "Corrigimos a perda de foco que fazia os campos de login piscarem e fechava o teclado",
-    "A digitação dos dados de acesso agora permanece estável no celular",
+    "Objetivos com prazo agora mostram o saldo previsto na data da meta, considerando as transferências agendadas",
+    "Histórico com filtro por ano e lançamentos ordenados da data mais próxima para a mais distante",
+    "Avisos de atrasos agora abrem o filtro correto e indicam quando há pendências",
+    "O sino deixa de exibir a bolinha vermelha depois que os avisos são visualizados",
+    "Receitas e despesas antigas sem categoria visível passam a aparecer em Outros, sem sumir dos gráficos",
   ],
 } as const;

@@ -501,25 +501,45 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
   };
 
   const resolverCategoria = (data: Record<string, any>, tipo: string) => {
-    if (data.category_id && !isNaN(Number(data.category_id)))
-      return categoriasUsuario.find((c) => c.id === Number(data.category_id)) ?? null;
+    const categoriasCompativeis = categoriasUsuario.filter((c) => c.tipo === tipo);
+
+    if (data.category_id && !isNaN(Number(data.category_id))) {
+      const categoriaPorId = categoriasCompativeis.find((c) => c.id === Number(data.category_id));
+      if (categoriaPorId) return categoriaPorId;
+    }
+
     const nome = data.category_name || data.categoria_name || data.category || data.categoria || "";
-    if (!nome) return null;
-    return (
-      categoriasUsuario.find((c) => c.tipo === tipo && c.nome.toLowerCase().includes(nome.toLowerCase())) ??
-      categoriasUsuario.find((c) => c.nome.toLowerCase().includes(nome.toLowerCase())) ??
-      null
-    );
+    if (nome) {
+      const nomeNormalizado = String(nome).trim().toLocaleLowerCase("pt-BR");
+      const categoriaPorNome = categoriasCompativeis.find(
+        (c) => c.nome.trim().toLocaleLowerCase("pt-BR") === nomeNormalizado,
+      ) ?? categoriasCompativeis.find(
+        (c) => c.nome.toLocaleLowerCase("pt-BR").includes(nomeNormalizado),
+      );
+      if (categoriaPorNome) return categoriaPorNome;
+    }
+
+    return categoriasCompativeis.find(
+      (c) => c.nome.trim().toLocaleLowerCase("pt-BR") === "outros",
+    ) ?? null;
   };
 
   const criarTransacao = async (data: Record<string, any>): Promise<string> => {
-    const tipo = (data.tipo || "despesa").toLowerCase();
-    if (tipo === "transferencia" || tipo === "transferência") return criarTransferencia(data);
+    const tipoInformado = String(data.tipo || "despesa").toLocaleLowerCase("pt-BR");
+    if (tipoInformado === "transferencia" || tipoInformado === "transferência") return criarTransferencia(data);
+    if (tipoInformado !== "receita" && tipoInformado !== "despesa") {
+      return "Não reconheci o tipo do lançamento. Informe se é uma receita ou uma despesa.";
+    }
+    const tipo: "receita" | "despesa" = tipoInformado;
 
     const conta = resolverConta(data);
     if (!conta) return "Nenhuma conta encontrada. Crie uma conta primeiro.";
 
     const cat = resolverCategoria(data, tipo);
+    if (!cat) {
+      const tipoLabel = tipo === "receita" ? "receita" : "despesa";
+      return `Não encontrei uma categoria ativa compatível. Crie ou reative a categoria "Outros" de ${tipoLabel} e tente novamente.`;
+    }
     const dataBase = converterData(data.date);
     const status = data.status === "pendente" ? "pendente" : "paga";
     const frequencia = (data.frequencia || "unica").toLowerCase();
@@ -544,7 +564,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
       const { error } = await supabase.from("transacoes").insert({
         tipo, valor: Number(data.value), descricao: desc, status,
         data_vencimento: dataFmt, data_realizacao: status === "paga" ? dataFmt : null, conta_id: conta.id,
-        categoria_id: cat?.id ?? null, user_id: session?.user?.id,
+        categoria_id: cat.id, user_id: session?.user?.id,
       });
       if (error) return `Erro ao criar lançamento: ${error.message}`;
     }
@@ -552,7 +572,7 @@ RESUMO_FINANCEIRO: ${resumoFinanceiro || "Sem dados do mês atual"}`;
     await carregarContexto();
     const tipoLabel = tipo === "receita" ? "Receita" : "Despesa";
     const freqLabel = frequencia === "parcelada" ? ` (${totalRep}x)` : frequencia === "recorrente" ? " recorrente" : "";
-    return `✅ ${tipoLabel}${freqLabel} de R$ ${Number(data.value).toFixed(2)} criada!\n📅 ${formatarDataBR(dataBase)}\n📝 ${descBase}\n🏦 Conta: ${conta.nome}${cat ? `\n🏷 Categoria: ${cat.nome}` : ""}`;
+    return `✅ ${tipoLabel}${freqLabel} de R$ ${Number(data.value).toFixed(2)} criada!\n📅 ${formatarDataBR(dataBase)}\n📝 ${descBase}\n🏦 Conta: ${conta.nome}\n🏷 Categoria: ${cat.nome}`;
   };
 
   const criarTransferencia = async (data: Record<string, any>): Promise<string> => {

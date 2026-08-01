@@ -76,6 +76,15 @@ interface MovimentoCaixinha {
   user_id: string;
 }
 
+interface AgendamentoObjetivo {
+  id: number;
+  tipo: string;
+  valor: number;
+  status: string;
+  data_vencimento: string;
+  descricao: string;
+}
+
 const PALETA_CORES = [
   "#2A9D8F","#E9C46A","#F4A261","#E76F51",
   "#264653","#8AB17D","#8A05BE","#EC7000",
@@ -113,6 +122,7 @@ export default function CaixinhasScreen() {
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
+  const [agendamentosObjetivos, setAgendamentosObjetivos] = useState<AgendamentoObjetivo[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
   const [parceiraNome, setParceiraNome] = useState("Parceiro(a)");
   const [parceiroId, setParceiroId] = useState<string | null>(null);
@@ -167,15 +177,25 @@ export default function CaixinhasScreen() {
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     try {
-      const [resCaixinhas, resContas, resParceria] = await Promise.all([
+      const [resCaixinhas, resContas, resParceria, resAgendamentos] = await Promise.all([
         supabase.from("caixinhas").select("*"),  // RLS retorna próprias + compartilhadas do parceiro
         supabase.from("contas").select("*"),      // RLS retorna próprias + compartilhadas do parceiro
         supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
+        supabase
+          .from("transacoes")
+          .select("id, tipo, valor, status, data_vencimento, descricao")
+          .eq("status", "pendente")
+          .eq("tipo", "despesa")
+          .like("descricao", "Guardar em: %"),
       ]);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data.map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })));
       if (resContas.data) setContas(resContas.data);
+      setAgendamentosObjetivos((resAgendamentos.data ?? []).map((agendamento) => ({
+        ...agendamento,
+        valor: Number(agendamento.valor),
+      })));
       const parceria = resParceria.data?.[0];
       setTemParceiro(!!parceria);
       if (parceria) {
@@ -205,6 +225,29 @@ export default function CaixinhasScreen() {
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
   const totalGuardado = caixinhas.reduce((acc, curr) => acc + Number(curr.saldo_atual), 0);
+
+  const calcularPrevisaoObjetivo = (caixa: Caixinha): number | null => {
+    if (!caixa.data_prazo || diasAteData(caixa.data_prazo) < 0) return null;
+
+    const descricaoObjetivo = `Guardar em: ${caixa.nome}`;
+    const totalAgendadoAtePrazo = agendamentosObjetivos.reduce((total, agendamento) => {
+      const dataAgendada = (agendamento.data_vencimento ?? "").slice(0, 10);
+      const pertenceAoObjetivo = agendamento.tipo === "despesa"
+        && agendamento.status === "pendente"
+        && agendamento.descricao === descricaoObjetivo;
+
+      if (!pertenceAoObjetivo || !dataAgendada || dataAgendada > caixa.data_prazo!) return total;
+      return total + Number(agendamento.valor);
+    }, 0);
+
+    if (totalAgendadoAtePrazo <= 0) return null;
+    return Number(caixa.saldo_atual) + totalAgendadoAtePrazo;
+  };
+
+  const formatarDataPrazo = (dataStr: string): string => {
+    const [ano, mes, dia] = dataStr.split("-");
+    return `${dia}/${mes}/${ano}`;
+  };
 
   const criarCaixinha = async () => {
     if (nomeCaixinha.trim() === "" || metaValor.trim() === "")
@@ -571,6 +614,7 @@ export default function CaixinhasScreen() {
             const metaSegura = Math.max(Number(caixa.meta_valor), 0.01);
             const porcentagem = Math.min((Number(caixa.saldo_atual) / metaSegura) * 100, 100);
             const isCompleto = porcentagem === 100;
+            const previsaoAtePrazo = calcularPrevisaoObjetivo(caixa);
             return (
               <TouchableOpacity
                 key={caixa.id}
@@ -607,6 +651,15 @@ export default function CaixinhasScreen() {
                 <View style={[styles.progressBarBackground, { backgroundColor: Cores.barraFundo }]}>
                   <View style={[styles.progressBarFill, { backgroundColor: isCompleto ? "#2A9D8F" : caixa.cor, width: `${porcentagem}%` }]} />
                 </View>
+
+                {caixa.data_prazo && previsaoAtePrazo !== null && (
+                  <View style={[styles.forecastRow, { backgroundColor: `${caixa.cor}14` }]}>
+                    <MaterialIcons name="trending-up" size={13} color={caixa.cor} />
+                    <Text style={[styles.forecastText, { color: Cores.textoSecundario }]} numberOfLines={1}>
+                      Previsto até {formatarDataPrazo(caixa.data_prazo)}: {formatarReais(previsaoAtePrazo)}
+                    </Text>
+                  </View>
+                )}
 
                 {caixa.data_prazo && !isCompleto && (() => {
                   const dias = diasAteData(caixa.data_prazo);
@@ -1270,6 +1323,8 @@ const styles = StyleSheet.create({
   targetValue: { fontSize: 14, fontWeight: "500" },
   progressBarBackground: { height: 10, borderRadius: 5, overflow: "hidden" },
   progressBarFill: { height: "100%", borderRadius: 5 },
+  forecastRow: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 5, marginTop: 9, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9 },
+  forecastText: { fontSize: 11, fontWeight: "700", flexShrink: 1 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(2, 12, 15, 0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
   modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
