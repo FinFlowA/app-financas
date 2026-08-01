@@ -25,10 +25,16 @@ legal-site-temp/
 .kotlin/
 *.orig.*
 *.jks
+*.keystore
 *.p8
 *.p12
+*.pfx
 *.key
 *.mobileprovision
+credentials.json
+service-account*.json
+google-services.json
+GoogleService-Info.plist
 .metro-health-check*
 npm-debug.*
 yarn-debug.*

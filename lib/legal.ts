@@ -1,16 +1,11 @@
-export const LEGAL_DOCUMENT_VERSION = "2026-08-01";
+export const LEGAL_DOCUMENT_VERSION = "2026-08-01-telefone-opcional";
 
-export type PendenciaCadastro = "telefone" | "data_nascimento" | "termos";
+export type PendenciaCadastro = "data_nascimento" | "termos";
 
 export function listarPendenciasCadastro(
   metadata: Record<string, unknown> | null | undefined,
-  telefoneConfirmado: boolean,
 ): PendenciaCadastro[] {
   const pendencias: PendenciaCadastro[] = [];
-
-  if (!telefoneConfirmado) {
-    pendencias.push("telefone");
-  }
 
   if (typeof metadata?.data_nascimento !== "string" || !metadata.data_nascimento) {
     pendencias.push("data_nascimento");

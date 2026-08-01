@@ -16,7 +16,6 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import Button from "../components/FinFlowButton";
-import PhoneVerificationFlow from "../components/PhoneVerificationFlow";
 import {
   FinFlowColors,
   FinFlowRadius,
@@ -24,7 +23,7 @@ import {
   finFlowTheme,
 } from "../constants/finflow-design";
 import { supabase } from "../lib/supabase";
-import { formatarTelefoneBrasil } from "../lib/phone";
+import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { useAppTheme } from "./_layout";
 
 const SECURITY_WINDOW_MS = 5 * 60 * 1000;
@@ -124,8 +123,7 @@ export default function SegurancaScreen() {
     ? session.user.user_metadata.telefone.trim()
     : "";
   const authPhone = session?.user?.phone?.trim() ?? "";
-  const currentPhone = authPhone || metadataPhone;
-  const phoneIsVerified = Boolean(authPhone && session?.user?.phone_confirmed_at);
+  const currentPhone = metadataPhone || authPhone;
   const initialPendingEmail = (session?.user as { new_email?: string } | undefined)?.new_email ?? "";
 
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -137,6 +135,9 @@ export default function SegurancaScreen() {
   const [newEmail, setNewEmail] = useState("");
   const [pendingEmail, setPendingEmail] = useState(initialPendingEmail);
   const [isUpdatingEmail, setIsUpdatingEmail] = useState(false);
+
+  const [phoneDraft, setPhoneDraft] = useState(() => formatarTelefoneBrasil(currentPhone));
+  const [isUpdatingPhone, setIsUpdatingPhone] = useState(false);
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -196,6 +197,10 @@ export default function SegurancaScreen() {
       if (securityTimerRef.current) clearTimeout(securityTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    setPhoneDraft(formatarTelefoneBrasil(currentPhone));
+  }, [currentPhone]);
 
   function hasValidSecurityWindow(): boolean {
     if (!isUnlocked || Date.now() >= securityDeadlineRef.current) {
@@ -344,6 +349,34 @@ export default function SegurancaScreen() {
     );
   }
 
+  async function updateOptionalPhone() {
+    if (!hasValidSecurityWindow() || isUpdatingPhone) return;
+
+    const normalizedPhone = phoneDraft.trim() ? telefoneBrasilE164(phoneDraft) : null;
+    if (phoneDraft.trim() && !normalizedPhone) {
+      Alert.alert("Celular inválido", "Informe um celular brasileiro válido, com DDD e 11 dígitos.");
+      return;
+    }
+
+    setIsUpdatingPhone(true);
+    const metadataAtual = session?.user?.user_metadata ?? {};
+    const { error } = await supabase.auth.updateUser({
+      data: {
+        ...metadataAtual,
+        telefone: normalizedPhone,
+      },
+    });
+    setIsUpdatingPhone(false);
+
+    if (error) {
+      Alert.alert("Não foi possível salvar", "Confira sua conexão e tente novamente.");
+      return;
+    }
+
+    setPhoneDraft(formatarTelefoneBrasil(normalizedPhone ?? ""));
+    showToast(normalizedPhone ? "Telefone salvo ✓" : "Telefone removido ✓", "success");
+  }
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
@@ -457,8 +490,8 @@ export default function SegurancaScreen() {
                   <View style={styles.dataCopy}>
                     <Text style={[styles.dataLabel, { color: theme.textMuted }]}>Telefone</Text>
                     <Text style={[styles.dataValue, { color: theme.text }]}>{formatarTelefoneBrasil(currentPhone) || "Não informado"}</Text>
-                    <Text style={[styles.dataStatus, { color: phoneIsVerified ? theme.primary : FinFlowColors.orange }]}>
-                      {phoneIsVerified ? "Verificado por SMS" : "Ainda não verificado"}
+                    <Text style={[styles.dataStatus, { color: theme.textMuted }]}>
+                      Opcional · não verificado
                     </Text>
                   </View>
                 </View>
@@ -510,12 +543,40 @@ export default function SegurancaScreen() {
 
               <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>TELEFONE</Text>
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <PhoneVerificationFlow
-                  isDark={isDark}
-                  initialPhone={currentPhone}
-                  currentVerifiedPhone={authPhone}
-                  embedded
-                  onVerified={() => showToast("Telefone verificado com sucesso ✓", "success")}
+                <Text style={[styles.cardTitle, { color: theme.text }]}>Telefone opcional</Text>
+                <Text style={[styles.cardDescription, { color: theme.textMuted }]}>
+                  Enquanto não houver verificação, este número não será usado para entrar, recuperar a conta ou comprovar sua identidade.
+                </Text>
+                <View style={[styles.inputShell, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+                  <View style={[styles.inputIcon, { backgroundColor: theme.primarySoft }]}>
+                    <MaterialIcons name="phone-android" size={19} color={theme.primary} />
+                  </View>
+                  <TextInput
+                    style={[styles.input, { color: theme.text }]}
+                    placeholder="(11) 99999-9999"
+                    placeholderTextColor={theme.textMuted}
+                    value={phoneDraft}
+                    onChangeText={(value) => setPhoneDraft(formatarTelefoneBrasil(value))}
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                    textContentType="telephoneNumber"
+                    maxLength={15}
+                    returnKeyType="done"
+                    onSubmitEditing={() => void updateOptionalPhone()}
+                  />
+                </View>
+                <Button
+                  title={isUpdatingPhone
+                    ? "Salvando..."
+                    : phoneDraft.trim()
+                      ? "Salvar telefone"
+                      : currentPhone
+                        ? "Remover telefone"
+                        : "Telefone não informado"}
+                  color={theme.primary}
+                  disabled={isUpdatingPhone || (!phoneDraft.trim() && !currentPhone)}
+                  onPress={() => void updateOptionalPhone()}
+                  style={styles.fullButton}
                 />
               </View>
 

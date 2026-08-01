@@ -223,10 +223,10 @@ export default function LoginScreen() {
   }
 
   async function signUpWithEmail() {
-    if (!nome || !email || !telefone || !dataNascimento || !password)
+    if (!nome || !email || !dataNascimento || !password)
       return Alert.alert(
         "Aviso",
-        "Preencha todos os campos obrigatórios: nome, e-mail, telefone, data de nascimento e senha.",
+        "Preencha todos os campos obrigatórios: nome, e-mail, data de nascimento e senha.",
       );
     if (!validarEmail(email))
       return Alert.alert(
@@ -246,8 +246,8 @@ export default function LoginScreen() {
         "A senha deve ter pelo menos 6 caracteres.",
       );
 
-    const telefoneE164 = telefoneBrasilE164(telefone);
-    if (!telefoneE164)
+    const telefoneE164 = telefone.trim() ? telefoneBrasilE164(telefone) : null;
+    if (telefone.trim() && !telefoneE164)
       return Alert.alert(
         "Celular inválido",
         "Informe um celular brasileiro válido, com DDD e 11 dígitos.",
@@ -278,7 +278,7 @@ export default function LoginScreen() {
         emailRedirectTo: "meuappfinancas://email-confirmed",
         data: {
           nome_usuario: nome,
-          telefone: telefoneE164,
+          ...(telefoneE164 ? { telefone: telefoneE164 } : {}),
           data_nascimento: nascimentoISO,
           termos_aceitos_em: new Date().toISOString(),
           termos_versao: LEGAL_DOCUMENT_VERSION,
@@ -574,7 +574,7 @@ export default function LoginScreen() {
                     <View style={[styles.twoColumnFields, !isWide && styles.twoColumnFieldsStacked]}>
                       <View style={isWide ? styles.halfField : styles.fullWidthField}>
                         <AuthField
-                          label="Telefone com DDD"
+                          label="Telefone com DDD (opcional)"
                           icon="phone-iphone"
                           theme={theme}
                           placeholder="(11) 99999-9999"
@@ -587,7 +587,7 @@ export default function LoginScreen() {
                           returnKeyType="next"
                           helper={(
                             <Text style={[styles.fieldHelper, { color: theme.textMuted }]}>
-                              Após confirmar o e-mail, você validará este número por SMS.
+                              Não usamos um número não verificado para entrar ou recuperar a conta.
                             </Text>
                           )}
                         />

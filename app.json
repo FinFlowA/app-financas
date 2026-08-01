@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "FinFlow",
+    "owner": "app-financas",
     "slug": "meu-app-financas",
     "version": "2.0.0",
     "orientation": "portrait",

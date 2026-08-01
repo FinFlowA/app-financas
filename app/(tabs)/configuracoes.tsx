@@ -612,7 +612,7 @@ export default function ConfiguracoesScreen() {
                 <MaterialIcons name="manage-accounts" size={24} color="#2A9D8F" />
                 <View>
                   <Text style={[styles.configText, { color: Cores.texto }]}>Dados de acesso</Text>
-                  <Text style={[styles.configSubtext, { color: Cores.secundario }]}>E-mail, telefone e senha</Text>
+                  <Text style={[styles.configSubtext, { color: Cores.secundario }]}>E-mail, telefone opcional e senha</Text>
                 </View>
               </View>
               <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
@@ -962,7 +962,7 @@ export default function ConfiguracoesScreen() {
               autoCapitalize="words"
             />
             <Text style={{ color: Cores.secundario, fontSize: 11, lineHeight: 16, marginBottom: 14 }}>
-              E-mail, telefone e senha ficam protegidos na área Dados de acesso.
+              E-mail, telefone opcional e senha ficam protegidos na área Dados de acesso.
             </Text>
             {loadingPerfil ? (
               <ActivityIndicator size="small" color="#2A9D8F" style={{ marginTop: 10 }} />

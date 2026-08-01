@@ -6,6 +6,7 @@ type SendSmsHookEvent = {
   user?: {
     id?: string;
     phone?: string;
+    new_phone?: string;
   };
   sms?: {
     otp?: string;
@@ -30,8 +31,12 @@ function webhookSecret(): string {
   return normalized;
 }
 
-function validPhone(phone: string): boolean {
-  return /^\+55[1-9]{2}9\d{8}$/.test(phone);
+function normalizeBrazilianMobile(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const digits = value.replace(/\D/g, "");
+  if (/^55[1-9]{2}9\d{8}$/.test(digits)) return `+${digits}`;
+  if (/^[1-9]{2}9\d{8}$/.test(digits)) return `+55${digits}`;
+  return null;
 }
 
 Deno.serve(async (req) => {
@@ -47,10 +52,25 @@ Deno.serve(async (req) => {
     return hookError(401, "Assinatura do hook inválida.");
   }
 
-  const userId = event.user?.id ?? "";
-  const phone = event.user?.phone ?? "";
-  const otp = event.sms?.otp ?? "";
-  if (!/^[0-9a-f-]{36}$/i.test(userId) || !validPhone(phone) || !/^\d{6}$/.test(otp)) {
+  const userId = typeof event.user?.id === "string" ? event.user.id.trim() : "";
+  // Em alterações de telefone, o Auth serializa o campo interno
+  // `phone_change` como `new_phone`. Em login/cadastro por telefone, usa
+  // `phone`. O número novo precisa ter prioridade para o OTP não ser enviado
+  // ao telefone anterior.
+  const phoneSource = event.user?.new_phone || event.user?.phone || "";
+  const phone = normalizeBrazilianMobile(phoneSource);
+  const otp = typeof event.sms?.otp === "string" ? event.sms.otp.trim() : "";
+  const validUserId = /^[0-9a-f-]{36}$/i.test(userId);
+  const validOtp = /^\d{6}$/.test(otp);
+  if (!validUserId || !phone || !validOtp) {
+    console.warn("send-auth-sms: payload inválido", {
+      validUserId,
+      hasNewPhone: Boolean(event.user?.new_phone),
+      hasPhone: Boolean(event.user?.phone),
+      phoneType: typeof phoneSource,
+      phoneDigits: typeof phoneSource === "string" ? phoneSource.replace(/\D/g, "").length : 0,
+      validOtp,
+    });
     return hookError(400, "Solicitação de SMS inválida.");
   }
 

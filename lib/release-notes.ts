@@ -5,11 +5,11 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-01-verificacao-telefone",
+  id: "2.0.0-2026-08-01-telefone-opcional",
   items: [
-    "Seu telefone agora é confirmado por um código de segurança enviado por SMS",
-    "A troca do número fica protegida na área Segurança e só é concluída após a confirmação",
-    "O FinFlow impede que o mesmo telefone seja vinculado a contas diferentes",
-    "Termos de Uso e Política de Privacidade foram atualizados para explicar a verificação por SMS",
+    "O telefone deixou de bloquear o acesso e agora é uma informação opcional",
+    "A confirmação por e-mail continua protegendo a criação e as alterações da conta",
+    "A área Segurança agora identifica com clareza quando um telefone não foi verificado",
+    "Termos de Uso e Política de Privacidade foram atualizados para refletir essa mudança",
   ],
 } as const;
