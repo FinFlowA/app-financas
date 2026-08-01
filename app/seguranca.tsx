@@ -16,6 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import Button from "../components/FinFlowButton";
+import PhoneVerificationFlow from "../components/PhoneVerificationFlow";
 import {
   FinFlowColors,
   FinFlowRadius,
@@ -23,6 +24,7 @@ import {
   finFlowTheme,
 } from "../constants/finflow-design";
 import { supabase } from "../lib/supabase";
+import { formatarTelefoneBrasil } from "../lib/phone";
 import { useAppTheme } from "./_layout";
 
 const SECURITY_WINDOW_MS = 5 * 60 * 1000;
@@ -40,19 +42,6 @@ type PasswordFieldProps = {
   textContentType: "password" | "newPassword";
   onSubmitEditing?: () => void;
 };
-
-function formatPhoneForDisplay(value: string): string {
-  const digits = value.replace(/\D/g, "");
-  const localDigits = digits.length === 13 && digits.startsWith("55") ? digits.slice(2) : digits;
-
-  if (localDigits.length === 11) {
-    return `(${localDigits.slice(0, 2)}) ${localDigits.slice(2, 7)}-${localDigits.slice(7)}`;
-  }
-  if (localDigits.length === 10) {
-    return `(${localDigits.slice(0, 2)}) ${localDigits.slice(2, 6)}-${localDigits.slice(6)}`;
-  }
-  return value || "Não informado";
-}
 
 function emailErrorMessage(code?: string): { title: string; message: string } {
   if (code === "email_exists" || code === "user_already_exists") {
@@ -127,7 +116,7 @@ function SecurityPasswordField({
 
 export default function SegurancaScreen() {
   const router = useRouter();
-  const { isDark, session } = useAppTheme();
+  const { isDark, session, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
 
   const currentEmail = session?.user?.email?.trim() ?? "";
@@ -467,7 +456,7 @@ export default function SegurancaScreen() {
                   </View>
                   <View style={styles.dataCopy}>
                     <Text style={[styles.dataLabel, { color: theme.textMuted }]}>Telefone</Text>
-                    <Text style={[styles.dataValue, { color: theme.text }]}>{formatPhoneForDisplay(currentPhone)}</Text>
+                    <Text style={[styles.dataValue, { color: theme.text }]}>{formatarTelefoneBrasil(currentPhone) || "Não informado"}</Text>
                     <Text style={[styles.dataStatus, { color: phoneIsVerified ? theme.primary : FinFlowColors.orange }]}>
                       {phoneIsVerified ? "Verificado por SMS" : "Ainda não verificado"}
                     </Text>
@@ -520,16 +509,14 @@ export default function SegurancaScreen() {
               </View>
 
               <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>TELEFONE</Text>
-              <View style={[styles.card, styles.disabledCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <View style={[styles.disabledIcon, { backgroundColor: `${FinFlowColors.orange}16` }]}>
-                  <MaterialIcons name="sms-failed" size={24} color={FinFlowColors.orange} />
-                </View>
-                <View style={styles.disabledCopy}>
-                  <Text style={[styles.cardTitle, { color: theme.text }]}>Alteração temporariamente indisponível</Text>
-                  <Text style={[styles.cardDescription, styles.disabledDescription, { color: theme.textMuted }]}>
-                    O envio de SMS ainda não está configurado. Seu telefone não será alterado sem a confirmação por código.
-                  </Text>
-                </View>
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <PhoneVerificationFlow
+                  isDark={isDark}
+                  initialPhone={currentPhone}
+                  currentVerifiedPhone={authPhone}
+                  embedded
+                  onVerified={() => showToast("Telefone verificado com sucesso ✓", "success")}
+                />
               </View>
 
               <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>ALTERAR SENHA</Text>

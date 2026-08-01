@@ -1,11 +1,16 @@
-export const LEGAL_DOCUMENT_VERSION = "2026-07-30";
+export const LEGAL_DOCUMENT_VERSION = "2026-08-01";
 
-export type PendenciaCadastro = "data_nascimento" | "termos";
+export type PendenciaCadastro = "telefone" | "data_nascimento" | "termos";
 
 export function listarPendenciasCadastro(
   metadata: Record<string, unknown> | null | undefined,
+  telefoneConfirmado: boolean,
 ): PendenciaCadastro[] {
   const pendencias: PendenciaCadastro[] = [];
+
+  if (!telefoneConfirmado) {
+    pendencias.push("telefone");
+  }
 
   if (typeof metadata?.data_nascimento !== "string" || !metadata.data_nascimento) {
     pendencias.push("data_nascimento");
@@ -19,14 +24,6 @@ export function listarPendenciasCadastro(
   }
 
   return pendencias;
-}
-
-export function formatarTelefone(valor: string): string {
-  const digitos = valor.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "").slice(0, 11);
-  if (digitos.length <= 2) return digitos;
-  if (digitos.length <= 6) return `(${digitos.slice(0, 2)}) ${digitos.slice(2)}`;
-  if (digitos.length <= 10) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
-  return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
 }
 
 export function formatarDataNascimento(valor: string): string {

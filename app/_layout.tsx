@@ -53,6 +53,7 @@ import { garantirCategoriaOutros } from "../lib/default-categories";
 import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
+import PhoneVerificationFlow from "../components/PhoneVerificationFlow";
 import PartnershipDissolutionModals, {
   type DecisaoContaDissolucao,
   type ResumoDissolucao,
@@ -362,9 +363,10 @@ export default function RootLayout() {
 
   const verificarCadastroPendente = useCallback(() => {
     const metadata = session?.user?.user_metadata as Record<string, unknown> | undefined;
-    setPendenciasCadastro(listarPendenciasCadastro(metadata));
+    const telefoneConfirmado = Boolean(session?.user?.phone && session?.user?.phone_confirmed_at);
+    setPendenciasCadastro(listarPendenciasCadastro(metadata, telefoneConfirmado));
     setErroCadastroPendente("");
-  }, [session?.user?.user_metadata]);
+  }, [session?.user?.phone, session?.user?.phone_confirmed_at, session?.user?.user_metadata]);
 
   useEffect(() => {
     if (!session?.user?.id) {
@@ -457,6 +459,11 @@ export default function RootLayout() {
   const concluirCadastroPendente = async () => {
     if (salvandoCadastroPendente) return;
 
+    if (pendenciasCadastro.includes("telefone")) {
+      setErroCadastroPendente("Confirme seu telefone por SMS antes de continuar.");
+      return;
+    }
+
     const precisaNascimento = pendenciasCadastro.includes("data_nascimento");
     const precisaTermos = pendenciasCadastro.includes("termos");
     const nascimentoISO = precisaNascimento
@@ -498,8 +505,29 @@ export default function RootLayout() {
 
     setNascimentoPendente("");
     setTermosPendentesAceitos(false);
-    setPendenciasCadastro(listarPendenciasCadastro(data.user.user_metadata));
+    setPendenciasCadastro(listarPendenciasCadastro(
+      data.user.user_metadata,
+      Boolean(data.user.phone && data.user.phone_confirmed_at),
+    ));
     showToast("Cadastro atualizado com segurança ✓", "success");
+  };
+
+  const concluirVerificacaoTelefone = async (userAtualizado: any) => {
+    const user = userAtualizado ?? (await supabase.auth.getUser()).data.user;
+    if (!user) {
+      setErroCadastroPendente("O telefone foi confirmado, mas não foi possível atualizar a sessão. Entre novamente.");
+      return;
+    }
+
+    setSession((currentSession: any) => currentSession
+      ? { ...currentSession, user }
+      : currentSession);
+    setPendenciasCadastro(listarPendenciasCadastro(
+      user.user_metadata,
+      Boolean(user.phone && user.phone_confirmed_at),
+    ));
+    setErroCadastroPendente("");
+    showToast("Telefone confirmado com segurança ✓", "success");
   };
 
   // Load per-user notification preference
@@ -1027,13 +1055,29 @@ export default function RootLayout() {
               <MaterialIcons name="person-outline" size={34} color="#2A9D8F" />
             </View>
             <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
-              Complete seu cadastro
+              {pendenciasCadastro.includes("telefone") ? "Confirme seu telefone" : "Complete seu cadastro"}
             </Text>
             <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
-              Precisamos confirmar algumas informações obrigatórias antes de você continuar.
+              {pendenciasCadastro.includes("telefone")
+                ? "Esta verificação protege sua conta e impede o uso do mesmo número em cadastros diferentes."
+                : "Precisamos confirmar algumas informações obrigatórias antes de você continuar."}
             </Text>
 
-            {pendenciasCadastro.includes("data_nascimento") && (
+            {pendenciasCadastro.includes("telefone") && (
+              <View style={{ width: "100%", marginTop: 12 }}>
+                <PhoneVerificationFlow
+                  isDark={isDark}
+                  initialPhone={typeof session?.user?.user_metadata?.telefone === "string"
+                    ? session.user.user_metadata.telefone
+                    : ""}
+                  currentVerifiedPhone={session?.user?.phone ?? ""}
+                  embedded
+                  onVerified={concluirVerificacaoTelefone}
+                />
+              </View>
+            )}
+
+            {!pendenciasCadastro.includes("telefone") && pendenciasCadastro.includes("data_nascimento") && (
               <View style={{ width: "100%", marginTop: 8 }}>
                 <Text style={{ color: isDark ? "#DDD" : "#34404B", fontSize: 13, fontWeight: "600", marginBottom: 7 }}>
                   Data de nascimento
@@ -1064,7 +1108,7 @@ export default function RootLayout() {
               </View>
             )}
 
-            {pendenciasCadastro.includes("termos") && (
+            {!pendenciasCadastro.includes("telefone") && pendenciasCadastro.includes("termos") && (
               <View style={{ width: "100%", marginTop: 18 }}>
                 <TouchableOpacity
                   style={{ flexDirection: "row", alignItems: "flex-start" }}
@@ -1098,15 +1142,17 @@ export default function RootLayout() {
               </Text>
             ) : null}
 
-            <TouchableOpacity
-              style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]}
-              onPress={concluirCadastroPendente}
-              disabled={salvandoCadastroPendente}
-            >
-              {salvandoCadastroPendente
-                ? <ActivityIndicator color="#FFF" />
-                : <Text style={styles.modalLimiteBtnText}>Salvar e continuar</Text>}
-            </TouchableOpacity>
+            {!pendenciasCadastro.includes("telefone") && (
+              <TouchableOpacity
+                style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]}
+                onPress={concluirCadastroPendente}
+                disabled={salvandoCadastroPendente}
+              >
+                {salvandoCadastroPendente
+                  ? <ActivityIndicator color="#FFF" />
+                  : <Text style={styles.modalLimiteBtnText}>Salvar e continuar</Text>}
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>

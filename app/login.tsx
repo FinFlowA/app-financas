@@ -28,6 +28,7 @@ import {
   idadeEmAnos,
   LEGAL_DOCUMENT_VERSION,
 } from "../lib/legal";
+import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { useAppTheme } from "./_layout";
 import { PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
 
@@ -149,15 +150,6 @@ export default function LoginScreen() {
   const validarEmail = (e: string) =>
     /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e.trim());
 
-  const formatarTelefone = (valor: string) => {
-    const nums = valor.replace(/\D/g, "").slice(0, 11);
-    if (nums.length <= 2) return nums;
-    if (nums.length <= 7) return `(${nums.slice(0, 2)}) ${nums.slice(2)}`;
-    if (nums.length <= 11)
-      return `(${nums.slice(0, 2)}) ${nums.slice(2, 7)}-${nums.slice(7)}`;
-    return valor;
-  };
-
   async function signInWithEmail() {
     if (bloqueadoAte && Date.now() < bloqueadoAte)
       return Alert.alert(
@@ -254,11 +246,11 @@ export default function LoginScreen() {
         "A senha deve ter pelo menos 6 caracteres.",
       );
 
-    const telefoneDigitos = telefone.replace(/\D/g, "");
-    if (telefoneDigitos.length !== 10 && telefoneDigitos.length !== 11)
+    const telefoneE164 = telefoneBrasilE164(telefone);
+    if (!telefoneE164)
       return Alert.alert(
-        "Telefone inválido",
-        "Informe um telefone com DDD e 10 ou 11 dígitos.",
+        "Celular inválido",
+        "Informe um celular brasileiro válido, com DDD e 11 dígitos.",
       );
 
     const nascimentoISO = dataNascimentoParaISO(dataNascimento);
@@ -286,7 +278,7 @@ export default function LoginScreen() {
         emailRedirectTo: "meuappfinancas://email-confirmed",
         data: {
           nome_usuario: nome,
-          telefone: telefone.trim(),
+          telefone: telefoneE164,
           data_nascimento: nascimentoISO,
           termos_aceitos_em: new Date().toISOString(),
           termos_versao: LEGAL_DOCUMENT_VERSION,
@@ -586,13 +578,18 @@ export default function LoginScreen() {
                           icon="phone-iphone"
                           theme={theme}
                           placeholder="(11) 99999-9999"
-                          onChangeText={(valor) => setTelefone(formatarTelefone(valor))}
+                          onChangeText={(valor) => setTelefone(formatarTelefoneBrasil(valor))}
                           value={telefone}
                           keyboardType="phone-pad"
                           autoComplete="tel"
                           textContentType="telephoneNumber"
                           maxLength={15}
                           returnKeyType="next"
+                          helper={(
+                            <Text style={[styles.fieldHelper, { color: theme.textMuted }]}>
+                              Após confirmar o e-mail, você validará este número por SMS.
+                            </Text>
+                          )}
                         />
                       </View>
                       <View style={isWide ? styles.halfField : styles.fullWidthField}>
@@ -991,6 +988,7 @@ const styles = StyleSheet.create({
   formFields: { width: "100%" },
   fieldGroup: { width: "100%", marginBottom: 14 },
   fieldLabel: { fontSize: 12, fontWeight: "700", marginBottom: 7, marginLeft: 2 },
+  fieldHelper: { fontSize: 10.5, lineHeight: 15, marginTop: 6, marginLeft: 2 },
   inputContainer: {
     minHeight: 54,
     flexDirection: "row",

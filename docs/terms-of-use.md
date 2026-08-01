@@ -1,6 +1,6 @@
 # Termos de Uso — FinFlow
 
-**Última atualização:** 30 de julho de 2026
+**Última atualização:** 1º de agosto de 2026
 
 ## 1. Aceitação
 
@@ -18,12 +18,17 @@ O FinFlow ajuda a registrar e visualizar contas, movimentações, categorias, ob
 
 - O serviço é destinado somente a pessoas com 18 anos ou mais.
 - A data de nascimento deve ser informada corretamente no cadastro.
+- Um telefone celular brasileiro válido é obrigatório e deve ser confirmado por código SMS.
+- A troca do telefone também exige confirmação por SMS; números já vinculados a outra conta não podem ser reutilizados.
 - O usuário deve fornecer dados corretos e atualizados.
 - Senha, dispositivo e sessão devem ser protegidos.
+- Códigos de verificação são pessoais, temporários e não devem ser compartilhados.
 - O acesso não pode ser cedido ou comercializado.
 - Uso não autorizado deve ser comunicado ao canal de contato.
 
 O usuário é responsável pelos registros inseridos e por conferir valores, datas, saldos e projeções antes de tomar decisões.
+
+Sem acesso a um celular apto a receber o SMS, não será possível concluir a verificação obrigatória. O FinFlow nunca solicita senha, dados bancários ou pagamento por mensagem SMS.
 
 ## 4. Planos
 

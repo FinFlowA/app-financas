@@ -14,3 +14,6 @@ verify_jwt = false
 
 [functions.groq-proxy]
 verify_jwt = true
+
+[functions.send-auth-sms]
+verify_jwt = false

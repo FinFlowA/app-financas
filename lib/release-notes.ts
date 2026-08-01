@@ -5,12 +5,11 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-01-projecao-objetivos",
+  id: "2.0.0-2026-08-01-verificacao-telefone",
   items: [
-    "Objetivos com prazo agora mostram o saldo previsto na data da meta, considerando as transferências agendadas",
-    "Histórico com filtro por ano e lançamentos ordenados da data mais próxima para a mais distante",
-    "Avisos de atrasos agora abrem o filtro correto e indicam quando há pendências",
-    "O sino deixa de exibir a bolinha vermelha depois que os avisos são visualizados",
-    "Receitas e despesas antigas sem categoria visível passam a aparecer em Outros, sem sumir dos gráficos",
+    "Seu telefone agora é confirmado por um código de segurança enviado por SMS",
+    "A troca do número fica protegida na área Segurança e só é concluída após a confirmação",
+    "O FinFlow impede que o mesmo telefone seja vinculado a contas diferentes",
+    "Termos de Uso e Política de Privacidade foram atualizados para explicar a verificação por SMS",
   ],
 } as const;
