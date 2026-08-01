@@ -994,7 +994,7 @@ export default function Dashboard() {
           ))}
         </View>
 
-        <TouchableOpacity style={[styles.homeMonthCard, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]} onPress={() => setModalResumoVisivel(true)} activeOpacity={0.85}>
+        <View style={[styles.homeMonthCard, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
           <View style={styles.homeSectionTop}>
             <Text style={[styles.homeSectionTitle, { color: novoTema.text }]}>Visão do mês</Text>
             <View style={[styles.homeCalendarIcon, { backgroundColor: novoTema.surfaceMuted }]}><MaterialIcons name="calendar-today" size={15} color={novoTema.textMuted} /></View>
@@ -1011,7 +1011,7 @@ export default function Dashboard() {
           <Text style={{ color: saldoPrevistoFimDoMes < 0 ? (isDark ? "#F28B82" : "#C96A6A") : novoTema.textMuted, fontSize: 11, marginTop: 9 }}>
             Saldo previsto no fim do mês: {fmtReais(saldoPrevistoFimDoMes)}
           </Text>
-        </TouchableOpacity>
+        </View>
 
         {false && <>
         {/* HEADER com botão IA fixo */}

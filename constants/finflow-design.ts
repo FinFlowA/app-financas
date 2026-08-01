@@ -38,3 +38,15 @@ export const FinFlowShadow = {
   shadowRadius: 14,
   elevation: 5,
 } as const;
+
+/**
+ * Medidas compartilhadas do topo verde das abas principais.
+ * Manter estes valores centralizados evita que cada tela volte a adotar
+ * uma altura ou curvatura diferente.
+ */
+export const FinFlowTabHeader = {
+  expandedHeight: 120,
+  compactHeight: 72,
+  expandedRadius: 24,
+  compactRadius: 17,
+} as const;

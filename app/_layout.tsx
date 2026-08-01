@@ -50,6 +50,7 @@ import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscription
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
+import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
   type DecisaoContaDissolucao,
   type ResumoDissolucao,
@@ -175,6 +176,10 @@ export default function RootLayout() {
   const [termosPendentesAceitos, setTermosPendentesAceitos] = useState(false);
   const [salvandoCadastroPendente, setSalvandoCadastroPendente] = useState(false);
   const [erroCadastroPendente, setErroCadastroPendente] = useState("");
+  const [tutorialUsuario, setTutorialUsuario] = useState<{
+    userId: string | null;
+    status: "verificando" | "pendente" | "concluido";
+  }>({ userId: null, status: "verificando" });
 
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
@@ -341,6 +346,76 @@ export default function RootLayout() {
     }
     verificarCadastroPendente();
   }, [session?.user?.id, verificarCadastroPendente]);
+
+  const tutorialMarcadoPendente = session?.user?.user_metadata?.tutorial_pendente === true;
+  const tutorialStatus = tutorialUsuario.userId === session?.user?.id
+    ? tutorialUsuario.status
+    : "verificando";
+  const tutorialBloqueando = Boolean(
+    session?.user?.id && tutorialMarcadoPendente && tutorialStatus !== "concluido",
+  );
+  const tutorialVisivel = tutorialBloqueando && tutorialStatus === "pendente";
+
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (!uid) {
+      setTutorialUsuario({ userId: null, status: "verificando" });
+      return;
+    }
+
+    if (!tutorialMarcadoPendente) {
+      setTutorialUsuario({ userId: uid, status: "concluido" });
+      return;
+    }
+
+    let ativo = true;
+    setTutorialUsuario({ userId: uid, status: "verificando" });
+    AsyncStorage.getItem(`@finflow_tutorial_concluido_${uid}`)
+      .then((valor) => {
+        if (!ativo) return;
+        setTutorialUsuario({
+          userId: uid,
+          status: valor === "true" ? "concluido" : "pendente",
+        });
+      })
+      .catch(() => {
+        if (ativo) setTutorialUsuario({ userId: uid, status: "pendente" });
+      });
+
+    return () => {
+      ativo = false;
+    };
+  }, [session?.user?.id, tutorialMarcadoPendente]);
+
+  const concluirOuPularTutorial = async () => {
+    const uid = session?.user?.id;
+    if (!uid) return;
+
+    // Fecha imediatamente e grava primeiro no aparelho. Assim, uma falha de rede
+    // nunca obriga o usuário a rever o tutorial neste dispositivo.
+    setTutorialUsuario({ userId: uid, status: "concluido" });
+    try {
+      await AsyncStorage.setItem(`@finflow_tutorial_concluido_${uid}`, "true");
+    } catch (error) {
+      console.warn("Não foi possível salvar o tutorial no dispositivo:", error);
+    }
+
+    const metadataAtual = session?.user?.user_metadata ?? {};
+    try {
+      const { error } = await supabase.auth.updateUser({
+        data: {
+          ...metadataAtual,
+          tutorial_pendente: false,
+          tutorial_concluido_em: new Date().toISOString(),
+        },
+      });
+      if (error) {
+        console.warn("Tutorial concluído localmente; sincronização pendente:", error.message);
+      }
+    } catch (error) {
+      console.warn("Tutorial concluído localmente; sincronização pendente:", error);
+    }
+  };
 
   const concluirCadastroPendente = async () => {
     if (salvandoCadastroPendente) return;
@@ -868,6 +943,7 @@ export default function RootLayout() {
           temCadastroPendente: pendenciasCadastro.length > 0,
           temPopupPrioritario:
             pendenciasCadastro.length > 0 ||
+            tutorialBloqueando ||
             resumoDissolucao !== null ||
             decisoesContaDissolucao.length > 0 ||
             decisoesCaixinha.length > 0 ||
@@ -997,13 +1073,29 @@ export default function RootLayout() {
         </View>
       </Modal>
 
+      <FinFlowOnboarding
+        visible={
+          Boolean(session?.user?.id) &&
+          pendenciasCadastro.length === 0 &&
+          tutorialVisivel
+        }
+        isDark={isDark}
+        onSkip={concluirOuPularTutorial}
+        onFinish={concluirOuPularTutorial}
+      />
+
       <PartnershipDissolutionModals
         isDark={isDark}
         resumo={resumoDissolucao}
         decisaoConta={decisoesContaDissolucao[0] ?? null}
-        mostrarResumo={pendenciasCadastro.length === 0 && resumoDissolucao !== null}
+        mostrarResumo={
+          pendenciasCadastro.length === 0 &&
+          !tutorialBloqueando &&
+          resumoDissolucao !== null
+        }
         mostrarDecisaoConta={
           pendenciasCadastro.length === 0 &&
+          !tutorialBloqueando &&
           resumoDissolucao === null &&
           decisoesContaDissolucao.length > 0
         }
@@ -1017,6 +1109,7 @@ export default function RootLayout() {
         transparent
         visible={
           pendenciasCadastro.length === 0 &&
+          !tutorialBloqueando &&
           resumoDissolucao === null &&
           decisoesContaDissolucao.length === 0 &&
           decisoesCaixinha.length === 0 &&
@@ -1059,6 +1152,7 @@ export default function RootLayout() {
         transparent
         visible={
           pendenciasCadastro.length === 0 &&
+          !tutorialBloqueando &&
           resumoDissolucao === null &&
           decisoesContaDissolucao.length === 0 &&
           decisoesCaixinha.length > 0
@@ -1163,6 +1257,7 @@ export default function RootLayout() {
         transparent
         visible={
           pendenciasCadastro.length === 0 &&
+          !tutorialBloqueando &&
           resumoDissolucao === null &&
           decisoesContaDissolucao.length === 0 &&
           decisoesCaixinha.length === 0 &&
@@ -1227,6 +1322,7 @@ export default function RootLayout() {
         transparent
         visible={
           pendenciasCadastro.length === 0 &&
+          !tutorialBloqueando &&
           resumoDissolucao === null &&
           decisoesContaDissolucao.length === 0 &&
           decisoesCaixinha.length === 0 &&

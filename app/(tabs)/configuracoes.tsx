@@ -2,10 +2,11 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Animated,
   DeviceEventEmitter,
   Modal,
   ScrollView,
@@ -19,7 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
-import { finFlowTheme } from "../../constants/finflow-design";
+import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import { formatarTelefone } from "../../lib/legal";
 import {
   obterPreferenciasNotificacoes,
@@ -41,11 +42,16 @@ const OPCOES_NOTIFICACOES: { key: keyof PreferenciasNotificacoes; titulo: string
   { key: "prazoObjetivos", titulo: "Prazos dos objetivos", descricao: "Lembretes quando uma meta estiver perto do prazo.", icone: "savings", cor: "#2A9D8F" },
 ];
 
+const SETTINGS_HEADER_COLLAPSE_DISTANCE = FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight;
+
 export default function ConfiguracoesScreen() {
   const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, limitsEnabled } = useAppTheme();
   const router = useRouter();
   const params = useLocalSearchParams<{ abrirNotificacoes?: string; parceriaId?: string }>();
   const novoTema = finFlowTheme(isDark);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const cabecalhoCompactoRef = useRef(false);
+  const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
@@ -474,22 +480,134 @@ export default function ConfiguracoesScreen() {
     session?.user?.email?.split("@")[0] ||
     "Usuário";
 
+  const nomePlano = plano === "free" ? "Free" : plano === "smart" ? "Smart" : "Premium";
+  const alturaCabecalho = scrollY.interpolate({
+    inputRange: [0, SETTINGS_HEADER_COLLAPSE_DISTANCE],
+    outputRange: [FinFlowTabHeader.expandedHeight, FinFlowTabHeader.compactHeight],
+    extrapolate: "clamp",
+  });
+  const raioCabecalho = scrollY.interpolate({
+    inputRange: [0, SETTINGS_HEADER_COLLAPSE_DISTANCE],
+    outputRange: [FinFlowTabHeader.expandedRadius, FinFlowTabHeader.compactRadius],
+    extrapolate: "clamp",
+  });
+  const opacidadeCabecalhoExpandido = scrollY.interpolate({
+    inputRange: [0, 20, SETTINGS_HEADER_COLLAPSE_DISTANCE],
+    outputRange: [1, 0.72, 0],
+    extrapolate: "clamp",
+  });
+  const deslocamentoCabecalhoExpandido = scrollY.interpolate({
+    inputRange: [0, SETTINGS_HEADER_COLLAPSE_DISTANCE],
+    outputRange: [0, -12],
+    extrapolate: "clamp",
+  });
+  const opacidadeCabecalhoCompacto = scrollY.interpolate({
+    inputRange: [12, SETTINGS_HEADER_COLLAPSE_DISTANCE],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+  const deslocamentoCabecalhoCompacto = scrollY.interpolate({
+    inputRange: [12, SETTINGS_HEADER_COLLAPSE_DISTANCE],
+    outputRange: [7, 0],
+    extrapolate: "clamp",
+  });
+  const onScrollAjustes = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: false,
+      listener: (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+        const offset = Math.max(0, event.nativeEvent.contentOffset.y);
+        let compacto = cabecalhoCompactoRef.current;
+        if (!compacto && offset >= 34) compacto = true;
+        if (compacto && offset <= 18) compacto = false;
+        if (compacto !== cabecalhoCompactoRef.current) {
+          cabecalhoCompactoRef.current = compacto;
+          setCabecalhoCompacto(compacto);
+        }
+      },
+    }
+  );
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
-      <ScrollView>
-        <View style={[styles.header, { backgroundColor: novoTema.header }]}>
-          <Text style={[styles.title, { color: "#FFF" }]}>Configurações</Text>
-          <TouchableOpacity
-            style={[styles.ajudaBtn, { backgroundColor: "rgba(255,255,255,0.14)" }]}
-            onPress={() => {
-              setTipoFeedback("sugestao");
-              setMensagemFeedback("");
-              setModalFeedbackVisivel(true);
-            }}
+      <View style={styles.screenContent}>
+        <Animated.View
+          style={[
+            styles.header,
+            {
+              backgroundColor: novoTema.header,
+              height: alturaCabecalho,
+              borderBottomLeftRadius: raioCabecalho,
+              borderBottomRightRadius: raioCabecalho,
+            },
+          ]}
+        >
+          <Animated.View
+            pointerEvents={cabecalhoCompacto ? "none" : "auto"}
+            style={[
+              styles.headerExpandedContent,
+              {
+                opacity: opacidadeCabecalhoExpandido,
+                transform: [{ translateY: deslocamentoCabecalhoExpandido }],
+              },
+            ]}
           >
-            <MaterialIcons name="help-outline" size={22} color="#FFF" />
-          </TouchableOpacity>
-        </View>
+            <Text style={[styles.title, { color: "#FFF" }]}>Configurações</Text>
+            <TouchableOpacity
+              style={[styles.ajudaBtn, { backgroundColor: "rgba(255,255,255,0.14)" }]}
+              onPress={() => {
+                setTipoFeedback("sugestao");
+                setMensagemFeedback("");
+                setModalFeedbackVisivel(true);
+              }}
+              accessibilityLabel="Ajuda e feedback"
+            >
+              <MaterialIcons name="help-outline" size={22} color="#FFF" />
+            </TouchableOpacity>
+          </Animated.View>
+
+          <Animated.View
+            pointerEvents={cabecalhoCompacto ? "auto" : "none"}
+            style={[
+              styles.headerCompactContent,
+              {
+                opacity: opacidadeCabecalhoCompacto,
+                transform: [{ translateY: deslocamentoCabecalhoCompacto }],
+              },
+            ]}
+          >
+            <View style={styles.compactProfileAvatar}>
+              <Text style={styles.compactProfileAvatarText}>{nomeUsuario.charAt(0).toUpperCase()}</Text>
+            </View>
+            <View style={styles.compactProfileInfo}>
+              <Text style={styles.compactHeaderTitle}>Configurações</Text>
+              <Text style={styles.compactProfileSummary} numberOfLines={1}>
+                {nomeUsuario} · Plano {nomePlano}
+              </Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.compactHelpButton, { backgroundColor: "rgba(255,255,255,0.14)" }]}
+              onPress={() => {
+                setTipoFeedback("sugestao");
+                setMensagemFeedback("");
+                setModalFeedbackVisivel(true);
+              }}
+              accessibilityLabel="Ajuda e feedback"
+            >
+              <MaterialIcons name="help-outline" size={19} color="#FFF" />
+            </TouchableOpacity>
+          </Animated.View>
+        </Animated.View>
+
+        <Animated.ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={styles.mainScrollContent}
+          onScroll={onScrollAjustes}
+          scrollEventThrottle={16}
+          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
 
         <View style={styles.content}>
 
@@ -679,7 +797,7 @@ export default function ConfiguracoesScreen() {
 
           {/* VERSÃO */}
           <Text style={[{ color: Cores.secundario, fontSize: 12, textAlign: "center", marginTop: 16 }]}>
-            FinFlow v1.0.0
+            FinFlow v2.0.0
           </Text>
 
           {/* SAIR */}
@@ -699,7 +817,8 @@ export default function ConfiguracoesScreen() {
           </Text>
 
         </View>
-      </ScrollView>
+        </Animated.ScrollView>
+      </View>
 
       <Modal animationType="fade" transparent visible={modalPreferenciasNotificacoes} onRequestClose={() => setModalPreferenciasNotificacoes(false)}>
         <View style={styles.modalOverlay}>
@@ -988,10 +1107,55 @@ export default function ConfiguracoesScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { padding: 20, paddingTop: 26, paddingBottom: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  screenContent: { flex: 1, position: "relative" },
+  mainScroll: { flex: 1 },
+  mainScrollContent: { paddingTop: FinFlowTabHeader.expandedHeight, paddingBottom: 104 },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 12,
+    overflow: "hidden",
+    shadowColor: "#001E1A",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  headerExpandedContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: FinFlowTabHeader.expandedHeight,
+    paddingHorizontal: 18,
+    paddingTop: 22,
+    paddingBottom: 38,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  headerCompactContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: FinFlowTabHeader.compactHeight,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    flexDirection: "row",
+    alignItems: "center",
+  },
   title: { fontSize: 24, fontWeight: "bold" },
   ajudaBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  content: { padding: 16, marginTop: -28 },
+  compactProfileAvatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center", marginRight: 10 },
+  compactProfileAvatarText: { color: "#FFF", fontSize: 17, fontWeight: "900" },
+  compactProfileInfo: { flex: 1, minWidth: 0, justifyContent: "center" },
+  compactHeaderTitle: { color: "#FFF", fontSize: 16, fontWeight: "800", lineHeight: 19 },
+  compactProfileSummary: { color: "rgba(255,255,255,0.76)", fontSize: 10, fontWeight: "600", marginTop: 1 },
+  compactHelpButton: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginLeft: 10 },
+  content: { padding: 16, marginTop: -8 },
 
   perfilCard: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 20, borderWidth: 1, marginBottom: 5, elevation: 5 },
   perfilAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginRight: 14 },

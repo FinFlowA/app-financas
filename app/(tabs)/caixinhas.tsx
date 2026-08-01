@@ -1,9 +1,10 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   Modal,
   Platform,
   ScrollView,
@@ -18,7 +19,7 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { fmtReais } from "../../lib/utils";
-import { finFlowTheme } from "../../constants/finflow-design";
+import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import { useAppTheme } from "../_layout";
 
@@ -108,7 +109,6 @@ export default function CaixinhasScreen() {
     inputFundo: novoTema.surfaceMuted,
     barraFundo: novoTema.border,
     pillFundo: novoTema.surfaceMuted,
-    totalCardBg: novoTema.header,
   };
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
@@ -160,6 +160,9 @@ export default function CaixinhasScreen() {
   const [caixaHistorico, setCaixaHistorico] = useState<Caixinha | null>(null);
   const [filtroUsuarioHistorico, setFiltroUsuarioHistorico] = useState<string>("");
   const [acaoRapidaPendente, setAcaoRapidaPendente] = useState<"guardar" | "resgatar" | "historico" | null>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const cabecalhoCompactoRef = useRef(false);
+  const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -406,27 +409,128 @@ export default function CaixinhasScreen() {
 
   const totalGuardadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Guardar")).reduce((acc, m) => acc + Number(m.valor), 0);
   const totalResgatadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Resgate")).reduce((acc, m) => acc + Number(m.valor), 0);
+  const objetivosAlcancados = caixinhas.filter(
+    (caixa) => Number(caixa.saldo_atual) >= Number(caixa.meta_valor)
+  ).length;
+  const resumoProgresso = `${objetivosAlcancados} de ${caixinhas.length} objetivos alcançados`;
+
+  const alturaCabecalho = scrollY.interpolate({
+    inputRange: [0, FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight],
+    outputRange: [FinFlowTabHeader.expandedHeight, FinFlowTabHeader.compactHeight],
+    extrapolate: "clamp",
+  });
+  const raioCabecalho = scrollY.interpolate({
+    inputRange: [0, FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight],
+    outputRange: [FinFlowTabHeader.expandedRadius, FinFlowTabHeader.compactRadius],
+    extrapolate: "clamp",
+  });
+  const opacidadeCabecalhoExpandido = scrollY.interpolate({
+    inputRange: [0, 18, 36],
+    outputRange: [1, 0.65, 0],
+    extrapolate: "clamp",
+  });
+  const deslocamentoCabecalhoExpandido = scrollY.interpolate({
+    inputRange: [0, FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight],
+    outputRange: [0, -10],
+    extrapolate: "clamp",
+  });
+  const opacidadeCabecalhoCompacto = scrollY.interpolate({
+    inputRange: [20, FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+  const deslocamentoCabecalhoCompacto = scrollY.interpolate({
+    inputRange: [20, FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight],
+    outputRange: [7, 0],
+    extrapolate: "clamp",
+  });
+  const onScrollObjetivos = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: false,
+      listener: (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+        const offset = Math.max(0, event.nativeEvent.contentOffset.y);
+        let compacto = cabecalhoCompactoRef.current;
+        if (!compacto && offset >= 32) compacto = true;
+        if (compacto && offset <= 18) compacto = false;
+        if (compacto !== cabecalhoCompactoRef.current) {
+          cabecalhoCompactoRef.current = compacto;
+          setCabecalhoCompacto(compacto);
+        }
+      },
+    }
+  );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Objetivos</Text>
-        <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>Transforme planos em conquistas</Text>
-      </View>
+      <View style={styles.screenContent}>
+      <Animated.View
+        style={[
+          styles.header,
+          {
+            backgroundColor: novoTema.header,
+            height: alturaCabecalho,
+            borderBottomLeftRadius: raioCabecalho,
+            borderBottomRightRadius: raioCabecalho,
+          },
+        ]}
+      >
+        <Animated.View
+          pointerEvents={cabecalhoCompacto ? "none" : "auto"}
+          style={[
+            styles.headerExpandedContent,
+            {
+              opacity: opacidadeCabecalhoExpandido,
+              transform: [{ translateY: deslocamentoCabecalhoExpandido }],
+            },
+          ]}
+        >
+          <Text style={styles.title}>Objetivos</Text>
+          <Text style={styles.subtitle}>Transforme planos em conquistas</Text>
 
-      <ScrollView
+          <View style={styles.headerSummary}>
+            <View>
+              <Text style={styles.totalCardTitle}>Total guardado</Text>
+              <Text style={styles.totalCardAmount}>{fmtReais(totalGuardado)}</Text>
+            </View>
+            <Text style={styles.totalCardProgress}>{resumoProgresso}</Text>
+          </View>
+        </Animated.View>
+
+        <Animated.View
+          pointerEvents={cabecalhoCompacto ? "auto" : "none"}
+          style={[
+            styles.headerCompactContent,
+            {
+              opacity: opacidadeCabecalhoCompacto,
+              transform: [{ translateY: deslocamentoCabecalhoCompacto }],
+            },
+          ]}
+        >
+          <View style={styles.compactHeaderTopRow}>
+            <Text style={styles.compactHeaderTitle}>Objetivos</Text>
+            <Text
+              style={styles.compactHeaderAmount}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.72}
+            >
+              {fmtReais(totalGuardado)}
+            </Text>
+          </View>
+          <Text style={styles.compactHeaderProgress} numberOfLines={1}>
+            {resumoProgresso}
+          </Text>
+        </Animated.View>
+      </Animated.View>
+
+      <Animated.ScrollView
         style={styles.content}
         contentContainerStyle={[styles.contentContainer, { paddingBottom: 112 + Math.max(insets.bottom, 8) }]}
+        onScroll={onScrollObjetivos}
+        scrollEventThrottle={16}
         showsVerticalScrollIndicator={false}
       >
-        <View style={[styles.totalCard, { backgroundColor: Cores.totalCardBg }]}>
-          <Text style={styles.totalCardTitle}>Total guardado</Text>
-          <Text style={styles.totalCardAmount}>{fmtReais(totalGuardado)}</Text>
-          <Text style={styles.totalCardProgress}>
-            {caixinhas.filter((caixa) => Number(caixa.saldo_atual) >= Number(caixa.meta_valor)).length} de {caixinhas.length} objetivos alcançados
-          </Text>
-        </View>
-
         <View style={[styles.quickActions, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
           {[
             { label: "Nova meta", icon: "add-circle-outline", action: () => setModalNovaVisivel(true) },
@@ -519,7 +623,8 @@ export default function CaixinhasScreen() {
             );
           })
         )}
-      </ScrollView>
+      </Animated.ScrollView>
+      </View>
 
       <Modal animationType="fade" transparent visible={acaoRapidaPendente !== null} onRequestClose={() => setAcaoRapidaPendente(null)}>
         <View style={styles.modalOverlay}>
@@ -1059,15 +1164,81 @@ export default function CaixinhasScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { padding: 20, paddingTop: 26, paddingBottom: 14 },
-  title: { fontSize: 28, fontWeight: "bold" },
-  subtitle: { fontSize: 14, marginTop: 4 },
-  content: { flex: 1, paddingHorizontal: 16 },
-  contentContainer: { flexGrow: 1 },
-  totalCard: { padding: 22, minHeight: 136, borderRadius: 22, marginBottom: 10, elevation: 6, alignItems: "flex-start", justifyContent: "center", overflow: "hidden" },
-  totalCardTitle: { color: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: "600" },
-  totalCardAmount: { color: "#FFF", fontSize: 34, fontWeight: "900", marginTop: 5, marginBottom: 7 },
-  totalCardProgress: { color: "rgba(255,255,255,0.72)", fontSize: 12, fontWeight: "600" },
+  screenContent: { flex: 1, position: "relative" },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 12,
+    overflow: "hidden",
+    shadowColor: "#001E1A",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  headerExpandedContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 9,
+    paddingBottom: 6,
+  },
+  headerCompactContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: FinFlowTabHeader.compactHeight,
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  title: { color: "#FFF", fontSize: 20, lineHeight: 23, fontWeight: "bold" },
+  subtitle: { color: "rgba(255,255,255,0.72)", fontSize: 11, lineHeight: 13 },
+  headerSummary: {
+    marginTop: 5,
+    paddingHorizontal: 2,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  content: { flex: 1 },
+  contentContainer: {
+    flexGrow: 1,
+    paddingTop: FinFlowTabHeader.expandedHeight + 14,
+    paddingHorizontal: 16,
+  },
+  totalCardTitle: { color: "rgba(255,255,255,0.72)", fontSize: 10, lineHeight: 12, fontWeight: "600" },
+  totalCardAmount: { color: "#FFF", fontSize: 23, lineHeight: 27, fontWeight: "900" },
+  totalCardProgress: {
+    color: "rgba(255,255,255,0.76)",
+    fontSize: 10,
+    lineHeight: 12,
+    fontWeight: "600",
+    textAlign: "right",
+    maxWidth: "46%",
+    paddingBottom: 2,
+  },
+  compactHeaderTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  compactHeaderTitle: { color: "#FFF", fontSize: 18, fontWeight: "800" },
+  compactHeaderAmount: { color: "#FFF", fontSize: 20, fontWeight: "900", flexShrink: 1, textAlign: "right" },
+  compactHeaderProgress: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    fontWeight: "600",
+    marginTop: 2,
+    textAlign: "right",
+  },
   addButton: { backgroundColor: "rgba(255,255,255,0.16)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20 },
   addButtonText: { color: "#FFF", fontWeight: "bold" },
   quickActions: { flexDirection: "row", borderWidth: 1, borderRadius: 18, marginBottom: 20, paddingVertical: 13, paddingHorizontal: 4, elevation: 2 },

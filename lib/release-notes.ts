@@ -5,12 +5,12 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-07-31",
+  id: "2.0.0-2026-08-01-layout-e-tutorial",
   items: [
-    "Novo visual FinFlow nas telas principais, autenticação, botões e avisos",
-    "Nova central de contas na tela inicial, com seleção, edição, arquivamento e criação em um só lugar",
-    "Histórico, objetivos e Fluxo de Caixa reorganizados para uma leitura mais rápida e confortável",
-    "Parcerias agora possuem avisos obrigatórios e um resumo seguro ao encerrar o vínculo",
-    "Contas sem lançamentos podem ser excluídas com confirmação clara do saldo removido",
+    "Novo tutorial pulável apresenta os recursos essenciais para quem acabou de criar a conta",
+    "Histórico, Objetivos, Fluxo e Ajustes agora possuem cabeçalhos verdes padronizados e mais confortáveis",
+    "Cabeçalhos de Histórico, Objetivos e Ajustes ficam compactos enquanto você navega pela tela",
+    "Fluxo de Caixa ganhou gráfico maior, arraste horizontal e saldo acumulado referente ao mês selecionado",
+    "A Visão do mês na tela inicial ficou mais direta e sem abrir informações repetidas",
   ],
 } as const;

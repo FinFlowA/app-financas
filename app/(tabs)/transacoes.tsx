@@ -18,7 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
-import { finFlowTheme } from "../../constants/finflow-design";
+import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
 import {
   descricaoBaseRecorrencia,
   descricaoVisivel,
@@ -89,8 +89,8 @@ const formatarMesAno = (yyyymm: string) => {
   return `${getNomeMes(mes)} ${ano}`;
 };
 
-const HEADER_EXPANDED_HEIGHT = 205;
-const HEADER_COMPACT_HEIGHT = 92;
+const HEADER_EXPANDED_HEIGHT = FinFlowTabHeader.expandedHeight;
+const HEADER_COMPACT_HEIGHT = FinFlowTabHeader.compactHeight;
 const HEADER_COLLAPSE_DISTANCE = HEADER_EXPANDED_HEIGHT - HEADER_COMPACT_HEIGHT;
 
 export default function TransacoesScreen() {
@@ -624,11 +624,11 @@ export default function TransacoesScreen() {
   });
   const raioCabecalho = scrollY.interpolate({
     inputRange: [0, HEADER_COLLAPSE_DISTANCE],
-    outputRange: [28, 18],
+    outputRange: [FinFlowTabHeader.expandedRadius, FinFlowTabHeader.compactRadius],
     extrapolate: "clamp",
   });
   const opacidadeCabecalhoExpandido = scrollY.interpolate({
-    inputRange: [0, 44, 78],
+    inputRange: [0, 18, HEADER_COLLAPSE_DISTANCE],
     outputRange: [1, 0.65, 0],
     extrapolate: "clamp",
   });
@@ -638,12 +638,12 @@ export default function TransacoesScreen() {
     extrapolate: "clamp",
   });
   const opacidadeCabecalhoCompacto = scrollY.interpolate({
-    inputRange: [48, HEADER_COLLAPSE_DISTANCE],
+    inputRange: [20, HEADER_COLLAPSE_DISTANCE],
     outputRange: [0, 1],
     extrapolate: "clamp",
   });
   const deslocamentoCabecalhoCompacto = scrollY.interpolate({
-    inputRange: [48, HEADER_COLLAPSE_DISTANCE],
+    inputRange: [20, HEADER_COLLAPSE_DISTANCE],
     outputRange: [8, 0],
     extrapolate: "clamp",
   });
@@ -654,8 +654,8 @@ export default function TransacoesScreen() {
       listener: (event: { nativeEvent: { contentOffset: { y: number } } }) => {
         const offset = Math.max(0, event.nativeEvent.contentOffset.y);
         let compacto = cabecalhoCompactoRef.current;
-        if (!compacto && offset >= 72) compacto = true;
-        if (compacto && offset <= 48) compacto = false;
+        if (!compacto && offset >= 28) compacto = true;
+        if (compacto && offset <= 12) compacto = false;
         if (compacto !== cabecalhoCompactoRef.current) {
           cabecalhoCompactoRef.current = compacto;
           setCabecalhoCompacto(compacto);
@@ -1640,7 +1640,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   screenContent: { flex: 1, position: "relative" },
   mainScroll: { flex: 1 },
-  mainScrollContent: { paddingTop: HEADER_EXPANDED_HEIGHT + 14, paddingBottom: 110 },
+  mainScrollContent: { paddingTop: HEADER_EXPANDED_HEIGHT + 10, paddingBottom: 110 },
   header: {
     position: "absolute",
     top: 0,
@@ -1659,9 +1659,9 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    padding: 18,
-    paddingTop: 24,
-    paddingBottom: 22,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 7,
   },
   headerCompactContent: {
     position: "absolute",
@@ -1669,43 +1669,43 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: HEADER_COMPACT_HEIGHT,
-    paddingHorizontal: 14,
-    paddingTop: 8,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingTop: 5,
+    paddingBottom: 4,
   },
-  title: { fontSize: 24, fontWeight: "bold" },
-  headerTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerSearch: { width: "48%", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.15)", borderRadius: 16, paddingRight: 5 },
-  headerSearchInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 9, color: "#FFF", fontSize: 13 },
-  headerSearchClear: { padding: 4, marginLeft: 4 },
-  headerMonthRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 20 },
-  headerMonthButton: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.14)" },
-  headerMonthText: { color: "#FFF", fontSize: 15, fontWeight: "700", textTransform: "capitalize", minWidth: 150, textAlign: "center" },
-  headerTotals: { flexDirection: "row", justifyContent: "space-between", marginTop: 17, paddingHorizontal: 10 },
-  headerTotalLabel: { color: "rgba(255,255,255,0.68)", fontSize: 11, marginBottom: 3 },
-  headerIncome: { color: "#B7F5D8", fontSize: 18, fontWeight: "800" },
-  headerExpense: { color: "#FFC0B5", fontSize: 18, fontWeight: "800", textAlign: "right" },
-  compactHeaderTopRow: { minHeight: 31, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
-  compactHeaderTitle: { color: "#FFF", fontSize: 18, fontWeight: "800" },
+  title: { fontSize: 20, fontWeight: "bold" },
+  headerTopRow: { height: 28, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerSearch: { width: "52%", height: 28, flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.15)", borderRadius: 14, paddingRight: 4 },
+  headerSearchInput: { flex: 1, paddingHorizontal: 10, paddingVertical: 4, color: "#FFF", fontSize: 12 },
+  headerSearchClear: { padding: 3, marginLeft: 2 },
+  headerMonthRow: { height: 26, flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 2 },
+  headerMonthButton: { width: 25, height: 25, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.14)" },
+  headerMonthText: { color: "#FFF", fontSize: 13, fontWeight: "700", textTransform: "capitalize", minWidth: 130, textAlign: "center" },
+  headerTotals: { minHeight: 33, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 1, paddingHorizontal: 5 },
+  headerTotalLabel: { color: "rgba(255,255,255,0.68)", fontSize: 9, marginBottom: 0 },
+  headerIncome: { color: "#B7F5D8", fontSize: 14, fontWeight: "800" },
+  headerExpense: { color: "#FFC0B5", fontSize: 14, fontWeight: "800", textAlign: "right" },
+  compactHeaderTopRow: { minHeight: 27, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  compactHeaderTitle: { color: "#FFF", fontSize: 16, fontWeight: "800" },
   compactHeaderSearch: {
-    width: "50%",
-    height: 31,
+    width: "52%",
+    height: 27,
     flexDirection: "row",
     alignItems: "center",
-    paddingLeft: 9,
-    paddingRight: 3,
-    borderRadius: 15,
+    paddingLeft: 8,
+    paddingRight: 2,
+    borderRadius: 14,
     backgroundColor: "rgba(0,0,0,0.16)",
   },
-  compactHeaderSearchInput: { flex: 1, minWidth: 0, paddingHorizontal: 6, paddingVertical: 5, color: "#FFF", fontSize: 12 },
-  compactHeaderClear: { padding: 4 },
-  compactHeaderSummary: { flex: 1, minHeight: 39, flexDirection: "row", alignItems: "center", marginTop: 5 },
+  compactHeaderSearchInput: { flex: 1, minWidth: 0, paddingHorizontal: 5, paddingVertical: 3, color: "#FFF", fontSize: 11 },
+  compactHeaderClear: { padding: 3 },
+  compactHeaderSummary: { flex: 1, minHeight: 28, flexDirection: "row", alignItems: "center", marginTop: 1 },
   compactMonthSelector: { flex: 1.2, minWidth: 0, flexDirection: "row", alignItems: "center" },
-  compactMonthButton: { width: 27, height: 27, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.13)" },
-  compactMonthText: { flex: 1, minWidth: 0, paddingHorizontal: 3, color: "#FFF", fontSize: 12, fontWeight: "700", textAlign: "center", textTransform: "capitalize" },
+  compactMonthButton: { width: 23, height: 23, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.13)" },
+  compactMonthText: { flex: 1, minWidth: 0, paddingHorizontal: 2, color: "#FFF", fontSize: 11, fontWeight: "700", textAlign: "center", textTransform: "capitalize" },
   compactTotals: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "center", gap: 1 },
-  compactIncome: { width: "100%", color: "#B7F5D8", fontSize: 11, fontWeight: "800", textAlign: "right" },
-  compactExpense: { width: "100%", color: "#FFC0B5", fontSize: 11, fontWeight: "800", textAlign: "right" },
+  compactIncome: { width: "100%", color: "#B7F5D8", fontSize: 10, fontWeight: "800", textAlign: "right" },
+  compactExpense: { width: "100%", color: "#FFC0B5", fontSize: 10, fontWeight: "800", textAlign: "right" },
   statusFilters: { flexDirection: "row", gap: 7, paddingHorizontal: 14, marginTop: 14, marginBottom: 12 },
   statusFilter: { flex: 1, paddingVertical: 8, borderRadius: 18, borderWidth: 1, alignItems: "center" },
   statusFilterText: { fontSize: 11, fontWeight: "700" },

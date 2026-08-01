@@ -3,6 +3,8 @@ import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
+  PanResponder,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -14,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
-import { finFlowTheme } from "../../constants/finflow-design";
+import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
   dataEfetivaTransacao,
   getContaDestinoTransferencia,
@@ -47,7 +49,7 @@ const getNomeMes = (mes: string) => MESES_FULL[parseInt(mes, 10) - 1];
 export default function RelatoriosScreen() {
   const { isDark, session } = useAppTheme();
   const novoTema = finFlowTheme(isDark);
-  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const { width: screenWidth } = useWindowDimensions();
   const tabBarHeight = useBottomTabBarHeight();
 
   const Cores = {
@@ -71,9 +73,34 @@ export default function RelatoriosScreen() {
 
   const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
   const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
-  const [contentHeight, setContentHeight] = useState(0);
+  const [chartCardHeight, setChartCardHeight] = useState(0);
+  const [chartChromeHeight, setChartChromeHeight] = useState(0);
+  const [detailHeight, setDetailHeight] = useState(0);
 
   const projScrollRef = useRef<ScrollView>(null);
+  const chartScrollXRef = useRef(0);
+  const chartDragStartXRef = useRef(0);
+  const chartDragResponder = useRef(
+    PanResponder.create({
+      // No celular, o ScrollView continua usando o gesto nativo. No web,
+      // capturamos apenas um arrasto horizontal real, mantendo o toque nos
+      // meses livre quando o ponteiro não se move.
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponderCapture: (_event, gesture) => (
+        Platform.OS === "web"
+        && Math.abs(gesture.dx) > 6
+        && Math.abs(gesture.dx) > Math.abs(gesture.dy)
+      ),
+      onPanResponderGrant: () => {
+        chartDragStartXRef.current = chartScrollXRef.current;
+      },
+      onPanResponderMove: (_event, gesture) => {
+        const nextX = Math.max(0, chartDragStartXRef.current - gesture.dx);
+        projScrollRef.current?.scrollTo({ x: nextX, animated: false });
+      },
+      onPanResponderTerminationRequest: () => true,
+    }),
+  ).current;
 
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -203,7 +230,10 @@ export default function RelatoriosScreen() {
     const mesNoPassado = anoSelecionado < anoAtualNum || (isAnoAtual && m < mesAtualIdx);
     const mesAtualSemPendencias = isAnoAtual
       && m === mesAtualIdx
-      && !transacoesFiltradas.some(t => t.status !== "paga" && (t.data_vencimento || "").startsWith(yyyymm));
+      && !transacoesFiltradas.some((t) => {
+        const vencimento = t.data_vencimento || "";
+        return t.status !== "paga" && vencimento !== "" && vencimento <= fimDoMes;
+      });
 
     if (mesNoPassado) {
       projecaoSaldo.push({ mesIdx: m, saldo: saldoRealAte(fimDoMes), isFuture: false, isPast: true });
@@ -222,30 +252,28 @@ export default function RelatoriosScreen() {
   const chartRange = chartMax - chartMin || 1;
   const mesDetalhe = todosOsMeses[mesProjSelecionado];
   const saldoDetalhe = projecaoSaldo.find(p => p.mesIdx === mesProjSelecionado);
+  const saldoAcumuladoSelecionado = saldoDetalhe?.saldo ?? saldoAtualGlobal;
 
-  const detalheTemPendencias = !!mesDetalhe
-    && (mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0);
-  const detalheRows = mesDetalhe
-    ? 2
-      + (mesDetalhe.recPendentes > 0 ? 1 : 0)
-      + (mesDetalhe.despPendentes > 0 ? 1 : 0)
-      + (saldoDetalhe ? 1 : 0)
-      + (mesDetalhe.isAtual && saldoDetalhe?.isFuture ? 1 : 0)
-    : 0;
-  const detalheSeparadores = (detalheTemPendencias ? 1 : 0) + (saldoDetalhe ? 1 : 0);
-  const detalheHeightEstimado = mesDetalhe
-    ? 37 + detalheRows * 16 + detalheSeparadores * 5
-    : 0;
-  const alturaConteudoDisponivel = contentHeight || Math.max(300, screenHeight - 190);
-  const chartHeight = Math.max(
-    42,
-    Math.min(
-      160,
-      alturaConteudoDisponivel - tabBarHeight - detalheHeightEstimado - 98,
-    ),
-  );
-  const barSectionWidth = Math.max(56, Math.min(84, (screenWidth - 48) / 6));
+  // O gráfico ocupa exatamente o espaço real restante do card. A barra de
+  // abas já está reservada pelo paddingBottom do conteúdo e não deve ser
+  // descontada uma segunda vez aqui.
+  const medidasDoCardProntas = chartCardHeight > 0
+    && chartChromeHeight > 0
+    && (!mesDetalhe || detailHeight > 0);
+  const chartHeightDisponivel = chartCardHeight
+    - 18 // padding vertical (16) + bordas (2) do card
+    - chartChromeHeight
+    - 4 // margem superior da área rolável
+    - 20 // rótulos dos meses
+    - (mesDetalhe ? detailHeight + 10 : 0); // detalhe e sua margem superior
+  const chartHeight = medidasDoCardProntas
+    ? Math.max(72, Math.min(460, chartHeightDisponivel))
+    : 120;
+  // Mantém aproximadamente cinco meses visíveis em telas estreitas. Assim os
+  // 12 meses formam uma faixa realmente rolável no celular e no preview web.
+  const barSectionWidth = Math.max(64, Math.min(86, (screenWidth - 48) / 5.25));
   const barWidth = barSectionWidth * 0.28;
+  const chartContentWidth = barSectionWidth * 12;
 
   const getY = (val: number) => chartHeight - ((val - chartMin) / chartRange) * chartHeight;
   const getBarH = (val: number) => Math.max(0, (val / chartRange) * chartHeight);
@@ -255,12 +283,21 @@ export default function RelatoriosScreen() {
   const balancePoints = projecaoSaldo.map(p => ({
     x: barSectionWidth * p.mesIdx + barSectionWidth / 2,
     y: getY(p.saldo),
+    saldo: p.saldo,
     isFuture: p.isFuture,
     mesIdx: p.mesIdx,
   }));
 
   const formatVal = (v: number) =>
     Math.abs(v) >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${v.toFixed(0)}`;
+
+  const rotuloEscopoFluxo = contas.length === 0
+    ? "Vis\u00e3o consolidada"
+    : escopoFluxoEhTodas
+      ? contas.length > 1 ? "Todas as contas" : contas[0]?.nome ?? "Vis\u00e3o consolidada"
+      : contasFiltradas.length === 1
+        ? contasFiltradas[0].nome
+        : `${contasFiltradas.length} contas selecionadas`;
 
   return (
     <SafeAreaView
@@ -270,103 +307,96 @@ export default function RelatoriosScreen() {
       <View style={[styles.header, { backgroundColor: novoTema.header }]}>
         <View style={styles.headerTitleRow}>
           <Text style={[styles.title, { color: "#FFF" }]}>Fluxo de caixa</Text>
-          <View style={styles.headerPeriodPill}>
-            <MaterialIcons name="calendar-today" size={13} color="#FFF" />
+          <View style={styles.headerYearSelector}>
+            <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.headerYearButton} accessibilityLabel="Ano anterior">
+              <MaterialIcons name="chevron-left" size={20} color="#FFF" />
+            </TouchableOpacity>
+            <MaterialIcons name="calendar-today" size={12} color="rgba(255,255,255,0.76)" />
             <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
+            <TouchableOpacity onPress={() => alterarAno(1)} style={styles.headerYearButton} accessibilityLabel="Próximo ano">
+              <MaterialIcons name="chevron-right" size={20} color="#FFF" />
+            </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.headerBalanceLabel}>Saldo acumulado</Text>
+        <Text style={styles.headerBalanceLabel} numberOfLines={1}>
+          Saldo acumulado{" \u00b7 "}{rotuloEscopoFluxo}
+        </Text>
         <View style={styles.headerBalanceRow}>
-          <Text style={styles.headerBalance}>{fmtReais(saldoAtualGlobal)}</Text>
+          <Text style={styles.headerBalance}>{fmtReais(saldoAcumuladoSelecionado)}</Text>
           <View style={styles.headerTrendPill}>
-            <MaterialIcons name="trending-up" size={13} color="#C7F6E5" />
+            <MaterialIcons
+              name={saldoDetalhe?.isPast ? "history" : saldoDetalhe?.isFuture ? "trending-up" : "account-balance-wallet"}
+              size={13}
+              color="#C7F6E5"
+            />
             <Text style={styles.headerTrendText}>{getNomeMes(String(mesProjSelecionado + 1).padStart(2, "0"))}</Text>
           </View>
         </View>
-        <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.74)" }]}>
-          {contas.length === 0
-            ? "Visão consolidada"
-            : escopoFluxoEhTodas
-              ? contas.length > 1 ? "Todas as contas" : contas[0]?.nome ?? "Visão consolidada"
-              : contasFiltradas.length === 1
-                ? contasFiltradas[0].nome
-                : `${contasFiltradas.length} contas selecionadas`}
-        </Text>
-      </View>
-
-      {/* ACCOUNT FILTER */}
-      {contas.length > 0 && (
-        <View style={styles.contasFiltroWrap}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 15, gap: 8, paddingVertical: 4 }}
-        >
-          {/* Todas */}
-          <TouchableOpacity
-            onPress={() => setContasSelecionadasIds(null)}
-            style={[
-              styles.contaChip,
-              {
-                backgroundColor: escopoFluxoEhTodas ? "#2A9D8F" : Cores.pillFundo,
-                borderColor: escopoFluxoEhTodas ? "#2A9D8F" : Cores.borda,
-              },
-            ]}
+        {contas.length > 0 && (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.headerAccountsScroll}
+            contentContainerStyle={styles.headerAccountsContent}
           >
-            <MaterialIcons
-              name="account-balance-wallet"
-              size={13}
-              color={escopoFluxoEhTodas ? "#fff" : Cores.textoSecundario}
-            />
-            <Text style={[styles.contaChipText, { color: escopoFluxoEhTodas ? "#fff" : Cores.textoSecundario }]}>
-              Todas
-            </Text>
-          </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => setContasSelecionadasIds(null)}
+              style={[
+                styles.contaChip,
+                escopoFluxoEhTodas ? styles.contaChipHeaderSelected : styles.contaChipHeaderIdle,
+              ]}
+            >
+              <MaterialIcons
+                name="account-balance-wallet"
+                size={13}
+                color={escopoFluxoEhTodas ? "#FFF" : "rgba(255,255,255,0.72)"}
+              />
+              <Text style={[styles.contaChipText, { color: escopoFluxoEhTodas ? "#FFF" : "rgba(255,255,255,0.72)" }]}>
+                Todas
+              </Text>
+            </TouchableOpacity>
 
-          {/* Individual accounts */}
-          {contas.map(conta => {
-            const sel = !escopoFluxoEhTodas && idsEscopoFluxo.has(conta.id);
-            const cor = conta.cor || "#2A9D8F";
-            return (
-              <TouchableOpacity
-                key={conta.id}
-                onPress={() => alternarContaFluxo(conta.id)}
-                style={[
-                  styles.contaChip,
-                  { backgroundColor: sel ? cor : Cores.pillFundo, borderColor: sel ? cor : Cores.borda },
-                ]}
-              >
-                <View style={[styles.contaChipDot, { backgroundColor: sel ? "#fff" : cor }]} />
-                <Text style={[styles.contaChipText, { color: sel ? "#fff" : Cores.textoSecundario }]}>
-                  {conta.nome}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-        </View>
-      )}
-
-      {/* YEAR NAV */}
-      <View style={[styles.anoNav, { backgroundColor: Cores.pillFundo }]}>
-        <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.anoNavBtn}>
-          <MaterialIcons name="chevron-left" size={28} color={Cores.textoPrincipal} />
-        </TouchableOpacity>
-        <Text style={[styles.anoNavText, { color: Cores.textoPrincipal }]}>{anoSelecionado}</Text>
-        <TouchableOpacity onPress={() => alterarAno(1)} style={styles.anoNavBtn}>
-          <MaterialIcons name="chevron-right" size={28} color={Cores.textoPrincipal} />
-        </TouchableOpacity>
+            {contas.map(conta => {
+              const sel = !escopoFluxoEhTodas && idsEscopoFluxo.has(conta.id);
+              const cor = conta.cor || "#C7F6E5";
+              return (
+                <TouchableOpacity
+                  key={conta.id}
+                  onPress={() => alternarContaFluxo(conta.id)}
+                  style={[
+                    styles.contaChip,
+                    sel ? styles.contaChipHeaderSelected : styles.contaChipHeaderIdle,
+                  ]}
+                >
+                  <View style={[styles.contaChipDot, { backgroundColor: sel ? "#FFF" : cor }]} />
+                  <Text style={[styles.contaChipText, { color: sel ? "#FFF" : "rgba(255,255,255,0.72)" }]}>
+                    {conta.nome}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        )}
       </View>
 
       <View
         style={[styles.content, { paddingBottom: tabBarHeight + 6 }]}
-        onLayout={({ nativeEvent }) => {
-          const proximaAltura = Math.round(nativeEvent.layout.height);
-          if (Math.abs(proximaAltura - contentHeight) > 1) setContentHeight(proximaAltura);
-        }}
       >
         {/* COMBINED BAR + LINE CHART */}
-        <View style={[styles.chartCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+        <View
+          style={[styles.chartCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}
+          onLayout={({ nativeEvent }) => {
+            const altura = Math.round(nativeEvent.layout.height);
+            setChartCardHeight(atual => Math.abs(atual - altura) > 1 ? altura : atual);
+          }}
+        >
+          <View
+            style={styles.chartChrome}
+            onLayout={({ nativeEvent }) => {
+              const altura = Math.round(nativeEvent.layout.height);
+              setChartChromeHeight(atual => Math.abs(atual - altura) > 1 ? altura : atual);
+            }}
+          >
           <View style={styles.chartHeader}>
             <MaterialIcons name="bar-chart" size={18} color="#2A9D8F" />
             <Text style={[styles.chartTitle, { color: Cores.textoPrincipal }]}>
@@ -394,18 +424,34 @@ export default function RelatoriosScreen() {
             </View>
           </View>
 
-          <Text style={[styles.chartHint, { color: Cores.textoSecundario }]}>
-            Toque em um mês para detalhes
-          </Text>
-
-          <ScrollView
-            ref={projScrollRef}
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.chartScroll}
-            contentContainerStyle={{ paddingHorizontal: 4 }}
+          <Text
+            style={[styles.chartHint, { color: Cores.textoSecundario }]}
           >
-            <View style={{ width: barSectionWidth * 12, height: chartHeight + 20 }}>
+            Toque em um mês ou arraste para navegar
+          </Text>
+          </View>
+
+          <View
+            {...chartDragResponder.panHandlers}
+            style={[
+              styles.chartDragViewport,
+              Platform.OS === "web" && ({ cursor: "grab" } as any),
+            ]}
+          >
+            <ScrollView
+              ref={projScrollRef}
+              horizontal
+              directionalLockEnabled
+              nestedScrollEnabled
+              showsHorizontalScrollIndicator={false}
+              style={styles.chartScroll}
+              contentContainerStyle={{ paddingHorizontal: 4 }}
+              onScroll={({ nativeEvent }) => {
+                chartScrollXRef.current = nativeEvent.contentOffset.x;
+              }}
+              scrollEventThrottle={16}
+            >
+              <View style={{ width: chartContentWidth, height: chartHeight + 20 }}>
               {/* Guide lines */}
               {[0, 0.25, 0.5, 0.75, 1].map(frac => {
                 const y = getY(chartMin + frac * chartRange);
@@ -538,9 +584,7 @@ export default function RelatoriosScreen() {
                             alignItems: "center",
                           }}>
                             <Text style={{ color: "#FFF", fontSize: 10, fontWeight: "bold" }}>
-                              {formatVal(balPt!.isFuture
-                                ? projecaoSaldo.find(p => p.mesIdx === mes.mesIdx)?.saldo ?? 0
-                                : saldoAtualGlobal)}
+                              {formatVal(balPt!.saldo)}
                             </Text>
                           </View>
                         )}
@@ -559,12 +603,19 @@ export default function RelatoriosScreen() {
                   </TouchableOpacity>
                 );
               })}
-            </View>
-          </ScrollView>
+              </View>
+            </ScrollView>
+          </View>
 
           {/* Detail box */}
           {mesDetalhe && (
-            <View style={[styles.detalheBox, { borderColor: Cores.borda, backgroundColor: isDark ? "#242424" : "#F0F0F0" }]}>
+            <View
+              style={[styles.detalheBox, { borderColor: Cores.borda, backgroundColor: isDark ? "#242424" : "#F0F0F0" }]}
+              onLayout={({ nativeEvent }) => {
+                const altura = Math.round(nativeEvent.layout.height);
+                setDetailHeight(atual => Math.abs(atual - altura) > 1 ? altura : atual);
+              }}
+            >
               <Text style={[styles.detalheTitulo, { color: Cores.textoPrincipal }]}>
                 {MESES_ABREV[mesDetalhe.mesIdx]} {anoSelecionado}
                 {mesDetalhe.isAtual ? "  •  Mês atual" : ""}
@@ -673,58 +724,56 @@ function DetalheRow({ label, valor, cor, dotCor, isIcon, iconName, bold, cores }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  // SafeAreaView já reserva a área do recorte superior. Mantemos aqui
-  // apenas a folga visual necessária para o cabeçalho não dominar a tela.
   header: {
+    height: FinFlowTabHeader.expandedHeight,
     paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 9,
-    borderBottomLeftRadius: 20,
-    borderBottomRightRadius: 20,
+    paddingTop: 6,
+    paddingBottom: 5,
+    borderBottomLeftRadius: FinFlowTabHeader.expandedRadius,
+    borderBottomRightRadius: FinFlowTabHeader.expandedRadius,
+    overflow: "hidden",
+    elevation: 12,
+    shadowColor: "#001E1A",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
   },
   title: { fontSize: 21, lineHeight: 25, fontWeight: "bold" },
-  subtitle: { fontSize: 11, lineHeight: 14, marginTop: 1 },
   headerTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  headerPeriodPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 13, backgroundColor: "rgba(0,0,0,0.14)" },
-  headerPeriodText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
-  headerBalanceLabel: { color: "rgba(255,255,255,0.68)", fontSize: 10, marginTop: 5 },
+  headerYearSelector: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 3, paddingVertical: 2, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.15)" },
+  headerYearButton: { width: 27, height: 27, alignItems: "center", justifyContent: "center", borderRadius: 14 },
+  headerPeriodText: { color: "#FFF", fontSize: 12, fontWeight: "700", minWidth: 35, textAlign: "center" },
+  headerBalanceLabel: { color: "rgba(255,255,255,0.68)", fontSize: 10, lineHeight: 12, marginTop: 3 },
   headerBalanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 1 },
-  headerBalance: { color: "#FFF", fontSize: 26, lineHeight: 31, fontWeight: "900" },
-  headerTrendPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "rgba(0,0,0,0.14)", borderRadius: 13 },
+  headerBalance: { color: "#FFF", fontSize: 24, lineHeight: 28, fontWeight: "900" },
+  headerTrendPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "rgba(0,0,0,0.15)", borderRadius: 13 },
   headerTrendText: { color: "#C7F6E5", fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
 
-  contasFiltroWrap: { height: 38, marginBottom: 2 },
+  headerAccountsScroll: { marginTop: 2, flexGrow: 0 },
+  headerAccountsContent: { gap: 7, paddingRight: 8 },
   contaChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 2,
+    borderRadius: 16,
     borderWidth: 1,
-    gap: 6,
+    gap: 5,
   },
+  contaChipHeaderSelected: { backgroundColor: "rgba(255,255,255,0.20)", borderColor: "rgba(255,255,255,0.52)" },
+  contaChipHeaderIdle: { backgroundColor: "rgba(0,0,0,0.10)", borderColor: "rgba(255,255,255,0.16)" },
   contaChipDot: { width: 8, height: 8, borderRadius: 4 },
-  contaChipText: { fontSize: 13, fontWeight: "600" },
+  contaChipText: { fontSize: 11, fontWeight: "700" },
 
-  anoNav: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginHorizontal: 16,
-    marginBottom: 6,
-    borderRadius: 10,
-    paddingVertical: 0,
-  },
-  anoNavBtn: { paddingHorizontal: 10, paddingVertical: 3 },
-  anoNavText: { fontSize: 15, lineHeight: 19, fontWeight: "bold", minWidth: 54, textAlign: "center" },
-
-  content: { flex: 1, minHeight: 0, paddingHorizontal: 12 },
+  content: { flex: 1, minHeight: 0, paddingHorizontal: 12, paddingTop: 14 },
 
   chartCard: { flex: 1, minHeight: 0, padding: 8, borderRadius: 16, borderWidth: 1, elevation: 3 },
+  chartChrome: { flexShrink: 0 },
   chartHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
   chartTitle: { fontSize: 14, lineHeight: 18, fontWeight: "bold", flex: 1 },
   chartHint: { fontSize: 10, lineHeight: 12, marginTop: 2 },
-  chartScroll: { marginTop: 4, flexGrow: 0 },
+  chartDragViewport: { marginTop: 4, flexGrow: 0, overflow: "hidden" },
+  chartScroll: { flexGrow: 0 },
 
   legendaRow: { flexDirection: "row", flexWrap: "wrap", columnGap: 7, rowGap: 2, marginTop: 5 },
   legendaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -732,11 +781,11 @@ const styles = StyleSheet.create({
   legendaLinha: { width: 14, height: 2, borderRadius: 1 },
   legendaTxt: { fontSize: 10, lineHeight: 12 },
 
-  detalheBox: { marginTop: 6, borderRadius: 12, borderWidth: 1, padding: 6 },
-  detalheTitulo: { fontSize: 11, lineHeight: 15, fontWeight: "bold", marginBottom: 4 },
-  detalheRow: { flexDirection: "row", alignItems: "center", minHeight: 15, marginBottom: 1 },
+  detalheBox: { marginTop: 10, borderRadius: 12, borderWidth: 1, paddingHorizontal: 9, paddingVertical: 8 },
+  detalheTitulo: { fontSize: 11, lineHeight: 15, fontWeight: "bold", marginBottom: 6 },
+  detalheRow: { flexDirection: "row", alignItems: "center", minHeight: 18, marginBottom: 2 },
   detalheDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
   detalheLabel: { flex: 1, fontSize: 11, lineHeight: 14 },
   detalheVal: { fontSize: 11, lineHeight: 14, fontWeight: "600" },
-  detalheSep: { height: 1, marginVertical: 2 },
+  detalheSep: { height: 1, marginVertical: 3 },
 });

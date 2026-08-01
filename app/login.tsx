@@ -263,6 +263,7 @@ export default function LoginScreen() {
           data_nascimento: nascimentoISO,
           termos_aceitos_em: new Date().toISOString(),
           termos_versao: LEGAL_DOCUMENT_VERSION,
+          tutorial_pendente: true,
         },
       },
     });
