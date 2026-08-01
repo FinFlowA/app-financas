@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Dimensions,
   Image,
   KeyboardAvoidingView,
   Modal,
@@ -15,7 +16,6 @@ import {
   TextInput,
   TextInputProps,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -101,8 +101,8 @@ function AuthField({
 
 export default function LoginScreen() {
   const { isDark, toggleTheme } = useAppTheme();
-  const { width } = useWindowDimensions();
-  const isWide = width >= 900;
+  const [viewportWidth, setViewportWidth] = useState(() => Dimensions.get("window").width);
+  const isWide = Platform.OS === "web" && viewportWidth >= 900;
   const theme = finFlowTheme(isDark);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
@@ -124,6 +124,14 @@ export default function LoginScreen() {
   const [segundosRestantes, setSegundosRestantes] = useState(0);
   const [modalErro, setModalErro] = useState<{ titulo: string; mensagem: string; cor?: string } | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const subscription = Dimensions.addEventListener("change", ({ window }) => {
+      setViewportWidth(window.width);
+    });
+    return () => subscription.remove();
+  }, []);
 
   useEffect(() => {
     if (bloqueadoAte === null) return;
@@ -353,16 +361,17 @@ export default function LoginScreen() {
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <KeyboardAvoidingView
         style={styles.container}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
         <ScrollView
           style={styles.scrollView}
           contentContainerStyle={[styles.scrollContent, isWide && styles.scrollContentWide]}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="on-drag"
+          keyboardShouldPersistTaps="always"
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "none"}
           showsVerticalScrollIndicator={false}
           automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+          removeClippedSubviews={false}
         >
           <View style={[styles.authShell, isWide && styles.authShellWide]}>
             <View
@@ -916,10 +925,9 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.16,
     shadowRadius: 6,
-    elevation: 1,
   },
   inputIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", marginLeft: 7 },
-  input: { flex: 1, minWidth: 0, paddingHorizontal: 10, paddingVertical: 14, fontSize: 15 },
+  input: { flex: 1, minWidth: 0, paddingHorizontal: 10, paddingVertical: 14, fontSize: 15, textAlignVertical: "center" },
   olhoBtn: { width: 48, minHeight: 52, alignItems: "center", justifyContent: "center" },
   twoColumnFields: { width: "100%", flexDirection: "row", gap: 12 },
   twoColumnFieldsStacked: { flexDirection: "column", gap: 0 },
