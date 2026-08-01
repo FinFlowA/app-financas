@@ -50,19 +50,14 @@ function AuthField({
   helper,
   error = false,
   success = false,
-  onFocus,
-  onBlur,
   style,
   ...inputProps
 }: AuthFieldProps) {
-  const [focused, setFocused] = useState(false);
   const borderColor = error
     ? FinFlowColors.red
     : success
       ? FinFlowColors.primary
-      : focused
-        ? theme.primary
-        : theme.border;
+      : theme.border;
 
   return (
     <View style={styles.fieldGroup}>
@@ -71,11 +66,10 @@ function AuthField({
         style={[
           styles.inputContainer,
           { backgroundColor: theme.surfaceMuted, borderColor },
-          focused && styles.inputContainerFocused,
         ]}
       >
-        <View style={[styles.inputIconWrap, { backgroundColor: focused ? theme.primarySoft : "transparent" }]}>
-          <MaterialIcons name={icon} size={19} color={focused ? theme.primary : theme.textMuted} />
+        <View style={styles.inputIconWrap} pointerEvents="none">
+          <MaterialIcons name={icon} size={19} color={theme.textMuted} />
         </View>
         <TextInput
           {...inputProps}
@@ -83,14 +77,6 @@ function AuthField({
           placeholderTextColor={theme.textMuted}
           selectionColor={theme.primary}
           accessibilityLabel={inputProps.accessibilityLabel ?? label}
-          onFocus={(event) => {
-            setFocused(true);
-            onFocus?.(event);
-          }}
-          onBlur={(event) => {
-            setFocused(false);
-            onBlur?.(event);
-          }}
         />
         {trailing}
       </View>
@@ -919,12 +905,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     borderWidth: 1,
     borderRadius: FinFlowRadius.medium,
-  },
-  inputContainerFocused: {
-    shadowColor: FinFlowColors.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.16,
-    shadowRadius: 6,
   },
   inputIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", marginLeft: 7 },
   input: { flex: 1, minWidth: 0, paddingHorizontal: 10, paddingVertical: 14, fontSize: 15, textAlignVertical: "center" },
