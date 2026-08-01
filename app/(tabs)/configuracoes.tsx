@@ -1,6 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import React, { useCallback, useState } from "react";
 import {
@@ -19,26 +19,45 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
+import { finFlowTheme } from "../../constants/finflow-design";
+import { formatarTelefone } from "../../lib/legal";
+import {
+  obterPreferenciasNotificacoes,
+  PREFERENCIAS_NOTIFICACOES_PADRAO,
+  salvarPreferenciasNotificacoes,
+  type PreferenciasNotificacoes,
+} from "../../lib/notifications";
 
 // URLs das páginas legais (GitHub Pages — atualizar quando publicado)
 const URL_PRIVACIDADE = "https://finflowa.github.io/finflow-legal/#privacidade";
 const URL_TERMOS = "https://finflowa.github.io/finflow-legal/#termos";
 
+const OPCOES_NOTIFICACOES: { key: keyof PreferenciasNotificacoes; titulo: string; descricao: string; icone: keyof typeof MaterialIcons.glyphMap; cor: string }[] = [
+  { key: "transacoesVencidas", titulo: "Lançamentos vencidos", descricao: "Avisos de despesas e receitas que passaram do prazo.", icone: "warning-amber", cor: "#E76F51" },
+  { key: "transacoesDoDia", titulo: "Vencimentos do dia", descricao: "Lembretes dos lançamentos previstos para hoje.", icone: "event", cor: "#457B9D" },
+  { key: "fechamentoFatura", titulo: "Fechamento da fatura", descricao: "Avisos antes e no dia do fechamento do cartão.", icone: "lock-clock", cor: "#805AD5" },
+  { key: "vencimentoFatura", titulo: "Vencimento da fatura", descricao: "Lembretes antes e no dia de pagar a fatura.", icone: "credit-card", cor: "#E76F51" },
+  { key: "limiteCartao", titulo: "Limite do cartão", descricao: "Alerta quando o uso do limite ultrapassar 80%.", icone: "speed", cor: "#F4A261" },
+  { key: "prazoObjetivos", titulo: "Prazos dos objetivos", descricao: "Lembretes quando uma meta estiver perto do prazo.", icone: "savings", cor: "#2A9D8F" },
+];
+
 export default function ConfiguracoesScreen() {
   const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, limitsEnabled } = useAppTheme();
   const router = useRouter();
+  const params = useLocalSearchParams<{ abrirNotificacoes?: string; parceriaId?: string }>();
+  const novoTema = finFlowTheme(isDark);
 
   const meuEmail = session?.user?.email || "";
   const meuId = session?.user?.id;
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F2EC",
-    texto: isDark ? "#ffffff" : "#27313A",
-    secundario: isDark ? "#AAAAAA" : "#68727D",
-    card: isDark ? "#1E1E1E" : "#FFFDF9",
-    borda: isDark ? "#333" : "#E5DED3",
-    input: isDark ? "#2C2C2C" : "#FAF8F4",
-    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
+    fundo: novoTema.background,
+    texto: novoTema.text,
+    secundario: novoTema.textMuted,
+    card: novoTema.surface,
+    borda: novoTema.border,
+    input: novoTema.surfaceMuted,
+    pillFundo: novoTema.surfaceMuted,
   };
 
   // Parceria
@@ -72,6 +91,9 @@ export default function ConfiguracoesScreen() {
   const [tipoFeedback, setTipoFeedback] = useState<"problema" | "sugestao" | "reclamação">("sugestao");
   const [mensagemFeedback, setMensagemFeedback] = useState("");
   const [loadingFeedback, setLoadingFeedback] = useState(false);
+  const [modalPreferenciasNotificacoes, setModalPreferenciasNotificacoes] = useState(false);
+  const [loadingPreferenciasNotificacoes, setLoadingPreferenciasNotificacoes] = useState(false);
+  const [preferenciasNotificacoes, setPreferenciasNotificacoes] = useState<PreferenciasNotificacoes>(PREFERENCIAS_NOTIFICACOES_PADRAO);
 
   const carregarParceria = async () => {
     if (!meuId || !meuEmail) return;
@@ -83,7 +105,15 @@ export default function ConfiguracoesScreen() {
 
     if (!data || data.length === 0) { setParceria(null); return; }
 
-    // Prioriza: aceito > pendente mais recente
+    const parceriaSolicitada = params.parceriaId
+      ? data.find((p) => String(p.id) === String(params.parceriaId))
+      : null;
+    if (parceriaSolicitada) {
+      setParceria(parceriaSolicitada);
+      return;
+    }
+
+    // Prioriza: convite aberto pela notificação > aceito > pendente mais recente
     const aceito = data.find((p) => p.status === "aceito");
     setParceria(aceito ?? data[0]);
   };
@@ -96,10 +126,54 @@ export default function ConfiguracoesScreen() {
     setNomeEdit(typeof meta?.nome_usuario === "string"
       ? meta.nome_usuario
       : typeof meta?.full_name === "string" ? meta.full_name : "");
-    setTelefoneEdit(typeof meta?.telefone === "string" ? meta.telefone : "");
+    setTelefoneEdit(typeof meta?.telefone === "string" ? formatarTelefone(meta.telefone) : "");
     setEmailEdit(meuEmail);
+    if (meuId) {
+      void obterPreferenciasNotificacoes(meuId).then(setPreferenciasNotificacoes);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]));
+
+  const abrirPreferenciasNotificacoes = async () => {
+    setModalPreferenciasNotificacoes(true);
+    if (!meuId) return;
+    setLoadingPreferenciasNotificacoes(true);
+    try {
+      setPreferenciasNotificacoes(await obterPreferenciasNotificacoes(meuId));
+    } finally {
+      setLoadingPreferenciasNotificacoes(false);
+    }
+  };
+
+  const confirmarPreferenciasNotificacoes = async () => {
+    if (!meuId) return;
+    setLoadingPreferenciasNotificacoes(true);
+    try {
+      const atualizadas = await salvarPreferenciasNotificacoes(meuId, preferenciasNotificacoes);
+      setPreferenciasNotificacoes(atualizadas);
+      DeviceEventEmitter.emit("finflow:notificacoes-alteradas", atualizadas);
+      setModalPreferenciasNotificacoes(false);
+      showToast("Preferências de notificação salvas", "success");
+    } finally {
+      setLoadingPreferenciasNotificacoes(false);
+    }
+  };
+
+  React.useEffect(() => {
+    if (params.abrirNotificacoes !== "1") return;
+    void abrirPreferenciasNotificacoes();
+    router.setParams({ abrirNotificacoes: "" });
+    // A função usa apenas o usuário atual; o parâmetro é consumido uma vez.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.abrirNotificacoes]);
+
+  React.useEffect(() => {
+    if (!params.parceriaId) return;
+    void carregarParceria();
+    // O id vem do aviso persistente e precisa selecionar exatamente o convite
+    // correspondente, inclusive se Ajustes ja estiver aberto.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.parceriaId]);
 
   const enviarConvite = async () => {
     const emailNormalizado = emailConvite.toLowerCase().trim();
@@ -136,7 +210,22 @@ export default function ConfiguracoesScreen() {
     }]);
     setLoadingParceria(false);
 
-    if (error) Alert.alert("Erro", "Não foi possível enviar o convite. Tente novamente.");
+    if (error) {
+      const usuarioNaoEncontrado = error.code === "P0002"
+        || error.message?.includes("finflow_invitee_not_found")
+        || error.details?.includes("finflow_invitee_not_found");
+
+      if (usuarioNaoEncontrado) {
+        setModalInfo({
+          titulo: "E-mail sem cadastro",
+          mensagem: `Não encontramos uma conta FinFlow vinculada a ${emailNormalizado}. Peça para essa pessoa criar uma conta antes de enviar o convite.`,
+          cor: "#E76F51",
+        });
+        return;
+      }
+
+      Alert.alert("Erro", "Não foi possível enviar o convite. Tente novamente.");
+    }
     else {
       Alert.alert("Convite Enviado!", `Um convite foi enviado para ${emailNormalizado}.\n\nEle(a) verá o convite ao abrir o app.`);
       setEmailConvite("");
@@ -149,7 +238,14 @@ export default function ConfiguracoesScreen() {
     const { error } = await supabase.from("parcerias").update({ convidado_id: meuId, status: "aceito" }).eq("id", parceria.id);
     setLoadingParceria(false);
     if (error) Alert.alert("Erro", "Falha ao aceitar o convite.");
-    else { Alert.alert("Parceria Formada!", "Agora vocês podem criar Contas Conjuntas!"); carregarParceria(); }
+    else {
+      setModalInfo({
+        titulo: "Parceria formada!",
+        mensagem: "O vínculo foi confirmado. Agora vocês podem usar os recursos compartilhados do FinFlow.",
+        cor: "#2A9D8F",
+      });
+      carregarParceria();
+    }
   };
 
   const executarDissolucaoVinculo = async () => {
@@ -162,12 +258,17 @@ export default function ConfiguracoesScreen() {
     DeviceEventEmitter.emit("finflow:parceria-dissolvida");
   };
 
-  const deletarParceria = async (mensagem: string) => {
+  const deletarParceria = async (
+    mensagem: string,
+    acao: "cancelar_convite" | "recusar_convite" | "desfazer_vinculo",
+  ) => {
     const ehVinculoAtivo = parceria?.status === "aceito";
     setModalConfirmarAcao({
       titulo: "Atenção",
       mensagem,
-      labelConfirm: "Sim, desvincular",
+      labelConfirm: acao === "recusar_convite"
+        ? "Sim, recusar"
+        : acao === "cancelar_convite" ? "Sim, cancelar" : "Sim, desvincular",
       cor: "#E76F51",
       onConfirm: async () => {
         setModalConfirmarAcao(null);
@@ -184,8 +285,23 @@ export default function ConfiguracoesScreen() {
           }
         } else {
           // Convite pendente: apenas deletar, sem split de dados
-          await supabase.from("parcerias").delete().eq("id", parceria.id);
-          setParceria(null);
+          const { error } = await supabase.from("parcerias").delete().eq("id", parceria.id);
+          if (error) {
+            setModalInfo({
+              titulo: "Não foi possível concluir",
+              mensagem: "O convite continua ativo. Confira sua conexão e tente novamente.",
+              cor: "#E76F51",
+            });
+          } else {
+            setParceria(null);
+            if (acao === "recusar_convite") {
+              setModalInfo({
+                titulo: "Convite recusado",
+                mensagem: "O convite de parceria foi recusado com sucesso.",
+                cor: "#E76F51",
+              });
+            }
+          }
         }
         setLoadingParceria(false);
       },
@@ -361,17 +477,17 @@ export default function ConfiguracoesScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
       <ScrollView>
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: Cores.texto }]}>Configurações</Text>
+        <View style={[styles.header, { backgroundColor: novoTema.header }]}>
+          <Text style={[styles.title, { color: "#FFF" }]}>Configurações</Text>
           <TouchableOpacity
-            style={[styles.ajudaBtn, { backgroundColor: Cores.pillFundo }]}
+            style={[styles.ajudaBtn, { backgroundColor: "rgba(255,255,255,0.14)" }]}
             onPress={() => {
               setTipoFeedback("sugestao");
               setMensagemFeedback("");
               setModalFeedbackVisivel(true);
             }}
           >
-            <MaterialIcons name="help-outline" size={22} color={Cores.secundario} />
+            <MaterialIcons name="help-outline" size={22} color="#FFF" />
           </TouchableOpacity>
         </View>
 
@@ -385,7 +501,7 @@ export default function ConfiguracoesScreen() {
               setNomeEdit(typeof meta?.nome_usuario === "string"
                 ? meta.nome_usuario
                 : typeof meta?.full_name === "string" ? meta.full_name : "");
-              setTelefoneEdit(typeof meta?.telefone === "string" ? meta.telefone : "");
+              setTelefoneEdit(typeof meta?.telefone === "string" ? formatarTelefone(meta.telefone) : "");
               setEmailEdit(meuEmail);
               setNovaSenha(""); setNovaSenhaConfirm("");
               setMostrarNovaSenha(false); setMostrarConfirmSenha(false);
@@ -400,8 +516,15 @@ export default function ConfiguracoesScreen() {
             <View style={{ flex: 1 }}>
               <Text style={[styles.perfilNome, { color: Cores.texto }]}>{nomeUsuario}</Text>
               <Text style={[styles.perfilEmail, { color: Cores.secundario }]}>{meuEmail}</Text>
+              <View style={styles.perfilPlanBadge}>
+                <MaterialIcons name="workspace-premium" size={11} color="#E9C46A" />
+                <Text style={styles.perfilPlanText}>Plano {plano === "free" ? "Free" : plano === "smart" ? "Smart" : "Premium"}</Text>
+              </View>
             </View>
-            <MaterialIcons name="edit" size={20} color={Cores.secundario} />
+            <View style={[styles.editProfileButton, { borderColor: Cores.borda }]}>
+              <MaterialIcons name="edit" size={14} color={Cores.secundario} />
+              <Text style={[styles.editProfileText, { color: Cores.secundario }]}>Editar perfil</Text>
+            </View>
           </TouchableOpacity>
 
           {/* PREFERÊNCIAS */}
@@ -421,13 +544,16 @@ export default function ConfiguracoesScreen() {
               </View>
               <Switch value={isBiometricEnabled} onValueChange={handleBiometricToggle} trackColor={{ false: "#767577", true: "#457B9D" }} />
             </View>
-            <View style={styles.configRow}>
+            <TouchableOpacity style={styles.configRow} onPress={() => void abrirPreferenciasNotificacoes()} activeOpacity={0.75}>
               <View style={styles.configLeft}>
                 <MaterialIcons name={notificacoesAtivas ? "notifications-active" : "notifications-off"} size={24} color={notificacoesAtivas ? "#2A9D8F" : "#999"} />
-                <Text style={[styles.configText, { color: Cores.texto }]}>Notificações</Text>
+                <View>
+                  <Text style={[styles.configText, { color: Cores.texto }]}>Notificações</Text>
+                  <Text style={[styles.configSubtext, { color: Cores.secundario }]}>{notificacoesAtivas ? "Escolha quais deseja receber" : "Desativadas · toque para configurar"}</Text>
+                </View>
               </View>
-              <Switch value={notificacoesAtivas} onValueChange={toggleNotificacoes} trackColor={{ false: "#767577", true: "#2A9D8F" }} />
-            </View>
+              <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
+            </TouchableOpacity>
           </View>
 
           {/* CONTA CONJUNTA */}
@@ -467,7 +593,7 @@ export default function ConfiguracoesScreen() {
                   <MaterialIcons name="hourglass-empty" size={30} color="#F4A261" />
                   <Text style={[styles.statusText, { color: Cores.texto }]}>Aguardando aceitação de:</Text>
                   <Text style={[styles.emailText, { color: Cores.texto }]}>{parceria.convidado_email}</Text>
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#E76F51", marginTop: 15 }]} onPress={() => deletarParceria("Deseja cancelar este convite?")}>
+                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#E76F51", marginTop: 15 }]} onPress={() => deletarParceria("Deseja cancelar este convite?", "cancelar_convite")}>
                     <Text style={styles.actionBtnText}>Cancelar Convite</Text>
                   </TouchableOpacity>
                 </View>
@@ -476,7 +602,7 @@ export default function ConfiguracoesScreen() {
                   <MaterialIcons name="mail" size={30} color="#2A9D8F" />
                   <Text style={[styles.statusText, { color: Cores.texto }]}>Você recebeu um convite para Conta Conjunta!</Text>
                   <View style={styles.rowBtns}>
-                    <TouchableOpacity style={[styles.actionBtn, { flex: 1, backgroundColor: "#E76F51", marginRight: 10 }]} onPress={() => deletarParceria("Deseja recusar o convite?")}>
+                    <TouchableOpacity style={[styles.actionBtn, { flex: 1, backgroundColor: "#E76F51", marginRight: 10 }]} onPress={() => deletarParceria("Deseja recusar o convite?", "recusar_convite")}>
                       <Text style={styles.actionBtnText}>Recusar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity style={[styles.actionBtn, { flex: 1 }]} onPress={aceitarConvite}>
@@ -492,7 +618,7 @@ export default function ConfiguracoesScreen() {
                 <Text style={[styles.helpText, { color: Cores.secundario, textAlign: "center", marginTop: 5 }]}>
                   {"Agora você verá a opção “Compartilhar” ao criar uma Conta Nova."}
                 </Text>
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#E76F51", marginTop: 20 }]} onPress={() => deletarParceria("Tem certeza que deseja desfazer o vínculo com seu parceiro(a)?")}>
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#E76F51", marginTop: 20 }]} onPress={() => deletarParceria("Tem certeza que deseja desfazer o vínculo com seu parceiro(a)?", "desfazer_vinculo")}>
                   <Text style={[styles.actionBtnText, { color: "#E76F51" }]}>Desfazer Vínculo</Text>
                 </TouchableOpacity>
               </View>
@@ -574,6 +700,63 @@ export default function ConfiguracoesScreen() {
 
         </View>
       </ScrollView>
+
+      <Modal animationType="fade" transparent visible={modalPreferenciasNotificacoes} onRequestClose={() => setModalPreferenciasNotificacoes(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.notificationPreferencesModal, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+            <View style={styles.notificationPreferencesHeader}>
+              <View style={[styles.notificationPreferencesIcon, { backgroundColor: novoTema.primarySoft }]}>
+                <MaterialIcons name="notifications-active" size={24} color="#2A9D8F" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.notificationPreferencesTitle, { color: Cores.texto }]}>Notificações</Text>
+                <Text style={[styles.notificationPreferencesSubtitle, { color: Cores.secundario }]}>Escolha os avisos que fazem sentido para você.</Text>
+              </View>
+              <TouchableOpacity style={styles.notificationPreferencesClose} onPress={() => setModalPreferenciasNotificacoes(false)}>
+                <MaterialIcons name="close" size={22} color={Cores.secundario} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={[styles.notificationMasterRow, { backgroundColor: Cores.input, borderColor: Cores.borda }]}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.notificationMasterTitle, { color: Cores.texto }]}>Permitir notificações</Text>
+                <Text style={[styles.notificationMasterText, { color: Cores.secundario }]}>Controle geral deste dispositivo</Text>
+              </View>
+              <Switch value={notificacoesAtivas} onValueChange={(value) => void toggleNotificacoes(value)} trackColor={{ false: "#767577", true: "#2A9D8F" }} />
+            </View>
+
+            {!notificacoesAtivas && (
+              <View style={styles.notificationDisabledNotice}>
+                <MaterialIcons name="info-outline" size={16} color="#F4A261" />
+                <Text style={styles.notificationDisabledText}>Suas escolhas serão salvas, mas os avisos só serão enviados quando a permissão geral estiver ativa.</Text>
+              </View>
+            )}
+
+            <ScrollView style={styles.notificationOptionsList} showsVerticalScrollIndicator={false}>
+              {OPCOES_NOTIFICACOES.map((opcao) => (
+                <View key={opcao.key} style={[styles.notificationOptionRow, { borderBottomColor: Cores.borda }]}>
+                  <View style={[styles.notificationOptionIcon, { backgroundColor: `${opcao.cor}1F` }]}>
+                    <MaterialIcons name={opcao.icone} size={19} color={opcao.cor} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.notificationOptionTitle, { color: Cores.texto }]}>{opcao.titulo}</Text>
+                    <Text style={[styles.notificationOptionText, { color: Cores.secundario }]}>{opcao.descricao}</Text>
+                  </View>
+                  <Switch
+                    value={preferenciasNotificacoes[opcao.key]}
+                    onValueChange={(value) => setPreferenciasNotificacoes((atuais) => ({ ...atuais, [opcao.key]: value }))}
+                    trackColor={{ false: "#767577", true: "#2A9D8F" }}
+                  />
+                </View>
+              ))}
+            </ScrollView>
+
+            <TouchableOpacity style={[styles.notificationSaveButton, loadingPreferenciasNotificacoes && { opacity: 0.6 }]} onPress={() => void confirmarPreferenciasNotificacoes()} disabled={loadingPreferenciasNotificacoes}>
+              {loadingPreferenciasNotificacoes ? <ActivityIndicator size="small" color="#FFF" /> : <Text style={styles.notificationSaveText}>Salvar preferências</Text>}
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
       {/* MODAL FEEDBACK */}
       {modalFeedbackVisivel && (
@@ -725,8 +908,9 @@ export default function ConfiguracoesScreen() {
                   placeholder="(00) 00000-0000"
                   placeholderTextColor={Cores.secundario}
                   value={telefoneEdit}
-                  onChangeText={setTelefoneEdit}
+                  onChangeText={(valor) => setTelefoneEdit(formatarTelefone(valor))}
                   keyboardType="phone-pad"
+                  maxLength={15}
                 />
                 {loadingPerfil ? (
                   <ActivityIndicator size="small" color="#2A9D8F" style={{ marginTop: 10 }} />
@@ -804,22 +988,27 @@ export default function ConfiguracoesScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { padding: 20, paddingTop: 30, paddingBottom: 10, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  title: { fontSize: 28, fontWeight: "bold" },
+  header: { padding: 20, paddingTop: 26, paddingBottom: 42, flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderBottomLeftRadius: 28, borderBottomRightRadius: 28 },
+  title: { fontSize: 24, fontWeight: "bold" },
   ajudaBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  content: { padding: 20 },
+  content: { padding: 16, marginTop: -28 },
 
-  perfilCard: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 5 },
+  perfilCard: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 20, borderWidth: 1, marginBottom: 5, elevation: 5 },
   perfilAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginRight: 14 },
   perfilAvatarLetra: { color: "#FFF", fontSize: 22, fontWeight: "bold" },
   perfilNome: { fontSize: 17, fontWeight: "bold" },
   perfilEmail: { fontSize: 13, marginTop: 2 },
+  perfilPlanBadge: { alignSelf: "flex-start", flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6, paddingHorizontal: 7, paddingVertical: 3, borderRadius: 10, backgroundColor: "rgba(233,196,106,0.14)" },
+  perfilPlanText: { color: "#C9A83B", fontSize: 9, fontWeight: "800" },
+  editProfileButton: { flexDirection: "row", alignItems: "center", gap: 4, borderWidth: 1, borderRadius: 14, paddingHorizontal: 8, paddingVertical: 6 },
+  editProfileText: { fontSize: 9, fontWeight: "700" },
 
   sectionTitle: { fontSize: 13, fontWeight: "bold", marginBottom: 10, marginLeft: 5, letterSpacing: 1 },
-  configGroup: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
-  configRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18 },
+  configGroup: { borderRadius: 18, borderWidth: 1, overflow: "hidden" },
+  configRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16 },
   configLeft: { flexDirection: "row", alignItems: "center" },
   configText: { fontSize: 16, fontWeight: "600", marginLeft: 15 },
+  configSubtext: { fontSize: 10, marginLeft: 15, marginTop: 2 },
 
   logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 18, marginTop: 30, borderRadius: 12, borderWidth: 1, backgroundColor: "rgba(231, 111, 81, 0.1)" },
   logoutText: { color: "#E76F51", fontSize: 16, fontWeight: "bold", marginLeft: 10 },
@@ -837,9 +1026,27 @@ const styles = StyleSheet.create({
   emailText: { fontSize: 16, fontWeight: "bold", marginTop: 5, marginBottom: 15 },
   rowBtns: { flexDirection: "row", width: "100%" },
 
-  modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center" },
-  modalContent: { width: "92%", padding: 24, borderRadius: 16, elevation: 5 },
+  modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
+  notificationPreferencesModal: { width: "100%", maxWidth: 520, maxHeight: "90%", borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  notificationPreferencesHeader: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 16 },
+  notificationPreferencesIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  notificationPreferencesTitle: { fontSize: 19, fontWeight: "900" },
+  notificationPreferencesSubtitle: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  notificationPreferencesClose: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  notificationMasterRow: { minHeight: 68, borderRadius: 16, borderWidth: 1, paddingHorizontal: 14, flexDirection: "row", alignItems: "center", marginBottom: 10 },
+  notificationMasterTitle: { fontSize: 14, fontWeight: "800" },
+  notificationMasterText: { fontSize: 10, marginTop: 3 },
+  notificationDisabledNotice: { flexDirection: "row", alignItems: "flex-start", gap: 7, borderRadius: 12, padding: 10, backgroundColor: "rgba(244,162,97,0.12)", marginBottom: 7 },
+  notificationDisabledText: { flex: 1, color: "#C47C2B", fontSize: 10, lineHeight: 15 },
+  notificationOptionsList: { maxHeight: 390 },
+  notificationOptionRow: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 70, borderBottomWidth: 1, paddingVertical: 9 },
+  notificationOptionIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  notificationOptionTitle: { fontSize: 13, fontWeight: "800" },
+  notificationOptionText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  notificationSaveButton: { minHeight: 50, borderRadius: 15, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginTop: 16 },
+  notificationSaveText: { color: "#FFF", fontSize: 14, fontWeight: "800" },
   abaSelector: { flexDirection: "row", borderRadius: 10, padding: 3, marginBottom: 20 },
   abaBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
   abaBtnText: { fontWeight: "600", fontSize: 14 },

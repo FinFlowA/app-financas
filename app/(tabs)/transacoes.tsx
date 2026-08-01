@@ -3,6 +3,7 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
+  Animated,
   Alert,
   Modal,
   ScrollView,
@@ -17,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
+import { finFlowTheme } from "../../constants/finflow-design";
 import {
   descricaoBaseRecorrencia,
   descricaoVisivel,
@@ -87,21 +89,26 @@ const formatarMesAno = (yyyymm: string) => {
   return `${getNomeMes(mes)} ${ano}`;
 };
 
+const HEADER_EXPANDED_HEIGHT = 205;
+const HEADER_COMPACT_HEIGHT = 92;
+const HEADER_COLLAPSE_DISTANCE = HEADER_EXPANDED_HEIGHT - HEADER_COMPACT_HEIGHT;
+
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
   const router = useRouter();
+  const novoTema = finFlowTheme(isDark);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F2EC",
-    textoPrincipal: isDark ? "#ffffff" : "#27313A",
-    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
-    blocoData: isDark ? "#2C2C2C" : "#EEEAE3",
-    borda: isDark ? "#333333" : "#E5DED3",
-    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
-    headerTabela: isDark ? "#252525" : "#EDE8E0",
-    rowPar: isDark ? "#161616" : "#FAF8F4",
-    rowImpar: isDark ? "#1C1C1C" : "#FFFDF9",
+    fundo: novoTema.background,
+    textoPrincipal: novoTema.text,
+    textoSecundario: novoTema.textMuted,
+    cardFundo: novoTema.surface,
+    blocoData: novoTema.surfaceMuted,
+    borda: novoTema.border,
+    pillFundo: novoTema.surfaceMuted,
+    headerTabela: novoTema.surfaceMuted,
+    rowPar: novoTema.background,
+    rowImpar: novoTema.surface,
   };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -160,12 +167,25 @@ export default function TransacoesScreen() {
     `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
   );
   const mesesScrollRef = useRef<any>(null);
+  const scrollY = useRef(new Animated.Value(0)).current;
+  const cabecalhoCompactoRef = useRef(false);
+  const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
   const alterarAno = (direcao: number) => {
     const novoAno = anoSelecionado + direcao;
     setAnoSelecionado(novoAno);
     const mesNum = mesSelecionado.split("-")[1];
     setMesSelecionado(`${novoAno}-${mesNum}`);
+  };
+
+  const alterarMes = (direcao: number) => {
+    const [ano, mes] = mesSelecionado.split("-").map(Number);
+    const proximo = new Date(ano, mes - 1 + direcao, 1);
+    const novoAno = proximo.getFullYear();
+    const novoMes = `${novoAno}-${String(proximo.getMonth() + 1).padStart(2, "0")}`;
+    setAnoSelecionado(novoAno);
+    setMesSelecionado(novoMes);
+    setPaginaAtual(1);
   };
 
   const carregarDados = useCallback(async () => {
@@ -513,6 +533,19 @@ export default function TransacoesScreen() {
     setFiltroCategorias((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
   };
 
+  const selecionarFiltroTipo = (tipo: "todas" | "receita" | "despesa" | "transferencia") => {
+    setFiltroTipo(tipo);
+    setPaginaAtual(1);
+    if (tipo === "transferencia") {
+      setFiltroCategorias([]);
+      return;
+    }
+    if (tipo === "receita" || tipo === "despesa") {
+      const idsCompativeis = new Set(categorias.filter((categoria) => categoria.tipo === tipo || categoria.tipo === "ambos").map((categoria) => categoria.id));
+      setFiltroCategorias((atuais) => atuais.filter((id) => idsCompativeis.has(id)));
+    }
+  };
+
   const hojeRef = new Date(); hojeRef.setHours(0, 0, 0, 0);
 
   const normalizar = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
@@ -533,8 +566,7 @@ export default function TransacoesScreen() {
       const passaMes = dataSegura.startsWith(mesSelecionado);
       const isTransferencia = t.descricao.includes("[Transf.]");
       const passaCategoria = filtroCategorias.length === 0
-        || isTransferencia
-        || (t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
+        || (!isTransferencia && t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
       let passaTipo = true;
       if (filtroTipo === "transferencia") passaTipo = isTransferencia;
       else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !isTransferencia;
@@ -577,47 +609,188 @@ export default function TransacoesScreen() {
 
   const mesesDoAno = Array.from({ length: 12 }, (_, i) => `${anoSelecionado}-${String(i + 1).padStart(2, "0")}`);
 
-  const temVencidas = transacoes.some(t => {
-    if (t.status !== "pendente") return false;
-    const p = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
-    return new Date(+p[0], +p[1] - 1, +p[2]) < hojeRef;
-  });
   const temFiltroAtivo = filtroContas.length > 0 || filtroCategorias.length > 0 || filtroTipo !== "todas" || filtroVencidas || filtroStatus !== "todos";
+  const categoriasReceitaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "receita" || (filtroTipo === "receita" && categoria.tipo === "ambos")));
+  const categoriasDespesaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "despesa" || (filtroTipo === "despesa" && categoria.tipo === "ambos")));
+  const categoriasAmbasVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "ambos");
   const limparFiltros = () => {
     setFiltroContas([]); setFiltroCategorias([]); setFiltroTipo("todas"); setFiltroVencidas(false); setFiltroStatus("todos"); setBusca(""); setPaginaAtual(1);
   };
 
+  const alturaCabecalho = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [HEADER_EXPANDED_HEIGHT, HEADER_COMPACT_HEIGHT],
+    extrapolate: "clamp",
+  });
+  const raioCabecalho = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [28, 18],
+    extrapolate: "clamp",
+  });
+  const opacidadeCabecalhoExpandido = scrollY.interpolate({
+    inputRange: [0, 44, 78],
+    outputRange: [1, 0.65, 0],
+    extrapolate: "clamp",
+  });
+  const deslocamentoCabecalhoExpandido = scrollY.interpolate({
+    inputRange: [0, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [0, -18],
+    extrapolate: "clamp",
+  });
+  const opacidadeCabecalhoCompacto = scrollY.interpolate({
+    inputRange: [48, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [0, 1],
+    extrapolate: "clamp",
+  });
+  const deslocamentoCabecalhoCompacto = scrollY.interpolate({
+    inputRange: [48, HEADER_COLLAPSE_DISTANCE],
+    outputRange: [8, 0],
+    extrapolate: "clamp",
+  });
+  const onScrollHistorico = Animated.event(
+    [{ nativeEvent: { contentOffset: { y: scrollY } } }],
+    {
+      useNativeDriver: false,
+      listener: (event: { nativeEvent: { contentOffset: { y: number } } }) => {
+        const offset = Math.max(0, event.nativeEvent.contentOffset.y);
+        let compacto = cabecalhoCompactoRef.current;
+        if (!compacto && offset >= 72) compacto = true;
+        if (compacto && offset <= 48) compacto = false;
+        if (compacto !== cabecalhoCompactoRef.current) {
+          cabecalhoCompactoRef.current = compacto;
+          setCabecalhoCompacto(compacto);
+        }
+      },
+    }
+  );
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
-      {/* CABEÇALHO */}
-      <View style={[styles.header, { backgroundColor: Cores.fundo }]}>
-        <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Extrato</Text>
-        <View style={{ flex: 1, flexDirection: "row", alignItems: "center", marginLeft: 10 }}>
-          <TextInput
-            value={busca}
-            onChangeText={(t) => { setBusca(t); setPaginaAtual(1); }}
-            placeholder="Buscar..."
-            placeholderTextColor={Cores.textoSecundario}
-            style={{ flex: 1, backgroundColor: Cores.pillFundo, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5, color: Cores.textoPrincipal, fontSize: 13 }}
-          />
-          {busca.length > 0 && (
-            <TouchableOpacity onPress={() => setBusca("")} style={{ padding: 4, marginLeft: 4 }}>
-              <MaterialIcons name="close" size={16} color={Cores.textoSecundario} />
+      <View style={styles.screenContent}>
+      {/* CABEÇALHO COLAPSÁVEL: permanece fixo e reduz ao rolar o extrato. */}
+      <Animated.View
+        style={[
+          styles.header,
+          {
+            backgroundColor: novoTema.header,
+            height: alturaCabecalho,
+            borderBottomLeftRadius: raioCabecalho,
+            borderBottomRightRadius: raioCabecalho,
+          },
+        ]}
+      >
+        <Animated.View
+          pointerEvents={cabecalhoCompacto ? "none" : "auto"}
+          style={[
+            styles.headerExpandedContent,
+            {
+              opacity: opacidadeCabecalhoExpandido,
+              transform: [{ translateY: deslocamentoCabecalhoExpandido }],
+            },
+          ]}
+        >
+          <View style={styles.headerTopRow}>
+            <Text style={[styles.title, { color: "#FFF" }]}>Histórico</Text>
+            <View style={styles.headerSearch}>
+              <TextInput
+                value={busca}
+                onChangeText={(t) => { setBusca(t); setPaginaAtual(1); }}
+                placeholder="Buscar..."
+                placeholderTextColor="rgba(255,255,255,0.68)"
+                style={styles.headerSearchInput}
+              />
+              {busca.length > 0 && (
+                <TouchableOpacity onPress={() => setBusca("")} style={styles.headerSearchClear}>
+                  <MaterialIcons name="close" size={16} color="#FFF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+          <View style={styles.headerMonthRow}>
+            <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.headerMonthButton} accessibilityLabel="Mês anterior">
+              <MaterialIcons name="chevron-left" size={25} color="#FFF" />
             </TouchableOpacity>
-          )}
-        </View>
-        {temVencidas && (
-          <TouchableOpacity
-            onPress={() => { setFiltroVencidas(!filtroVencidas); setPaginaAtual(1); }}
-            style={{ padding: 6, marginLeft: 4, borderRadius: 20, backgroundColor: filtroVencidas ? "#E76F5133" : "transparent" }}
-          >
-            <MaterialIcons name={filtroVencidas ? "close" : "warning"} size={24} color="#E76F51" />
-          </TouchableOpacity>
-        )}
-      </View>
+            <Text style={styles.headerMonthText}>{formatarMesAno(mesSelecionado)}</Text>
+            <TouchableOpacity onPress={() => alterarMes(1)} style={styles.headerMonthButton} accessibilityLabel="Próximo mês">
+              <MaterialIcons name="chevron-right" size={25} color="#FFF" />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.headerTotals}>
+            <View>
+              <Text style={styles.headerTotalLabel}>Entradas</Text>
+              <Text style={styles.headerIncome}>{fmtReais(totalReceitas)}</Text>
+            </View>
+            <View>
+              <Text style={styles.headerTotalLabel}>Saídas</Text>
+              <Text style={styles.headerExpense}>{fmtReais(totalDespesas)}</Text>
+            </View>
+          </View>
+        </Animated.View>
+
+        <Animated.View
+          pointerEvents={cabecalhoCompacto ? "auto" : "none"}
+          style={[
+            styles.headerCompactContent,
+            {
+              opacity: opacidadeCabecalhoCompacto,
+              transform: [{ translateY: deslocamentoCabecalhoCompacto }],
+            },
+          ]}
+        >
+          <View style={styles.compactHeaderTopRow}>
+            <Text style={styles.compactHeaderTitle}>Histórico</Text>
+            <View style={styles.compactHeaderSearch}>
+              <MaterialIcons name="search" size={16} color="rgba(255,255,255,0.76)" />
+              <TextInput
+                value={busca}
+                onChangeText={(t) => { setBusca(t); setPaginaAtual(1); }}
+                placeholder="Buscar"
+                placeholderTextColor="rgba(255,255,255,0.68)"
+                style={styles.compactHeaderSearchInput}
+              />
+              {busca.length > 0 && (
+                <TouchableOpacity onPress={() => setBusca("")} style={styles.compactHeaderClear} accessibilityLabel="Limpar busca">
+                  <MaterialIcons name="close" size={14} color="#FFF" />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+          <View style={styles.compactHeaderSummary}>
+            <View style={styles.compactMonthSelector}>
+              <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.compactMonthButton} accessibilityLabel="Mês anterior">
+                <MaterialIcons name="chevron-left" size={19} color="#FFF" />
+              </TouchableOpacity>
+              <Text style={styles.compactMonthText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
+                {formatarMesAno(mesSelecionado)}
+              </Text>
+              <TouchableOpacity onPress={() => alterarMes(1)} style={styles.compactMonthButton} accessibilityLabel="Próximo mês">
+                <MaterialIcons name="chevron-right" size={19} color="#FFF" />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.compactTotals}>
+              <Text style={styles.compactIncome} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                + {fmtReais(totalReceitas)}
+              </Text>
+              <Text style={styles.compactExpense} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
+                - {fmtReais(totalDespesas)}
+              </Text>
+            </View>
+          </View>
+        </Animated.View>
+      </Animated.View>
+
+      <Animated.ScrollView
+        style={styles.mainScroll}
+        contentContainerStyle={styles.mainScrollContent}
+        onScroll={onScrollHistorico}
+        scrollEventThrottle={16}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
 
       {/* NAVEGADOR DE ANO */}
-      <View style={[styles.anoNavBar, { backgroundColor: Cores.pillFundo }]}>
+      {false && <View style={[styles.anoNavBar, { backgroundColor: Cores.pillFundo }]}>
         <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.anoNavBtn}>
           <MaterialIcons name="chevron-left" size={28} color={Cores.textoPrincipal} />
         </TouchableOpacity>
@@ -625,6 +798,30 @@ export default function TransacoesScreen() {
         <TouchableOpacity onPress={() => alterarAno(1)} style={styles.anoNavBtn}>
           <MaterialIcons name="chevron-right" size={28} color={Cores.textoPrincipal} />
         </TouchableOpacity>
+      </View>}
+
+      <View style={styles.statusFilters}>
+        {([
+          { key: "todos", label: "Todos" },
+          { key: "concluidos", label: "Concluídos" },
+          { key: "pendentes", label: "Pendentes" },
+          { key: "atrasados", label: "Atrasados" },
+        ] as const).map((item) => {
+          const ativo = item.key === "atrasados" ? filtroVencidas : (!filtroVencidas && filtroStatus === item.key);
+          return (
+            <TouchableOpacity
+              key={item.key}
+              onPress={() => {
+                setFiltroVencidas(item.key === "atrasados");
+                setFiltroStatus(item.key === "atrasados" ? "todos" : item.key);
+                setPaginaAtual(1);
+              }}
+              style={[styles.statusFilter, { backgroundColor: ativo ? "#23977F" : Cores.cardFundo, borderColor: ativo ? "#23977F" : Cores.borda }]}
+            >
+              <Text style={[styles.statusFilterText, { color: ativo ? "#FFF" : Cores.textoSecundario }]}>{item.label}</Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {/* FILTROS */}
@@ -643,16 +840,16 @@ export default function TransacoesScreen() {
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.mainFilterButton, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalFiltroCat(true)}>
-          <MaterialIcons name="label" size={18} color={filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario} />
+        <TouchableOpacity disabled={filtroTipo === "transferencia"} style={[styles.mainFilterButton, { backgroundColor: Cores.pillFundo, opacity: filtroTipo === "transferencia" ? 0.45 : 1 }]} onPress={() => setModalFiltroCat(true)}>
+          <MaterialIcons name={filtroTipo === "transferencia" ? "label-off" : "label"} size={18} color={filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario} />
           <Text style={[styles.mainFilterText, { color: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario }]} numberOfLines={1}>
-            Categ. {filtroCategorias.length > 0 ? `(${filtroCategorias.length})` : ""}
+            {filtroTipo === "transferencia" ? "Sem categ." : `Categ. ${filtroCategorias.length > 0 ? `(${filtroCategorias.length})` : ""}`}
           </Text>
         </TouchableOpacity>
       </View>
 
       {/* FILTRO DE STATUS */}
-      <View style={{ flexDirection: "row", paddingHorizontal: 15, paddingBottom: 8, gap: 8 }}>
+      {false && <View style={{ flexDirection: "row", paddingHorizontal: 15, paddingBottom: 8, gap: 8 }}>
         {(["todos", "concluidos", "pendentes"] as const).map((opcao) => {
           const ativo = filtroStatus === opcao;
           const label = opcao === "todos" ? "Todos" : opcao === "concluidos" ? "Concluídos" : "Pendentes";
@@ -675,7 +872,7 @@ export default function TransacoesScreen() {
             </TouchableOpacity>
           );
         })}
-      </View>
+      </View>}
 
       {temFiltroAtivo && (
         <TouchableOpacity
@@ -688,7 +885,7 @@ export default function TransacoesScreen() {
       )}
 
       {/* SELETOR DE MÊS */}
-      <View style={styles.mesesScrollContainer}>
+      {false && <View style={styles.mesesScrollContainer}>
         <ScrollView ref={mesesScrollRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
           {mesesDoAno.map((yyyymm) => {
             const isAtivo = mesSelecionado === yyyymm;
@@ -705,10 +902,10 @@ export default function TransacoesScreen() {
             );
           })}
         </ScrollView>
-      </View>
+      </View>}
 
       {/* RESUMO RÁPIDO DO MÊS */}
-      <View style={[styles.resumoBar, { backgroundColor: Cores.cardFundo, borderBottomColor: Cores.borda }]}>
+      {false && <View style={[styles.resumoBar, { backgroundColor: Cores.cardFundo, borderBottomColor: Cores.borda }]}>
         <View style={styles.resumoItem}>
           <MaterialIcons name="arrow-upward" size={14} color="#2A9D8F" />
           <Text style={styles.resumoReceita}>{fmtReais(totalReceitas)}</Text>
@@ -725,10 +922,10 @@ export default function TransacoesScreen() {
             {fmtReais(totalReceitas - totalDespesas)}
           </Text>
         </View>
-      </View>
+      </View>}
 
       {/* LISTA DE TRANSAÇÕES */}
-      <ScrollView style={styles.listContainer}>
+      <View style={styles.listContainer}>
         <View style={[styles.tabelaCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
           {/* Cabeçalho do mês */}
           <View style={[styles.monthHeader, { backgroundColor: isDark ? "#252525" : "#F8F9FA", borderColor: Cores.borda }]}>
@@ -772,8 +969,10 @@ export default function TransacoesScreen() {
           ) : (
             transacoesPaginadas.map((t, index) => {
               const conta = contas.find((c) => c.id === t.conta_id);
+              const categoria = categorias.find((c) => c.id === t.categoria_id);
               const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
-              const partes = (dataEfetivaTransacao(t) || "0000-00-00").split("-");
+              const dataEfetiva = dataEfetivaTransacao(t) || "0000-00-00";
+              const partes = dataEfetiva.split("-");
               const isPendente = t.status === "pendente";
               const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
               const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
@@ -784,10 +983,23 @@ export default function TransacoesScreen() {
               const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
               const corStatus = isVencida ? "#DC2626" : "#F59E0B";
               const textoStatus = isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar";
+              const dataAnterior = index > 0 ? dataEfetivaTransacao(transacoesPaginadas[index - 1]) : null;
+              const mostrarCabecalhoDia = index === 0 || dataAnterior !== dataEfetiva;
+              const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
+              const chaveHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+              const chaveOntem = `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, "0")}-${String(ontem.getDate()).padStart(2, "0")}`;
+              const rotuloDia = dataEfetiva === chaveHoje
+                ? "Hoje"
+                : dataEfetiva === chaveOntem
+                  ? "Ontem"
+                  : `${partes[2]} ${getNomeMes(partes[1])?.substring(0, 3)}`;
 
               return (
+                <React.Fragment key={t.id}>
+                {mostrarCabecalhoDia && (
+                  <Text style={[styles.dayHeading, { color: Cores.textoSecundario, backgroundColor: Cores.fundo }]}>{rotuloDia}</Text>
+                )}
                 <TouchableOpacity
-                  key={t.id}
                   style={[styles.transacaoCard, {
                     backgroundColor: bgRow,
                     borderBottomColor: Cores.borda,
@@ -798,12 +1010,9 @@ export default function TransacoesScreen() {
                   onPress={() => setTransacaoDetalhe(t)}
                   activeOpacity={0.75}
                 >
-                  {/* Coluna esquerda: data */}
-                  <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
-                    <Text style={[styles.dataDia, { color: Cores.textoPrincipal }]}>{partes[2]}</Text>
-                    <Text style={[styles.dataMes, { color: Cores.textoSecundario }]}>
-                      {getNomeMes(partes[1])?.substring(0, 3).toUpperCase()}
-                    </Text>
+                  {/* Coluna esquerda: categoria */}
+                  <View style={[styles.transactionIcon, { backgroundColor: `${categoria?.cor ?? (transferencia ? "#F4A261" : corValor)}22` }]}>
+                    <MaterialIcons name={(categoria?.icone as any) ?? (transferencia ? "swap-horiz" : t.tipo === "receita" ? "payments" : "receipt-long")} size={20} color={categoria?.cor ?? (transferencia ? "#F4A261" : corValor)} />
                   </View>
 
                   {/* Coluna central: descrição + badges */}
@@ -837,6 +1046,7 @@ export default function TransacoesScreen() {
                     <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginTop: 5 }} />
                   </View>
                 </TouchableOpacity>
+                </React.Fragment>
               );
             })
           )}
@@ -854,7 +1064,7 @@ export default function TransacoesScreen() {
           )}
 
           {/* ─── Faturas de Cartão do Mês (oculto no filtro de receita) ─── */}
-          {faturaGruposDoMes.length > 0 && filtroTipo !== "receita" && (
+          {faturaGruposDoMes.length > 0 && (filtroTipo === "todas" || filtroTipo === "despesa") && (
             <>
               <View style={[styles.faturaSecHeader, { backgroundColor: isDark ? "#252525" : "#F3F4F6", borderColor: Cores.borda }]}>
                 <MaterialIcons name="credit-card" size={14} color={Cores.textoSecundario} />
@@ -925,7 +1135,8 @@ export default function TransacoesScreen() {
           )}
         </View>
         <View style={{ height: 40 }} />
-      </ScrollView>
+      </View>
+      </Animated.ScrollView>
 
       {faturaAbrirCartao && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setFaturaAbrirCartao(null)}>
@@ -1299,7 +1510,7 @@ export default function TransacoesScreen() {
               ].map((op) => {
                 const isAtivo = filtroTipo === op.key;
                 return (
-                  <TouchableOpacity key={op.key} style={[styles.filterPill, { backgroundColor: isAtivo ? op.bgAtivo : Cores.pillFundo, borderWidth: 1, borderColor: isAtivo ? op.bgAtivo : Cores.borda }]} onPress={() => setFiltroTipo(op.key)}>
+                  <TouchableOpacity key={op.key} style={[styles.filterPill, { backgroundColor: isAtivo ? op.bgAtivo : Cores.pillFundo, borderWidth: 1, borderColor: isAtivo ? op.bgAtivo : Cores.borda }]} onPress={() => selecionarFiltroTipo(op.key)}>
                     <Text style={[styles.filterPillText, { color: isAtivo ? "#FFF" : Cores.textoPrincipal }]}>{op.label}</Text>
                   </TouchableOpacity>
                 );
@@ -1349,14 +1560,14 @@ export default function TransacoesScreen() {
               </View>
 
               {/* Receitas */}
-              {categorias.filter((c) => c.ativa !== 0 && c.tipo === "receita").length > 0 && (
+              {(filtroTipo === "todas" || filtroTipo === "receita") && categoriasReceitaVisiveis.length > 0 && (
                 <>
                   <View style={styles.catSecaoHeader}>
                     <MaterialIcons name="arrow-upward" size={13} color="#2A9D8F" />
                     <Text style={[styles.catSecaoTitulo, { color: "#2A9D8F" }]}>Receitas</Text>
                   </View>
                   <View style={[styles.wrapContainer, { marginBottom: 12 }]}>
-                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === "receita").map((c) => (
+                    {categoriasReceitaVisiveis.map((c) => (
                       <TouchableOpacity
                         key={`fcat-${c.id}`}
                         style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
@@ -1371,14 +1582,14 @@ export default function TransacoesScreen() {
               )}
 
               {/* Despesas */}
-              {categorias.filter((c) => c.ativa !== 0 && c.tipo === "despesa").length > 0 && (
+              {(filtroTipo === "todas" || filtroTipo === "despesa") && categoriasDespesaVisiveis.length > 0 && (
                 <>
                   <View style={styles.catSecaoHeader}>
                     <MaterialIcons name="arrow-downward" size={13} color="#E76F51" />
                     <Text style={[styles.catSecaoTitulo, { color: "#E76F51" }]}>Despesas</Text>
                   </View>
                   <View style={[styles.wrapContainer, { marginBottom: 12 }]}>
-                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === "despesa").map((c) => (
+                    {categoriasDespesaVisiveis.map((c) => (
                       <TouchableOpacity
                         key={`fcat-${c.id}`}
                         style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(c.id) ? c.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(c.id) ? c.cor : Cores.borda }]}
@@ -1386,6 +1597,27 @@ export default function TransacoesScreen() {
                       >
                         <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(c.id) ? "#FFF" : c.cor }]} />
                         <Text style={[styles.filterPillText, { color: filtroCategorias.includes(c.id) ? "#FFF" : Cores.textoPrincipal }]}>{c.nome}</Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {filtroTipo === "todas" && categoriasAmbasVisiveis.length > 0 && (
+                <>
+                  <View style={styles.catSecaoHeader}>
+                    <MaterialIcons name="swap-vert" size={13} color="#457B9D" />
+                    <Text style={[styles.catSecaoTitulo, { color: "#457B9D" }]}>Receitas e despesas</Text>
+                  </View>
+                  <View style={[styles.wrapContainer, { marginBottom: 12 }]}>
+                    {categoriasAmbasVisiveis.map((categoria) => (
+                      <TouchableOpacity
+                        key={`fcat-${categoria.id}`}
+                        style={[styles.filterPill, { backgroundColor: filtroCategorias.includes(categoria.id) ? categoria.cor : Cores.pillFundo, borderWidth: 1, borderColor: filtroCategorias.includes(categoria.id) ? categoria.cor : Cores.borda }]}
+                        onPress={() => toggleFiltroCategoria(categoria.id)}
+                      >
+                        <View style={[styles.colorDot, { backgroundColor: filtroCategorias.includes(categoria.id) ? "#FFF" : categoria.cor }]} />
+                        <Text style={[styles.filterPillText, { color: filtroCategorias.includes(categoria.id) ? "#FFF" : Cores.textoPrincipal }]}>{categoria.nome}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
@@ -1399,16 +1631,86 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+      </View>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { padding: 20, paddingTop: 30, paddingBottom: 15, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  screenContent: { flex: 1, position: "relative" },
+  mainScroll: { flex: 1 },
+  mainScrollContent: { paddingTop: HEADER_EXPANDED_HEIGHT + 14, paddingBottom: 110 },
+  header: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    elevation: 12,
+    overflow: "hidden",
+    shadowColor: "#001E1A",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+  },
+  headerExpandedContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    padding: 18,
+    paddingTop: 24,
+    paddingBottom: 22,
+  },
+  headerCompactContent: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    height: HEADER_COMPACT_HEIGHT,
+    paddingHorizontal: 14,
+    paddingTop: 8,
+    paddingBottom: 8,
+  },
   title: { fontSize: 24, fontWeight: "bold" },
+  headerTopRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerSearch: { width: "48%", flexDirection: "row", alignItems: "center", backgroundColor: "rgba(0,0,0,0.15)", borderRadius: 16, paddingRight: 5 },
+  headerSearchInput: { flex: 1, paddingHorizontal: 12, paddingVertical: 9, color: "#FFF", fontSize: 13 },
+  headerSearchClear: { padding: 4, marginLeft: 4 },
+  headerMonthRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 20 },
+  headerMonthButton: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.14)" },
+  headerMonthText: { color: "#FFF", fontSize: 15, fontWeight: "700", textTransform: "capitalize", minWidth: 150, textAlign: "center" },
+  headerTotals: { flexDirection: "row", justifyContent: "space-between", marginTop: 17, paddingHorizontal: 10 },
+  headerTotalLabel: { color: "rgba(255,255,255,0.68)", fontSize: 11, marginBottom: 3 },
+  headerIncome: { color: "#B7F5D8", fontSize: 18, fontWeight: "800" },
+  headerExpense: { color: "#FFC0B5", fontSize: 18, fontWeight: "800", textAlign: "right" },
+  compactHeaderTopRow: { minHeight: 31, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  compactHeaderTitle: { color: "#FFF", fontSize: 18, fontWeight: "800" },
+  compactHeaderSearch: {
+    width: "50%",
+    height: 31,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingLeft: 9,
+    paddingRight: 3,
+    borderRadius: 15,
+    backgroundColor: "rgba(0,0,0,0.16)",
+  },
+  compactHeaderSearchInput: { flex: 1, minWidth: 0, paddingHorizontal: 6, paddingVertical: 5, color: "#FFF", fontSize: 12 },
+  compactHeaderClear: { padding: 4 },
+  compactHeaderSummary: { flex: 1, minHeight: 39, flexDirection: "row", alignItems: "center", marginTop: 5 },
+  compactMonthSelector: { flex: 1.2, minWidth: 0, flexDirection: "row", alignItems: "center" },
+  compactMonthButton: { width: 27, height: 27, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.13)" },
+  compactMonthText: { flex: 1, minWidth: 0, paddingHorizontal: 3, color: "#FFF", fontSize: 12, fontWeight: "700", textAlign: "center", textTransform: "capitalize" },
+  compactTotals: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "center", gap: 1 },
+  compactIncome: { width: "100%", color: "#B7F5D8", fontSize: 11, fontWeight: "800", textAlign: "right" },
+  compactExpense: { width: "100%", color: "#FFC0B5", fontSize: 11, fontWeight: "800", textAlign: "right" },
+  statusFilters: { flexDirection: "row", gap: 7, paddingHorizontal: 14, marginTop: 14, marginBottom: 12 },
+  statusFilter: { flex: 1, paddingVertical: 8, borderRadius: 18, borderWidth: 1, alignItems: "center" },
+  statusFilterText: { fontSize: 11, fontWeight: "700" },
 
-  filterButtonsRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 15, marginBottom: 12 },
+  filterButtonsRow: { flexDirection: "row", justifyContent: "space-between", paddingHorizontal: 15, marginBottom: 10 },
   mainFilterButton: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, paddingHorizontal: 5, borderRadius: 10, marginHorizontal: 4 },
   mainFilterText: { marginLeft: 4, fontSize: 13, fontWeight: "bold" },
 
@@ -1428,15 +1730,17 @@ const styles = StyleSheet.create({
   resumoBalanco: { fontSize: 13, fontWeight: "bold" },
   resumoDivider: { width: 1, height: 20 },
 
-  listContainer: { flex: 1, paddingHorizontal: 12 },
-  tabelaCard: { marginBottom: 20, borderRadius: 12, borderWidth: 1, overflow: "hidden" },
+  listContainer: { paddingHorizontal: 12 },
+  tabelaCard: { marginBottom: 20, borderRadius: 18, borderWidth: 1, overflow: "hidden" },
 
   monthHeader: { paddingVertical: 12, paddingHorizontal: 15, borderBottomWidth: 1, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   monthHeaderText: { fontSize: 16, fontWeight: "bold", textTransform: "capitalize" },
   contadorText: { fontSize: 12 },
 
   // Novo layout de card de transação
-  transacaoCard: { flexDirection: "row", alignItems: "center", padding: 12, borderBottomWidth: 1 },
+  transacaoCard: { flexDirection: "row", alignItems: "center", padding: 14, minHeight: 72, borderBottomWidth: 1 },
+  dayHeading: { paddingTop: 13, paddingBottom: 7, paddingHorizontal: 12, fontSize: 11, fontWeight: "800", textTransform: "capitalize" },
+  transactionIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 12 },
   dataBadge: { alignItems: "center", borderRadius: 8, paddingVertical: 6, paddingHorizontal: 8, marginRight: 12, minWidth: 42 },
   dataDia: { fontSize: 16, fontWeight: "bold", lineHeight: 19 },
   dataMes: { fontSize: 9, fontWeight: "600", lineHeight: 12 },
@@ -1463,8 +1767,8 @@ const styles = StyleSheet.create({
   footerValorDespesa: { fontSize: 13, fontWeight: "700", color: "#E76F51" },
 
   editInput: { padding: 14, borderRadius: 10, borderWidth: 1, marginBottom: 14, fontSize: 15 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
-  modalContent: { width: "90%", padding: 25, borderRadius: 16, elevation: 5 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(2, 12, 15, 0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   wrapContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 25, justifyContent: "center" },
   filterPill: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, flexDirection: "row", alignItems: "center" },

@@ -4,7 +4,6 @@ import { useFocusEffect } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
   Alert,
-  Button,
   Modal,
   Platform,
   ScrollView,
@@ -15,10 +14,12 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { fmtReais } from "../../lib/utils";
+import { finFlowTheme } from "../../constants/finflow-design";
+import Button from "../../components/FinFlowButton";
 import { useAppTheme } from "../_layout";
 
 interface Caixinha {
@@ -95,17 +96,19 @@ const LISTA_ICONES = [
 
 export default function CaixinhasScreen() {
   const { isDark, session, showToast, verificarLimite } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const novoTema = finFlowTheme(isDark);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F2EC",
-    textoPrincipal: isDark ? "#ffffff" : "#27313A",
-    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
-    borda: isDark ? "#333333" : "#E5DED3",
-    inputFundo: isDark ? "#2C2C2C" : "#FAF8F4",
-    barraFundo: isDark ? "#333333" : "#E3DDD4",
-    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
-    totalCardBg: isDark ? "#1A1A1A" : "#EDE8E0",
+    fundo: novoTema.background,
+    textoPrincipal: novoTema.text,
+    textoSecundario: novoTema.textMuted,
+    cardFundo: novoTema.surface,
+    borda: novoTema.border,
+    inputFundo: novoTema.surfaceMuted,
+    barraFundo: novoTema.border,
+    pillFundo: novoTema.surfaceMuted,
+    totalCardBg: novoTema.header,
   };
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
@@ -156,6 +159,7 @@ export default function CaixinhasScreen() {
   const [historicoMovimentos, setHistoricoMovimentos] = useState<MovimentoCaixinha[]>([]);
   const [caixaHistorico, setCaixaHistorico] = useState<Caixinha | null>(null);
   const [filtroUsuarioHistorico, setFiltroUsuarioHistorico] = useState<string>("");
+  const [acaoRapidaPendente, setAcaoRapidaPendente] = useState<"guardar" | "resgatar" | "historico" | null>(null);
 
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
@@ -286,10 +290,10 @@ export default function CaixinhasScreen() {
     setModalConfirmarDeletar(caixa);
   };
 
-  const abrirMovimento = (caixa: Caixinha) => {
+  const abrirMovimento = (caixa: Caixinha, tipo: "guardar" | "resgatar" = "guardar") => {
     setModalOpcoesVisivel(false);
     setCaixaSelecionada(caixa);
-    setValorMovimento(""); setTipoMovimento("guardar"); setContaMovimentoId(null);
+    setValorMovimento(""); setTipoMovimento(tipo); setContaMovimentoId(null);
     setModalMovimentoVisivel(true);
   };
 
@@ -313,6 +317,22 @@ export default function CaixinhasScreen() {
 
     setHistoricoMovimentos(dataFiltrada);
     setModalHistoricoVisivel(true);
+  };
+
+  const executarAcaoRapida = (acao: "guardar" | "resgatar" | "historico") => {
+    const disponiveis = caixinhas.filter((caixa) => !caixa.bloqueado_plano);
+    if (disponiveis.length === 0) {
+      setModalNovaVisivel(true);
+      return;
+    }
+    setAcaoRapidaPendente(acao);
+  };
+
+  const selecionarObjetivoDaAcao = (caixa: Caixinha) => {
+    const acao = acaoRapidaPendente;
+    setAcaoRapidaPendente(null);
+    if (acao === "historico") void abrirHistorico(caixa);
+    else if (acao) abrirMovimento(caixa, acao);
   };
 
   const executarMovimento = async (valorNum: number, novoSaldo: number) => {
@@ -390,18 +410,40 @@ export default function CaixinhasScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Meus Objetivos</Text>
-        <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>Guarda dinheiro para os seus sonhos</Text>
+        <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Objetivos</Text>
+        <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>Transforme planos em conquistas</Text>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: 112 + Math.max(insets.bottom, 8) }]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={[styles.totalCard, { backgroundColor: Cores.totalCardBg }]}>
-          <Text style={styles.totalCardTitle}>Total Poupado</Text>
+          <Text style={styles.totalCardTitle}>Total guardado</Text>
           <Text style={styles.totalCardAmount}>{fmtReais(totalGuardado)}</Text>
-          <TouchableOpacity style={styles.addButton} onPress={() => setModalNovaVisivel(true)}>
-            <Text style={styles.addButtonText}>+ Novo Objetivo</Text>
-          </TouchableOpacity>
+          <Text style={styles.totalCardProgress}>
+            {caixinhas.filter((caixa) => Number(caixa.saldo_atual) >= Number(caixa.meta_valor)).length} de {caixinhas.length} objetivos alcançados
+          </Text>
         </View>
+
+        <View style={[styles.quickActions, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+          {[
+            { label: "Nova meta", icon: "add-circle-outline", action: () => setModalNovaVisivel(true) },
+            { label: "Guardar", icon: "arrow-downward", action: () => executarAcaoRapida("guardar") },
+            { label: "Resgatar", icon: "arrow-upward", action: () => executarAcaoRapida("resgatar") },
+            { label: "Histórico", icon: "history", action: () => executarAcaoRapida("historico") },
+          ].map((item) => (
+            <TouchableOpacity key={item.label} style={styles.quickAction} onPress={item.action}>
+              <View style={[styles.quickActionIcon, { borderColor: "#2A9D8F" }]}>
+                <MaterialIcons name={item.icon as any} size={20} color="#2A9D8F" />
+              </View>
+              <Text style={[styles.quickActionLabel, { color: Cores.textoPrincipal }]}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={[styles.sectionHeading, { color: Cores.textoPrincipal }]}>Seus objetivos</Text>
 
         {caixinhas.length === 0 ? (
           <TouchableOpacity
@@ -477,8 +519,50 @@ export default function CaixinhasScreen() {
             );
           })
         )}
-        <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal animationType="fade" transparent visible={acaoRapidaPendente !== null} onRequestClose={() => setAcaoRapidaPendente(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.goalPicker, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={styles.goalPickerHeader}>
+              <View style={[styles.goalPickerActionIcon, { backgroundColor: acaoRapidaPendente === "resgatar" ? "#E76F5122" : "#2A9D8F22" }]}>
+                <MaterialIcons
+                  name={acaoRapidaPendente === "historico" ? "history" : acaoRapidaPendente === "resgatar" ? "arrow-upward" : "arrow-downward"}
+                  size={23}
+                  color={acaoRapidaPendente === "resgatar" ? "#E76F51" : "#2A9D8F"}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.goalPickerTitle, { color: Cores.textoPrincipal }]}>Escolha o objetivo</Text>
+                <Text style={[styles.goalPickerSubtitle, { color: Cores.textoSecundario }]}>Selecione em qual caixinha deseja {acaoRapidaPendente === "historico" ? "ver o histórico" : acaoRapidaPendente}.</Text>
+              </View>
+              <TouchableOpacity style={styles.goalPickerClose} onPress={() => setAcaoRapidaPendente(null)}>
+                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.goalPickerList} showsVerticalScrollIndicator={false}>
+              {caixinhas.filter((caixa) => !caixa.bloqueado_plano).map((caixa) => {
+                const meta = Math.max(Number(caixa.meta_valor), 0.01);
+                const percentual = Math.min(100, (Number(caixa.saldo_atual) / meta) * 100);
+                return (
+                  <TouchableOpacity key={caixa.id} style={[styles.goalPickerItem, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]} onPress={() => selecionarObjetivoDaAcao(caixa)}>
+                    <View style={[styles.goalPickerIcon, { backgroundColor: `${caixa.cor}22` }]}>
+                      <MaterialIcons name={caixa.icone as any} size={21} color={caixa.cor} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.goalPickerName, { color: Cores.textoPrincipal }]}>{caixa.nome}</Text>
+                      <Text style={[styles.goalPickerBalance, { color: Cores.textoSecundario }]}>{fmtReais(Number(caixa.saldo_atual))} de {fmtReais(Number(caixa.meta_valor))}</Text>
+                      <View style={[styles.goalPickerProgress, { backgroundColor: Cores.barraFundo }]}><View style={{ width: `${percentual}%`, height: "100%", borderRadius: 2, backgroundColor: caixa.cor }} /></View>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={22} color={Cores.textoSecundario} />
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       {/* MODAL OPÇÕES */}
       <Modal animationType="fade" transparent visible={modalOpcoesVisivel} onRequestClose={() => setModalOpcoesVisivel(false)}>
@@ -975,17 +1059,36 @@ export default function CaixinhasScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  header: { padding: 20, paddingTop: 30, paddingBottom: 10 },
+  header: { padding: 20, paddingTop: 26, paddingBottom: 14 },
   title: { fontSize: 28, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 4 },
-  content: { flex: 1, paddingHorizontal: 20 },
-  totalCard: { padding: 20, borderRadius: 16, marginBottom: 25, elevation: 4, alignItems: "center" },
-  totalCardTitle: { color: "#999", fontSize: 14, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
-  totalCardAmount: { color: "#FFF", fontSize: 36, fontWeight: "bold", marginTop: 5, marginBottom: 15 },
-  addButton: { backgroundColor: "#FFF", paddingHorizontal: 20, paddingVertical: 10, borderRadius: 20 },
-  addButtonText: { color: "#1A1A1A", fontWeight: "bold" },
+  content: { flex: 1, paddingHorizontal: 16 },
+  contentContainer: { flexGrow: 1 },
+  totalCard: { padding: 22, minHeight: 136, borderRadius: 22, marginBottom: 10, elevation: 6, alignItems: "flex-start", justifyContent: "center", overflow: "hidden" },
+  totalCardTitle: { color: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: "600" },
+  totalCardAmount: { color: "#FFF", fontSize: 34, fontWeight: "900", marginTop: 5, marginBottom: 7 },
+  totalCardProgress: { color: "rgba(255,255,255,0.72)", fontSize: 12, fontWeight: "600" },
+  addButton: { backgroundColor: "rgba(255,255,255,0.16)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20 },
+  addButtonText: { color: "#FFF", fontWeight: "bold" },
+  quickActions: { flexDirection: "row", borderWidth: 1, borderRadius: 18, marginBottom: 20, paddingVertical: 13, paddingHorizontal: 4, elevation: 2 },
+  quickAction: { flex: 1, alignItems: "center", gap: 6 },
+  quickActionIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 1.5 },
+  quickActionLabel: { fontSize: 10, fontWeight: "700" },
+  sectionHeading: { fontSize: 15, fontWeight: "800", marginBottom: 12 },
+  goalPicker: { width: "92%", maxWidth: 520, maxHeight: "76%", borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  goalPickerHeader: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 16 },
+  goalPickerActionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  goalPickerTitle: { fontSize: 18, fontWeight: "900" },
+  goalPickerSubtitle: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  goalPickerClose: { width: 34, height: 34, alignItems: "center", justifyContent: "center" },
+  goalPickerList: { maxHeight: 430 },
+  goalPickerItem: { flexDirection: "row", alignItems: "center", gap: 11, borderRadius: 16, borderWidth: 1, padding: 12, marginBottom: 9 },
+  goalPickerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center" },
+  goalPickerName: { fontSize: 14, fontWeight: "800" },
+  goalPickerBalance: { fontSize: 10, marginTop: 2 },
+  goalPickerProgress: { height: 4, borderRadius: 2, overflow: "hidden", marginTop: 7 },
   emptyText: { fontStyle: "italic", textAlign: "center", marginTop: 20 },
-  card: { padding: 18, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
+  card: { padding: 17, borderRadius: 18, borderWidth: 1, marginBottom: 12, elevation: 1 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
   titleRow: { flexDirection: "row", alignItems: "center" },
   iconBox: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", marginRight: 10 },
@@ -996,8 +1099,8 @@ const styles = StyleSheet.create({
   targetValue: { fontSize: 14, fontWeight: "500" },
   progressBarBackground: { height: 10, borderRadius: 5, overflow: "hidden" },
   progressBarFill: { height: "100%", borderRadius: 5 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
-  modalContent: { width: "90%", padding: 25, borderRadius: 16, elevation: 5 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(2, 12, 15, 0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
+  modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 20 },
   colorLabel: { fontSize: 14, fontWeight: "500", marginBottom: 10 },

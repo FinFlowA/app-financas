@@ -1,18 +1,20 @@
 import { MaterialIcons } from "@expo/vector-icons";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
-  Dimensions,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
+import { finFlowTheme } from "../../constants/finflow-design";
 import {
   dataEfetivaTransacao,
   getContaDestinoTransferencia,
@@ -42,28 +44,26 @@ const MESES_FULL = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho
 
 const getNomeMes = (mes: string) => MESES_FULL[parseInt(mes, 10) - 1];
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
-const BAR_SECTION_WIDTH = Math.max(60, (SCREEN_WIDTH - 56) / 6);
-const CHART_HEIGHT = 200;
-const BAR_W = BAR_SECTION_WIDTH * 0.28;
-
 export default function RelatoriosScreen() {
   const { isDark, session } = useAppTheme();
+  const novoTema = finFlowTheme(isDark);
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
+  const tabBarHeight = useBottomTabBarHeight();
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F2EC",
-    textoPrincipal: isDark ? "#ffffff" : "#27313A",
-    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
-    borda: isDark ? "#333333" : "#E5DED3",
-    pillFundo: isDark ? "#2C2C2C" : "#EEEAE3",
-    linhaGuia: isDark ? "#2C2C2C" : "#E3DDD4",
-    linhaBalance: "#457B9D",
+    fundo: novoTema.background,
+    textoPrincipal: novoTema.text,
+    textoSecundario: novoTema.textMuted,
+    cardFundo: novoTema.surface,
+    borda: novoTema.border,
+    pillFundo: novoTema.surfaceMuted,
+    linhaGuia: novoTema.border,
+    linhaBalance: novoTema.primary,
   };
 
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
   const [contas, setContas] = useState<Conta[]>([]);
-  const [contaSelecionada, setContaSelecionada] = useState<number | null>(null);
+  const [contasSelecionadasIds, setContasSelecionadasIds] = useState<number[] | null>(null);
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -71,6 +71,7 @@ export default function RelatoriosScreen() {
 
   const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
   const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
+  const [contentHeight, setContentHeight] = useState(0);
 
   const projScrollRef = useRef<ScrollView>(null);
 
@@ -94,28 +95,53 @@ export default function RelatoriosScreen() {
     setMesProjSelecionado(novoAno === anoAtualNum ? mesAtualIdx : 0);
   };
 
-  // Filtered data based on account selection (null = todas)
+  const idsContasAtivas = new Set(contas.map(conta => conta.id));
+  const idsSelecionadosValidos = contasSelecionadasIds?.filter(id => idsContasAtivas.has(id)) ?? null;
+  const escopoFluxoEhTodas = idsSelecionadosValidos === null
+    || idsSelecionadosValidos.length === contas.length
+    || (contas.length > 0 && idsSelecionadosValidos.length === 0);
+  const contasFiltradas = escopoFluxoEhTodas
+    ? contas
+    : contas.filter(conta => idsSelecionadosValidos.includes(conta.id));
+  const idsEscopoFluxo = new Set(contasFiltradas.map(conta => conta.id));
+
+  const alternarContaFluxo = (contaId: number) => {
+    setContasSelecionadasIds((idsAtuais) => {
+      // Ao sair da visão "Todas", o primeiro toque cria uma seleção
+      // individual; os próximos adicionam novas contas ao conjunto.
+      if (idsAtuais === null) return [contaId];
+
+      const idsValidos = idsAtuais.filter(id => idsContasAtivas.has(id));
+      if (idsValidos.includes(contaId)) {
+        if (idsValidos.length === 1) return idsValidos;
+        return idsValidos.filter(id => id !== contaId);
+      }
+
+      const proximosIds = [...idsValidos, contaId];
+      return proximosIds.length === contas.length ? null : proximosIds;
+    });
+  };
+
+  // Dados filtrados pela seleção múltipla. Transferências internas ao
+  // conjunto se anulam; movimentos que cruzam a fronteira viram saída/entrada.
   const transacoesFiltradas = transacoes.flatMap((t) => {
     const destinoId = getContaDestinoTransferencia(t.descricao);
 
     if (destinoId !== null) {
-      if (contaSelecionada === null) return [];
-      if (t.conta_id === contaSelecionada) return [t];
-      if (destinoId === contaSelecionada) {
-        return [{ ...t, tipo: "receita", conta_id: destinoId }];
-      }
-      return [];
+      const origemSelecionada = idsEscopoFluxo.has(t.conta_id);
+      const destinoSelecionado = idsEscopoFluxo.has(destinoId);
+      if (origemSelecionada === destinoSelecionado) return [];
+      if (origemSelecionada) return [t];
+      return [{ ...t, tipo: "receita", conta_id: destinoId }];
     }
 
     // Transferências antigas possuem duas linhas. No consolidado elas são
     // internas e não representam receita ou despesa real.
-    if (isTransferencia(t.descricao) && contaSelecionada === null) return [];
-    return contaSelecionada === null || t.conta_id === contaSelecionada ? [t] : [];
+    if (isTransferencia(t.descricao)) {
+      return contasFiltradas.length === 1 && idsEscopoFluxo.has(t.conta_id) ? [t] : [];
+    }
+    return idsEscopoFluxo.has(t.conta_id) ? [t] : [];
   });
-
-  const contasFiltradas = contaSelecionada === null
-    ? contas
-    : contas.filter(c => c.id === contaSelecionada);
 
   const saldoInicialTotal = contasFiltradas.reduce((acc, c) => acc + Number(c.saldo_inicial), 0);
 
@@ -194,14 +220,40 @@ export default function RelatoriosScreen() {
   const chartMax = Math.max(...barMaxes, ...balanceSaldos, saldoAtualGlobal, 0);
   const chartMin = Math.min(...balanceSaldos, saldoAtualGlobal, 0);
   const chartRange = chartMax - chartMin || 1;
+  const mesDetalhe = todosOsMeses[mesProjSelecionado];
+  const saldoDetalhe = projecaoSaldo.find(p => p.mesIdx === mesProjSelecionado);
 
-  const getY = (val: number) => CHART_HEIGHT - ((val - chartMin) / chartRange) * CHART_HEIGHT;
-  const getBarH = (val: number) => Math.max(0, (val / chartRange) * CHART_HEIGHT);
+  const detalheTemPendencias = !!mesDetalhe
+    && (mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0);
+  const detalheRows = mesDetalhe
+    ? 2
+      + (mesDetalhe.recPendentes > 0 ? 1 : 0)
+      + (mesDetalhe.despPendentes > 0 ? 1 : 0)
+      + (saldoDetalhe ? 1 : 0)
+      + (mesDetalhe.isAtual && saldoDetalhe?.isFuture ? 1 : 0)
+    : 0;
+  const detalheSeparadores = (detalheTemPendencias ? 1 : 0) + (saldoDetalhe ? 1 : 0);
+  const detalheHeightEstimado = mesDetalhe
+    ? 37 + detalheRows * 16 + detalheSeparadores * 5
+    : 0;
+  const alturaConteudoDisponivel = contentHeight || Math.max(300, screenHeight - 190);
+  const chartHeight = Math.max(
+    42,
+    Math.min(
+      160,
+      alturaConteudoDisponivel - tabBarHeight - detalheHeightEstimado - 98,
+    ),
+  );
+  const barSectionWidth = Math.max(56, Math.min(84, (screenWidth - 48) / 6));
+  const barWidth = barSectionWidth * 0.28;
+
+  const getY = (val: number) => chartHeight - ((val - chartMin) / chartRange) * chartHeight;
+  const getBarH = (val: number) => Math.max(0, (val / chartRange) * chartHeight);
   const zeroY = getY(0);
 
   // Build balance line points (absolute X positions)
   const balancePoints = projecaoSaldo.map(p => ({
-    x: BAR_SECTION_WIDTH * p.mesIdx + BAR_SECTION_WIDTH / 2,
+    x: barSectionWidth * p.mesIdx + barSectionWidth / 2,
     y: getY(p.saldo),
     isFuture: p.isFuture,
     mesIdx: p.mesIdx,
@@ -210,18 +262,35 @@ export default function RelatoriosScreen() {
   const formatVal = (v: number) =>
     Math.abs(v) >= 1000 ? `R$${(v / 1000).toFixed(1)}k` : `R$${v.toFixed(0)}`;
 
-  const mesDetalhe = todosOsMeses[mesProjSelecionado];
-  const saldoDetalhe = projecaoSaldo.find(p => p.mesIdx === mesProjSelecionado);
-
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: Cores.fundo }]}>
-      <View style={styles.header}>
-        <Text style={[styles.title, { color: Cores.textoPrincipal }]}>Fluxo de Caixa</Text>
-        <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
-          {getNomeMes(String(mesProjSelecionado + 1).padStart(2, "0"))} {anoSelecionado}
-          {contaSelecionada !== null
-            ? `  •  ${contas.find(c => c.id === contaSelecionada)?.nome ?? ""}`
-            : contas.length > 1 ? "  •  Todas as contas" : ""}
+    <SafeAreaView
+      edges={["top", "left", "right"]}
+      style={[styles.safe, { backgroundColor: Cores.fundo }]}
+    >
+      <View style={[styles.header, { backgroundColor: novoTema.header }]}>
+        <View style={styles.headerTitleRow}>
+          <Text style={[styles.title, { color: "#FFF" }]}>Fluxo de caixa</Text>
+          <View style={styles.headerPeriodPill}>
+            <MaterialIcons name="calendar-today" size={13} color="#FFF" />
+            <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
+          </View>
+        </View>
+        <Text style={styles.headerBalanceLabel}>Saldo acumulado</Text>
+        <View style={styles.headerBalanceRow}>
+          <Text style={styles.headerBalance}>{fmtReais(saldoAtualGlobal)}</Text>
+          <View style={styles.headerTrendPill}>
+            <MaterialIcons name="trending-up" size={13} color="#C7F6E5" />
+            <Text style={styles.headerTrendText}>{getNomeMes(String(mesProjSelecionado + 1).padStart(2, "0"))}</Text>
+          </View>
+        </View>
+        <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.74)" }]}>
+          {contas.length === 0
+            ? "Visão consolidada"
+            : escopoFluxoEhTodas
+              ? contas.length > 1 ? "Todas as contas" : contas[0]?.nome ?? "Visão consolidada"
+              : contasFiltradas.length === 1
+                ? contasFiltradas[0].nome
+                : `${contasFiltradas.length} contas selecionadas`}
         </Text>
       </View>
 
@@ -235,33 +304,33 @@ export default function RelatoriosScreen() {
         >
           {/* Todas */}
           <TouchableOpacity
-            onPress={() => setContaSelecionada(null)}
+            onPress={() => setContasSelecionadasIds(null)}
             style={[
               styles.contaChip,
               {
-                backgroundColor: contaSelecionada === null ? "#2A9D8F" : Cores.pillFundo,
-                borderColor: contaSelecionada === null ? "#2A9D8F" : Cores.borda,
+                backgroundColor: escopoFluxoEhTodas ? "#2A9D8F" : Cores.pillFundo,
+                borderColor: escopoFluxoEhTodas ? "#2A9D8F" : Cores.borda,
               },
             ]}
           >
             <MaterialIcons
               name="account-balance-wallet"
               size={13}
-              color={contaSelecionada === null ? "#fff" : Cores.textoSecundario}
+              color={escopoFluxoEhTodas ? "#fff" : Cores.textoSecundario}
             />
-            <Text style={[styles.contaChipText, { color: contaSelecionada === null ? "#fff" : Cores.textoSecundario }]}>
+            <Text style={[styles.contaChipText, { color: escopoFluxoEhTodas ? "#fff" : Cores.textoSecundario }]}>
               Todas
             </Text>
           </TouchableOpacity>
 
           {/* Individual accounts */}
           {contas.map(conta => {
-            const sel = contaSelecionada === conta.id;
+            const sel = !escopoFluxoEhTodas && idsEscopoFluxo.has(conta.id);
             const cor = conta.cor || "#2A9D8F";
             return (
               <TouchableOpacity
                 key={conta.id}
-                onPress={() => setContaSelecionada(sel ? null : conta.id)}
+                onPress={() => alternarContaFluxo(conta.id)}
                 style={[
                   styles.contaChip,
                   { backgroundColor: sel ? cor : Cores.pillFundo, borderColor: sel ? cor : Cores.borda },
@@ -289,7 +358,13 @@ export default function RelatoriosScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View
+        style={[styles.content, { paddingBottom: tabBarHeight + 6 }]}
+        onLayout={({ nativeEvent }) => {
+          const proximaAltura = Math.round(nativeEvent.layout.height);
+          if (Math.abs(proximaAltura - contentHeight) > 1) setContentHeight(proximaAltura);
+        }}
+      >
         {/* COMBINED BAR + LINE CHART */}
         <View style={[styles.chartCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
           <View style={styles.chartHeader}>
@@ -327,10 +402,10 @@ export default function RelatoriosScreen() {
             ref={projScrollRef}
             horizontal
             showsHorizontalScrollIndicator={false}
-            style={{ marginTop: 12 }}
+            style={styles.chartScroll}
             contentContainerStyle={{ paddingHorizontal: 4 }}
           >
-            <View style={{ width: BAR_SECTION_WIDTH * 12, height: CHART_HEIGHT + 30 }}>
+            <View style={{ width: barSectionWidth * 12, height: chartHeight + 20 }}>
               {/* Guide lines */}
               {[0, 0.25, 0.5, 0.75, 1].map(frac => {
                 const y = getY(chartMin + frac * chartRange);
@@ -348,8 +423,8 @@ export default function RelatoriosScreen() {
               {todosOsMeses.map((mes, i) => {
                 const incH = getBarH(mes.recPagas);
                 const expH = getBarH(mes.despPagas);
-                const barLeftX = BAR_SECTION_WIDTH * i + (BAR_SECTION_WIDTH / 2 - BAR_W - 1.5);
-                const barRightX = BAR_SECTION_WIDTH * i + BAR_SECTION_WIDTH / 2 + 1.5;
+                const barLeftX = barSectionWidth * i + (barSectionWidth / 2 - barWidth - 1.5);
+                const barRightX = barSectionWidth * i + barSectionWidth / 2 + 1.5;
 
                 return (
                   <View key={i}>
@@ -358,7 +433,7 @@ export default function RelatoriosScreen() {
                         position: "absolute",
                         left: barLeftX,
                         top: zeroY - incH,
-                        width: BAR_W,
+                        width: barWidth,
                         height: incH,
                         backgroundColor: "#2A9D8F",
                         borderTopLeftRadius: 3,
@@ -370,7 +445,7 @@ export default function RelatoriosScreen() {
                         position: "absolute",
                         left: barRightX,
                         top: zeroY - expH,
-                        width: BAR_W,
+                        width: barWidth,
                         height: expH,
                         backgroundColor: "#E76F51",
                         borderTopLeftRadius: 3,
@@ -420,10 +495,10 @@ export default function RelatoriosScreen() {
                     onPress={() => setMesProjSelecionado(mes.mesIdx)}
                     style={{
                       position: "absolute",
-                      left: BAR_SECTION_WIDTH * i,
+                      left: barSectionWidth * i,
                       top: 0,
-                      width: BAR_SECTION_WIDTH,
-                      height: CHART_HEIGHT + 30,
+                      width: barSectionWidth,
+                      height: chartHeight + 20,
                       alignItems: "center",
                     }}
                   >
@@ -440,7 +515,7 @@ export default function RelatoriosScreen() {
                       <>
                         <View style={{
                           position: "absolute",
-                          left: BAR_SECTION_WIDTH / 2 - (isSel ? 6 : 4),
+                          left: barSectionWidth / 2 - (isSel ? 6 : 4),
                           top: dotY - (isSel ? 6 : 4),
                           width: isSel ? 12 : 8,
                           height: isSel ? 12 : 8,
@@ -454,7 +529,7 @@ export default function RelatoriosScreen() {
                           <View style={{
                             position: "absolute",
                             top: dotY < 28 ? dotY + 14 : dotY - 22,
-                            left: BAR_SECTION_WIDTH / 2 - 28,
+                            left: barSectionWidth / 2 - 28,
                             backgroundColor: dotCor,
                             paddingHorizontal: 6,
                             paddingVertical: 2,
@@ -563,8 +638,7 @@ export default function RelatoriosScreen() {
           )}
         </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -599,16 +673,32 @@ function DetalheRow({ label, valor, cor, dotCor, isIcon, iconName, bold, cores }
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },
-  header: { padding: 20, paddingTop: 30, paddingBottom: 10 },
-  title: { fontSize: 24, fontWeight: "bold" },
-  subtitle: { fontSize: 14, marginTop: 4 },
+  // SafeAreaView já reserva a área do recorte superior. Mantemos aqui
+  // apenas a folga visual necessária para o cabeçalho não dominar a tela.
+  header: {
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 9,
+    borderBottomLeftRadius: 20,
+    borderBottomRightRadius: 20,
+  },
+  title: { fontSize: 21, lineHeight: 25, fontWeight: "bold" },
+  subtitle: { fontSize: 11, lineHeight: 14, marginTop: 1 },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  headerPeriodPill: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 9, paddingVertical: 4, borderRadius: 13, backgroundColor: "rgba(0,0,0,0.14)" },
+  headerPeriodText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
+  headerBalanceLabel: { color: "rgba(255,255,255,0.68)", fontSize: 10, marginTop: 5 },
+  headerBalanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 1 },
+  headerBalance: { color: "#FFF", fontSize: 26, lineHeight: 31, fontWeight: "900" },
+  headerTrendPill: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, backgroundColor: "rgba(0,0,0,0.14)", borderRadius: 13 },
+  headerTrendText: { color: "#C7F6E5", fontSize: 10, fontWeight: "700", textTransform: "capitalize" },
 
-  contasFiltroWrap: { height: 46, marginBottom: 4 },
+  contasFiltroWrap: { height: 38, marginBottom: 2 },
   contaChip: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 4,
     borderRadius: 20,
     borderWidth: 1,
     gap: 6,
@@ -620,32 +710,33 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    marginHorizontal: 15,
-    marginBottom: 12,
-    borderRadius: 12,
-    paddingVertical: 4,
+    marginHorizontal: 16,
+    marginBottom: 6,
+    borderRadius: 10,
+    paddingVertical: 0,
   },
-  anoNavBtn: { padding: 8 },
-  anoNavText: { fontSize: 18, fontWeight: "bold", minWidth: 60, textAlign: "center" },
+  anoNavBtn: { paddingHorizontal: 10, paddingVertical: 3 },
+  anoNavText: { fontSize: 15, lineHeight: 19, fontWeight: "bold", minWidth: 54, textAlign: "center" },
 
-  content: { flex: 1, paddingHorizontal: 20 },
+  content: { flex: 1, minHeight: 0, paddingHorizontal: 12 },
 
-  chartCard: { padding: 16, borderRadius: 16, borderWidth: 1, elevation: 2, marginBottom: 20 },
+  chartCard: { flex: 1, minHeight: 0, padding: 8, borderRadius: 16, borderWidth: 1, elevation: 3 },
   chartHeader: { flexDirection: "row", alignItems: "center", gap: 8 },
-  chartTitle: { fontSize: 16, fontWeight: "bold", flex: 1 },
-  chartHint: { fontSize: 11, marginTop: 4 },
+  chartTitle: { fontSize: 14, lineHeight: 18, fontWeight: "bold", flex: 1 },
+  chartHint: { fontSize: 10, lineHeight: 12, marginTop: 2 },
+  chartScroll: { marginTop: 4, flexGrow: 0 },
 
-  legendaRow: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 8 },
-  legendaItem: { flexDirection: "row", alignItems: "center", gap: 5 },
-  legendaDot: { width: 10, height: 10, borderRadius: 5 },
-  legendaLinha: { width: 16, height: 2.5, borderRadius: 1.5 },
-  legendaTxt: { fontSize: 11 },
+  legendaRow: { flexDirection: "row", flexWrap: "wrap", columnGap: 7, rowGap: 2, marginTop: 5 },
+  legendaItem: { flexDirection: "row", alignItems: "center", gap: 4 },
+  legendaDot: { width: 8, height: 8, borderRadius: 4 },
+  legendaLinha: { width: 14, height: 2, borderRadius: 1 },
+  legendaTxt: { fontSize: 10, lineHeight: 12 },
 
-  detalheBox: { marginTop: 14, borderRadius: 12, borderWidth: 1, padding: 14 },
-  detalheTitulo: { fontSize: 13, fontWeight: "bold", marginBottom: 10 },
-  detalheRow: { flexDirection: "row", alignItems: "center", marginBottom: 7 },
-  detalheDot: { width: 10, height: 10, borderRadius: 5, marginRight: 8 },
-  detalheLabel: { flex: 1, fontSize: 13 },
-  detalheVal: { fontSize: 13, fontWeight: "600" },
-  detalheSep: { height: 1, marginVertical: 7 },
+  detalheBox: { marginTop: 6, borderRadius: 12, borderWidth: 1, padding: 6 },
+  detalheTitulo: { fontSize: 11, lineHeight: 15, fontWeight: "bold", marginBottom: 4 },
+  detalheRow: { flexDirection: "row", alignItems: "center", minHeight: 15, marginBottom: 1 },
+  detalheDot: { width: 8, height: 8, borderRadius: 4, marginRight: 6 },
+  detalheLabel: { flex: 1, fontSize: 11, lineHeight: 14 },
+  detalheVal: { fontSize: 11, lineHeight: 14, fontWeight: "600" },
+  detalheSep: { height: 1, marginVertical: 2 },
 });

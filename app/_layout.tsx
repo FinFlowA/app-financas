@@ -36,7 +36,7 @@ import "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { MaterialIcons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
-import { pedirPermissaoNotificacoes } from "../lib/notifications";
+import { exibirEventoObrigatorioLocal, pedirPermissaoNotificacoes } from "../lib/notifications";
 import {
   type TipoPlano,
   type LimitesPlano,
@@ -49,6 +49,11 @@ import {
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
+import FinFlowAlertHost from "../components/FinFlowAlertHost";
+import PartnershipDissolutionModals, {
+  type DecisaoContaDissolucao,
+  type ResumoDissolucao,
+} from "../components/PartnershipDissolutionModals";
 import {
   dataNascimentoParaISO,
   formatarDataNascimento,
@@ -67,6 +72,16 @@ type DecisaoCaixinha = {
   cor: string;
   icone: string;
   data_prazo: string | null;
+};
+
+type NotificacaoParceria = {
+  id: number;
+  tipo: "convite_parceria" | "parceria_aceita" | "parceria_recusada";
+  referencia_id: number;
+  titulo: string;
+  mensagem: string;
+  dados: Record<string, unknown> | null;
+  criada_em: string;
 };
 
 // ERROR BOUNDARY
@@ -148,6 +163,13 @@ export default function RootLayout() {
   const [definindoSaldoCaixinha, setDefinindoSaldoCaixinha] = useState(false);
   const [saldoCaixinha, setSaldoCaixinha] = useState("");
   const [resolvendoCaixinha, setResolvendoCaixinha] = useState(false);
+  const [resumoDissolucao, setResumoDissolucao] = useState<ResumoDissolucao | null>(null);
+  const [decisoesContaDissolucao, setDecisoesContaDissolucao] = useState<DecisaoContaDissolucao[]>([]);
+  const [processandoDissolucao, setProcessandoDissolucao] = useState(false);
+  const dissolucaoResumoIndisponivel = useRef(false);
+  const [notificacoesParceria, setNotificacoesParceria] = useState<NotificacaoParceria[]>([]);
+  const buscandoNotificacoesParceria = useRef(false);
+  const notificacoesParceriaIndisponiveis = useRef(false);
   const [pendenciasCadastro, setPendenciasCadastro] = useState<PendenciaCadastro[]>([]);
   const [nascimentoPendente, setNascimentoPendente] = useState("");
   const [termosPendentesAceitos, setTermosPendentesAceitos] = useState(false);
@@ -403,6 +425,182 @@ export default function RootLayout() {
     };
   }, [carregarDecisoesCaixinha, session?.user?.id]);
 
+  const carregarResumoDissolucao = useCallback(async () => {
+    if (!session?.user?.id) {
+      setResumoDissolucao(null);
+      setDecisoesContaDissolucao([]);
+      return;
+    }
+    if (dissolucaoResumoIndisponivel.current) return;
+
+    const [resumoResult, contasResult] = await Promise.all([
+      supabase.rpc("get_meu_resumo_dissolucao"),
+      supabase.rpc("get_minhas_decisoes_conta_dissolucao"),
+    ]);
+    const erros = [resumoResult.error, contasResult.error].filter(Boolean);
+    const migrationAusente = erros.some((erro) =>
+      erro?.code === "42883" || erro?.code === "PGRST202" || erro?.code === "PGRST205"
+    );
+    if (migrationAusente) {
+      // O app continua compatível com o backend anterior até a migration ser
+      // aplicada. As decisões antigas de caixinha permanecem funcionando.
+      dissolucaoResumoIndisponivel.current = true;
+      setResumoDissolucao(null);
+      setDecisoesContaDissolucao([]);
+      return;
+    }
+    if (erros.length > 0) {
+      console.log("Falha ao carregar resumo da parceria:", erros[0]?.message);
+      return;
+    }
+
+    const resumoBruto = Array.isArray(resumoResult.data) ? resumoResult.data[0] : null;
+    setResumoDissolucao(resumoBruto ? {
+      ...resumoBruto,
+      itens: Array.isArray(resumoBruto.itens) ? resumoBruto.itens : [],
+    } as ResumoDissolucao : null);
+    setDecisoesContaDissolucao((contasResult.data ?? []) as DecisaoContaDissolucao[]);
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    dissolucaoResumoIndisponivel.current = false;
+    setResumoDissolucao(null);
+    setDecisoesContaDissolucao([]);
+    if (!session?.user?.id) return;
+
+    void carregarResumoDissolucao();
+    const eventoLocal = DeviceEventEmitter.addListener(
+      "finflow:parceria-dissolvida",
+      carregarResumoDissolucao,
+    );
+    const eventoApp = AppState.addEventListener("change", (estado) => {
+      if (estado === "active") void carregarResumoDissolucao();
+    });
+
+    return () => {
+      eventoLocal.remove();
+      eventoApp.remove();
+    };
+  }, [carregarResumoDissolucao, session?.user?.id]);
+
+  const confirmarResumoDissolucao = async () => {
+    if (!resumoDissolucao || processandoDissolucao) return;
+    setProcessandoDissolucao(true);
+    const { data, error } = await supabase.rpc("confirmar_resumo_dissolucao", {
+      p_resumo_id: resumoDissolucao.resumo_id,
+    });
+    setProcessandoDissolucao(false);
+    if (error || data !== true) {
+      Alert.alert("Não foi possível continuar", "O resumo permanece salvo. Confira sua conexão e tente novamente.");
+      return;
+    }
+    setResumoDissolucao(null);
+    await carregarResumoDissolucao();
+  };
+
+  const resolverContaDissolucao = async (manterAtiva: boolean) => {
+    const decisao = decisoesContaDissolucao[0];
+    if (!decisao || processandoDissolucao) return;
+    setProcessandoDissolucao(true);
+    const { error } = await supabase.rpc("resolver_decisao_conta_dissolucao", {
+      p_item_id: decisao.id,
+      p_manter_ativa: manterAtiva,
+    });
+    setProcessandoDissolucao(false);
+    if (error) {
+      await carregarResumoDissolucao();
+      Alert.alert("Não foi possível atualizar a conta", "A escolha não foi aplicada. Tente novamente.");
+      return;
+    }
+    await carregarResumoDissolucao();
+  };
+
+  const carregarNotificacoesParceria = useCallback(async () => {
+    const uid = session?.user?.id;
+    if (!uid) {
+      setNotificacoesParceria([]);
+      return;
+    }
+    if (buscandoNotificacoesParceria.current || notificacoesParceriaIndisponiveis.current) return;
+
+    buscandoNotificacoesParceria.current = true;
+    try {
+      const { data, error } = await supabase
+        .from("notificacoes_sistema")
+        .select("id, tipo, referencia_id, titulo, mensagem, dados, criada_em")
+        .in("tipo", ["convite_parceria", "parceria_aceita", "parceria_recusada"])
+        .is("lida_em", null)
+        .order("criada_em", { ascending: true })
+        .order("id", { ascending: true })
+        .limit(20);
+
+      if (error) {
+        // Durante o preview local a migration pode ainda nao ter sido aplicada.
+        // Nesse caso o restante do app continua funcionando sem alertas ou logs
+        // repetidos a cada ciclo de atualizacao.
+        if (error.code === "42P01" || error.code === "PGRST205" || error.code === "PGRST204") {
+          notificacoesParceriaIndisponiveis.current = true;
+          setNotificacoesParceria([]);
+          return;
+        }
+        console.log("Falha ao carregar avisos de parceria:", error.message);
+        return;
+      }
+
+      const eventos = (data ?? []) as NotificacaoParceria[];
+      setNotificacoesParceria(eventos);
+      eventos.forEach((evento) => {
+        void exibirEventoObrigatorioLocal(uid, evento.id, evento.titulo, evento.mensagem);
+      });
+    } finally {
+      buscandoNotificacoesParceria.current = false;
+    }
+  }, [session?.user?.id]);
+
+  useEffect(() => {
+    notificacoesParceriaIndisponiveis.current = false;
+    setNotificacoesParceria([]);
+    if (!session?.user?.id) return;
+
+    void carregarNotificacoesParceria();
+    const intervalo = setInterval(() => {
+      if (AppState.currentState === "active") void carregarNotificacoesParceria();
+    }, 15000);
+    const eventoApp = AppState.addEventListener("change", (estado) => {
+      if (estado === "active") void carregarNotificacoesParceria();
+    });
+
+    return () => {
+      clearInterval(intervalo);
+      eventoApp.remove();
+    };
+  }, [carregarNotificacoesParceria, session?.user?.id]);
+
+  const concluirNotificacaoParceria = async (abrirConvite: boolean) => {
+    const notificacao = notificacoesParceria[0];
+    if (!notificacao) return;
+
+    const { error } = await supabase.rpc("marcar_notificacao_sistema_lida", {
+      p_id: notificacao.id,
+    });
+    if (error) {
+      // A fila nunca deve derrubar o app. Se a migration estiver incompleta, o
+      // evento permanece persistente para uma nova tentativa.
+      if (error.code !== "42883" && error.code !== "PGRST202") {
+        showToast("Nao foi possivel confirmar este aviso", "error");
+      }
+      return;
+    }
+
+    setNotificacoesParceria((atuais) => atuais.filter((item) => item.id !== notificacao.id));
+    if (abrirConvite) {
+      router.push({
+        pathname: "/(tabs)/configuracoes",
+        params: { parceriaId: String(notificacao.referencia_id) },
+      } as any);
+    }
+  };
+
   const resolverDecisaoCaixinha = async (manter: boolean) => {
     const decisao = decisoesCaixinha[0];
     if (!decisao || resolvendoCaixinha) return;
@@ -653,6 +851,9 @@ export default function RootLayout() {
   }
 
   const toastCor = toastTipo === "error" ? "#E76F51" : toastTipo === "info" ? "#457B9D" : "#2A9D8F";
+  const notificacaoParceriaAtual = notificacoesParceria[0];
+  const notificacaoEhConvite = notificacaoParceriaAtual?.tipo === "convite_parceria";
+  const notificacaoEhRecusa = notificacaoParceriaAtual?.tipo === "parceria_recusada";
 
   return (
     <View style={{ flex: 1 }}>
@@ -667,8 +868,11 @@ export default function RootLayout() {
           temCadastroPendente: pendenciasCadastro.length > 0,
           temPopupPrioritario:
             pendenciasCadastro.length > 0 ||
+            resumoDissolucao !== null ||
+            decisoesContaDissolucao.length > 0 ||
             decisoesCaixinha.length > 0 ||
             modalAtualizacao !== null ||
+            notificacoesParceria.length > 0 ||
             modalNotificacoes !== null,
           refreshEntitlement,
           verificarLimite, mostrarModalLimite,
@@ -686,6 +890,8 @@ export default function RootLayout() {
           </ThemeProvider>
         </ThemeContext.Provider>
       </ErrorBoundary>
+
+      <FinFlowAlertHost isDark={isDark} />
 
       {/* Toast global */}
       <Animated.View
@@ -791,10 +997,72 @@ export default function RootLayout() {
         </View>
       </Modal>
 
+      <PartnershipDissolutionModals
+        isDark={isDark}
+        resumo={resumoDissolucao}
+        decisaoConta={decisoesContaDissolucao[0] ?? null}
+        mostrarResumo={pendenciasCadastro.length === 0 && resumoDissolucao !== null}
+        mostrarDecisaoConta={
+          pendenciasCadastro.length === 0 &&
+          resumoDissolucao === null &&
+          decisoesContaDissolucao.length > 0
+        }
+        processando={processandoDissolucao}
+        onConfirmarResumo={() => void confirmarResumoDissolucao()}
+        onResolverConta={(manterAtiva) => void resolverContaDissolucao(manterAtiva)}
+      />
+
       <Modal
         animationType="fade"
         transparent
-        visible={pendenciasCadastro.length === 0 && decisoesCaixinha.length > 0}
+        visible={
+          pendenciasCadastro.length === 0 &&
+          resumoDissolucao === null &&
+          decisoesContaDissolucao.length === 0 &&
+          decisoesCaixinha.length === 0 &&
+          modalAtualizacao === null &&
+          Boolean(notificacaoParceriaAtual)
+        }
+        onRequestClose={() => {}}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+            <View style={[
+              styles.modalLimiteTopo,
+              { backgroundColor: notificacaoEhRecusa ? "rgba(231,111,81,0.14)" : "rgba(42,157,143,0.14)" },
+            ]}>
+              <MaterialIcons
+                name={notificacaoEhConvite ? "person-add-alt-1" : notificacaoEhRecusa ? "person-remove" : "favorite"}
+                size={34}
+                color={notificacaoEhRecusa ? "#E76F51" : "#2A9D8F"}
+              />
+            </View>
+            <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
+              {notificacaoParceriaAtual?.titulo ?? "Aviso de parceria"}
+            </Text>
+            <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
+              {notificacaoParceriaAtual?.mensagem ?? "Existe uma novidade sobre sua parceria."}
+            </Text>
+            <TouchableOpacity
+              style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 4 }]}
+              onPress={() => void concluirNotificacaoParceria(notificacaoEhConvite)}
+            >
+              <MaterialIcons name={notificacaoEhConvite ? "settings" : "check"} size={18} color="#FFF" />
+              <Text style={styles.modalLimiteBtnText}>{notificacaoEhConvite ? "Ver convite em Ajustes" : "Entendi"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        animationType="fade"
+        transparent
+        visible={
+          pendenciasCadastro.length === 0 &&
+          resumoDissolucao === null &&
+          decisoesContaDissolucao.length === 0 &&
+          decisoesCaixinha.length > 0
+        }
         onRequestClose={() => {}}
       >
         <View style={styles.modalOverlay}>
@@ -895,6 +1163,8 @@ export default function RootLayout() {
         transparent
         visible={
           pendenciasCadastro.length === 0 &&
+          resumoDissolucao === null &&
+          decisoesContaDissolucao.length === 0 &&
           decisoesCaixinha.length === 0 &&
           modalAtualizacao !== null
         }
@@ -957,8 +1227,11 @@ export default function RootLayout() {
         transparent
         visible={
           pendenciasCadastro.length === 0 &&
+          resumoDissolucao === null &&
+          decisoesContaDissolucao.length === 0 &&
           decisoesCaixinha.length === 0 &&
           modalAtualizacao === null &&
+          notificacoesParceria.length === 0 &&
           modalNotificacoes !== null
         }
         onRequestClose={async () => {

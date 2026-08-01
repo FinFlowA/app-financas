@@ -13,9 +13,13 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  TextInputProps,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { supabase } from "../lib/supabase";
 import {
   dataNascimentoParaISO,
@@ -23,8 +27,83 @@ import {
   idadeEmAnos,
   LEGAL_DOCUMENT_VERSION,
 } from "../lib/legal";
+import { useAppTheme } from "./_layout";
+
+type AuthTheme = ReturnType<typeof finFlowTheme>;
+type MaterialIconName = React.ComponentProps<typeof MaterialIcons>["name"];
+
+interface AuthFieldProps extends TextInputProps {
+  label: string;
+  icon: MaterialIconName;
+  theme: AuthTheme;
+  trailing?: React.ReactNode;
+  helper?: React.ReactNode;
+  error?: boolean;
+  success?: boolean;
+}
+
+function AuthField({
+  label,
+  icon,
+  theme,
+  trailing,
+  helper,
+  error = false,
+  success = false,
+  onFocus,
+  onBlur,
+  style,
+  ...inputProps
+}: AuthFieldProps) {
+  const [focused, setFocused] = useState(false);
+  const borderColor = error
+    ? FinFlowColors.red
+    : success
+      ? FinFlowColors.primary
+      : focused
+        ? theme.primary
+        : theme.border;
+
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={[styles.fieldLabel, { color: theme.text }]}>{label}</Text>
+      <View
+        style={[
+          styles.inputContainer,
+          { backgroundColor: theme.surfaceMuted, borderColor },
+          focused && styles.inputContainerFocused,
+        ]}
+      >
+        <View style={[styles.inputIconWrap, { backgroundColor: focused ? theme.primarySoft : "transparent" }]}>
+          <MaterialIcons name={icon} size={19} color={focused ? theme.primary : theme.textMuted} />
+        </View>
+        <TextInput
+          {...inputProps}
+          style={[styles.input, { color: theme.text }, style]}
+          placeholderTextColor={theme.textMuted}
+          selectionColor={theme.primary}
+          accessibilityLabel={inputProps.accessibilityLabel ?? label}
+          onFocus={(event) => {
+            setFocused(true);
+            onFocus?.(event);
+          }}
+          onBlur={(event) => {
+            setFocused(false);
+            onBlur?.(event);
+          }}
+        />
+        {trailing}
+      </View>
+      {helper}
+    </View>
+  );
+}
 
 export default function LoginScreen() {
+  const { isDark, toggleTheme } = useAppTheme();
+  const { width } = useWindowDimensions();
+  const isWide = width >= 900;
+  const theme = finFlowTheme(isDark);
   const [nome, setNome] = useState("");
   const [email, setEmail] = useState("");
   const [telefone, setTelefone] = useState("");
@@ -133,10 +212,10 @@ export default function LoginScreen() {
   }
 
   async function signUpWithEmail() {
-    if (!nome || !email || !dataNascimento || !password)
+    if (!nome || !email || !telefone || !dataNascimento || !password)
       return Alert.alert(
         "Aviso",
-        "Preencha todos os campos obrigatórios: nome, e-mail, data de nascimento e senha.",
+        "Preencha todos os campos obrigatórios: nome, e-mail, telefone, data de nascimento e senha.",
       );
     if (!validarEmail(email))
       return Alert.alert(
@@ -248,422 +327,648 @@ export default function LoginScreen() {
     }
   };
 
+  const selecionarModo = (modoLogin: boolean) => {
+    setIsRecuperandoSenha(false);
+    if (isLogin === modoLogin) return;
+    setIsLogin(modoLogin);
+    setPassword("");
+    setConfirmPassword("");
+    setMostrarSenha(false);
+    setMostrarConfirmSenha(false);
+  };
+
+  const tituloFormulario = isRecuperandoSenha
+    ? "Recupere seu acesso"
+    : isLogin
+      ? "Bem-vindo de volta"
+      : "Crie sua conta";
+  const descricaoFormulario = isRecuperandoSenha
+    ? "Informe seu e-mail e enviaremos um link seguro para você definir uma nova senha."
+    : isLogin
+      ? "Entre para acompanhar suas contas, metas e próximos passos."
+      : "Organize sua vida financeira em poucos minutos.";
+
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <KeyboardAvoidingView
+        style={styles.container}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
       >
-        {/* LOGO */}
-        <View style={styles.iconContainer}>
-          <Image
-            source={require("../assets/images/icon.png")}
-            style={styles.logo}
-            resizeMode="contain"
-          />
-        </View>
-
-        <Text style={styles.title}>FinFlow</Text>
-        <Text style={styles.subtitle}>
-          {isRecuperandoSenha
-            ? "Recuperação de Acesso"
-            : isLogin
-              ? "Bem-vindo de volta!"
-              : "Crie sua conta para começar"}
-        </Text>
-
-        {isRecuperandoSenha && (
-          <View style={styles.recuperacaoBadge}>
-            <MaterialIcons name="lock-reset" size={16} color="#E76F51" />
-            <Text style={styles.recuperacaoTexto}>Recuperação de senha</Text>
-          </View>
-        )}
-
-        {/* NOME — só no cadastro */}
-        {!isLogin && !isRecuperandoSenha && (
-          <View style={styles.inputContainer}>
-            <MaterialIcons
-              name="person"
-              size={20}
-              color="#666"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Seu Nome (Ex: Luis)"
-              placeholderTextColor="#999"
-              onChangeText={setNome}
-              value={nome}
-              autoCapitalize="words"
-            />
-          </View>
-        )}
-
-        {/* DATA DE NASCIMENTO — obrigatória no cadastro */}
-        {!isLogin && !isRecuperandoSenha && (
-          <View style={styles.inputContainer}>
-            <MaterialIcons
-              name="cake"
-              size={20}
-              color="#666"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Data de nascimento (DD/MM/AAAA)"
-              placeholderTextColor="#999"
-              onChangeText={(valor) => setDataNascimento(formatarDataNascimento(valor))}
-              value={dataNascimento}
-              keyboardType="number-pad"
-              maxLength={10}
-            />
-          </View>
-        )}
-
-        {/* EMAIL — sempre visível */}
-        <View style={styles.inputContainer}>
-          <MaterialIcons
-            name="email"
-            size={20}
-            color="#666"
-            style={styles.inputIcon}
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Seu E-mail"
-            placeholderTextColor="#999"
-            onChangeText={setEmail}
-            value={email}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-        </View>
-
-        {/* TELEFONE — só no cadastro */}
-        {!isLogin && !isRecuperandoSenha && (
-          <View style={styles.inputContainer}>
-            <MaterialIcons
-              name="phone"
-              size={20}
-              color="#666"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Telefone (Ex: 11 99999-9999)"
-              placeholderTextColor="#999"
-              onChangeText={(v) => setTelefone(formatarTelefone(v))}
-              value={telefone}
-              keyboardType="phone-pad"
-            />
-          </View>
-        )}
-
-        {/* SENHA — visível quando não está recuperando */}
-        {!isRecuperandoSenha && (
-          <View style={styles.inputContainer}>
-            <MaterialIcons
-              name="lock"
-              size={20}
-              color="#666"
-              style={styles.inputIcon}
-            />
-            <TextInput
-              style={styles.input}
-              placeholder="Sua Senha"
-              placeholderTextColor="#999"
-              onChangeText={setPassword}
-              value={password}
-              secureTextEntry={!mostrarSenha}
-              autoCapitalize="none"
-            />
-            <TouchableOpacity
-              onPress={() => setMostrarSenha((v) => !v)}
-              style={styles.olhoBtn}
-            >
-              <MaterialIcons
-                name={mostrarSenha ? "visibility-off" : "visibility"}
-                size={20}
-                color="#666"
-              />
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* CONFIRMAR SENHA — só no cadastro */}
-        {!isLogin && !isRecuperandoSenha && (
-          <>
+        <ScrollView
+          style={styles.scrollView}
+          contentContainerStyle={[styles.scrollContent, isWide && styles.scrollContentWide]}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+          automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
+        >
+          <View style={[styles.authShell, isWide && styles.authShellWide]}>
             <View
               style={[
-                styles.inputContainer,
-                confirmPassword.length > 0 &&
-                  password !== confirmPassword &&
-                  styles.inputContainerErro,
+                styles.brandPanel,
+                { backgroundColor: theme.header },
+                isWide ? styles.brandPanelWide : styles.brandPanelMobile,
               ]}
             >
-              <MaterialIcons
-                name="lock-outline"
-                size={20}
-                color="#666"
-                style={styles.inputIcon}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="Confirmar Senha"
-                placeholderTextColor="#999"
-                onChangeText={setConfirmPassword}
-                value={confirmPassword}
-                secureTextEntry={!mostrarConfirmSenha}
-                autoCapitalize="none"
-              />
+              <View pointerEvents="none" style={styles.brandDecoration}>
+                <View style={styles.brandWaveLarge} />
+                <View style={styles.brandWaveMedium} />
+                <View style={styles.brandGlow} />
+              </View>
+
               <TouchableOpacity
-                onPress={() => setMostrarConfirmSenha((v) => !v)}
-                style={styles.olhoBtn}
+                style={styles.themeButton}
+                onPress={toggleTheme}
+                accessibilityRole="button"
+                accessibilityLabel={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
               >
-                <MaterialIcons
-                  name={mostrarConfirmSenha ? "visibility-off" : "visibility"}
-                  size={20}
-                  color="#666"
-                />
+                <MaterialIcons name={isDark ? "light-mode" : "dark-mode"} size={20} color="#FFF" />
               </TouchableOpacity>
+
+              <View style={[styles.brandContent, isWide && styles.brandContentWide]}>
+                <View style={styles.logoBadge}>
+                  <Image
+                    source={require("../assets/images/icon.png")}
+                    style={styles.logo}
+                    resizeMode="contain"
+                  />
+                </View>
+                <Text style={styles.brandTitle}>FinFlow</Text>
+                <Text style={styles.brandEyebrow}>SEU PAINEL FINANCEIRO</Text>
+                <Text style={[styles.brandDescription, isWide && styles.brandDescriptionWide]}>
+                  Clareza para cuidar do presente e tranquilidade para planejar o futuro.
+                </Text>
+
+                {isWide && (
+                  <View style={styles.brandBenefits}>
+                    <View style={styles.brandBenefitItem}>
+                      <MaterialIcons name="account-balance-wallet" size={18} color="#D9FFF0" />
+                      <Text style={styles.brandBenefitText}>Contas e movimentações em um só lugar</Text>
+                    </View>
+                    <View style={styles.brandBenefitItem}>
+                      <MaterialIcons name="insights" size={18} color="#D9FFF0" />
+                      <Text style={styles.brandBenefitText}>Visão simples do realizado e do previsto</Text>
+                    </View>
+                    <View style={styles.brandBenefitItem}>
+                      <MaterialIcons name="verified-user" size={18} color="#D9FFF0" />
+                      <Text style={styles.brandBenefitText}>Seus dados protegidos com segurança</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
             </View>
-            {confirmPassword.length > 0 && password !== confirmPassword && (
-              <Text style={styles.erroSenha}>As senhas não conferem</Text>
-            )}
-            {confirmPassword.length > 0 && password === confirmPassword && (
-              <Text style={styles.senhaOk}>Senhas conferem ✓</Text>
-            )}
-          </>
-        )}
 
-        {/* BOTÃO PRINCIPAL */}
-        <TouchableOpacity
-          style={[
-            styles.mainButton,
-            (loading || !!bloqueadoAte) && styles.buttonDisabled,
-          ]}
-          onPress={
-            isRecuperandoSenha
-              ? recuperarSenha
-              : isLogin
-                ? signInWithEmail
-                : signUpWithEmail
-          }
-          disabled={loading || !!bloqueadoAte}
-        >
-          {loading ? (
-            <ActivityIndicator color="#FFF" />
-          ) : bloqueadoAte ? (
-            <Text style={styles.mainButtonText}>
-              Aguarde {segundosRestantes}s
-            </Text>
-          ) : (
-            <Text style={styles.mainButtonText}>
-              {isRecuperandoSenha
-                ? "Enviar Link de Recuperação"
-                : isLogin
-                  ? "Entrar"
-                  : "Criar Conta"}
-            </Text>
-          )}
-        </TouchableOpacity>
-
-        {/* ESQUECI A SENHA — só no login */}
-        {isLogin && !isRecuperandoSenha && (
-          <TouchableOpacity
-            style={{ marginTop: 12, alignItems: "center" }}
-            onPress={() => setIsRecuperandoSenha(true)}
-          >
-            <Text
-              style={{ color: "#E76F51", fontSize: 14, fontWeight: "bold" }}
+            <View
+              style={[
+                styles.formPanel,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+                isWide ? styles.formPanelWide : styles.formPanelMobile,
+              ]}
             >
-              Esqueci minha senha
-            </Text>
-          </TouchableOpacity>
-        )}
+              <View style={styles.formInner}>
+                <View style={styles.formHeaderRow}>
+                  <View style={styles.formHeadingCopy}>
+                    <Text style={[styles.formTitle, { color: theme.text }]}>{tituloFormulario}</Text>
+                    <Text style={[styles.formSubtitle, { color: theme.textMuted }]}>{descricaoFormulario}</Text>
+                  </View>
+                  {isRecuperandoSenha && (
+                    <TouchableOpacity style={[styles.backButton, { backgroundColor: theme.surfaceMuted }]} onPress={trocarTela} accessibilityLabel="Voltar ao login">
+                      <MaterialIcons name="arrow-back" size={20} color={theme.primary} />
+                    </TouchableOpacity>
+                  )}
+                </View>
 
-        {/* TROCAR TELA */}
-        <TouchableOpacity style={styles.switchButton} onPress={trocarTela}>
-          <Text style={styles.switchButtonText}>
-            {isRecuperandoSenha
-              ? "Voltar para o Login"
-              : isLogin
-                ? "Não tem uma conta? Crie aqui."
-                : "Já tem uma conta? Faça login."}
-          </Text>
-        </TouchableOpacity>
+                {!isRecuperandoSenha && (
+                  <View style={[styles.modeTabs, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+                    <TouchableOpacity
+                      style={[styles.modeTab, isLogin && { backgroundColor: theme.surface }]}
+                      onPress={() => selecionarModo(true)}
+                      accessibilityState={{ selected: isLogin }}
+                    >
+                      <Text style={[styles.modeTabText, { color: isLogin ? theme.primary : theme.textMuted }]}>Entrar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modeTab, !isLogin && { backgroundColor: theme.surface }]}
+                      onPress={() => selecionarModo(false)}
+                      accessibilityState={{ selected: !isLogin }}
+                    >
+                      <Text style={[styles.modeTabText, { color: !isLogin ? theme.primary : theme.textMuted }]}>Criar conta</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
 
-        {/* CONSENTIMENTO LGPD — exibido apenas no cadastro */}
-        {!isLogin && !isRecuperandoSenha && (
-          <View style={styles.consentimentoContainer}>
-            <TouchableOpacity
-              style={styles.consentimentoCheckRow}
-              onPress={() => setAceitouTermos((valor) => !valor)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: aceitouTermos }}
-            >
-              <MaterialIcons
-                name={aceitouTermos ? "check-box" : "check-box-outline-blank"}
-                size={24}
-                color={aceitouTermos ? "#2A9D8F" : "#888"}
-              />
-              <Text style={styles.consentimentoCheckTexto}>
-                Li e concordo com os documentos abaixo.
-              </Text>
-            </TouchableOpacity>
-            <Text style={styles.consentimentoTexto}>
-              Consulte nossos{" "}
-              <Text
-                style={styles.consentimentoLink}
-                onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
-              >
-                Termos de Uso
-              </Text>
-              {" "}e{" "}
-              <Text
-                style={styles.consentimentoLink}
-                onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#privacidade")}
-              >
-                Política de Privacidade
-              </Text>
-              , incluindo o tratamento dos seus dados conforme a LGPD.
-            </Text>
+                {isRecuperandoSenha && (
+                  <View style={[styles.recuperacaoBadge, { backgroundColor: theme.primarySoft, borderColor: `${theme.primary}45` }]}>
+                    <View style={[styles.recuperacaoIcon, { backgroundColor: `${theme.primary}1F` }]}>
+                      <MaterialIcons name="lock-reset" size={20} color={theme.primary} />
+                    </View>
+                    <Text style={[styles.recuperacaoTexto, { color: theme.text }]}>O link será enviado para o e-mail cadastrado.</Text>
+                  </View>
+                )}
+
+                <View style={styles.formFields}>
+                  {/* NOME — só no cadastro */}
+                  {!isLogin && !isRecuperandoSenha && (
+                    <AuthField
+                      label="Nome completo"
+                      icon="person-outline"
+                      theme={theme}
+                      placeholder="Como você quer ser chamado"
+                      onChangeText={setNome}
+                      value={nome}
+                      autoCapitalize="words"
+                      autoComplete="name"
+                      textContentType="name"
+                      returnKeyType="next"
+                    />
+                  )}
+
+                  {/* EMAIL — sempre visível */}
+                  <AuthField
+                    label="E-mail"
+                    icon="mail-outline"
+                    theme={theme}
+                    placeholder="seuemail@exemplo.com"
+                    onChangeText={setEmail}
+                    value={email}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    autoComplete="email"
+                    textContentType="emailAddress"
+                    returnKeyType={isRecuperandoSenha ? "send" : "next"}
+                    onSubmitEditing={isRecuperandoSenha ? recuperarSenha : undefined}
+                  />
+
+                  {!isLogin && !isRecuperandoSenha && (
+                    <View style={[styles.twoColumnFields, !isWide && styles.twoColumnFieldsStacked]}>
+                      <View style={isWide ? styles.halfField : styles.fullWidthField}>
+                        <AuthField
+                          label="Telefone com DDD"
+                          icon="phone-iphone"
+                          theme={theme}
+                          placeholder="(11) 99999-9999"
+                          onChangeText={(valor) => setTelefone(formatarTelefone(valor))}
+                          value={telefone}
+                          keyboardType="phone-pad"
+                          autoComplete="tel"
+                          textContentType="telephoneNumber"
+                          maxLength={15}
+                          returnKeyType="next"
+                        />
+                      </View>
+                      <View style={isWide ? styles.halfField : styles.fullWidthField}>
+                        <AuthField
+                          label="Data de nascimento"
+                          icon="cake"
+                          theme={theme}
+                          placeholder="DD/MM/AAAA"
+                          onChangeText={(valor) => setDataNascimento(formatarDataNascimento(valor))}
+                          value={dataNascimento}
+                          keyboardType="number-pad"
+                          maxLength={10}
+                          returnKeyType="next"
+                        />
+                      </View>
+                    </View>
+                  )}
+
+                  {/* SENHA — visível quando não está recuperando */}
+                  {!isRecuperandoSenha && (
+                    <AuthField
+                      label="Senha"
+                      icon="lock-outline"
+                      theme={theme}
+                      placeholder={isLogin ? "Digite sua senha" : "Mínimo de 6 caracteres"}
+                      onChangeText={setPassword}
+                      value={password}
+                      secureTextEntry={!mostrarSenha}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete={isLogin ? "current-password" : "new-password"}
+                      textContentType={isLogin ? "password" : "newPassword"}
+                      returnKeyType={isLogin ? "done" : "next"}
+                      onSubmitEditing={isLogin ? signInWithEmail : undefined}
+                      trailing={
+                        <TouchableOpacity
+                          onPress={() => setMostrarSenha((valor) => !valor)}
+                          style={styles.olhoBtn}
+                          accessibilityLabel={mostrarSenha ? "Ocultar senha" : "Mostrar senha"}
+                        >
+                          <MaterialIcons name={mostrarSenha ? "visibility-off" : "visibility"} size={20} color={theme.textMuted} />
+                        </TouchableOpacity>
+                      }
+                    />
+                  )}
+
+                  {/* CONFIRMAR SENHA — só no cadastro */}
+                  {!isLogin && !isRecuperandoSenha && (
+                    <AuthField
+                      label="Confirme sua senha"
+                      icon="verified-user"
+                      theme={theme}
+                      placeholder="Digite novamente"
+                      onChangeText={setConfirmPassword}
+                      value={confirmPassword}
+                      secureTextEntry={!mostrarConfirmSenha}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="new-password"
+                      textContentType="newPassword"
+                      returnKeyType="done"
+                      onSubmitEditing={signUpWithEmail}
+                      error={confirmPassword.length > 0 && password !== confirmPassword}
+                      success={confirmPassword.length > 0 && password === confirmPassword}
+                      trailing={
+                        <TouchableOpacity
+                          onPress={() => setMostrarConfirmSenha((valor) => !valor)}
+                          style={styles.olhoBtn}
+                          accessibilityLabel={mostrarConfirmSenha ? "Ocultar confirmação de senha" : "Mostrar confirmação de senha"}
+                        >
+                          <MaterialIcons name={mostrarConfirmSenha ? "visibility-off" : "visibility"} size={20} color={theme.textMuted} />
+                        </TouchableOpacity>
+                      }
+                      helper={confirmPassword.length > 0 ? (
+                        <View style={styles.passwordFeedback}>
+                          <MaterialIcons
+                            name={password === confirmPassword ? "check-circle" : "error-outline"}
+                            size={14}
+                            color={password === confirmPassword ? theme.primary : FinFlowColors.red}
+                          />
+                          <Text style={[styles.passwordFeedbackText, { color: password === confirmPassword ? theme.primary : FinFlowColors.red }]}>
+                            {password === confirmPassword ? "As senhas conferem" : "As senhas não conferem"}
+                          </Text>
+                        </View>
+                      ) : undefined}
+                    />
+                  )}
+                </View>
+
+                {/* ESQUECI A SENHA — só no login */}
+                {isLogin && !isRecuperandoSenha && (
+                  <TouchableOpacity style={styles.forgotButton} onPress={() => setIsRecuperandoSenha(true)}>
+                    <MaterialIcons name="lock-reset" size={16} color={theme.primary} />
+                    <Text style={[styles.forgotButtonText, { color: theme.primary }]}>Esqueci minha senha</Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* CONSENTIMENTO LGPD — exibido apenas no cadastro */}
+                {!isLogin && !isRecuperandoSenha && (
+                  <View style={[styles.consentimentoContainer, { backgroundColor: theme.primarySoft, borderColor: `${theme.primary}38` }]}>
+                    <TouchableOpacity
+                      style={styles.consentimentoCheckRow}
+                      onPress={() => setAceitouTermos((valor) => !valor)}
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: aceitouTermos }}
+                    >
+                      <MaterialIcons
+                        name={aceitouTermos ? "check-box" : "check-box-outline-blank"}
+                        size={24}
+                        color={aceitouTermos ? theme.primary : theme.textMuted}
+                      />
+                      <Text style={[styles.consentimentoCheckTexto, { color: theme.text }]}>Li e concordo com os documentos do FinFlow.</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.consentimentoTexto, { color: theme.textMuted }]}>
+                      Consulte nossos{" "}
+                      <Text
+                        style={[styles.consentimentoLink, { color: theme.primary }]}
+                        onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
+                      >
+                        Termos de Uso
+                      </Text>
+                      {" "}e{" "}
+                      <Text
+                        style={[styles.consentimentoLink, { color: theme.primary }]}
+                        onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#privacidade")}
+                      >
+                        Política de Privacidade
+                      </Text>
+                      , incluindo o tratamento dos seus dados conforme a LGPD.
+                    </Text>
+                  </View>
+                )}
+
+                {/* BOTÃO PRINCIPAL */}
+                <TouchableOpacity
+                  style={[
+                    styles.mainButton,
+                    { backgroundColor: theme.primary },
+                    (loading || !!bloqueadoAte) && [styles.buttonDisabled, { backgroundColor: theme.border }],
+                  ]}
+                  onPress={
+                    isRecuperandoSenha
+                      ? recuperarSenha
+                      : isLogin
+                        ? signInWithEmail
+                        : signUpWithEmail
+                  }
+                  disabled={loading || !!bloqueadoAte}
+                  activeOpacity={0.84}
+                >
+                  {loading ? (
+                    <ActivityIndicator color="#FFF" />
+                  ) : bloqueadoAte ? (
+                    <>
+                      <MaterialIcons name="timer" size={19} color={theme.textMuted} />
+                      <Text style={[styles.mainButtonText, { color: theme.textMuted }]}>Aguarde {segundosRestantes}s</Text>
+                    </>
+                  ) : (
+                    <>
+                      <Text style={styles.mainButtonText}>
+                        {isRecuperandoSenha
+                          ? "Enviar link seguro"
+                          : isLogin
+                            ? "Entrar no FinFlow"
+                            : "Criar minha conta"}
+                      </Text>
+                      <MaterialIcons name={isRecuperandoSenha ? "send" : "arrow-forward"} size={19} color="#FFF" />
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {/* TROCAR TELA */}
+                <TouchableOpacity style={styles.switchButton} onPress={trocarTela}>
+                  <Text style={[styles.switchButtonPrefix, { color: theme.textMuted }]}>
+                    {isRecuperandoSenha
+                      ? "Lembrou sua senha? "
+                      : isLogin
+                        ? "Ainda não tem uma conta? "
+                        : "Já possui uma conta? "}
+                    <Text style={[styles.switchButtonText, { color: theme.primary }]}>
+                      {isRecuperandoSenha ? "Voltar ao login" : isLogin ? "Cadastre-se" : "Faça login"}
+                    </Text>
+                  </Text>
+                </TouchableOpacity>
+
+                <View style={[styles.legalDivider, { backgroundColor: theme.border }]} />
+
+                {/* BOTÕES LEGAIS — sempre visíveis */}
+                <View style={styles.legalBtnRow}>
+                  <TouchableOpacity
+                    style={styles.legalBtn}
+                    onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#privacidade")}
+                  >
+                    <MaterialIcons name="privacy-tip" size={14} color={theme.primary} />
+                    <Text style={[styles.legalBtnText, { color: theme.primary }]}>Privacidade</Text>
+                  </TouchableOpacity>
+                  <View style={[styles.legalSeparador, { backgroundColor: theme.border }]} />
+                  <TouchableOpacity
+                    style={styles.legalBtn}
+                    onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
+                  >
+                    <MaterialIcons name="description" size={14} color={theme.primary} />
+                    <Text style={[styles.legalBtnText, { color: theme.primary }]}>Termos de Uso</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
           </View>
-        )}
-
-        {/* BOTÕES LEGAIS — sempre visíveis */}
-        <View style={styles.legalBtnRow}>
-          <TouchableOpacity
-            style={styles.legalBtn}
-            onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#privacidade")}
-          >
-            <Text style={styles.legalBtnText}>Política de Privacidade</Text>
-          </TouchableOpacity>
-          <View style={styles.legalSeparador} />
-          <TouchableOpacity
-            style={styles.legalBtn}
-            onPress={() => WebBrowser.openBrowserAsync("https://finflowa.github.io/finflow-legal/#termos")}
-          >
-            <Text style={styles.legalBtnText}>Termos de Uso</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
 
-      {modalErro && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalErro(null)}>
-          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.75)", justifyContent: "center", alignItems: "center", padding: 24 }}>
-            <View style={{ width: "100%", backgroundColor: "#1E1E1E", borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalErro.cor ?? "#E76F51" }}>
-              <Text style={{ color: "#FFF", fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>{modalErro.titulo}</Text>
-              <Text style={{ color: "#AAAAAA", fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>{modalErro.mensagem}</Text>
-              <TouchableOpacity
-                style={{ backgroundColor: modalErro.cor ?? "#E76F51", paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
-                onPress={() => setModalErro(null)}
-              >
-                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>OK</Text>
-              </TouchableOpacity>
+        {modalErro && (
+          <Modal animationType="fade" transparent visible onRequestClose={() => setModalErro(null)} statusBarTranslucent>
+            <View style={[styles.modalOverlay, { backgroundColor: theme.overlay }]}>
+              <View style={[styles.modalCard, { backgroundColor: theme.surfaceElevated, borderColor: theme.border }]} accessibilityViewIsModal>
+                <TouchableOpacity style={[styles.modalClose, { backgroundColor: theme.surfaceMuted }]} onPress={() => setModalErro(null)} accessibilityLabel="Fechar aviso">
+                  <MaterialIcons name="close" size={19} color={theme.textMuted} />
+                </TouchableOpacity>
+                <View style={[styles.modalIcon, { backgroundColor: `${modalErro.cor ?? FinFlowColors.red}1F` }]}>
+                  <MaterialIcons
+                    name={modalErro.cor === "#2A9D8F" ? "check-circle" : "error-outline"}
+                    size={34}
+                    color={modalErro.cor ?? FinFlowColors.red}
+                  />
+                </View>
+                <Text style={[styles.modalTitle, { color: theme.text }]}>{modalErro.titulo}</Text>
+                <Text style={[styles.modalMessage, { color: theme.textMuted }]}>{modalErro.mensagem}</Text>
+                <TouchableOpacity
+                  style={[styles.modalButton, { backgroundColor: modalErro.cor ?? FinFlowColors.red }]}
+                  onPress={() => setModalErro(null)}
+                  activeOpacity={0.84}
+                >
+                  <Text style={styles.modalButtonText}>Entendi</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </Modal>
-      )}
-    </KeyboardAvoidingView>
+          </Modal>
+        )}
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#121212",
+  safeArea: { flex: 1 },
+  container: { flex: 1 },
+  scrollView: { flex: 1 },
+  scrollContent: { flexGrow: 1, paddingBottom: 24 },
+  scrollContentWide: { justifyContent: "center", paddingHorizontal: 28, paddingVertical: 34 },
+  authShell: { width: "100%", alignSelf: "center" },
+  authShellWide: {
+    maxWidth: 1100,
+    minHeight: 700,
+    flexDirection: "row",
+    borderRadius: 32,
+    ...FinFlowShadow,
   },
-  scrollContent: {
-    flexGrow: 1,
-    paddingTop: 48,
-    paddingHorizontal: 28,
-    paddingBottom: 36,
+  brandPanel: { position: "relative", overflow: "hidden", justifyContent: "center" },
+  brandPanelMobile: {
+    minHeight: 258,
+    paddingHorizontal: 26,
+    paddingTop: 28,
+    paddingBottom: 62,
+    borderBottomLeftRadius: 34,
+    borderBottomRightRadius: 34,
   },
-  iconContainer: { alignItems: "center", marginBottom: 8 },
-  logo: { width: 220, height: 220 },
+  brandPanelWide: {
+    flex: 0.88,
+    minHeight: 700,
+    paddingHorizontal: 44,
+    paddingVertical: 52,
+    borderTopLeftRadius: 32,
+    borderBottomLeftRadius: 32,
+  },
+  brandDecoration: { ...StyleSheet.absoluteFillObject },
+  brandWaveLarge: {
+    position: "absolute",
+    width: 520,
+    height: 250,
+    right: -230,
+    top: 72,
+    borderRadius: 260,
+    backgroundColor: "rgba(119, 245, 187, 0.16)",
+    transform: [{ rotate: "-13deg" }],
+  },
+  brandWaveMedium: {
+    position: "absolute",
+    width: 430,
+    height: 190,
+    left: -210,
+    bottom: -28,
+    borderRadius: 220,
+    backgroundColor: "rgba(7, 83, 72, 0.28)",
+    transform: [{ rotate: "12deg" }],
+  },
+  brandGlow: {
+    position: "absolute",
+    width: 210,
+    height: 210,
+    right: -52,
+    bottom: -80,
+    borderRadius: 105,
+    backgroundColor: "rgba(217, 255, 240, 0.10)",
+  },
+  themeButton: {
+    position: "absolute",
+    zIndex: 4,
+    top: 18,
+    right: 18,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(4, 49, 42, 0.28)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.18)",
+  },
+  brandContent: { zIndex: 2, alignItems: "center" },
+  brandContentWide: { alignItems: "flex-start" },
+  logoBadge: {
+    width: 86,
+    height: 86,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
+    backgroundColor: "rgba(255,255,255,0.91)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.65)",
+    shadowColor: "#003C31",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  },
+  logo: { width: 72, height: 72 },
+  brandTitle: { color: "#FFF", fontSize: 32, fontWeight: "900", letterSpacing: -0.7 },
+  brandEyebrow: { color: "rgba(255,255,255,0.72)", fontSize: 10, fontWeight: "800", letterSpacing: 1.6, marginTop: 2 },
+  brandDescription: { maxWidth: 390, color: "rgba(255,255,255,0.90)", fontSize: 15, lineHeight: 22, textAlign: "center", marginTop: 13 },
+  brandDescriptionWide: { textAlign: "left" },
+  brandBenefits: { width: "100%", marginTop: 34, gap: 15 },
+  brandBenefitItem: { flexDirection: "row", alignItems: "center", gap: 11 },
+  brandBenefitText: { flex: 1, color: "rgba(255,255,255,0.86)", fontSize: 13, lineHeight: 19 },
+  formPanel: { borderWidth: 1 },
+  formPanelMobile: {
+    zIndex: 3,
+    marginTop: -38,
+    marginHorizontal: 14,
+    paddingHorizontal: 21,
+    paddingTop: 26,
+    paddingBottom: 22,
+    borderRadius: 26,
+    ...FinFlowShadow,
+  },
+  formPanelWide: {
+    flex: 1.12,
+    minHeight: 700,
+    justifyContent: "center",
+    paddingHorizontal: 46,
+    paddingVertical: 42,
+    borderLeftWidth: 0,
+    borderTopRightRadius: 32,
+    borderBottomRightRadius: 32,
+  },
+  formInner: { width: "100%", maxWidth: 520, alignSelf: "center" },
+  formHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: 14, marginBottom: 20 },
+  formHeadingCopy: { flex: 1 },
+  formTitle: { fontSize: 27, lineHeight: 33, fontWeight: "900", letterSpacing: -0.6 },
+  formSubtitle: { fontSize: 13, lineHeight: 19, marginTop: 6 },
+  backButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  modeTabs: { flexDirection: "row", padding: 4, borderRadius: 16, borderWidth: 1, marginBottom: 22 },
+  modeTab: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  modeTabText: { fontSize: 13, fontWeight: "800" },
   recuperacaoBadge: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    backgroundColor: "#E76F5122",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 20,
+    gap: 10,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
     marginBottom: 20,
-    alignSelf: "center",
   },
-  recuperacaoTexto: { color: "#E76F51", fontSize: 13, fontWeight: "600" },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#FFF",
-    textAlign: "center",
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 15,
-    color: "#AAA",
-    textAlign: "center",
-    marginBottom: 28,
-  },
+  recuperacaoIcon: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  recuperacaoTexto: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
+  formFields: { width: "100%" },
+  fieldGroup: { width: "100%", marginBottom: 14 },
+  fieldLabel: { fontSize: 12, fontWeight: "700", marginBottom: 7, marginLeft: 2 },
   inputContainer: {
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#2C2C2C",
-    borderRadius: 10,
-    marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#444",
+    borderRadius: FinFlowRadius.medium,
   },
-  inputContainerErro: {
-    borderColor: "#E76F51",
+  inputContainerFocused: {
+    shadowColor: FinFlowColors.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    elevation: 1,
   },
-  inputIcon: { paddingHorizontal: 15 },
-  input: { flex: 1, paddingVertical: 15, color: "#FFF", fontSize: 16 },
-  olhoBtn: { paddingHorizontal: 15, paddingVertical: 15 },
-  erroSenha: {
-    color: "#E76F51",
-    fontSize: 12,
-    marginTop: -10,
-    marginBottom: 12,
-    marginLeft: 5,
-  },
-  senhaOk: {
-    color: "#2A9D8F",
-    fontSize: 12,
-    marginTop: -10,
-    marginBottom: 12,
-    marginLeft: 5,
-  },
+  inputIconWrap: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center", marginLeft: 7 },
+  input: { flex: 1, minWidth: 0, paddingHorizontal: 10, paddingVertical: 14, fontSize: 15 },
+  olhoBtn: { width: 48, minHeight: 52, alignItems: "center", justifyContent: "center" },
+  twoColumnFields: { width: "100%", flexDirection: "row", gap: 12 },
+  twoColumnFieldsStacked: { flexDirection: "column", gap: 0 },
+  halfField: { flex: 1, minWidth: 0 },
+  fullWidthField: { width: "100%", flexGrow: 0, flexShrink: 0, flexBasis: "auto" },
+  passwordFeedback: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6, marginLeft: 3 },
+  passwordFeedbackText: { fontSize: 11, fontWeight: "600" },
+  forgotButton: { alignSelf: "flex-end", flexDirection: "row", alignItems: "center", gap: 5, marginTop: -2, marginBottom: 4, paddingVertical: 6 },
+  forgotButtonText: { fontSize: 12, fontWeight: "700" },
+  consentimentoContainer: { padding: 13, borderRadius: 16, borderWidth: 1, marginTop: 4, marginBottom: 2 },
+  consentimentoCheckRow: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 7 },
+  consentimentoCheckTexto: { flex: 1, fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  consentimentoTexto: { fontSize: 11, lineHeight: 17 },
+  consentimentoLink: { fontWeight: "700", textDecorationLine: "underline" },
   mainButton: {
-    backgroundColor: "#2A9D8F",
-    paddingVertical: 15,
-    borderRadius: 10,
+    minHeight: 54,
+    flexDirection: "row",
     alignItems: "center",
-    marginTop: 10,
+    justifyContent: "center",
+    gap: 9,
+    paddingHorizontal: 18,
+    borderRadius: FinFlowRadius.medium,
+    marginTop: 16,
+    shadowColor: FinFlowColors.primaryDark,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 9,
+    elevation: 3,
   },
-  buttonDisabled: { backgroundColor: "#444" },
-  mainButtonText: { color: "#FFF", fontSize: 16, fontWeight: "bold" },
-  switchButton: { marginTop: 20, alignItems: "center" },
-  switchButtonText: { color: "#F4A261", fontSize: 14, fontWeight: "600" },
-  consentimentoContainer: { marginTop: 20, paddingHorizontal: 4 },
-  consentimentoCheckRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 8 },
-  consentimentoCheckTexto: { flex: 1, color: "#DDD", fontSize: 13, fontWeight: "600" },
-  consentimentoTexto: { color: "#888", fontSize: 12, textAlign: "center", lineHeight: 18 },
-  consentimentoLink: { color: "#2A9D8F", textDecorationLine: "underline" },
+  buttonDisabled: { shadowOpacity: 0, elevation: 0 },
+  mainButtonText: { color: "#FFF", fontSize: 15, fontWeight: "800" },
+  switchButton: { marginTop: 18, alignItems: "center", paddingVertical: 4 },
+  switchButtonPrefix: { fontSize: 12, lineHeight: 18, textAlign: "center" },
+  switchButtonText: { fontWeight: "800" },
+  legalDivider: { height: 1, marginTop: 19, marginBottom: 8 },
   legalBtnRow: {
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
-    marginTop: 16,
-    marginBottom: 8,
+    flexWrap: "wrap",
   },
-  legalBtn: { paddingHorizontal: 12, paddingVertical: 6 },
-  legalBtnText: { color: "#2A9D8F", fontSize: 12, fontWeight: "600" },
-  legalSeparador: { width: 1, height: 14, backgroundColor: "#444" },
+  legalBtn: { flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 7 },
+  legalBtnText: { fontSize: 11, fontWeight: "700" },
+  legalSeparador: { width: 1, height: 14 },
+  modalOverlay: { flex: 1, alignItems: "center", justifyContent: "center", padding: 22 },
+  modalCard: { width: "100%", maxWidth: 420, padding: 24, paddingTop: 30, borderRadius: 24, borderWidth: 1, ...FinFlowShadow },
+  modalClose: { position: "absolute", top: 12, right: 12, zIndex: 2, width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  modalIcon: { alignSelf: "center", width: 64, height: 64, borderRadius: 22, alignItems: "center", justifyContent: "center", marginBottom: 16 },
+  modalTitle: { paddingHorizontal: 16, fontSize: 20, lineHeight: 25, fontWeight: "800", textAlign: "center", marginBottom: 9 },
+  modalMessage: { fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: 22 },
+  modalButton: { minHeight: 50, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  modalButtonText: { color: "#FFF", fontSize: 14, fontWeight: "800" },
 });

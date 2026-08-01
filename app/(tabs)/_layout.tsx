@@ -1,26 +1,30 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
+import { finFlowTheme, FinFlowColors } from "../../constants/finflow-design";
 import { useAppTheme } from "../_layout"; // Puxando nossa memória global!
 
 export default function TabLayout() {
   const { isDark } = useAppTheme();
+  const theme = finFlowTheme(isDark);
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: "#2A9D8F",
-        tabBarInactiveTintColor: isDark ? "#666" : "#999",
+        tabBarActiveTintColor: FinFlowColors.primary,
+        tabBarInactiveTintColor: theme.textMuted,
         headerShown: false,
         tabBarStyle: {
-          backgroundColor: isDark ? "#1E1E1E" : "#F8FAFC",
+          backgroundColor: theme.surface,
           borderTopWidth: 1,
-          borderColor: isDark ? "#333" : "#CBD5E1",
-          elevation: 5,
+          borderColor: theme.border,
+          elevation: 12,
           minHeight: Platform.OS === "android" ? 70 : 85,
           paddingBottom: Platform.OS === "android" ? 15 : 25,
           paddingTop: 10,
+          position: "absolute",
         },
+        tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
       }}
     >
       <Tabs.Screen

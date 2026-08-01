@@ -21,6 +21,14 @@ export function listarPendenciasCadastro(
   return pendencias;
 }
 
+export function formatarTelefone(valor: string): string {
+  const digitos = valor.replace(/\D/g, "").replace(/^55(?=\d{10,11}$)/, "").slice(0, 11);
+  if (digitos.length <= 2) return digitos;
+  if (digitos.length <= 6) return `(${digitos.slice(0, 2)}) ${digitos.slice(2)}`;
+  if (digitos.length <= 10) return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 6)}-${digitos.slice(6)}`;
+  return `(${digitos.slice(0, 2)}) ${digitos.slice(2, 7)}-${digitos.slice(7)}`;
+}
+
 export function formatarDataNascimento(valor: string): string {
   const numeros = valor.replace(/\D/g, "").slice(0, 8);
   if (numeros.length <= 2) return numeros;

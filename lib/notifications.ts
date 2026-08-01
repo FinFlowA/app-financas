@@ -3,6 +3,46 @@ import { Platform } from "react-native";
 
 const NOTIFICATION_SCHEDULE_VERSION = "2026-07-31-v3";
 
+export type PreferenciasNotificacoes = {
+  transacoesVencidas: boolean;
+  transacoesDoDia: boolean;
+  fechamentoFatura: boolean;
+  vencimentoFatura: boolean;
+  limiteCartao: boolean;
+  prazoObjetivos: boolean;
+};
+
+export const PREFERENCIAS_NOTIFICACOES_PADRAO: PreferenciasNotificacoes = {
+  transacoesVencidas: true,
+  transacoesDoDia: true,
+  fechamentoFatura: true,
+  vencimentoFatura: true,
+  limiteCartao: true,
+  prazoObjetivos: true,
+};
+
+const chavePreferencias = (userId: string) => `@notificacoes_preferencias_${userId}`;
+
+export async function obterPreferenciasNotificacoes(userId: string): Promise<PreferenciasNotificacoes> {
+  try {
+    const valor = await AsyncStorage.getItem(chavePreferencias(userId));
+    if (!valor) return { ...PREFERENCIAS_NOTIFICACOES_PADRAO };
+    return { ...PREFERENCIAS_NOTIFICACOES_PADRAO, ...JSON.parse(valor) };
+  } catch {
+    return { ...PREFERENCIAS_NOTIFICACOES_PADRAO };
+  }
+}
+
+export async function salvarPreferenciasNotificacoes(
+  userId: string,
+  preferencias: Partial<PreferenciasNotificacoes>
+): Promise<PreferenciasNotificacoes> {
+  const atuais = await obterPreferenciasNotificacoes(userId);
+  const atualizadas = { ...atuais, ...preferencias };
+  await AsyncStorage.setItem(chavePreferencias(userId), JSON.stringify(atualizadas));
+  return atualizadas;
+}
+
 // Importação lazy para não travar o app se o módulo falhar
 let Notif: any = null;
 try {
@@ -40,6 +80,45 @@ export async function pedirPermissaoNotificacoes(): Promise<boolean> {
   }
 }
 
+/**
+ * Espelha um evento obrigatorio do servidor em uma notificacao local quando o
+ * sistema operacional ja concedeu permissao. Nao solicita permissao e nao
+ * consulta as preferencias opcionais do usuario: o aviso persistente dentro do
+ * app continua sendo a fonte garantida.
+ */
+export async function exibirEventoObrigatorioLocal(
+  userId: string,
+  eventoId: number,
+  titulo: string,
+  mensagem: string,
+): Promise<void> {
+  if (!Notif || Platform.OS === "web") return;
+
+  const chave = `@notif_sistema_${userId}_${eventoId}`;
+  try {
+    if (await AsyncStorage.getItem(chave)) return;
+
+    const { status } = await Notif.getPermissionsAsync();
+    if (status !== "granted") return;
+
+    await Notif.scheduleNotificationAsync({
+      content: {
+        title: titulo,
+        body: mensagem,
+        sound: "default",
+        badge: 0,
+        data: { origem: "finflow_sistema", eventoId },
+      },
+      trigger: Platform.OS === "android"
+        ? { type: "timeInterval", seconds: 1, repeats: false, channelId: "finflow" } as any
+        : null,
+    });
+    await AsyncStorage.setItem(chave, "1");
+  } catch {
+    // Best-effort: o evento permanece salvo e visivel dentro do aplicativo.
+  }
+}
+
 export async function notificacoesEstaoAtivas(): Promise<boolean> {
   try {
     const val = await AsyncStorage.getItem("@notificacoes_enabled");
@@ -69,6 +148,7 @@ export async function agendarNotificacoesDoApp(
   try {
     const ativas = await notificacoesEstaoAtivasPara(userId);
     if (!ativas) return;
+    const preferencias = await obterPreferenciasNotificacoes(userId);
 
     const agora = new Date();
     const hojeStr = agora.toISOString().split("T")[0];
@@ -87,6 +167,7 @@ export async function agendarNotificacoesDoApp(
         transacoes: transacoes.map((t) => [t.status, t.data_vencimento, t.tipo]).sort(),
         caixinhas: (caixinhas ?? []).map((c) => [c.nome, c.meta_valor, c.saldo_atual, c.data_prazo]).sort(),
         cartoes: (cartoes ?? []).map((c) => [c.nome, c.dia_vencimento, c.dia_fechamento, ...(c.faturas_pendentes ?? []).sort()]).sort(),
+        preferencias,
       });
       const agendaAtual = await AsyncStorage.getItem(chaveAgendado);
       if (agendaAtual === assinatura) return;
@@ -95,7 +176,7 @@ export async function agendarNotificacoesDoApp(
     }
 
     // Alertas imediatos de limite de cartão próximo do máximo (dedup por cartão/dia)
-    if (cartoes && cartoes.length > 0) {
+    if (preferencias.limiteCartao && cartoes && cartoes.length > 0) {
       for (const cartao of cartoes) {
         if (cartao.limite && cartao.limite_usado && cartao.limite_usado / cartao.limite > 0.8) {
           const chaveLimite = `@notif_limite_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${cartao.nome}_${hojeStr}`;
@@ -117,13 +198,13 @@ export async function agendarNotificacoesDoApp(
     }
 
     // Vencidas — executa sempre mas com dedup diário (evita duplicata por re-foco)
-    const vencidas = transacoes.filter((t) => {
+    const vencidas = preferencias.transacoesVencidas ? transacoes.filter((t) => {
       if (t.status !== "pendente") return false;
       const p = (t.data_vencimento || "").split("-");
       if (p.length < 3) return false;
       const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
       return d < hoje;
-    });
+    }) : [];
     const chaveVencidos = `@notif_vencidos_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
     const jaNotificouVencidos = await AsyncStorage.getItem(chaveVencidos);
     if (vencidas.length > 0 && !jaNotificouVencidos) {
@@ -148,13 +229,13 @@ export async function agendarNotificacoesDoApp(
     if (!dadosCompletos) return;
 
     // Vencendo hoje (8h e 19h)
-    const vencendoHoje = transacoes.filter((t) => {
+    const vencendoHoje = preferencias.transacoesDoDia ? transacoes.filter((t) => {
       if (t.status !== "pendente") return false;
       const p = (t.data_vencimento || "").split("-");
       if (p.length < 3) return false;
       const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
       return d.getTime() === hoje.getTime();
-    });
+    }) : [];
     if (vencendoHoje.length > 0) {
       const despesas = vencendoHoje.filter((t) => t.tipo === "despesa").length;
       const receitas = vencendoHoje.filter((t) => t.tipo === "receita").length;
@@ -185,7 +266,7 @@ export async function agendarNotificacoesDoApp(
     }
 
     // Notificações de prazo das caixinhas
-    if (caixinhas && caixinhas.length > 0) {
+    if (preferencias.prazoObjetivos && caixinhas && caixinhas.length > 0) {
       const MARCOS_DIAS = [30, 7, 3, 1, 0];
       for (const caixa of caixinhas) {
         if (!caixa.data_prazo) continue;
@@ -213,7 +294,7 @@ export async function agendarNotificacoesDoApp(
       }
     }
     // Notificações de vencimento e fechamento de cartões
-    if (cartoes && cartoes.length > 0) {
+    if ((preferencias.vencimentoFatura || preferencias.fechamentoFatura) && cartoes && cartoes.length > 0) {
       const dataNotifCartao = (diaDoMes: number, diasAntes: number, hora: number): { data: Date; mes: string } | null => {
         for (let offset = 0; offset <= 1; offset++) {
           const baseMes = new Date(agora.getFullYear(), agora.getMonth() + offset, 1);
@@ -230,47 +311,51 @@ export async function agendarNotificacoesDoApp(
       };
 
       for (const cartao of cartoes) {
-        // Vencimento: 3 dias antes, 1 dia antes, no dia
-        const eventosVenc = [
-          { diasAntes: 3, titulo: `💳 ${cartao.nome} — Fatura vence em 3 dias`, corpo: "Separe o valor para pagar sua fatura." },
-          { diasAntes: 1, titulo: `💳 ${cartao.nome} — Fatura vence amanhã`, corpo: "Não esqueça de pagar a fatura do seu cartão." },
-          { diasAntes: 0, titulo: `🔔 ${cartao.nome} — Fatura vence hoje!`, corpo: "Efetue o pagamento para evitar juros." },
-        ];
-        for (const ev of eventosVenc) {
-          const evento = dataNotifCartao(cartao.dia_vencimento, ev.diasAntes, 9);
-          if (evento && (cartao.faturas_pendentes ?? []).includes(evento.mes)) {
-            const segundos = Math.floor((evento.data.getTime() - agora.getTime()) / 1000);
+        if (preferencias.vencimentoFatura) {
+          // Vencimento: 3 dias antes, 1 dia antes, no dia
+          const eventosVenc = [
+            { diasAntes: 3, titulo: `💳 ${cartao.nome} — Fatura vence em 3 dias`, corpo: "Separe o valor para pagar sua fatura." },
+            { diasAntes: 1, titulo: `💳 ${cartao.nome} — Fatura vence amanhã`, corpo: "Não esqueça de pagar a fatura do seu cartão." },
+            { diasAntes: 0, titulo: `🔔 ${cartao.nome} — Fatura vence hoje!`, corpo: "Efetue o pagamento para evitar juros." },
+          ];
+          for (const ev of eventosVenc) {
+            const evento = dataNotifCartao(cartao.dia_vencimento, ev.diasAntes, 9);
+            if (evento && (cartao.faturas_pendentes ?? []).includes(evento.mes)) {
+              const segundos = Math.floor((evento.data.getTime() - agora.getTime()) / 1000);
+              if (segundos > 0) {
+                await Notif.scheduleNotificationAsync({
+                  content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
+                  trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+                });
+              }
+            }
+          }
+        }
+
+        if (preferencias.fechamentoFatura) {
+          // Fechamento: 2 dias antes e no próprio dia
+          const eventosFechamento = [
+            {
+              diasAntes: 2,
+              titulo: `📋 ${cartao.nome} — Fatura fecha em 2 dias`,
+              corpo: "Últimos dias para incluir compras nesta fatura.",
+            },
+            {
+              diasAntes: 0,
+              titulo: `🔒 ${cartao.nome} — Fatura fechou hoje`,
+              corpo: "As próximas compras serão lançadas na fatura seguinte.",
+            },
+          ];
+          for (const ev of eventosFechamento) {
+            const eventoFechamento = dataNotifCartao(cartao.dia_fechamento, ev.diasAntes, 9);
+            if (!eventoFechamento) continue;
+            const segundos = Math.floor((eventoFechamento.data.getTime() - agora.getTime()) / 1000);
             if (segundos > 0) {
               await Notif.scheduleNotificationAsync({
                 content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
                 trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
               });
             }
-          }
-        }
-
-        // Fechamento: 2 dias antes e no próprio dia
-        const eventosFechamento = [
-          {
-            diasAntes: 2,
-            titulo: `📋 ${cartao.nome} — Fatura fecha em 2 dias`,
-            corpo: "Últimos dias para incluir compras nesta fatura.",
-          },
-          {
-            diasAntes: 0,
-            titulo: `🔒 ${cartao.nome} — Fatura fechou hoje`,
-            corpo: "As próximas compras serão lançadas na fatura seguinte.",
-          },
-        ];
-        for (const ev of eventosFechamento) {
-          const eventoFechamento = dataNotifCartao(cartao.dia_fechamento, ev.diasAntes, 9);
-          if (!eventoFechamento) continue;
-          const segundos = Math.floor((eventoFechamento.data.getTime() - agora.getTime()) / 1000);
-          if (segundos > 0) {
-            await Notif.scheduleNotificationAsync({
-              content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
-              trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
-            });
           }
         }
       }

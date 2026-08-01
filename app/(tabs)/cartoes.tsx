@@ -365,7 +365,7 @@ export default function CartoesScreen() {
 
   const salvarNovoCartao = async () => {
     if (!nomeCartao.trim()) return Alert.alert("Aviso", "Informe o nome do cartão.");
-    const limiteNum = parseFloat(limiteCartao.replace(",", ".")) || 0;
+    const limiteNum = valorDaEntradaMoeda(limiteCartao);
     if (limiteNum <= 0) return Alert.alert("Aviso", "Informe um limite válido.");
     const venc = parseInt(diaVencimento);
     const fecha = parseInt(diaFechamento);
@@ -645,7 +645,7 @@ export default function CartoesScreen() {
     setCartaoEditando(c);
     setEditNome(c.nome);
     setEditCor(CORES_CARTAO.includes(c.cor) ? c.cor : CORES_CARTAO[0]);
-    setEditLimite(c.limite.toString());
+    setEditLimite(formatarEntradaMoeda(String(Math.round(Number(c.limite) * 100))));
     setEditVenc(c.dia_vencimento.toString());
     setEditFecha(c.dia_fechamento.toString());
     setModalEditarCartao(true);
@@ -654,7 +654,7 @@ export default function CartoesScreen() {
   const salvarEdicaoCartao = async () => {
     if (!cartaoEditando) return;
     if (!editNome.trim()) return showToast("Informe o nome", "error");
-    const limiteNum = parseFloat(editLimite.replace(",", ".")) || 0;
+    const limiteNum = valorDaEntradaMoeda(editLimite);
     if (limiteNum <= 0) return showToast("Limite inválido", "error");
     const venc = parseInt(editVenc);
     const fecha = parseInt(editFecha);
@@ -999,10 +999,10 @@ export default function CartoesScreen() {
               <Text style={[estilos.label, { color: Cores.secundario }]}>Limite (R$)</Text>
               <TextInput
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                placeholder="Ex: 5000"
+                placeholder="R$ 0,00"
                 placeholderTextColor={Cores.secundario}
                 value={limiteCartao}
-                onChangeText={setLimiteCartao}
+                onChangeText={(texto) => setLimiteCartao(formatarEntradaMoeda(texto))}
                 keyboardType="decimal-pad"
               />
 
@@ -1363,7 +1363,7 @@ export default function CartoesScreen() {
               <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} placeholder="Ex: Nubank" placeholderTextColor={Cores.secundario} value={editNome} onChangeText={setEditNome} />
 
               <Text style={[estilos.label, { color: Cores.secundario }]}>Limite (R$)</Text>
-              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} placeholder="Ex: 5000" placeholderTextColor={Cores.secundario} value={editLimite} onChangeText={setEditLimite} keyboardType="decimal-pad" />
+              <TextInput style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]} placeholder="R$ 0,00" placeholderTextColor={Cores.secundario} value={editLimite} onChangeText={(texto) => setEditLimite(formatarEntradaMoeda(texto))} keyboardType="decimal-pad" />
 
               <View style={estilos.doisCampos}>
                 <View style={{ flex: 1 }}>

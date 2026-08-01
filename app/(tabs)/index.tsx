@@ -5,7 +5,6 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Alert,
-  Button,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -24,6 +23,8 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
+import { finFlowTheme } from "../../constants/finflow-design";
+import Button from "../../components/FinFlowButton";
 import {
   adicionarRecorrencia,
   dataEfetivaTransacao,
@@ -119,28 +120,8 @@ const getSaudacao = () => {
   return "Boa noite";
 };
 
-const getEstiloBanco = (nome: string, isDark: boolean, corCustom?: string) => {
-  if (corCustom) return { bg: corCustom, text: "#FFF" };
-  const n = nome.toLowerCase();
-  if (n.includes("nu") || n.includes("nubank"))
-    return { bg: "#8A05BE", text: "#FFF" };
-  if (n.includes("itaú") || n.includes("itau"))
-    return { bg: "#EC7000", text: "#FFF" };
-  if (n.includes("inter")) return { bg: "#FF7A00", text: "#FFF" };
-  if (n.includes("bradesco")) return { bg: "#CC092F", text: "#FFF" };
-  if (n.includes("brasil") || n.includes("bb"))
-    return { bg: "#F9D300", text: "#0038A8" };
-  if (n.includes("santander")) return { bg: "#EC0000", text: "#FFF" };
-  if (n.includes("caixa")) return { bg: "#005CA9", text: "#FFF" };
-  if (n.includes("c6")) return { bg: "#242424", text: "#FFF" };
-  if (n.includes("carteira") || n.includes("dinheiro"))
-    return { bg: "#2A9D8F", text: "#FFF" };
-
-  return {
-    bg: isDark ? "#333333" : "#F8F9FA",
-    text: isDark ? "#FFFFFF" : "#333333",
-  };
-};
+const isPagamentoFatura = (descricao?: string | null) =>
+  (descricao ?? "").includes("[PagFatura:");
 
 const mesesEmPortugues = [
   "Janeiro","Fevereiro","Março","Abril","Maio","Junho",
@@ -191,16 +172,17 @@ export default function Dashboard() {
   const { isDark, session, notificacoesAtivas, verificarLimite, temPopupPrioritario } = useAppTheme();
   const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
+  const novoTema = finFlowTheme(isDark);
 
   const Cores = {
-    fundo: isDark ? "#121212" : "#F5F2EC",
-    textoPrincipal: isDark ? "#ffffff" : "#27313A",
-    textoSecundario: isDark ? "#AAAAAA" : "#68727D",
-    cardFundo: isDark ? "#1E1E1E" : "#FFFDF9",
-    borda: isDark ? "#333333" : "#E5DED3",
-    inputFundo: isDark ? "#2C2C2C" : "#FAF8F4",
-    pillFundo: isDark ? "#333333" : "#EEEAE3",
-    pillAtivo: isDark ? "#555555" : "#E3DDD4",
+    fundo: novoTema.background,
+    textoPrincipal: novoTema.text,
+    textoSecundario: novoTema.textMuted,
+    cardFundo: novoTema.surface,
+    borda: novoTema.border,
+    inputFundo: novoTema.surfaceMuted,
+    pillFundo: novoTema.surfaceMuted,
+    pillAtivo: novoTema.primarySoft,
   };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
@@ -276,6 +258,10 @@ export default function Dashboard() {
   const [foiPago, setFoiPago] = useState(true);
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
+  const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
+  const [modalContasHomeVisivel, setModalContasHomeVisivel] = useState(false);
+  const [contasSelecionadasHomeIds, setContasSelecionadasHomeIds] = useState<number[] | null>(null);
+  const [contasHomeRascunhoIds, setContasHomeRascunhoIds] = useState<number[]>([]);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   const [modoDistribuicao, setModoDistribuicao] = useState<"previstos" | "concluidos">("concluidos");
   const [comprasCartao, setComprasCartao] = useState<CompraCartao[]>([]);
@@ -286,23 +272,65 @@ export default function Dashboard() {
 
   // --- Cálculos ---
   const contasAtivas = contas.filter(c => !c.arquivado);
-  const contasAtivasIds = new Set(contasAtivas.map(c => c.id));
-  const saldoInicialTotal = contasAtivas.reduce((acc, curr) => acc + curr.saldo_inicial, 0);
-  const receitasRealizadas = transacoes
-    .filter((t) => t.tipo === "receita" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasRealizadas = transacoes
-    .filter((t) => t.tipo === "despesa" && t.status === "paga" && contasAtivasIds.has(t.conta_id))
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const transferenciasRecebidasAtivas = transacoes
-    .filter((t) => {
-      const contaDestinoId = getContaDestinoTransferencia(t.descricao);
-      return t.status === "paga" && contaDestinoId !== null && contasAtivasIds.has(contaDestinoId);
-    })
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas + transferenciasRecebidasAtivas - despesasRealizadas;
+  const idsAtivosHome = new Set(contasAtivas.map(c => c.id));
+  const idsSelecionadosHomeValidos = contasSelecionadasHomeIds?.filter(id => idsAtivosHome.has(id)) ?? null;
+  const escopoHomeEhTodas = idsSelecionadosHomeValidos === null
+    || idsSelecionadosHomeValidos.length === contasAtivas.length
+    || (contasAtivas.length > 0 && idsSelecionadosHomeValidos.length === 0);
+  const contasEscopoHome = escopoHomeEhTodas
+    ? contasAtivas
+    : contasAtivas.filter(c => idsSelecionadosHomeValidos.includes(c.id));
+  const contasEscopoHomeIds = new Set(contasEscopoHome.map(c => c.id));
+  const contasHomeRascunhoIdsValidos = contasHomeRascunhoIds.filter(id => idsAtivosHome.has(id));
+  const todasContasHomeRascunhoSelecionadas = contasAtivas.length > 0
+    && contasHomeRascunhoIdsValidos.length === contasAtivas.length;
+  const podeAplicarContasHome = contasHomeRascunhoIdsValidos.length > 0;
+  const chaveContasAtivasHome = contasAtivas.map(conta => conta.id).sort((a, b) => a - b).join(",");
 
-  const transacoesDoMes = transacoes.filter((t) => {
+  React.useEffect(() => {
+    if (!modalContasHomeVisivel) return;
+    setContasHomeRascunhoIds((idsAtuais) => {
+      if (contasSelecionadasHomeIds === null) return contasAtivas.map(conta => conta.id);
+      return idsAtuais.filter(id => idsAtivosHome.has(id));
+    });
+    // A chave muda somente quando uma conta é criada, arquivada ou reativada.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chaveContasAtivasHome, modalContasHomeVisivel, contasSelecionadasHomeIds]);
+
+  // Uma transferência interna ao conjunto selecionado se anula. Quando apenas
+  // uma das pontas está no conjunto, ela representa uma saída ou entrada real
+  // para a visão dessas contas.
+  const transacoesEscopoHome = transacoes.flatMap((transacao) => {
+    const destinoId = getContaDestinoTransferencia(transacao.descricao);
+    if (destinoId !== null) {
+      const origemSelecionada = contasEscopoHomeIds.has(transacao.conta_id);
+      const destinoSelecionado = contasEscopoHomeIds.has(destinoId);
+      if (origemSelecionada === destinoSelecionado) return [];
+      if (origemSelecionada) return [transacao];
+      return [{ ...transacao, tipo: "receita", conta_id: destinoId }];
+    }
+
+    // Transferências legadas não informam o destino. A linha da conta é
+    // segura em uma seleção individual; em um consolidado, seria duplicada.
+    if (isTransferencia(transacao.descricao)) {
+      return contasEscopoHome.length === 1 && contasEscopoHomeIds.has(transacao.conta_id)
+        ? [transacao]
+        : [];
+    }
+
+    return contasEscopoHomeIds.has(transacao.conta_id) ? [transacao] : [];
+  });
+
+  const saldoInicialTotal = contasEscopoHome.reduce((acc, curr) => acc + Number(curr.saldo_inicial), 0);
+  const receitasRealizadas = transacoesEscopoHome
+    .filter((t) => t.tipo === "receita" && t.status === "paga")
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasRealizadas = transacoesEscopoHome
+    .filter((t) => t.tipo === "despesa" && t.status === "paga")
+    .reduce((acc, curr) => acc + curr.valor, 0);
+  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+
+  const transacoesDoMes = transacoesEscopoHome.filter((t) => {
     const dataT = new Date(dataEfetivaTransacao(t));
     const dataAjustada = new Date(dataT.getTime() + dataT.getTimezoneOffset() * 60000);
     return (
@@ -311,22 +339,62 @@ export default function Dashboard() {
     );
   });
 
-  const transacoesDoMesSemTransferencias = transacoesDoMes.filter(
-    (t) => !isTransferencia(t.descricao) && !(t.descricao ?? "").includes("[PagFatura:")
+  const transacoesDoMesConsideradas = transacoesDoMes.filter(
+    (t) => !escopoHomeEhTodas || !isPagamentoFatura(t.descricao)
   );
-  const comprasCartaoDoMes = comprasCartao.filter((item) => item.data_compra?.startsWith(
-    `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}`
-  ));
-  const receitasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
-  const receitasRealizadasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasRealizadasDoMes = transacoesDoMesSemTransferencias.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
+  // As compras do cartão ainda não possuem conta vinculada no banco. Por
+  // isso, entram apenas na visão de todas as contas, evitando atribuição errada.
+  const comprasCartaoDoMes = escopoHomeEhTodas
+    ? comprasCartao.filter((item) => item.data_compra?.startsWith(
+      `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}`
+    ))
+    : [];
+  const receitasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
+  const receitasRealizadasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasRealizadasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
   const balancoMensal = receitasRealizadasDoMes - despesasRealizadasDoMes;
-  const balancoAgendadoMensal = receitasDoMes - despesasDoMes;
+  const ultimoDiaMesSelecionado = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0).getDate();
+  const dataFimMesSelecionado = `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}-${String(ultimoDiaMesSelecionado).padStart(2, "0")}`;
+  const saldoPrevistoFimDoMes = transacoesEscopoHome.reduce((saldo, transacao) => {
+    if (transacao.status !== "paga" && transacao.status !== "pendente") return saldo;
+    const dataConsiderada = dataEfetivaTransacao(transacao).slice(0, 10);
+    if (!dataConsiderada || dataConsiderada > dataFimMesSelecionado) return saldo;
+
+    const valor = Number(transacao.valor);
+    if (!Number.isFinite(valor)) return saldo;
+
+    return saldo + (transacao.tipo === "receita" ? valor : -valor);
+  }, saldoInicialTotal);
+  const hojeAvisos = new Date();
+  hojeAvisos.setHours(0, 0, 0, 0);
+  const limiteAvisos = new Date(hojeAvisos);
+  limiteAvisos.setDate(limiteAvisos.getDate() + 7);
+  const qtdVencidasHome = transacoesEscopoHome.filter((transacao) => {
+    if (transacao.status !== "pendente") return false;
+    const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
+    return new Date(ano, mes - 1, dia) < hojeAvisos;
+  }).length;
+  const qtdProximosVencimentos = transacoesEscopoHome.filter((transacao) => {
+    if (transacao.status !== "pendente") return false;
+    const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
+    const vencimento = new Date(ano, mes - 1, dia);
+    return vencimento >= hojeAvisos && vencimento <= limiteAvisos;
+  }).length;
+  const temFaturaVencidaHome = escopoHomeEhTodas && temFaturaVencida;
 
   // Dados para os gráficos de pizza
   const caixinhaGuardadoTotal = transacoesDoMes
     .filter(t => t.tipo === "despesa" && (t.descricao || "").startsWith("Guardar em: "))
+    .reduce((acc, t) => acc + t.valor, 0);
+  const pagamentosFaturaDoMes = escopoHomeEhTodas ? 0 : transacoesDoMes
+    .filter(t => t.tipo === "despesa" && isPagamentoFatura(t.descricao))
+    .reduce((acc, t) => acc + t.valor, 0);
+  const transferenciasSaidaDoMes = transacoesDoMesConsideradas
+    .filter(t => t.tipo === "despesa" && isTransferencia(t.descricao))
+    .reduce((acc, t) => acc + t.valor, 0);
+  const transferenciasEntradaDoMes = transacoesDoMesConsideradas
+    .filter(t => t.tipo === "receita" && isTransferencia(t.descricao))
     .reduce((acc, t) => acc + t.valor, 0);
 
   const dadosDespesasPorCat = [
@@ -334,7 +402,7 @@ export default function Dashboard() {
       .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
       .map((cat) => {
         const totalTransacoes = transacoesDoMes
-          .filter((t) => t.tipo === "despesa" && t.categoria_id === cat.id)
+          .filter((t) => t.tipo === "despesa" && !isTransferencia(t.descricao) && !isPagamentoFatura(t.descricao) && t.categoria_id === cat.id)
           .reduce((acc, t) => acc + t.valor, 0);
         const totalCartao = comprasCartaoDoMes
           .filter((item) => item.categoria_id === cat.id)
@@ -343,26 +411,39 @@ export default function Dashboard() {
       })
       .filter((d) => d.valor > 0),
     ...(caixinhaGuardadoTotal > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoTotal, nome: "Objetivos", icone: "savings" }] : []),
+    ...(transferenciasSaidaDoMes > 0 ? [{ cor: "#F4A261", valor: transferenciasSaidaDoMes, nome: "Transferências", icone: "swap-horiz" }] : []),
+    ...(pagamentosFaturaDoMes > 0 ? [{ cor: "#805AD5", valor: pagamentosFaturaDoMes, nome: "Fatura do cartão", icone: "credit-card" }] : []),
   ].sort((a, b) => b.valor - a.valor);
 
-  const dadosReceitasPorCat = categorias
-    .filter((c) => c.tipo === "receita" && c.ativa !== 0)
-    .map((cat) => {
-      const total = transacoesDoMes
-        .filter((t) => t.tipo === "receita" && t.categoria_id === cat.id)
-        .reduce((acc, t) => acc + t.valor, 0);
-      return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
-    })
-    .filter((d) => d.valor > 0)
-    .sort((a, b) => b.valor - a.valor);
+  const dadosReceitasPorCat = [
+    ...categorias
+      .filter((c) => c.tipo === "receita" && c.ativa !== 0)
+      .map((cat) => {
+        const total = transacoesDoMes
+          .filter((t) => t.tipo === "receita" && !isTransferencia(t.descricao) && t.categoria_id === cat.id)
+          .reduce((acc, t) => acc + t.valor, 0);
+        return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
+      })
+      .filter((d) => d.valor > 0),
+    ...(transferenciasEntradaDoMes > 0 ? [{ cor: "#F4A261", valor: transferenciasEntradaDoMes, nome: "Transferências", icone: "swap-horiz" }] : []),
+  ].sort((a, b) => b.valor - a.valor);
 
   // Data for "realized only" mode
-  const receitasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
-  const despesasDoMesRealizadas = transacoesDoMesSemTransferencias.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0)
+  const receitasDoMesRealizadas = transacoesDoMesConsideradas.filter(t => t.tipo === "receita" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
+  const despesasDoMesRealizadas = transacoesDoMesConsideradas.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((acc, t) => acc + t.valor, 0)
     + comprasCartaoDoMes.reduce((acc, item) => acc + Number(item.valor), 0);
 
   const caixinhaGuardadoRealizado = transacoesDoMes
     .filter(t => t.tipo === "despesa" && t.status === "paga" && (t.descricao || "").startsWith("Guardar em: "))
+    .reduce((acc, t) => acc + t.valor, 0);
+  const pagamentosFaturaRealizados = escopoHomeEhTodas ? 0 : transacoesDoMes
+    .filter(t => t.tipo === "despesa" && t.status === "paga" && isPagamentoFatura(t.descricao))
+    .reduce((acc, t) => acc + t.valor, 0);
+  const transferenciasSaidaRealizadas = transacoesDoMesConsideradas
+    .filter(t => t.tipo === "despesa" && t.status === "paga" && isTransferencia(t.descricao))
+    .reduce((acc, t) => acc + t.valor, 0);
+  const transferenciasEntradaRealizadas = transacoesDoMesConsideradas
+    .filter(t => t.tipo === "receita" && t.status === "paga" && isTransferencia(t.descricao))
     .reduce((acc, t) => acc + t.valor, 0);
 
   const dadosDespesasPorCatRealizadas = [
@@ -370,7 +451,7 @@ export default function Dashboard() {
       .filter((c) => c.tipo === "despesa" && c.ativa !== 0)
       .map((cat) => {
         const totalTransacoes = transacoesDoMes
-          .filter(t => t.tipo === "despesa" && t.status === "paga" && t.categoria_id === cat.id)
+          .filter(t => t.tipo === "despesa" && t.status === "paga" && !isTransferencia(t.descricao) && !isPagamentoFatura(t.descricao) && t.categoria_id === cat.id)
           .reduce((acc, t) => acc + t.valor, 0);
         const totalCartao = comprasCartaoDoMes
           .filter((item) => item.categoria_id === cat.id)
@@ -379,18 +460,22 @@ export default function Dashboard() {
       })
       .filter((d) => d.valor > 0),
     ...(caixinhaGuardadoRealizado > 0 ? [{ cor: "#264653", valor: caixinhaGuardadoRealizado, nome: "Objetivos", icone: "savings" }] : []),
+    ...(transferenciasSaidaRealizadas > 0 ? [{ cor: "#F4A261", valor: transferenciasSaidaRealizadas, nome: "Transferências", icone: "swap-horiz" }] : []),
+    ...(pagamentosFaturaRealizados > 0 ? [{ cor: "#805AD5", valor: pagamentosFaturaRealizados, nome: "Fatura do cartão", icone: "credit-card" }] : []),
   ].sort((a, b) => b.valor - a.valor);
 
-  const dadosReceitasPorCatRealizadas = categorias
-    .filter((c) => c.tipo === "receita" && c.ativa !== 0)
-    .map((cat) => {
-      const total = transacoesDoMes
-        .filter(t => t.tipo === "receita" && t.status === "paga" && t.categoria_id === cat.id)
-        .reduce((acc, t) => acc + t.valor, 0);
-      return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
-    })
-    .filter((d) => d.valor > 0)
-    .sort((a, b) => b.valor - a.valor);
+  const dadosReceitasPorCatRealizadas = [
+    ...categorias
+      .filter((c) => c.tipo === "receita" && c.ativa !== 0)
+      .map((cat) => {
+        const total = transacoesDoMes
+          .filter(t => t.tipo === "receita" && t.status === "paga" && !isTransferencia(t.descricao) && t.categoria_id === cat.id)
+          .reduce((acc, t) => acc + t.valor, 0);
+        return { cor: cat.cor, valor: total, nome: cat.nome, icone: cat.icone };
+      })
+      .filter((d) => d.valor > 0),
+    ...(transferenciasEntradaRealizadas > 0 ? [{ cor: "#F4A261", valor: transferenciasEntradaRealizadas, nome: "Transferências", icone: "swap-horiz" }] : []),
+  ].sort((a, b) => b.valor - a.valor);
 
   // --- Dados ---
   const carregarDados = useCallback(async () => {
@@ -445,8 +530,8 @@ export default function Dashboard() {
       await AsyncStorage.setItem("@cache_caixinhas", JSON.stringify(resCaixinhas.data ?? []));
       await AsyncStorage.setItem("@cache_parceiro", JSON.stringify(temParc));
 
-      // Alerta de vencidos (apenas uma vez por sessão)
-      if (!alertaVencidoMostrado.current && resTransacoes.data) {
+      // Mantém a central do sino atualizada; o popup automático aparece apenas uma vez.
+      if (resTransacoes.data) {
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
         const vencidas = resTransacoes.data.filter((t: any) => {
@@ -455,9 +540,9 @@ export default function Dashboard() {
           const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
           return dataT < hoje;
         });
-        if (vencidas.length > 0) {
+        setQtdVencidas(vencidas.length);
+        if (!alertaVencidoMostrado.current && vencidas.length > 0) {
           alertaVencidoMostrado.current = true;
-          setQtdVencidas(vencidas.length);
           setModalVencidosVisivel(true);
         }
       }
@@ -498,9 +583,8 @@ export default function Dashboard() {
       }
       if (conCache) setContas(JSON.parse(conCache));
       if (transCache) {
-        const anoAtual = new Date().getFullYear();
         const todas: Transacao[] = JSON.parse(transCache);
-        setTransacoes(todas.filter(t => new Date(t.data_vencimento).getFullYear() === anoAtual));
+        setTransacoes(todas);
       }
       if (caixCache) setCaixinhas(JSON.parse(caixCache));
       if (parcCache) setTemParceiro(JSON.parse(parcCache));
@@ -519,6 +603,11 @@ export default function Dashboard() {
       .reduce((acc, curr) => acc + curr.valor, 0);
     return Number(conta.saldo_inicial) + rec + transferenciasRecebidas - desp;
   };
+
+  const contaPossuiLancamentos = (contaId: number) => transacoes.some((transacao) =>
+    transacao.conta_id === contaId
+    || getContaDestinoTransferencia(transacao.descricao) === contaId
+  );
 
   // --- Ações de Categoria ---
   const salvarCategoria = async () => {
@@ -617,7 +706,7 @@ export default function Dashboard() {
     // Verificar limite de contas do plano
     if (!verificarLimite("contas", contasAtivas.length)) return;
     setLoadingConta(true);
-    const saldoNum = parseFloat(saldoInicialConta.replace(",", ".")) || 0;
+    const saldoNum = valorDaEntradaMoeda(saldoInicialConta);
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
     let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
     if (res.error) {
@@ -634,9 +723,10 @@ export default function Dashboard() {
   };
 
   const abrirEditarConta = (conta: Conta) => {
+    setModalContasHomeVisivel(false);
     setContaEditando(conta);
     setNomeEditConta(conta.nome);
-    setSaldoEditConta(String(conta.saldo_inicial));
+    setSaldoEditConta(formatarEntradaMoeda(String(Math.round(Number(conta.saldo_inicial) * 100))));
     setCompartilhadoEditConta(conta.compartilhado);
     setCorEditConta(conta.cor && PALETA_CORES.includes(conta.cor) ? conta.cor : PALETA_CORES[6]);
     setEditandoSaldoConta(false);
@@ -647,7 +737,7 @@ export default function Dashboard() {
     if (!contaEditando || nomeEditConta.trim() === "") return Alert.alert("Aviso", "Nome inválido.");
     const base: any = { nome: nomeEditConta, compartilhado: compartilhadoEditConta };
     if (editandoSaldoConta) {
-      const saldoNum = parseFloat(saldoEditConta.replace(",", "."));
+      const saldoNum = valorDaEntradaMoeda(saldoEditConta);
       if (isNaN(saldoNum)) return Alert.alert("Aviso", "Saldo inválido.");
       base.saldo_inicial = saldoNum;
     }
@@ -686,11 +776,19 @@ export default function Dashboard() {
 
   const arquivarConta = (conta: Conta) => {
     const saldoAtual = calcularSaldoConta(conta);
-    const temLancamentos = transacoes.some((t) => t.conta_id === conta.id);
+    const temLancamentos = contaPossuiLancamentos(conta.id);
+    setModalEditarContaVisivel(false);
     setContaConfirmarArquivo({ conta, saldoAtual, temLancamentos });
   };
 
   const excluirContaSemLancamentos = async (conta: Conta) => {
+    if (contaPossuiLancamentos(conta.id)) {
+      setContaConfirmarArquivo(null);
+      return Alert.alert(
+        "Conta com lançamentos",
+        "Esta conta recebeu um lançamento enquanto a confirmação estava aberta. Para preservar o histórico, ela não pode mais ser excluída.",
+      );
+    }
     const { error } = await supabase.from("contas").delete().eq("id", conta.id);
     if (error) return Alert.alert("Erro", `Falha ao excluir: ${error.message}`);
     setContaConfirmarArquivo(null);
@@ -813,17 +911,116 @@ export default function Dashboard() {
   };
 
   const nomeUsuario = session?.user?.user_metadata?.nome_usuario || session?.user?.email?.split("@")[0] || "Usuário";
+  const resumoContasHome = contasAtivas.length === 0
+    ? "Nenhuma conta ativa"
+    : escopoHomeEhTodas
+      ? "Todas as contas"
+      : contasEscopoHome.length === 1
+        ? contasEscopoHome[0].nome
+        : `${contasEscopoHome.length} contas selecionadas`;
+
+  const abrirSeletorContasHome = () => {
+    setContasHomeRascunhoIds(contasEscopoHome.map(conta => conta.id));
+    setModalContasHomeVisivel(true);
+  };
+
+  const alternarContaHomeRascunho = (contaId: number) => {
+    setContasHomeRascunhoIds((idsAtuais) => {
+      if (!idsAtuais.includes(contaId)) return [...idsAtuais, contaId];
+      return idsAtuais.filter(id => id !== contaId);
+    });
+  };
+
+  const aplicarContasHome = () => {
+    const idsValidos = contasHomeRascunhoIdsValidos;
+    if (contasAtivas.length > 0 && idsValidos.length === 0) return;
+    setContasSelecionadasHomeIds(idsValidos.length === contasAtivas.length ? null : idsValidos);
+    setModalContasHomeVisivel(false);
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
-      <ScrollView style={styles.container}>
+      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+        <View style={[styles.homeHero, { backgroundColor: novoTema.header }]}>
+          <View pointerEvents="none" style={styles.homeHeroWaves}>
+            <View style={[styles.homeHeroWave, styles.homeHeroWaveOne]} />
+            <View style={[styles.homeHeroWave, styles.homeHeroWaveTwo]} />
+            <View style={[styles.homeHeroWave, styles.homeHeroWaveThree]} />
+          </View>
+          <View style={styles.homeHeroContent}>
+          <View style={styles.homeHeroTop}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.homeHeroGreeting}>{getSaudacao()}, {nomeUsuario}</Text>
+              <TouchableOpacity onPress={() => { setAnoTemp(mesAtual.getFullYear()); setMesTemp(mesAtual.getMonth()); setMostrarPickerMesAno(true); }} style={styles.homeMonthButton}>
+                <Text style={styles.homeMonthText}>{nomeDoMes}</Text>
+                <MaterialIcons name="keyboard-arrow-down" size={16} color="rgba(255,255,255,0.8)" />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.homeBell} onPress={() => setModalNotificacoesHome(true)}>
+              <MaterialIcons name={notificacoesAtivas ? "notifications-active" : "notifications-none"} size={22} color="#FFF" />
+              {(qtdVencidasHome > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome) && <View style={styles.homeBellBadge} />}
+            </TouchableOpacity>
+          </View>
+          <Text style={styles.homeBalanceLabel}>Saldo geral</Text>
+          <Text style={styles.homeBalanceValue}>{fmtReais(saldoAtualGlobal)}</Text>
+          <TouchableOpacity
+            style={styles.homeHeroTrend}
+            onPress={abrirSeletorContasHome}
+            activeOpacity={0.78}
+            accessibilityRole="button"
+            accessibilityLabel={`Selecionar contas. ${resumoContasHome}`}
+          >
+            <MaterialIcons name="account-balance-wallet" size={14} color="#8FF0C2" />
+            <Text style={styles.homeHeroTrendText}>{resumoContasHome}</Text>
+            <MaterialIcons name="keyboard-arrow-down" size={15} color="#B8F4D7" />
+          </TouchableOpacity>
+          </View>
+        </View>
+
+        <View style={[styles.homeActions, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
+          {[
+            { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => setModalTransVisivel(true) },
+            { label: "Categorias", icon: "category", color: "#4D76E8", action: () => setModalGerenciarCatVisivel(true) },
+            { label: "Cartões", icon: "credit-card", color: "#EE6B63", action: () => router.push("/(tabs)/cartoes" as any) },
+            { label: "IA", icon: "auto-awesome", color: "#805AD5", action: () => usuarioPodeAcessarIA(session?.user?.email) ? router.push("/chat-ia") : setModalIaEmBreve(true) },
+          ].map((item) => (
+            <TouchableOpacity key={item.label} style={styles.homeActionItem} onPress={item.action}>
+              <View style={[styles.homeActionIcon, { backgroundColor: `${item.color}1F` }]}>
+                <MaterialIcons name={item.icon as any} size={23} color={item.color} />
+                {item.label === "Cartões" && temFaturaVencidaHome && <View style={styles.homeActionAlert} />}
+              </View>
+              <Text style={[styles.homeActionLabel, { color: novoTema.text }]}>{item.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <TouchableOpacity style={[styles.homeMonthCard, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]} onPress={() => setModalResumoVisivel(true)} activeOpacity={0.85}>
+          <View style={styles.homeSectionTop}>
+            <Text style={[styles.homeSectionTitle, { color: novoTema.text }]}>Visão do mês</Text>
+            <View style={[styles.homeCalendarIcon, { backgroundColor: novoTema.surfaceMuted }]}><MaterialIcons name="calendar-today" size={15} color={novoTema.textMuted} /></View>
+          </View>
+          <View style={styles.homeMonthMetrics}>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{fmtReais(receitasDoMes)}</Text></View>
+            <View style={[styles.homeMetricColumn, { alignItems: "center" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Balanço atual</Text><Text style={[styles.homeMetricValue, { color: balancoMensal < 0 ? "#EE6B63" : novoTema.text }]} numberOfLines={1} adjustsFontSizeToFit>{fmtReais(balancoMensal)}</Text></View>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#EE6B63" }]} numberOfLines={1} adjustsFontSizeToFit>{fmtReais(despesasDoMes)}</Text></View>
+          </View>
+          <View style={[styles.homeMonthTrack, { backgroundColor: novoTema.surfaceMuted }]}>
+            <View style={{ flex: Math.max(receitasDoMes, 1), backgroundColor: "#42C78B" }} />
+            <View style={{ flex: Math.max(despesasDoMes, 1), backgroundColor: "#EE6B63" }} />
+          </View>
+          <Text style={{ color: saldoPrevistoFimDoMes < 0 ? (isDark ? "#F28B82" : "#C96A6A") : novoTema.textMuted, fontSize: 11, marginTop: 9 }}>
+            Saldo previsto no fim do mês: {fmtReais(saldoPrevistoFimDoMes)}
+          </Text>
+        </TouchableOpacity>
+
+        {false && <>
         {/* HEADER com botão IA fixo */}
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
-            <Text style={[styles.greeting, { color: Cores.textoPrincipal }]}>
+            <Text style={[styles.greeting, { color: "#FFF" }]}>
               {getSaudacao()}, {nomeUsuario}!
             </Text>
-            <Text style={[styles.subtitle, { color: Cores.textoSecundario }]}>
+            <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.78)" }]}>
               Seu painel financeiro FinFlow
             </Text>
           </View>
@@ -845,22 +1042,24 @@ export default function Dashboard() {
         {isOffline && (
           <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F59E0B22", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: "#F59E0B55" }}>
             <MaterialIcons name="wifi-off" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
-            <Text style={{ color: "#B45309", fontSize: 13, fontWeight: "600", flex: 1 }}>Sem conexão — exibindo dados salvos (apenas ano atual)</Text>
+            <Text style={{ color: "#B45309", fontSize: 13, fontWeight: "600", flex: 1 }}>Sem conexão — exibindo os dados salvos neste dispositivo</Text>
           </View>
         )}
 
         <View style={styles.actionGrid}>
           <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#F97316" }]} onPress={() => setModalTransVisivel(true)}>
-              <Text style={styles.actionButtonText}>+ Transação</Text>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]} onPress={() => setModalTransVisivel(true)}>
+              <MaterialIcons name="swap-horiz" size={20} color={novoTema.primary} style={{ marginRight: 7 }} />
+              <Text style={[styles.actionButtonText, { color: novoTema.text }]}>+ Transação</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.actionButton, { backgroundColor: "#2A9D8F" }]} onPress={() => setModalGerenciarCatVisivel(true)}>
-              <Text style={styles.actionButtonText}>Gerenciar Categorias</Text>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]} onPress={() => setModalGerenciarCatVisivel(true)}>
+              <MaterialIcons name="category" size={19} color="#4D76E8" style={{ marginRight: 7 }} />
+              <Text style={[styles.actionButtonText, { color: novoTema.text }]}>Gerenciar Categorias</Text>
             </TouchableOpacity>
           </View>
-          <TouchableOpacity style={[styles.actionButtonFull, { backgroundColor: "#2563EB", position: "relative" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
-            <MaterialIcons name="credit-card" size={15} color="#FFF" style={{ marginRight: 6 }} />
-            <Text style={styles.actionButtonText}>Cartão de Crédito</Text>
+          <TouchableOpacity style={[styles.actionButtonFull, { backgroundColor: novoTema.surface, borderColor: novoTema.border, position: "relative" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
+            <MaterialIcons name="credit-card" size={19} color="#EE6B63" style={{ marginRight: 7 }} />
+            <Text style={[styles.actionButtonText, { color: novoTema.text }]}>Cartão de Crédito</Text>
             {temFaturaVencida && (
               <View style={styles.faturaVencidaBadge}>
                 <Text style={styles.faturaVencidaBadgeText}>!</Text>
@@ -918,103 +1117,13 @@ export default function Dashboard() {
             <Text style={{ color: balancoMensal >= 0 ? "#10B981" : "#EF4444", fontWeight: "bold", fontSize: 20 }}>
               {fmtReais(balancoMensal)}
             </Text>
-            <Text style={{ color: balancoAgendadoMensal < 0 ? (isDark ? "#F28B82" : "#C96A6A") : (isDark ? "#888" : "#7B8490"), fontSize: 11, marginTop: 3 }}>
-              Previsto até o fim do mês: {fmtReais(balancoAgendadoMensal)}
+            <Text style={{ color: saldoPrevistoFimDoMes < 0 ? (isDark ? "#F28B82" : "#C96A6A") : (isDark ? "#888" : "#7B8490"), fontSize: 11, marginTop: 3 }}>
+              Saldo previsto no fim do mês: {fmtReais(saldoPrevistoFimDoMes)}
             </Text>
           </View>
         </View>
 
-        {/* CONTAS */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}>Minhas Contas</Text>
-            <TouchableOpacity
-              style={[styles.addContaBtn, { backgroundColor: "#457B9D" }]}
-              onPress={() => setModalContaVisivel(true)}
-            >
-              <MaterialIcons name="add" size={16} color="#FFF" />
-              <Text style={styles.addContaBtnText}>Nova Conta</Text>
-            </TouchableOpacity>
-          </View>
-
-          {contas.filter(c => !c.arquivado).length === 0 ? (
-            <TouchableOpacity
-              onPress={() => setModalContaVisivel(true)}
-              style={{ alignItems: "center", paddingVertical: 28, borderRadius: 12, borderWidth: 2, borderColor: Cores.borda, borderStyle: "dashed" }}
-            >
-              <MaterialIcons name="account-balance-wallet" size={40} color={Cores.borda} />
-              <Text style={{ color: Cores.textoSecundario, marginTop: 10, fontWeight: "600" }}>Nenhuma conta criada</Text>
-              <Text style={{ color: "#2563EB", fontSize: 13, marginTop: 4 }}>Toque para adicionar sua primeira conta</Text>
-            </TouchableOpacity>
-          ) : (
-            <View style={styles.accountsGrid}>
-              {contas.filter(c => !c.arquivado).map((conta) => {
-                const estilo = getEstiloBanco(conta.nome, isDark, conta.cor);
-                const bloqueada = conta.bloqueado_plano;
-                return (
-                  <TouchableOpacity
-                    key={conta.id}
-                    style={[styles.accountCard, { backgroundColor: estilo.bg, borderColor: isDark ? Cores.borda : estilo.bg, borderWidth: isDark ? 1 : 0, opacity: bloqueada ? 0.55 : 1 }]}
-                    onPress={() => !bloqueada && abrirEditarConta(conta)}
-                    activeOpacity={bloqueada ? 1 : 0.8}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center" }}>
-                      {bloqueada && <MaterialIcons name="lock" size={13} color={estilo.text} style={{ marginRight: 4 }} />}
-                      <Text style={[styles.accountName, { color: estilo.text }]}>{conta.nome}</Text>
-                      {conta.compartilhado && !bloqueada && (
-                        <View style={{ marginLeft: 8, backgroundColor: "rgba(255,255,255,0.2)", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 10 }}>
-                          <MaterialIcons name="people" size={14} color={estilo.text} />
-                        </View>
-                      )}
-                    </View>
-                    <Text style={[styles.accountBalance, { color: estilo.text }]}>
-                      {fmtReais(calcularSaldoConta(conta))}
-                    </Text>
-                    <Text style={{ color: estilo.text, opacity: 0.6, fontSize: 11, marginTop: 4 }}>
-                      {bloqueada ? "Bloqueada — faça upgrade" : "Toque para editar"}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          )}
-
-          {/* Contas arquivadas */}
-          {contas.filter(c => c.arquivado).length > 0 && (
-            <>
-              <TouchableOpacity
-                onPress={() => setMostrarArquivadas(!mostrarArquivadas)}
-                style={{ flexDirection: "row", alignItems: "center", marginTop: 12, paddingVertical: 6 }}
-              >
-                <MaterialIcons name={mostrarArquivadas ? "expand-less" : "expand-more"} size={18} color={Cores.textoSecundario} />
-                <Text style={{ color: Cores.textoSecundario, fontSize: 13, marginLeft: 4 }}>
-                  {mostrarArquivadas ? "Ocultar arquivadas" : `Ver ${contas.filter(c => c.arquivado).length} conta(s) arquivada(s)`}
-                </Text>
-              </TouchableOpacity>
-              {mostrarArquivadas && (
-                <View style={[styles.accountsGrid, { marginTop: 8 }]}>
-                  {contas.filter(c => c.arquivado).map((conta) => {
-                    const estilo = getEstiloBanco(conta.nome, isDark, conta.cor);
-                    return (
-                      <TouchableOpacity
-                        key={conta.id}
-                        style={[styles.accountCard, { backgroundColor: estilo.bg, opacity: 0.5, borderColor: Cores.borda, borderWidth: 1 }]}
-                        onPress={() => abrirEditarConta(conta)}
-                        activeOpacity={0.8}
-                      >
-                        <View style={{ flexDirection: "row", alignItems: "center" }}>
-                          <MaterialIcons name="archive" size={14} color={estilo.text} style={{ marginRight: 6 }} />
-                          <Text style={[styles.accountName, { color: estilo.text }]}>{conta.nome}</Text>
-                        </View>
-                        <Text style={{ color: estilo.text, opacity: 0.7, fontSize: 11, marginTop: 4 }}>Arquivada — toque para editar</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              )}
-            </>
-          )}
-        </View>
+        </>}
 
         {/* GRÁFICOS DE PIZZA */}
         <View style={styles.section}>
@@ -1089,33 +1198,239 @@ export default function Dashboard() {
 
       </ScrollView>
 
+      <Modal animationType="fade" transparent visible={modalContasHomeVisivel} onRequestClose={() => setModalContasHomeVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.accountScopePanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={styles.accountScopeHeader}>
+              <View style={[styles.accountScopeHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
+                <MaterialIcons name="account-balance-wallet" size={24} color={novoTema.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.accountScopeTitle, { color: Cores.textoPrincipal }]}>Contas e visão inicial</Text>
+                <Text style={[styles.accountScopeSubtitle, { color: Cores.textoSecundario }]}>Selecione, crie e gerencie suas contas em um só lugar.</Text>
+              </View>
+              <TouchableOpacity style={styles.notificationClose} onPress={() => setModalContasHomeVisivel(false)}>
+                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity
+              style={[styles.accountScopeCreate, { backgroundColor: novoTema.primary }]}
+              onPress={() => {
+                setModalContasHomeVisivel(false);
+                setModalContaVisivel(true);
+              }}
+              activeOpacity={0.8}
+            >
+              <MaterialIcons name="add" size={19} color="#FFF" />
+              <Text style={styles.accountScopeCreateText}>Criar nova conta</Text>
+            </TouchableOpacity>
+
+            <Text style={[styles.accountScopeSectionLabel, { color: Cores.textoSecundario }]}>CONTAS EXIBIDAS NA TELA INICIAL</Text>
+
+            <TouchableOpacity
+              style={[styles.accountScopeOption, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}
+              onPress={() => setContasHomeRascunhoIds(contasAtivas.map(conta => conta.id))}
+            >
+              <View style={[styles.accountScopeCheck, {
+                borderColor: todasContasHomeRascunhoSelecionadas ? novoTema.primary : Cores.borda,
+                backgroundColor: todasContasHomeRascunhoSelecionadas ? novoTema.primary : "transparent",
+              }]}>
+                {todasContasHomeRascunhoSelecionadas && <MaterialIcons name="check" size={16} color="#FFF" />}
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]}>Todas as contas</Text>
+                <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>Visão consolidada completa</Text>
+              </View>
+            </TouchableOpacity>
+
+            <ScrollView style={styles.accountScopeList} showsVerticalScrollIndicator={false}>
+              {contasAtivas.map((conta) => {
+                const selecionada = contasHomeRascunhoIdsValidos.includes(conta.id);
+                return (
+                  <View
+                    key={conta.id}
+                    style={[styles.accountScopeManagedOption, { backgroundColor: Cores.pillFundo, borderColor: selecionada ? novoTema.primary : Cores.borda }]}
+                  >
+                    <TouchableOpacity
+                      style={styles.accountScopeSelectArea}
+                      onPress={() => alternarContaHomeRascunho(conta.id)}
+                      activeOpacity={0.76}
+                    >
+                      <View style={[styles.accountScopeCheck, {
+                        borderColor: selecionada ? novoTema.primary : Cores.borda,
+                        backgroundColor: selecionada ? novoTema.primary : "transparent",
+                      }]}>
+                        {selecionada && <MaterialIcons name="check" size={16} color="#FFF" />}
+                      </View>
+                      <View style={[styles.accountScopeDot, { backgroundColor: conta.cor || novoTema.primary }]} />
+                      <View style={{ flex: 1, minWidth: 0 }}>
+                        <View style={styles.accountScopeNameRow}>
+                          <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]} numberOfLines={1}>{conta.nome}</Text>
+                          {conta.compartilhado && <MaterialIcons name="people" size={13} color={novoTema.primary} />}
+                        </View>
+                        <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{fmtReais(calcularSaldoConta(conta))}</Text>
+                      </View>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.accountScopeManageButton, { borderColor: Cores.borda }]}
+                      onPress={() => abrirEditarConta(conta)}
+                      accessibilityLabel={`Editar conta ${conta.nome}`}
+                    >
+                      <MaterialIcons name="edit" size={17} color={Cores.textoSecundario} />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+
+              {contas.filter(conta => conta.arquivado).length > 0 && (
+                <>
+                  <TouchableOpacity
+                    style={[styles.accountScopeArchivedToggle, { borderColor: Cores.borda }]}
+                    onPress={() => setMostrarArquivadas(atual => !atual)}
+                  >
+                    <View style={[styles.accountScopeArchivedIcon, { backgroundColor: Cores.inputFundo }]}>
+                      <MaterialIcons name="archive" size={17} color={Cores.textoSecundario} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]}>Contas arquivadas</Text>
+                      <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{contas.filter(conta => conta.arquivado).length} conta(s)</Text>
+                    </View>
+                    <MaterialIcons name={mostrarArquivadas ? "expand-less" : "expand-more"} size={22} color={Cores.textoSecundario} />
+                  </TouchableOpacity>
+
+                  {mostrarArquivadas && contas.filter(conta => conta.arquivado).map((conta) => (
+                    <TouchableOpacity
+                      key={`arquivada-${conta.id}`}
+                      style={[styles.accountScopeArchivedRow, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}
+                      onPress={() => abrirEditarConta(conta)}
+                    >
+                      <View style={[styles.accountScopeDot, { backgroundColor: conta.cor || novoTema.primary, opacity: 0.55 }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]}>{conta.nome}</Text>
+                        <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>Arquivada · toque para editar ou reativar</Text>
+                      </View>
+                      <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} />
+                    </TouchableOpacity>
+                  ))}
+                </>
+              )}
+            </ScrollView>
+
+            {!todasContasHomeRascunhoSelecionadas && (
+              <Text style={[styles.accountScopeHint, { color: Cores.textoSecundario }]}>Compras de cartão ainda não têm uma conta vinculada e aparecem somente em “Todas as contas”.</Text>
+            )}
+
+            {contasAtivas.length > 0 && !podeAplicarContasHome && (
+              <Text style={styles.accountScopeEmptyWarning}>Selecione ao menos uma conta para aplicar.</Text>
+            )}
+
+            <View style={styles.accountScopeActions}>
+              <TouchableOpacity style={[styles.accountScopeCancel, { borderColor: Cores.borda }]} onPress={() => setModalContasHomeVisivel(false)}>
+                <Text style={[styles.accountScopeCancelText, { color: Cores.textoSecundario }]}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.accountScopeApply, { backgroundColor: novoTema.primary }, !podeAplicarContasHome && styles.accountScopeApplyDisabled]}
+                onPress={aplicarContasHome}
+                disabled={!podeAplicarContasHome}
+              >
+                <Text style={styles.accountScopeApplyText}>Aplicar seleção</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal animationType="fade" transparent visible={modalNotificacoesHome} onRequestClose={() => setModalNotificacoesHome(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.notificationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={styles.notificationHeader}>
+              <View style={[styles.notificationHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
+                <MaterialIcons name="notifications-none" size={24} color={novoTema.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.notificationTitle, { color: Cores.textoPrincipal }]}>Avisos financeiros</Text>
+                <Text style={[styles.notificationSubtitle, { color: Cores.textoSecundario }]}>
+                  {notificacoesAtivas ? "Notificações do dispositivo ativadas" : "Notificações do dispositivo desativadas"}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.notificationClose} onPress={() => setModalNotificacoesHome(false)}>
+                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.notificationList}>
+              {qtdVencidasHome > 0 && (
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/transacoes" as any); }}>
+                  <View style={[styles.notificationItemIcon, { backgroundColor: "#E76F5122" }]}><MaterialIcons name="warning-amber" size={20} color="#E76F51" /></View>
+                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Lançamentos atrasados</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencidasHome} pendência{qtdVencidasHome === 1 ? "" : "s"} precisa{qtdVencidasHome === 1 ? "" : "m"} de atenção.</Text></View>
+                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
+                </TouchableOpacity>
+              )}
+              {qtdProximosVencimentos > 0 && (
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/transacoes" as any); }}>
+                  <View style={[styles.notificationItemIcon, { backgroundColor: "#E9C46A22" }]}><MaterialIcons name="event" size={20} color="#C99B25" /></View>
+                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Próximos 7 dias</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdProximosVencimentos} lançamento{qtdProximosVencimentos === 1 ? "" : "s"} previsto{qtdProximosVencimentos === 1 ? "" : "s"}.</Text></View>
+                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
+                </TouchableOpacity>
+              )}
+              {temFaturaVencidaHome && (
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/cartoes" as any); }}>
+                  <View style={[styles.notificationItemIcon, { backgroundColor: "#EE6B6322" }]}><MaterialIcons name="credit-card" size={20} color="#EE6B63" /></View>
+                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Fatura vencida</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>Existe uma fatura em aberto após o vencimento.</Text></View>
+                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
+                </TouchableOpacity>
+              )}
+              {qtdVencidasHome === 0 && qtdProximosVencimentos === 0 && !temFaturaVencidaHome && (
+                <View style={styles.notificationEmpty}>
+                  <MaterialIcons name="task-alt" size={38} color="#2A9D8F" />
+                  <Text style={[styles.notificationEmptyTitle, { color: Cores.textoPrincipal }]}>Tudo em dia</Text>
+                  <Text style={[styles.notificationEmptyText, { color: Cores.textoSecundario }]}>Nenhum aviso financeiro importante no momento.</Text>
+                </View>
+              )}
+            </View>
+
+            <TouchableOpacity style={[styles.notificationSettings, { borderColor: Cores.borda }]} onPress={() => {
+              setModalNotificacoesHome(false);
+              router.push({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
+            }}>
+              <MaterialIcons name="tune" size={18} color={novoTema.primary} />
+              <Text style={[styles.notificationSettingsText, { color: novoTema.primary }]}>Configurar notificações</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {contaConfirmarArquivo && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setContaConfirmarArquivo(null)}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "90%", borderTopWidth: 4, borderTopColor: "#F4A261" }]}>
+            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "90%", borderTopWidth: 4, borderTopColor: contaConfirmarArquivo.temLancamentos ? "#F4A261" : "#E76F51" }]}>
               <View style={{ alignItems: "center", marginBottom: 14 }}>
-                <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#F4A26122", alignItems: "center", justifyContent: "center" }}>
-                  <MaterialIcons name="archive" size={31} color="#F4A261" />
+                <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: contaConfirmarArquivo.temLancamentos ? "#F4A26122" : "#E76F5122", alignItems: "center", justifyContent: "center" }}>
+                  <MaterialIcons name={contaConfirmarArquivo.temLancamentos ? "archive" : "delete-outline"} size={31} color={contaConfirmarArquivo.temLancamentos ? "#F4A261" : "#E76F51"} />
                 </View>
               </View>
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>
-                {contaConfirmarArquivo.temLancamentos ? "Arquivar conta" : "Arquivar ou excluir"}
+                {contaConfirmarArquivo.temLancamentos ? "Arquivar conta" : "Excluir conta"}
               </Text>
               <Text style={{ color: Cores.textoSecundario, textAlign: "center", fontSize: 14, lineHeight: 21, marginBottom: 10 }}>
                 {contaConfirmarArquivo.temLancamentos
                   ? `A conta “${contaConfirmarArquivo.conta.nome}” deixará de aparecer nas operações, mas todo o histórico será preservado.`
-                  : `A conta “${contaConfirmarArquivo.conta.nome}” ainda não possui movimentações.`}
+                  : `A conta “${contaConfirmarArquivo.conta.nome}” não possui lançamentos e será excluída definitivamente.`}
               </Text>
               {Math.abs(contaConfirmarArquivo.saldoAtual) > 0.005 && (
                 <View style={{ backgroundColor: Cores.pillFundo, borderRadius: 12, padding: 14, alignItems: "center", marginBottom: 16 }}>
-                  <Text style={{ color: Cores.textoSecundario, fontSize: 12 }}>Saldo que ficará arquivado</Text>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12 }}>
+                    {contaConfirmarArquivo.temLancamentos ? "Saldo que ficará arquivado" : "Saldo que será removido"}
+                  </Text>
                   <Text style={{ color: Cores.textoPrincipal, fontSize: 22, fontWeight: "bold", marginTop: 3 }}>{fmtReais(contaConfirmarArquivo.saldoAtual)}</Text>
                 </View>
               )}
-              <TouchableOpacity style={{ minHeight: 50, borderRadius: 11, backgroundColor: "#F4A261", alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={() => executarArquivar(contaConfirmarArquivo.conta)}>
-                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Arquivar conta</Text>
-              </TouchableOpacity>
-              {!contaConfirmarArquivo.temLancamentos && (
+              {contaConfirmarArquivo.temLancamentos ? (
+                <TouchableOpacity style={{ minHeight: 50, borderRadius: 11, backgroundColor: "#F4A261", alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={() => executarArquivar(contaConfirmarArquivo.conta)}>
+                  <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Arquivar conta</Text>
+                </TouchableOpacity>
+              ) : (
                 <TouchableOpacity style={{ minHeight: 50, borderRadius: 11, backgroundColor: "#E76F51", alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={() => excluirContaSemLancamentos(contaConfirmarArquivo.conta)}>
                   <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Excluir definitivamente</Text>
                 </TouchableOpacity>
@@ -1245,12 +1560,12 @@ export default function Dashboard() {
                   placeholder="Novo Saldo Inicial"
                   placeholderTextColor={Cores.textoSecundario}
                   value={saldoEditConta}
-                  onChangeText={setSaldoEditConta}
+                  onChangeText={(texto) => setSaldoEditConta(formatarEntradaMoeda(texto))}
                   keyboardType="numeric"
                 />
               )}
 
-              {/* Arquivar / Desarquivar */}
+              {/* Arquivar, excluir ou desarquivar */}
               {contaEditando?.arquivado ? (
                 <TouchableOpacity
                   style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: "#2A9D8F" }]}
@@ -1261,11 +1576,13 @@ export default function Dashboard() {
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
-                  style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: "#F4A261" }]}
+                  style={[styles.botaoApagar, { marginBottom: 15, backgroundColor: contaEditando && contaPossuiLancamentos(contaEditando.id) ? "#F4A261" : "#E76F51" }]}
                   onPress={() => contaEditando && arquivarConta(contaEditando)}
                 >
-                  <MaterialIcons name="archive" size={18} color="#FFF" />
-                  <Text style={styles.botaoApagarTexto}>Arquivar Conta</Text>
+                  <MaterialIcons name={contaEditando && contaPossuiLancamentos(contaEditando.id) ? "archive" : "delete-outline"} size={18} color="#FFF" />
+                  <Text style={styles.botaoApagarTexto}>
+                    {contaEditando && contaPossuiLancamentos(contaEditando.id) ? "Arquivar Conta" : "Excluir Conta"}
+                  </Text>
                 </TouchableOpacity>
               )}
 
@@ -1303,10 +1620,10 @@ export default function Dashboard() {
             />
             <TextInput
               style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Saldo Inicial (ex: 100.00)"
+              placeholder="Saldo inicial (R$ 0,00)"
               placeholderTextColor={Cores.textoSecundario}
               value={saldoInicialConta}
-              onChangeText={setSaldoInicialConta}
+              onChangeText={(texto) => setSaldoInicialConta(formatarEntradaMoeda(texto))}
               keyboardType="numeric"
             />
 
@@ -1324,7 +1641,7 @@ export default function Dashboard() {
             {/* Preview da conta */}
             <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
               <Text style={{ color: "#FFF", fontWeight: "600" }}>{nomeConta || "Nome da Conta"}</Text>
-              <Text style={{ color: "#FFF", fontWeight: "bold" }}>{fmtReais(parseFloat(saldoInicialConta.replace(",", ".") || "0"))}</Text>
+              <Text style={{ color: "#FFF", fontWeight: "bold" }}>{fmtReais(valorDaEntradaMoeda(saldoInicialConta))}</Text>
             </View>
 
             <View style={styles.modalButtons}>
@@ -1787,14 +2104,45 @@ export default function Dashboard() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flex: 1, padding: 20, marginTop: 10 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  container: { flex: 1, padding: 16 },
+  homeHero: { borderRadius: 24, padding: 20, paddingBottom: 24, overflow: "hidden", minHeight: 190 },
+  homeHeroWaves: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
+  homeHeroWave: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.08)" },
+  homeHeroWaveOne: { width: 420, height: 155, right: -175, top: 45, transform: [{ rotate: "-10deg" }] },
+  homeHeroWaveTwo: { width: 390, height: 135, left: -205, top: 92, backgroundColor: "rgba(255,255,255,0.06)", transform: [{ rotate: "12deg" }] },
+  homeHeroWaveThree: { width: 330, height: 105, right: -105, bottom: -58, backgroundColor: "rgba(0,55,48,0.10)", transform: [{ rotate: "-7deg" }] },
+  homeHeroContent: { zIndex: 2 },
+  homeHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  homeHeroGreeting: { color: "#FFF", fontSize: 20, fontWeight: "800" },
+  homeMonthButton: { flexDirection: "row", alignItems: "center", marginTop: 3, alignSelf: "flex-start" },
+  homeMonthText: { color: "rgba(255,255,255,0.78)", fontSize: 12, textTransform: "capitalize" },
+  homeBell: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
+  homeBellBadge: { position: "absolute", right: 3, top: 3, width: 9, height: 9, borderRadius: 5, backgroundColor: "#FF6B5F", borderWidth: 1.5, borderColor: "#FFF" },
+  homeBalanceLabel: { color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 22 },
+  homeBalanceValue: { color: "#FFF", fontSize: 36, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
+  homeHeroTrend: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 9, backgroundColor: "rgba(0,0,0,0.13)", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, alignSelf: "flex-start" },
+  homeHeroTrendText: { color: "#B8F4D7", fontSize: 10, fontWeight: "600" },
+  homeActions: { marginHorizontal: 10, marginTop: -12, borderRadius: 20, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 8, flexDirection: "row", justifyContent: "space-around", elevation: 6 },
+  homeActionItem: { flex: 1, alignItems: "center", gap: 7 },
+  homeActionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  homeActionLabel: { fontSize: 11, fontWeight: "700" },
+  homeActionAlert: { position: "absolute", right: 1, top: 1, width: 9, height: 9, borderRadius: 5, backgroundColor: "#EE4B4B", borderWidth: 1.5, borderColor: "#FFF" },
+  homeMonthCard: { marginTop: 14, borderRadius: 20, borderWidth: 1, padding: 16, elevation: 2 },
+  homeSectionTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
+  homeSectionTitle: { fontSize: 15, fontWeight: "800" },
+  homeCalendarIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  homeMonthMetrics: { flexDirection: "row", justifyContent: "space-between" },
+  homeMetricColumn: { flex: 1, minWidth: 0 },
+  homeMetricLabel: { fontSize: 10, marginBottom: 4 },
+  homeMetricValue: { fontSize: 14, fontWeight: "800" },
+  homeMonthTrack: { height: 5, borderRadius: 3, overflow: "hidden", flexDirection: "row", marginTop: 14 },
+  header: { flexDirection: "row", alignItems: "center", marginBottom: 16, backgroundColor: "#15966E", padding: 18, borderRadius: 22, minHeight: 104 },
   greeting: { fontSize: 24, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 2 },
   iaBotaoFixo: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1D3557",
+    backgroundColor: "rgba(255,255,255,0.16)",
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 20,
@@ -1802,10 +2150,10 @@ const styles = StyleSheet.create({
     marginLeft: 10,
   },
   iaBotaoTexto: { color: "#FFF", fontWeight: "bold", fontSize: 13 },
-  actionGrid: { marginBottom: 20, gap: 10 },
+  actionGrid: { marginBottom: 18, gap: 10, padding: 4, borderRadius: 18 },
   actionRow: { flexDirection: "row", gap: 10 },
-  actionButton: { flex: 1, flexDirection: "row", paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  actionButtonFull: { flexDirection: "row", paddingVertical: 12, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  actionButton: { flex: 1, flexDirection: "row", minHeight: 58, paddingVertical: 12, paddingHorizontal: 8, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  actionButtonFull: { flexDirection: "row", minHeight: 56, paddingVertical: 12, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   faturaVencidaBadge: {
     position: "absolute", right: 8, top: 6, width: 20, height: 20,
     borderRadius: 10, backgroundColor: "#DC2626", borderWidth: 2, borderColor: "#FFF",
@@ -1816,7 +2164,7 @@ const styles = StyleSheet.create({
   mesBotao: { padding: 8, backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 20 },
   mesBotaoModal: { padding: 8, backgroundColor: "rgba(0,0,0,0.05)", borderRadius: 20 },
   mesItem: { width: "23%", alignItems: "center", paddingVertical: 10, borderRadius: 8, marginBottom: 8 },
-  balanceCard: { backgroundColor: "#1A1A1A", padding: 20, borderRadius: 16, marginBottom: 20, elevation: 4 },
+  balanceCard: { backgroundColor: "#1A1A1A", padding: 20, borderRadius: 22, marginBottom: 20, elevation: 4 },
   balanceTitle: { color: "#999", fontSize: 14, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
   balanceAmount: { color: "#FFF", fontSize: 36, fontWeight: "bold", marginTop: 5 },
   section: { marginBottom: 25 },
@@ -1824,8 +2172,9 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 18, fontWeight: "bold" },
   hintText: { fontSize: 12, fontStyle: "italic" },
   emptyText: { fontStyle: "italic", textAlign: "center", marginTop: 10 },
-  accountsGrid: { gap: 10 },
-  accountCard: { padding: 20, borderRadius: 12, minWidth: "100%", elevation: 2 },
+  accountsGrid: { gap: 12, paddingRight: 16 },
+  accountsGridSingle: { flexGrow: 1, justifyContent: "center", paddingRight: 0 },
+  accountCard: { padding: 18, borderRadius: 18, width: 255, minHeight: 112, elevation: 2, justifyContent: "center" },
   accountName: { fontSize: 16, fontWeight: "600" },
   accountBalance: { fontSize: 20, fontWeight: "bold", marginTop: 4 },
   addContaBtn: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 7, borderRadius: 20, gap: 4 },
@@ -1833,8 +2182,53 @@ const styles = StyleSheet.create({
   graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
-modalContent: { width: "95%", padding: 20, borderRadius: 16, elevation: 5 },
+modalContent: { width: "92%", maxWidth: 520, padding: 22, borderRadius: 22, elevation: 10 },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
+  notificationPanel: { width: "92%", maxWidth: 520, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  notificationHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
+  notificationHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  notificationTitle: { fontSize: 18, fontWeight: "900" },
+  notificationSubtitle: { fontSize: 11, marginTop: 2 },
+  notificationClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  notificationList: { gap: 10 },
+  notificationItem: { flexDirection: "row", alignItems: "center", gap: 11, borderRadius: 16, padding: 12 },
+  notificationItemIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  notificationItemTitle: { fontSize: 13, fontWeight: "800" },
+  notificationItemText: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  notificationEmpty: { alignItems: "center", paddingVertical: 22, paddingHorizontal: 20 },
+  notificationEmptyTitle: { fontSize: 16, fontWeight: "800", marginTop: 8 },
+  notificationEmptyText: { fontSize: 12, textAlign: "center", marginTop: 4 },
+  notificationSettings: { minHeight: 46, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 17 },
+  notificationSettingsText: { fontSize: 13, fontWeight: "800" },
+  accountScopePanel: { width: "92%", maxWidth: 520, maxHeight: "90%", flexShrink: 1, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  accountScopeHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
+  accountScopeHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  accountScopeTitle: { fontSize: 18, fontWeight: "900" },
+  accountScopeSubtitle: { fontSize: 11, lineHeight: 16, marginTop: 2 },
+  accountScopeCreate: { minHeight: 48, borderRadius: 15, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginBottom: 16 },
+  accountScopeCreateText: { color: "#FFF", fontSize: 13, fontWeight: "900" },
+  accountScopeSectionLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 0.8, marginBottom: 8 },
+  accountScopeList: { maxHeight: 330, flexShrink: 1, minHeight: 0, marginTop: 8 },
+  accountScopeOption: { minHeight: 54, borderRadius: 15, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  accountScopeManagedOption: { minHeight: 62, borderRadius: 15, borderWidth: 1, paddingLeft: 13, paddingRight: 8, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  accountScopeSelectArea: { flex: 1, minWidth: 0, minHeight: 60, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
+  accountScopeNameRow: { flexDirection: "row", alignItems: "center", gap: 5 },
+  accountScopeManageButton: { width: 36, height: 36, borderRadius: 11, borderWidth: 1, alignItems: "center", justifyContent: "center", marginLeft: 7 },
+  accountScopeCheck: { width: 23, height: 23, borderRadius: 7, borderWidth: 1.5, alignItems: "center", justifyContent: "center" },
+  accountScopeDot: { width: 10, height: 10, borderRadius: 5 },
+  accountScopeOptionTitle: { fontSize: 13, fontWeight: "800" },
+  accountScopeOptionText: { fontSize: 10, marginTop: 2 },
+  accountScopeArchivedToggle: { minHeight: 58, borderTopWidth: 1, marginTop: 7, paddingVertical: 10, paddingHorizontal: 4, flexDirection: "row", alignItems: "center", gap: 10 },
+  accountScopeArchivedIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  accountScopeArchivedRow: { minHeight: 56, borderRadius: 14, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 7, opacity: 0.86 },
+  accountScopeHint: { fontSize: 10, lineHeight: 15, marginTop: 4 },
+  accountScopeEmptyWarning: { color: "#E76F51", fontSize: 10, lineHeight: 15, fontWeight: "700", marginTop: 5 },
+  accountScopeActions: { flexDirection: "row", gap: 10, marginTop: 17 },
+  accountScopeCancel: { flex: 1, minHeight: 47, borderRadius: 14, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  accountScopeCancelText: { fontSize: 13, fontWeight: "800" },
+  accountScopeApply: { flex: 1.35, minHeight: 47, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  accountScopeApplyDisabled: { opacity: 0.38 },
+  accountScopeApplyText: { color: "#FFF", fontSize: 13, fontWeight: "900" },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 15 },
   datePickerText: { fontSize: 16, fontWeight: "500" },
   rowInputs: { flexDirection: "row", justifyContent: "space-between" },
