@@ -17,6 +17,9 @@ const DESTINO_TRANSFERENCIA_REGEX = /\s*\[Destino:(\d+)\]\s*$/;
 const OBJETIVO_TRANSFERENCIA_REGEX = /\s*\[Objetivo:(\d+):(guardar|resgatar)\]\s*$/;
 const SERIE_REGEX = /\s*\[Serie:([A-Za-z0-9_-]+)\]/;
 const METADADOS_INTERNOS_FINAIS_REGEX = /\s*(?:\[(?:Serie:[A-Za-z0-9_-]+|Destino:\d+|Objetivo:\d+:(?:guardar|resgatar))\]\s*)+$/;
+const MARCADORES_OBJETIVO = ["[Objetivo:", "Guardar em:", "Resgate de:"] as const;
+const CACHE_MOVIMENTOS_OBJETIVO_LIMITE = 2_000;
+const cacheMovimentosObjetivo = new Map<string, MovimentoObjetivo | null>();
 
 export type OperacaoObjetivo = "guardar" | "resgatar";
 
@@ -25,6 +28,18 @@ export interface MovimentoObjetivo {
   operacao: OperacaoObjetivo;
   nomeLegado?: string;
 }
+
+const salvarMovimentoObjetivoNoCache = (
+  texto: string,
+  resultado: MovimentoObjetivo | null,
+): MovimentoObjetivo | null => {
+  cacheMovimentosObjetivo.set(texto, resultado);
+  if (cacheMovimentosObjetivo.size > CACHE_MOVIMENTOS_OBJETIVO_LIMITE) {
+    const primeiraChave = cacheMovimentosObjetivo.keys().next().value;
+    if (primeiraChave !== undefined) cacheMovimentosObjetivo.delete(primeiraChave);
+  }
+  return resultado;
+};
 
 export function isTransferencia(descricao?: string | null): boolean {
   return (descricao ?? "").includes("[Transf.]");
@@ -89,12 +104,23 @@ export function substituirDescricaoBase(descricaoOriginal: string, novaBase: str
 
 export function getMovimentoObjetivo(descricao?: string | null): MovimentoObjetivo | null {
   const texto = descricao ?? "";
+
+  // A imensa maioria dos lançamentos não pertence a um objetivo. Evita
+  // executar a cadeia de regex/replaces abaixo em cada passe dos dashboards.
+  if (!MARCADORES_OBJETIVO.some((marcador) => texto.includes(marcador))) return null;
+
+  const resultadoEmCache = cacheMovimentosObjetivo.get(texto);
+  if (resultadoEmCache !== undefined || cacheMovimentosObjetivo.has(texto)) {
+    return resultadoEmCache ?? null;
+  }
+
   const marcador = texto.match(OBJETIVO_TRANSFERENCIA_REGEX);
   if (marcador) {
-    return {
+    const resultado: MovimentoObjetivo = {
       objetivoId: Number(marcador[1]),
       operacao: marcador[2] as OperacaoObjetivo,
     };
+    return salvarMovimentoObjetivoNoCache(texto, resultado);
   }
 
   const visivel = descricaoVisivel(texto)
@@ -102,13 +128,14 @@ export function getMovimentoObjetivo(descricao?: string | null): MovimentoObjeti
     .replace(/\s*\(Fixa(?: semanal| anual)?\)$/, "")
     .trim();
   const legado = visivel.match(/^(Guardar em|Resgate de):\s*(.+)$/);
-  if (!legado) return null;
+  if (!legado) return salvarMovimentoObjetivoNoCache(texto, null);
 
-  return {
+  const resultado: MovimentoObjetivo = {
     objetivoId: null,
     operacao: legado[1] === "Guardar em" ? "guardar" : "resgatar",
     nomeLegado: legado[2].trim(),
   };
+  return salvarMovimentoObjetivoNoCache(texto, resultado);
 }
 
 export function isMovimentoObjetivo(descricao?: string | null): boolean {

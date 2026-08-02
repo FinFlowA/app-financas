@@ -15,6 +15,7 @@ import React, {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -90,6 +91,21 @@ type NotificacaoParceria = {
   dados: Record<string, unknown> | null;
   criada_em: string;
 };
+
+const notificacoesParceriaIguais = (
+  atuais: NotificacaoParceria[],
+  proximas: NotificacaoParceria[],
+) => atuais.length === proximas.length && atuais.every((atual, indice) => {
+  const proxima = proximas[indice];
+  return Boolean(proxima) &&
+    atual.id === proxima.id &&
+    atual.tipo === proxima.tipo &&
+    atual.referencia_id === proxima.referencia_id &&
+    atual.titulo === proxima.titulo &&
+    atual.mensagem === proxima.mensagem &&
+    JSON.stringify(atual.dados) === JSON.stringify(proxima.dados) &&
+    atual.criada_em === proxima.criada_em;
+});
 
 // ERROR BOUNDARY
 class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolean }> {
@@ -177,6 +193,7 @@ export default function RootLayout() {
   const [processandoDissolucao, setProcessandoDissolucao] = useState(false);
   const dissolucaoResumoIndisponivel = useRef(false);
   const [notificacoesParceria, setNotificacoesParceria] = useState<NotificacaoParceria[]>([]);
+  const notificacoesParceriaRef = useRef<NotificacaoParceria[]>([]);
   const buscandoNotificacoesParceria = useRef(false);
   const notificacoesParceriaIndisponiveis = useRef(false);
   const [pendenciasCadastro, setPendenciasCadastro] = useState<PendenciaCadastro[]>([]);
@@ -211,7 +228,14 @@ export default function RootLayout() {
   const autenticacaoEmAndamento = useRef(false);
   const categoriasIniciaisProcessadas = useRef(new Set<string>());
 
-  const showToast = (msg: string, tipo: "success" | "error" | "info" = "success") => {
+  const substituirNotificacoesParceria = useCallback((proximas: NotificacaoParceria[]) => {
+    if (notificacoesParceriaIguais(notificacoesParceriaRef.current, proximas)) return false;
+    notificacoesParceriaRef.current = proximas;
+    setNotificacoesParceria(proximas);
+    return true;
+  }, []);
+
+  const showToast = useCallback((msg: string, tipo: "success" | "error" | "info" = "success") => {
     setToastMsg(msg);
     setToastTipo(tipo);
     if (toastTimer.current) clearTimeout(toastTimer.current);
@@ -223,7 +247,7 @@ export default function RootLayout() {
         useNativeDriver: true,
       }).start();
     }, 1800);
-  };
+  }, [toastOpacity]);
 
   const autenticar = useCallback(async () => {
     if (autenticacaoEmAndamento.current) return;
@@ -674,7 +698,7 @@ export default function RootLayout() {
   const carregarNotificacoesParceria = useCallback(async () => {
     const uid = session?.user?.id;
     if (!uid) {
-      setNotificacoesParceria([]);
+      substituirNotificacoesParceria([]);
       return;
     }
     if (buscandoNotificacoesParceria.current || notificacoesParceriaIndisponiveis.current) return;
@@ -696,7 +720,7 @@ export default function RootLayout() {
         // repetidos a cada ciclo de atualizacao.
         if (error.code === "42P01" || error.code === "PGRST205" || error.code === "PGRST204") {
           notificacoesParceriaIndisponiveis.current = true;
-          setNotificacoesParceria([]);
+          substituirNotificacoesParceria([]);
           return;
         }
         console.log("Falha ao carregar avisos de parceria:", error.message);
@@ -704,18 +728,18 @@ export default function RootLayout() {
       }
 
       const eventos = (data ?? []) as NotificacaoParceria[];
-      setNotificacoesParceria(eventos);
+      if (!substituirNotificacoesParceria(eventos)) return;
       eventos.forEach((evento) => {
         void exibirEventoObrigatorioLocal(uid, evento.id, evento.titulo, evento.mensagem);
       });
     } finally {
       buscandoNotificacoesParceria.current = false;
     }
-  }, [session?.user?.id]);
+  }, [session?.user?.id, substituirNotificacoesParceria]);
 
   useEffect(() => {
     notificacoesParceriaIndisponiveis.current = false;
-    setNotificacoesParceria([]);
+    substituirNotificacoesParceria([]);
     if (!session?.user?.id) return;
 
     void carregarNotificacoesParceria();
@@ -730,7 +754,7 @@ export default function RootLayout() {
       clearInterval(intervalo);
       eventoApp.remove();
     };
-  }, [carregarNotificacoesParceria, session?.user?.id]);
+  }, [carregarNotificacoesParceria, session?.user?.id, substituirNotificacoesParceria]);
 
   const concluirNotificacaoParceria = async (abrirConvite: boolean) => {
     const notificacao = notificacoesParceria[0];
@@ -748,7 +772,9 @@ export default function RootLayout() {
       return;
     }
 
-    setNotificacoesParceria((atuais) => atuais.filter((item) => item.id !== notificacao.id));
+    substituirNotificacoesParceria(
+      notificacoesParceriaRef.current.filter((item) => item.id !== notificacao.id),
+    );
     if (abrirConvite) {
       router.push({
         pathname: "/(tabs)/configuracoes",
@@ -795,12 +821,12 @@ export default function RootLayout() {
     await carregarDecisoesCaixinha();
   };
 
-  const refreshEntitlement = async () => {
+  const refreshEntitlement = useCallback(async () => {
     if (!session?.user?.id) return;
     const next = await fetchMyEntitlement();
     setEntitlement(next);
     setPlanoState(next.plan);
-  };
+  }, [session?.user?.id]);
 
   // Carrega direitos do servidor. O dispositivo nunca é a fonte oficial do plano.
   useEffect(() => {
@@ -843,7 +869,7 @@ export default function RootLayout() {
     }
   }, [session, isReady, isAuthReady, router, segments]);
 
-  const setPlano = async (novoPlano: TipoPlano) => {
+  const setPlano = useCallback(async (novoPlano: TipoPlano) => {
     // Compatibilidade temporária com telas antigas. O plano só pode mudar por
     // confirmação do backend/provedor; nunca por uma ação local do aplicativo.
     if (novoPlano !== plano) {
@@ -925,9 +951,9 @@ export default function RootLayout() {
     }
 
     setPlanoState(novoPlano);
-  };
+  }, [plano, session?.user?.id]);
 
-  const verificarLimite = (tipo: keyof LimitesPlano, qtdAtual: number): boolean => {
+  const verificarLimite = useCallback((tipo: keyof LimitesPlano, qtdAtual: number): boolean => {
     if (!entitlement.limitsEnabled) return true;
     const limite = LIMITES_PLANOS[plano][tipo] as number;
     if (dentroDoLimite(limite, qtdAtual)) return true;
@@ -936,13 +962,13 @@ export default function RootLayout() {
     const proxPlano: TipoPlano = plano === "free" ? "smart" : "premium";
     setModalLimite({ visivel: true, mensagem: msg, planoNecessario: proxPlano });
     return false;
-  };
+  }, [entitlement.limitsEnabled, plano]);
 
-  const mostrarModalLimite = (mensagem: string, planoNecessario?: TipoPlano) => {
+  const mostrarModalLimite = useCallback((mensagem: string, planoNecessario?: TipoPlano) => {
     setModalLimite({ visivel: true, mensagem, planoNecessario });
-  };
+  }, []);
 
-  const tentarAcaoIA = async (): Promise<boolean> => {
+  const tentarAcaoIA = useCallback(async (): Promise<boolean> => {
     if (!session?.user?.id) return false;
     if (!entitlement.limitsEnabled) return true;
     const uid = session.user.id;
@@ -958,9 +984,9 @@ export default function RootLayout() {
     // Atualiza contador local
     verificarCotaIA(uid, plano).then(({ usadas }) => setIaAcoesHoje(usadas));
     return true;
-  };
+  }, [entitlement.limitsEnabled, plano, session?.user?.id]);
 
-  const toggleNotificacoes = async (value: boolean) => {
+  const toggleNotificacoes = useCallback(async (value: boolean) => {
     if (value) {
       const concedida = await pedirPermissaoNotificacoes();
       if (!concedida) {
@@ -970,19 +996,72 @@ export default function RootLayout() {
     }
     setNotificacoesAtivas(value);
     await AsyncStorage.setItem(`@notificacoes_enabled_${session?.user?.id}`, value ? "true" : "false");
-  };
+  }, [session?.user?.id]);
 
-  const toggleTheme = async () => {
+  const toggleTheme = useCallback(async () => {
     const newValue = !isDark;
     setIsDark(newValue);
     await AsyncStorage.setItem("@dark_mode", newValue ? "true" : "false");
-  };
+  }, [isDark]);
 
-  const toggleBiometric = async (value: boolean) => {
+  const toggleBiometric = useCallback(async (value: boolean) => {
     setIsBiometricEnabled(value);
     await AsyncStorage.setItem("@biometric_enabled", value ? "true" : "false");
     if (value) setIsUnlocked(true);
-  };
+  }, []);
+
+  const temCadastroPendente = pendenciasCadastro.length > 0;
+  const temPopupPrioritario =
+    temCadastroPendente ||
+    tutorialBloqueando ||
+    resumoDissolucao !== null ||
+    decisoesContaDissolucao.length > 0 ||
+    decisoesCaixinha.length > 0 ||
+    modalAtualizacao !== null ||
+    notificacoesParceria.length > 0 ||
+    modalNotificacoes !== null;
+  const themeContextValue = useMemo(() => ({
+    isDark,
+    toggleTheme,
+    isBiometricEnabled,
+    toggleBiometric,
+    session,
+    showToast,
+    notificacoesAtivas,
+    toggleNotificacoes,
+    plano,
+    setPlano,
+    limites: entitlement.limitsEnabled ? LIMITES_PLANOS[plano] : LIMITES_DESENVOLVIMENTO,
+    billingEnabled: entitlement.billingEnabled,
+    limitsEnabled: entitlement.limitsEnabled,
+    temCadastroPendente,
+    temPopupPrioritario,
+    refreshEntitlement,
+    verificarLimite,
+    mostrarModalLimite,
+    iaAcoesHoje,
+    tentarAcaoIA,
+  }), [
+    entitlement.billingEnabled,
+    entitlement.limitsEnabled,
+    iaAcoesHoje,
+    isBiometricEnabled,
+    isDark,
+    notificacoesAtivas,
+    plano,
+    refreshEntitlement,
+    session,
+    setPlano,
+    showToast,
+    temCadastroPendente,
+    temPopupPrioritario,
+    tentarAcaoIA,
+    toggleBiometric,
+    toggleNotificacoes,
+    toggleTheme,
+    verificarLimite,
+    mostrarModalLimite,
+  ]);
 
   const temaFinFlow = finFlowTheme(isDark);
 
@@ -1071,27 +1150,7 @@ export default function RootLayout() {
   return (
     <View style={{ flex: 1 }}>
       <ErrorBoundary>
-        <ThemeContext.Provider value={{
-          isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast,
-          notificacoesAtivas, toggleNotificacoes,
-          plano, setPlano,
-          limites: entitlement.limitsEnabled ? LIMITES_PLANOS[plano] : LIMITES_DESENVOLVIMENTO,
-          billingEnabled: entitlement.billingEnabled,
-          limitsEnabled: entitlement.limitsEnabled,
-          temCadastroPendente: pendenciasCadastro.length > 0,
-          temPopupPrioritario:
-            pendenciasCadastro.length > 0 ||
-            tutorialBloqueando ||
-            resumoDissolucao !== null ||
-            decisoesContaDissolucao.length > 0 ||
-            decisoesCaixinha.length > 0 ||
-            modalAtualizacao !== null ||
-            notificacoesParceria.length > 0 ||
-            modalNotificacoes !== null,
-          refreshEntitlement,
-          verificarLimite, mostrarModalLimite,
-          iaAcoesHoje, tentarAcaoIA,
-        }}>
+        <ThemeContext.Provider value={themeContextValue}>
           <ThemeProvider value={isDark ? DarkTheme : DefaultTheme}>
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="login" />

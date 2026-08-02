@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   PanResponder,
   Platform,
@@ -41,6 +41,49 @@ interface Conta {
   saldo_inicial: number;
   arquivado?: boolean;
 }
+
+interface MesProj {
+  mesIdx: number;
+  saldo: number;
+  isFuture: boolean;
+  isPast?: boolean;
+}
+
+interface EventoSaldo {
+  data: string;
+  valor: number;
+}
+
+const ordenarEventosComAcumulado = (eventos: EventoSaldo[]) => {
+  const ordenados = [...eventos].sort((a, b) => a.data.localeCompare(b.data));
+  let total = 0;
+  return {
+    datas: ordenados.map((evento) => evento.data),
+    acumulados: ordenados.map((evento) => {
+      total += evento.valor;
+      return total;
+    }),
+  };
+};
+
+const indiceAposData = (datas: string[], dataLimite: string): number => {
+  let inicio = 0;
+  let fim = datas.length;
+  while (inicio < fim) {
+    const meio = Math.floor((inicio + fim) / 2);
+    if (datas[meio] <= dataLimite) inicio = meio + 1;
+    else fim = meio;
+  }
+  return inicio;
+};
+
+const totalAcumuladoAte = (
+  serie: ReturnType<typeof ordenarEventosComAcumulado>,
+  dataLimite: string,
+): number => {
+  const indice = indiceAposData(serie.datas, dataLimite);
+  return indice === 0 ? 0 : serie.acumulados[indice - 1];
+};
 
 const MESES_ABREV = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
 const MESES_FULL = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
@@ -123,15 +166,27 @@ export default function RelatoriosScreen() {
     setMesProjSelecionado(novoAno === anoAtualNum ? mesAtualIdx : 0);
   };
 
-  const idsContasAtivas = new Set(contas.map(conta => conta.id));
-  const idsSelecionadosValidos = contasSelecionadasIds?.filter(id => idsContasAtivas.has(id)) ?? null;
+  const idsContasAtivas = useMemo(
+    () => new Set(contas.map((conta) => conta.id)),
+    [contas],
+  );
+  const idsSelecionadosValidos = useMemo(
+    () => contasSelecionadasIds?.filter((id) => idsContasAtivas.has(id)) ?? null,
+    [contasSelecionadasIds, idsContasAtivas],
+  );
   const escopoFluxoEhTodas = idsSelecionadosValidos === null
     || idsSelecionadosValidos.length === contas.length
     || (contas.length > 0 && idsSelecionadosValidos.length === 0);
-  const contasFiltradas = escopoFluxoEhTodas
-    ? contas
-    : contas.filter(conta => idsSelecionadosValidos.includes(conta.id));
-  const idsEscopoFluxo = new Set(contasFiltradas.map(conta => conta.id));
+  const contasFiltradas = useMemo(
+    () => escopoFluxoEhTodas
+      ? contas
+      : contas.filter((conta) => idsSelecionadosValidos?.includes(conta.id)),
+    [contas, escopoFluxoEhTodas, idsSelecionadosValidos],
+  );
+  const idsEscopoFluxo = useMemo(
+    () => new Set(contasFiltradas.map((conta) => conta.id)),
+    [contasFiltradas],
+  );
 
   const alternarContaFluxo = (contaId: number) => {
     setContasSelecionadasIds((idsAtuais) => {
@@ -152,7 +207,7 @@ export default function RelatoriosScreen() {
 
   // Dados filtrados pela seleção múltipla. Transferências internas ao
   // conjunto se anulam; movimentos que cruzam a fronteira viram saída/entrada.
-  const transacoesFiltradas = transacoes.flatMap((t) => {
+  const transacoesFiltradas = useMemo(() => transacoes.flatMap((t) => {
     const destinoId = getContaDestinoTransferencia(t.descricao);
 
     if (destinoId !== null) {
@@ -173,88 +228,107 @@ export default function RelatoriosScreen() {
       return contasFiltradas.length === 1 && idsEscopoFluxo.has(t.conta_id) ? [t] : [];
     }
     return idsEscopoFluxo.has(t.conta_id) ? [t] : [];
-  });
-
-  const saldoInicialTotal = contasFiltradas.reduce((acc, c) => acc + Number(c.saldo_inicial), 0);
-
-  const receitasRealizadas = transacoesFiltradas
-    .filter(t => t.tipo === "receita" && t.status === "paga")
-    .reduce((acc, t) => acc + Number(t.valor), 0);
-  const despesasRealizadas = transacoesFiltradas
-    .filter(t => t.tipo === "despesa" && t.status === "paga")
-    .reduce((acc, t) => acc + Number(t.valor), 0);
-  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+  }), [contasFiltradas.length, idsEscopoFluxo, transacoes]);
 
   const isAnoAtual = anoSelecionado === anoAtualNum;
 
-  // Guardar ou resgatar valores de um objetivo altera o saldo disponível da
-  // conta, mas não representa receita nem despesa. Por isso, o movimento segue
-  // na coleção usada pela linha de saldo e sai apenas dos agregados do gráfico.
-  const lancamentosFinanceirosFiltrados = transacoesFiltradas.filter(
-    t => !isMovimentoObjetivo(t.descricao),
-  );
+  const {
+    saldoAtualGlobal,
+    todosOsMeses,
+    projecaoSaldo,
+  } = useMemo(() => {
+    const saldoInicialTotal = contasFiltradas.reduce(
+      (total, conta) => total + Number(conta.saldo_inicial),
+      0,
+    );
+    let receitasRealizadas = 0;
+    let despesasRealizadas = 0;
+    const eventosRealizados: EventoSaldo[] = [];
+    const eventosPendentes: EventoSaldo[] = [];
+    const datasPendentesValidas: string[] = [];
+    const meses = Array.from({ length: 12 }, (_, mesIdx) => ({
+      mesIdx,
+      label: MESES_ABREV[mesIdx],
+      isAtual: isAnoAtual && mesIdx === mesAtualIdx,
+      recPagas: 0,
+      despPagas: 0,
+      recPendentes: 0,
+      despPendentes: 0,
+    }));
 
-  // All 12 months bar data (paid transactions)
-  const todosOsMeses = Array.from({ length: 12 }, (_, m) => {
-    const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
-    const trans = lancamentosFinanceirosFiltrados.filter(t => dataEfetivaTransacao(t).startsWith(yyyymm));
-    return {
-      mesIdx: m,
-      label: MESES_ABREV[m],
-      isAtual: isAnoAtual && m === mesAtualIdx,
-      recPagas: trans.filter(t => t.tipo === "receita" && t.status === "paga").reduce((a, t) => a + Number(t.valor), 0),
-      despPagas: trans.filter(t => t.tipo === "despesa" && t.status === "paga").reduce((a, t) => a + Number(t.valor), 0),
-      recPendentes: trans.filter(t => t.tipo === "receita" && t.status !== "paga").reduce((a, t) => a + Number(t.valor), 0),
-      despPendentes: trans.filter(t => t.tipo === "despesa" && t.status !== "paga").reduce((a, t) => a + Number(t.valor), 0),
-    };
-  });
+    for (const transacao of transacoesFiltradas) {
+      const valor = Number(transacao.valor);
+      const realizada = transacao.status === "paga";
+      const dataEfetiva = dataEfetivaTransacao(transacao);
+      const delta = transacao.tipo === "receita" ? valor : -valor;
 
-  const saldoRealAte = (dataFim: string): number => {
-    return transacoesFiltradas
-      .filter(t => t.status === "paga" && dataEfetivaTransacao(t) <= dataFim)
-      .reduce(
-        (saldo, t) => saldo + (t.tipo === "receita" ? Number(t.valor) : -Number(t.valor)),
-        saldoInicialTotal,
-      );
-  };
+      if (realizada) {
+        if (transacao.tipo === "receita") receitasRealizadas += valor;
+        if (transacao.tipo === "despesa") despesasRealizadas += valor;
+        eventosRealizados.push({ data: dataEfetiva, valor: delta });
+      } else {
+        const vencimento = transacao.data_vencimento || "";
+        eventosPendentes.push({ data: vencimento, valor: delta });
+        if (vencimento) datasPendentesValidas.push(vencimento);
+      }
 
-  const saldoProjetadoAte = (dataFim: string): number => {
-    return transacoesFiltradas
-      .filter(t => t.status !== "paga" && (t.data_vencimento || "") <= dataFim)
-      .reduce(
-        (saldo, t) => saldo + (t.tipo === "receita" ? Number(t.valor) : -Number(t.valor)),
-        saldoAtualGlobal,
-      );
-  };
+      // Guardar ou resgatar valores de um objetivo altera o saldo disponível,
+      // mas não representa receita nem despesa nas barras do gráfico.
+      if (isMovimentoObjetivo(transacao.descricao)) continue;
+      if (!dataEfetiva.startsWith(`${anoSelecionado}-`)) continue;
 
-  // Passado mostra apenas o realizado; mês atual e futuro incluem pendências.
-  interface MesProj {
-    mesIdx: number;
-    saldo: number;
-    isFuture: boolean;
-    isPast?: boolean;
-  }
-
-  const projecaoSaldo: MesProj[] = [];
-  for (let m = 0; m <= 11; m++) {
-    const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
-    const fimDoMes = `${yyyymm}-${String(new Date(anoSelecionado, m + 1, 0).getDate()).padStart(2, "0")}`;
-    const mesNoPassado = anoSelecionado < anoAtualNum || (isAnoAtual && m < mesAtualIdx);
-    const mesAtualSemPendencias = isAnoAtual
-      && m === mesAtualIdx
-      && !transacoesFiltradas.some((t) => {
-        const vencimento = t.data_vencimento || "";
-        return t.status !== "paga" && vencimento !== "" && vencimento <= fimDoMes;
-      });
-
-    if (mesNoPassado) {
-      projecaoSaldo.push({ mesIdx: m, saldo: saldoRealAte(fimDoMes), isFuture: false, isPast: true });
-    } else if (mesAtualSemPendencias) {
-      projecaoSaldo.push({ mesIdx: m, saldo: saldoAtualGlobal, isFuture: false });
-    } else {
-      projecaoSaldo.push({ mesIdx: m, saldo: saldoProjetadoAte(fimDoMes), isFuture: true });
+      const mesIdx = Number(dataEfetiva.slice(5, 7)) - 1;
+      const mes = meses[mesIdx];
+      if (!mes) continue;
+      if (transacao.tipo === "receita") {
+        if (realizada) mes.recPagas += valor;
+        else mes.recPendentes += valor;
+      } else if (transacao.tipo === "despesa") {
+        if (realizada) mes.despPagas += valor;
+        else mes.despPendentes += valor;
+      }
     }
-  }
+
+    const saldoAtual = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+    const realizados = ordenarEventosComAcumulado(eventosRealizados);
+    const pendentes = ordenarEventosComAcumulado(eventosPendentes);
+    datasPendentesValidas.sort((a, b) => a.localeCompare(b));
+
+    // Doze buscas binárias substituem as varreduras completas repetidas para
+    // cada mês. O resultado financeiro permanece cumulativo como antes.
+    const projecoes: MesProj[] = meses.map(({ mesIdx }) => {
+      const yyyymm = `${anoSelecionado}-${String(mesIdx + 1).padStart(2, "0")}`;
+      const fimDoMes = `${yyyymm}-${String(new Date(anoSelecionado, mesIdx + 1, 0).getDate()).padStart(2, "0")}`;
+      const mesNoPassado = anoSelecionado < anoAtualNum
+        || (isAnoAtual && mesIdx < mesAtualIdx);
+      const mesAtualSemPendencias = isAnoAtual
+        && mesIdx === mesAtualIdx
+        && indiceAposData(datasPendentesValidas, fimDoMes) === 0;
+
+      if (mesNoPassado) {
+        return {
+          mesIdx,
+          saldo: saldoInicialTotal + totalAcumuladoAte(realizados, fimDoMes),
+          isFuture: false,
+          isPast: true,
+        };
+      }
+      if (mesAtualSemPendencias) {
+        return { mesIdx, saldo: saldoAtual, isFuture: false };
+      }
+      return {
+        mesIdx,
+        saldo: saldoAtual + totalAcumuladoAte(pendentes, fimDoMes),
+        isFuture: true,
+      };
+    });
+
+    return {
+      saldoAtualGlobal: saldoAtual,
+      todosOsMeses: meses,
+      projecaoSaldo: projecoes,
+    };
+  }, [anoAtualNum, anoSelecionado, contasFiltradas, isAnoAtual, mesAtualIdx, transacoesFiltradas]);
 
   // Chart Y scale (bars + balance line share same axis)
   const barMaxes = todosOsMeses.map(m => Math.max(m.recPagas, m.despPagas));

@@ -14,6 +14,10 @@ export default function TabLayout() {
         tabBarActiveTintColor: FinFlowColors.primary,
         tabBarInactiveTintColor: theme.textMuted,
         headerShown: false,
+        // As abas são telas extensas. Congelar as inativas impede que um
+        // clique na aba atual recalcule também todas as telas já visitadas.
+        freezeOnBlur: true,
+        lazy: true,
         tabBarStyle: {
           backgroundColor: theme.surface,
           borderTopWidth: 1,

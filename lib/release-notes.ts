@@ -5,13 +5,10 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-02-historico-categorias-objetivos",
+  id: "2.0.0-2026-08-02-desempenho-interface",
   items: [
-    "Histórico com seleção mais simples de mês e ano junto aos filtros",
-    "Categorias podem ser excluídas ou arquivadas sem mover seus lançamentos",
-    "Parcelamentos permitem apagar todas as parcelas que ainda estão em aberto",
-    "Transferências para objetivos mostram a descrição e não entram no balanço mensal",
-    "Objetivos mostram a previsão de saldo até o fim do ano",
-    "Tela de acesso protegido e login receberam melhorias visuais",
+    "Toques e mudanças de aba respondem com mais rapidez",
+    "Início, Histórico, Objetivos e Fluxo de Caixa foram otimizados",
+    "Rolagem e abertura de filtros, formulários e janelas ficaram mais leves",
   ],
 } as const;

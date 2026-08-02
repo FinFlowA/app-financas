@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   DeviceEventEmitter,
@@ -142,7 +142,7 @@ const mesesEmPortugues = [
 ];
 
 // Gráfico de barras horizontais por categoria
-const BarChartCategorias = ({ dados, total, isDark }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean }) => {
+const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total, isDark }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean }) {
   if (total === 0 || dados.length === 0) return (
     <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 20 }}>
       <MaterialIcons name="bar-chart" size={32} color={isDark ? "#333" : "#DDD"} />
@@ -179,7 +179,7 @@ const BarChartCategorias = ({ dados, total, isDark }: { dados: DadoDistribuicaoC
       })}
     </View>
   );
-};
+});
 
 export default function Dashboard() {
   const { isDark, session, notificacoesAtivas, verificarLimite, temPopupPrioritario } = useAppTheme();
@@ -291,21 +291,36 @@ export default function Dashboard() {
   const [qtdVencidas, setQtdVencidas] = useState(0);
 
   // --- Cálculos ---
-  const contasAtivas = contas.filter(c => !c.arquivado);
-  const idsAtivosHome = new Set(contasAtivas.map(c => c.id));
-  const idsSelecionadosHomeValidos = contasSelecionadasHomeIds?.filter(id => idsAtivosHome.has(id)) ?? null;
+  const contasAtivas = useMemo(() => contas.filter((conta) => !conta.arquivado), [contas]);
+  const contasArquivadas = useMemo(() => contas.filter((conta) => conta.arquivado), [contas]);
+  const idsAtivosHome = useMemo(() => new Set(contasAtivas.map((conta) => conta.id)), [contasAtivas]);
+  const idsSelecionadosHomeValidos = useMemo(
+    () => contasSelecionadasHomeIds?.filter((id) => idsAtivosHome.has(id)) ?? null,
+    [contasSelecionadasHomeIds, idsAtivosHome],
+  );
   const escopoHomeEhTodas = idsSelecionadosHomeValidos === null
     || idsSelecionadosHomeValidos.length === contasAtivas.length
     || (contasAtivas.length > 0 && idsSelecionadosHomeValidos.length === 0);
-  const contasEscopoHome = escopoHomeEhTodas
-    ? contasAtivas
-    : contasAtivas.filter(c => idsSelecionadosHomeValidos.includes(c.id));
-  const contasEscopoHomeIds = new Set(contasEscopoHome.map(c => c.id));
-  const contasHomeRascunhoIdsValidos = contasHomeRascunhoIds.filter(id => idsAtivosHome.has(id));
+  const contasEscopoHome = useMemo(() => {
+    if (escopoHomeEhTodas) return contasAtivas;
+    const idsSelecionados = new Set(idsSelecionadosHomeValidos);
+    return contasAtivas.filter((conta) => idsSelecionados.has(conta.id));
+  }, [contasAtivas, escopoHomeEhTodas, idsSelecionadosHomeValidos]);
+  const contasEscopoHomeIds = useMemo(
+    () => new Set(contasEscopoHome.map((conta) => conta.id)),
+    [contasEscopoHome],
+  );
+  const contasHomeRascunhoIdsValidos = useMemo(
+    () => contasHomeRascunhoIds.filter((id) => idsAtivosHome.has(id)),
+    [contasHomeRascunhoIds, idsAtivosHome],
+  );
   const todasContasHomeRascunhoSelecionadas = contasAtivas.length > 0
     && contasHomeRascunhoIdsValidos.length === contasAtivas.length;
   const podeAplicarContasHome = contasHomeRascunhoIdsValidos.length > 0;
-  const chaveContasAtivasHome = contasAtivas.map(conta => conta.id).sort((a, b) => a - b).join(",");
+  const chaveContasAtivasHome = useMemo(
+    () => contasAtivas.map((conta) => conta.id).sort((a, b) => a - b).join(","),
+    [contasAtivas],
+  );
 
   React.useEffect(() => {
     if (!modalContasHomeVisivel) return;
@@ -320,7 +335,7 @@ export default function Dashboard() {
   // Uma transferência interna ao conjunto selecionado se anula. Quando apenas
   // uma das pontas está no conjunto, ela representa uma saída ou entrada real
   // para a visão dessas contas.
-  const transacoesEscopoHome = transacoes.flatMap((transacao) => {
+  const transacoesEscopoHome = useMemo(() => transacoes.flatMap((transacao) => {
     const destinoId = getContaDestinoTransferencia(transacao.descricao);
     if (destinoId !== null) {
       const origemSelecionada = contasEscopoHomeIds.has(transacao.conta_id);
@@ -345,79 +360,105 @@ export default function Dashboard() {
     }
 
     return contasEscopoHomeIds.has(transacao.conta_id) ? [transacao] : [];
-  });
+  }), [contasEscopoHome.length, contasEscopoHomeIds, transacoes]);
 
-  const saldoInicialTotal = contasEscopoHome.reduce((acc, curr) => acc + Number(curr.saldo_inicial), 0);
-  const receitasRealizadas = transacoesEscopoHome
-    .filter((t) => t.tipo === "receita" && t.status === "paga")
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasRealizadas = transacoesEscopoHome
-    .filter((t) => t.tipo === "despesa" && t.status === "paga")
-    .reduce((acc, curr) => acc + curr.valor, 0);
-  const saldoAtualGlobal = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
+  const {
+    saldoAtualGlobal,
+    transacoesFinanceirasDoMes,
+    comprasCartaoDoMes,
+    receitasDoMes,
+    despesasDoMes,
+    balancoMensal,
+    saldoPrevistoFimDoMes,
+  } = useMemo(() => {
+    const mesSelecionado = mesAtual.getMonth();
+    const anoSelecionado = mesAtual.getFullYear();
+    const ultimoDiaMesSelecionado = new Date(anoSelecionado, mesSelecionado + 1, 0).getDate();
+    const dataFimMesSelecionado = `${anoSelecionado}-${String(mesSelecionado + 1).padStart(2, "0")}-${String(ultimoDiaMesSelecionado).padStart(2, "0")}`;
+    const saldoInicialTotal = contasEscopoHome.reduce((total, conta) => total + Number(conta.saldo_inicial), 0);
+    const financeirasDoMes: Transacao[] = [];
+    let receitasRealizadas = 0;
+    let despesasRealizadas = 0;
+    let entradasMes = 0;
+    let saidasMes = 0;
+    let entradasRealizadasMes = 0;
+    let saidasRealizadasMes = 0;
+    let saldoPrevisto = saldoInicialTotal;
 
-  const transacoesDoMes = transacoesEscopoHome.filter((t) => {
-    const dataT = new Date(dataEfetivaTransacao(t));
-    const dataAjustada = new Date(dataT.getTime() + dataT.getTimezoneOffset() * 60000);
-    return (
-      dataAjustada.getMonth() === mesAtual.getMonth() &&
-      dataAjustada.getFullYear() === mesAtual.getFullYear()
-    );
-  });
+    transacoesEscopoHome.forEach((transacao) => {
+      const valor = Number(transacao.valor);
+      if (transacao.status === "paga" && Number.isFinite(valor)) {
+        if (transacao.tipo === "receita") receitasRealizadas += valor;
+        if (transacao.tipo === "despesa") despesasRealizadas += valor;
+      }
 
-  const transacoesDoMesConsideradas = transacoesDoMes.filter(
-    (t) => !escopoHomeEhTodas || !isPagamentoFatura(t.descricao)
-  );
-  const transacoesFinanceirasDoMes = transacoesDoMesConsideradas.filter(
-    (t) => !isMovimentoObjetivo(t.descricao)
-  );
-  // As compras do cartão ainda não possuem conta vinculada no banco. Por
-  // isso, entram apenas na visão de todas as contas, evitando atribuição errada.
-  const comprasCartaoDoMes = escopoHomeEhTodas
-    ? comprasCartao.filter((item) => item.data_compra?.startsWith(
-      `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}`
-    ))
-    : [];
-  const receitasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
-  const receitasRealizadasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasRealizadasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
-  const balancoMensal = receitasRealizadasDoMes - despesasRealizadasDoMes;
-  const ultimoDiaMesSelecionado = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0).getDate();
-  const dataFimMesSelecionado = `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}-${String(ultimoDiaMesSelecionado).padStart(2, "0")}`;
-  const saldoPrevistoFimDoMes = transacoesEscopoHome.reduce((saldo, transacao) => {
-    if (transacao.status !== "paga" && transacao.status !== "pendente") return saldo;
-    const dataConsiderada = dataEfetivaTransacao(transacao).slice(0, 10);
-    if (!dataConsiderada || dataConsiderada > dataFimMesSelecionado) return saldo;
+      if (transacao.status === "paga" || transacao.status === "pendente") {
+        const dataConsiderada = dataEfetivaTransacao(transacao).slice(0, 10);
+        if (dataConsiderada && dataConsiderada <= dataFimMesSelecionado && Number.isFinite(valor)) {
+          saldoPrevisto += transacao.tipo === "receita" ? valor : -valor;
+        }
+      }
 
-    const valor = Number(transacao.valor);
-    if (!Number.isFinite(valor)) return saldo;
+      const dataTransacao = new Date(dataEfetivaTransacao(transacao));
+      const dataAjustada = new Date(dataTransacao.getTime() + dataTransacao.getTimezoneOffset() * 60000);
+      if (dataAjustada.getMonth() !== mesSelecionado || dataAjustada.getFullYear() !== anoSelecionado) return;
+      if ((escopoHomeEhTodas && isPagamentoFatura(transacao.descricao)) || isMovimentoObjetivo(transacao.descricao)) return;
 
-    return saldo + (transacao.tipo === "receita" ? valor : -valor);
-  }, saldoInicialTotal);
-  const hojeAvisos = new Date();
-  hojeAvisos.setHours(0, 0, 0, 0);
-  const limiteAvisos = new Date(hojeAvisos);
-  limiteAvisos.setDate(limiteAvisos.getDate() + 7);
-  const transacoesVencidasHome = transacoesEscopoHome.filter((transacao) => {
-    if (transacao.status !== "pendente") return false;
-    const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
-    return new Date(ano, mes - 1, dia) < hojeAvisos;
-  });
-  const transacoesProximasHome = transacoesEscopoHome.filter((transacao) => {
-    if (transacao.status !== "pendente") return false;
-    const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
-    const vencimento = new Date(ano, mes - 1, dia);
-    return vencimento >= hojeAvisos && vencimento <= limiteAvisos;
-  });
+      financeirasDoMes.push(transacao);
+      if (!Number.isFinite(valor)) return;
+      if (transacao.tipo === "receita") {
+        entradasMes += valor;
+        if (transacao.status === "paga") entradasRealizadasMes += valor;
+      } else if (transacao.tipo === "despesa") {
+        saidasMes += valor;
+        if (transacao.status === "paga") saidasRealizadasMes += valor;
+      }
+    });
+
+    // As compras do cartão ainda não possuem conta vinculada no banco e só
+    // entram na visão consolidada, evitando atribuição incorreta a uma conta.
+    const prefixoMes = `${anoSelecionado}-${String(mesSelecionado + 1).padStart(2, "0")}`;
+    const comprasDoMes = escopoHomeEhTodas
+      ? comprasCartao.filter((item) => item.data_compra?.startsWith(prefixoMes))
+      : [];
+
+    return {
+      saldoAtualGlobal: saldoInicialTotal + receitasRealizadas - despesasRealizadas,
+      transacoesFinanceirasDoMes: financeirasDoMes,
+      comprasCartaoDoMes: comprasDoMes,
+      receitasDoMes: entradasMes,
+      despesasDoMes: saidasMes,
+      balancoMensal: entradasRealizadasMes - saidasRealizadasMes,
+      saldoPrevistoFimDoMes: saldoPrevisto,
+    };
+  }, [comprasCartao, contasEscopoHome, escopoHomeEhTodas, mesAtual, transacoesEscopoHome]);
+
+  const { transacoesVencidasHome, transacoesProximasHome } = useMemo(() => {
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const limite = new Date(hoje);
+    limite.setDate(limite.getDate() + 7);
+    const vencidas: Transacao[] = [];
+    const proximas: Transacao[] = [];
+
+    transacoesEscopoHome.forEach((transacao) => {
+      if (transacao.status !== "pendente") return;
+      const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
+      const vencimento = new Date(ano, mes - 1, dia);
+      if (vencimento < hoje) vencidas.push(transacao);
+      else if (vencimento <= limite) proximas.push(transacao);
+    });
+
+    return { transacoesVencidasHome: vencidas, transacoesProximasHome: proximas };
+  }, [transacoesEscopoHome]);
   const qtdVencidasHome = transacoesVencidasHome.length;
   const qtdProximosVencimentos = transacoesProximasHome.length;
   const temFaturaVencidaHome = escopoHomeEhTodas && temFaturaVencida;
-  const assinaturaAvisosAtual = [
+  const assinaturaAvisosAtual = useMemo(() => [
     `atrasados:${transacoesVencidasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
     `proximos:${transacoesProximasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
     `fatura:${temFaturaVencidaHome ? "1" : "0"}`,
-  ].join("|");
+  ].join("|"), [temFaturaVencidaHome, transacoesProximasHome, transacoesVencidasHome]);
   const temAvisosFinanceiros = qtdVencidasHome > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome;
   const mostrarBadgeAvisos = leituraAvisosCarregada
     && temAvisosFinanceiros
@@ -451,6 +492,16 @@ export default function Dashboard() {
 
   // Cada movimentação entra em exatamente um bucket. Assim, categorias
   // arquivadas preservam o histórico e registros legados nunca somem do gráfico.
+  const {
+    dadosDespesasPorCat,
+    dadosReceitasPorCat,
+    dadosDespesasPorCatRealizadas,
+    dadosReceitasPorCatRealizadas,
+    totalDespesasPorCat,
+    totalReceitasPorCat,
+    totalDespesasPorCatRealizadas,
+    totalReceitasPorCatRealizadas,
+  } = useMemo(() => {
   const categoriasPorId = new Map(categorias.map((categoria) => [String(categoria.id), categoria]));
   const categoriaCompativel = (categoria: Categoria, tipo: TipoFinanceiro) => {
     const tipoCategoria = (categoria.tipo ?? "").trim().toLocaleLowerCase("pt-BR");
@@ -524,6 +575,18 @@ export default function Dashboard() {
   const totalReceitasPorCat = totalDistribuicao(dadosReceitasPorCat);
   const totalDespesasPorCatRealizadas = totalDistribuicao(dadosDespesasPorCatRealizadas);
   const totalReceitasPorCatRealizadas = totalDistribuicao(dadosReceitasPorCatRealizadas);
+
+  return {
+    dadosDespesasPorCat,
+    dadosReceitasPorCat,
+    dadosDespesasPorCatRealizadas,
+    dadosReceitasPorCatRealizadas,
+    totalDespesasPorCat,
+    totalReceitasPorCat,
+    totalDespesasPorCatRealizadas,
+    totalReceitasPorCatRealizadas,
+  };
+  }, [categorias, comprasCartaoDoMes, transacoesFinanceirasDoMes]);
 
   // --- Dados ---
   const carregarDados = useCallback(async () => {
@@ -649,19 +712,39 @@ export default function Dashboard() {
     return () => subscription.remove();
   }, [carregarDados]);
 
-  const calcularSaldoConta = (conta: Conta) => {
-    const transDaConta = transacoes.filter((t) => t.conta_id === conta.id && t.status === "paga");
-    const rec = transDaConta.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
-    const desp = transDaConta.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
-    const transferenciasRecebidas = transacoes
-      .filter((t) => t.status === "paga" && getContaDestinoTransferencia(t.descricao) === conta.id)
-      .reduce((acc, curr) => acc + curr.valor, 0);
-    return Number(conta.saldo_inicial) + rec + transferenciasRecebidas - desp;
-  };
+  const { saldoPorConta, contasComLancamentos } = useMemo(() => {
+    const saldos = new Map<number, number>();
+    const contasComMovimento = new Set<number>();
 
-  const contaPossuiLancamentos = (contaId: number) => transacoes.some((transacao) =>
-    transacao.conta_id === contaId
-    || getContaDestinoTransferencia(transacao.descricao) === contaId
+    contas.forEach((conta) => saldos.set(conta.id, Number(conta.saldo_inicial)));
+    transacoes.forEach((transacao) => {
+      const destinoId = getContaDestinoTransferencia(transacao.descricao);
+      contasComMovimento.add(transacao.conta_id);
+      if (destinoId !== null) contasComMovimento.add(destinoId);
+      if (transacao.status !== "paga") return;
+
+      const valor = Number(transacao.valor);
+      if (!Number.isFinite(valor)) return;
+      const saldoOrigem = saldos.get(transacao.conta_id) ?? 0;
+      if (transacao.tipo === "receita") saldos.set(transacao.conta_id, saldoOrigem + valor);
+      else if (transacao.tipo === "despesa") saldos.set(transacao.conta_id, saldoOrigem - valor);
+
+      if (destinoId !== null) {
+        saldos.set(destinoId, (saldos.get(destinoId) ?? 0) + valor);
+      }
+    });
+
+    return { saldoPorConta: saldos, contasComLancamentos: contasComMovimento };
+  }, [contas, transacoes]);
+
+  const calcularSaldoConta = useCallback(
+    (conta: Conta) => saldoPorConta.get(conta.id) ?? Number(conta.saldo_inicial),
+    [saldoPorConta],
+  );
+
+  const contaPossuiLancamentos = useCallback(
+    (contaId: number) => contasComLancamentos.has(contaId),
+    [contasComLancamentos],
   );
 
   // --- Ações de Categoria ---
@@ -1290,7 +1373,8 @@ export default function Dashboard() {
 
       </ScrollView>
 
-      <Modal animationType="fade" transparent visible={modalContasHomeVisivel} onRequestClose={() => setModalContasHomeVisivel(false)}>
+      {modalContasHomeVisivel && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalContasHomeVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.accountScopePanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.accountScopeHeader}>
@@ -1375,7 +1459,7 @@ export default function Dashboard() {
                 );
               })}
 
-              {contas.filter(conta => conta.arquivado).length > 0 && (
+              {contasArquivadas.length > 0 && (
                 <>
                   <TouchableOpacity
                     style={[styles.accountScopeArchivedToggle, { borderColor: Cores.borda }]}
@@ -1386,12 +1470,12 @@ export default function Dashboard() {
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]}>Contas arquivadas</Text>
-                      <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{contas.filter(conta => conta.arquivado).length} conta(s)</Text>
+                      <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{contasArquivadas.length} conta(s)</Text>
                     </View>
                     <MaterialIcons name={mostrarArquivadas ? "expand-less" : "expand-more"} size={22} color={Cores.textoSecundario} />
                   </TouchableOpacity>
 
-                  {mostrarArquivadas && contas.filter(conta => conta.arquivado).map((conta) => (
+                  {mostrarArquivadas && contasArquivadas.map((conta) => (
                     <TouchableOpacity
                       key={`arquivada-${conta.id}`}
                       style={[styles.accountScopeArchivedRow, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}
@@ -1432,8 +1516,10 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
-      <Modal animationType="fade" transparent visible={modalNotificacoesHome} onRequestClose={() => setModalNotificacoesHome(false)}>
+      {modalNotificacoesHome && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalNotificacoesHome(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.notificationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.notificationHeader}>
@@ -1498,6 +1584,7 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {contaConfirmarArquivo && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setContaConfirmarArquivo(null)}>
@@ -1542,7 +1629,8 @@ export default function Dashboard() {
       )}
 
       {/* MODAL PICKER MÊS/ANO */}
-      <Modal animationType="fade" transparent visible={mostrarPickerMesAno} onRequestClose={() => setMostrarPickerMesAno(false)}>
+      {mostrarPickerMesAno && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setMostrarPickerMesAno(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "85%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Selecionar Mês e Ano</Text>
@@ -1587,9 +1675,11 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL EDITAR CONTA */}
-      <Modal animationType="slide" transparent visible={modalEditarContaVisivel} onRequestClose={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }}>
+      {modalEditarContaVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => { setModalEditarContaVisivel(false); setEditandoSaldoConta(false); }}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1692,9 +1782,11 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL NOVA CONTA */}
-      <Modal animationType="slide" transparent visible={modalContaVisivel} onRequestClose={() => setModalContaVisivel(false)}>
+      {modalContaVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalContaVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Conta</Text>
@@ -1749,9 +1841,11 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL GERENCIAR CATEGORIAS */}
-      <Modal animationType="slide" transparent visible={modalGerenciarCatVisivel} onRequestClose={() => { setModalGerenciarCatVisivel(false); setCatEditando(null); }}>
+      {modalGerenciarCatVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => { setModalGerenciarCatVisivel(false); setCatEditando(null); }}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "85%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Gerenciar Categorias</Text>
@@ -1853,9 +1947,11 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL NOVA CATEGORIA */}
-      <Modal animationType="slide" transparent visible={modalCatVisivel} onRequestClose={() => setModalCatVisivel(false)}>
+      {modalCatVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalCatVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Criar Categoria</Text>
@@ -1899,9 +1995,11 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL RESUMO DO MÊS */}
-      <Modal animationType="slide" transparent visible={modalResumoVisivel} onRequestClose={() => setModalResumoVisivel(false)}>
+      {modalResumoVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalResumoVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "80%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>
@@ -1948,12 +2046,14 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL LANÇAMENTOS VENCIDOS */}
+      {modalVencidosVisivel && !temPopupPrioritario && (
       <Modal
         animationType="fade"
         transparent
-        visible={modalVencidosVisivel && !temPopupPrioritario}
+        visible
         onRequestClose={() => setModalVencidosVisivel(false)}
       >
         <View style={styles.modalOverlay}>
@@ -1981,11 +2081,13 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
+      {confirmarEdicaoSaldo && (
       <Modal
         animationType="fade"
         transparent
-        visible={confirmarEdicaoSaldo}
+        visible
         onRequestClose={() => setConfirmarEdicaoSaldo(false)}
       >
         <View style={styles.modalOverlay}>
@@ -2019,9 +2121,11 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL NOVA TRANSAÇÃO */}
-      <Modal animationType="slide" transparent visible={modalTransVisivel} onRequestClose={() => setModalTransVisivel(false)}>
+      {modalTransVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalTransVisivel(false)}>
         <KeyboardAvoidingView style={styles.transactionOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
           <View style={[styles.transactionSheet, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={[styles.transactionHandle, { backgroundColor: Cores.borda }]} />
@@ -2144,7 +2248,7 @@ export default function Dashboard() {
 
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
-                {contas.filter(c => !c.arquivado).map((conta) => (
+                {contasAtivas.map((conta) => (
                   <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
                     <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
                     <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
@@ -2156,7 +2260,7 @@ export default function Dashboard() {
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Conta ou objetivo de destino</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
-                    {contas.filter(c => !c.arquivado).map((conta) => (
+                    {contasAtivas.map((conta) => (
                       <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: !caixinhaDestinoId && contaDestinoId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
                         <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
                         <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
@@ -2194,7 +2298,9 @@ export default function Dashboard() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-      <Modal animationType="fade" transparent visible={modalIaEmBreve} onRequestClose={() => setModalIaEmBreve(false)}>
+      )}
+      {modalIaEmBreve && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalIaEmBreve(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxWidth: 390, alignItems: "center", borderTopWidth: 4, borderTopColor: "#7C6FF0" }]}>
             <View style={{ width: 68, height: 68, borderRadius: 24, backgroundColor: "#7C6FF022", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
@@ -2213,6 +2319,7 @@ export default function Dashboard() {
           </View>
         </View>
       </Modal>
+      )}
     </SafeAreaView>
   );
 }

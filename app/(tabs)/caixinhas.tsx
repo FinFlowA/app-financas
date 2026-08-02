@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
@@ -89,6 +89,42 @@ interface AgendamentoObjetivo {
   data_vencimento: string;
   descricao: string;
 }
+
+interface SerieAgendamentosObjetivo {
+  datas: string[];
+  totaisAcumulados: number[];
+}
+
+const criarSerieAgendamentos = (
+  itens: { data: string; valor: number }[],
+): SerieAgendamentosObjetivo => {
+  const ordenados = [...itens].sort((a, b) => a.data.localeCompare(b.data));
+  let total = 0;
+  return {
+    datas: ordenados.map((item) => item.data),
+    totaisAcumulados: ordenados.map((item) => {
+      total += item.valor;
+      return total;
+    }),
+  };
+};
+
+const totalDaSerieAte = (
+  serie: SerieAgendamentosObjetivo | undefined,
+  dataLimite: string,
+): number => {
+  if (!serie || serie.datas.length === 0) return 0;
+
+  let inicio = 0;
+  let fim = serie.datas.length;
+  while (inicio < fim) {
+    const meio = Math.floor((inicio + fim) / 2);
+    if (serie.datas[meio] <= dataLimite) inicio = meio + 1;
+    else fim = meio;
+  }
+
+  return inicio === 0 ? 0 : serie.totaisAcumulados[inicio - 1];
+};
 
 const normalizarNomeObjetivo = (nome: string): string =>
   nome.trim().toLocaleLowerCase("pt-BR");
@@ -210,7 +246,11 @@ export default function CaixinhasScreen() {
         supabase
           .from("transacoes")
           .select("id, tipo, valor, status, data_vencimento, descricao")
-          .eq("status", "pendente"),
+          .eq("status", "pendente")
+          // Marcadores atuais e descrições legadas de aportes contêm
+          // "guardar". O filtro fixo reduz os dados sem interpolar entrada do
+          // usuário; a validação estrutural continua sendo feita no cliente.
+          .ilike("descricao", "%guardar%"),
       ]);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data.map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })));
       if (resContas.data) setContas(resContas.data);
@@ -248,44 +288,76 @@ export default function CaixinhasScreen() {
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
-  const totalGuardado = caixinhas.reduce((acc, curr) => acc + Number(curr.saldo_atual), 0);
   const anoAtual = new Date().getFullYear();
   const fimDoAnoAtual = `${anoAtual}-12-31`;
 
-  const totalAgendadoAteFimDoAno = agendamentosObjetivos.reduce((total, agendamento) => {
-    const dataAgendada = (agendamento.data_vencimento ?? "").slice(0, 10);
-    const objetivo = caixinhas.find((caixa) =>
-      movimentoPertenceAoObjetivo(agendamento.descricao, caixa, "guardar")
-    );
+  const {
+    totalGuardado,
+    previsaoFimDoAno,
+    previsaoPorObjetivo,
+  } = useMemo(() => {
+    const objetivosPorId = new Map(caixinhas.map((caixa) => [caixa.id, caixa]));
+    const primeiroObjetivoPorNome = new Map<string, number>();
+    for (const caixa of caixinhas) {
+      const nome = normalizarNomeObjetivo(caixa.nome);
+      if (!primeiroObjetivoPorNome.has(nome)) primeiroObjetivoPorNome.set(nome, caixa.id);
+    }
+    const itensPorId = new Map<number, { data: string; valor: number }[]>();
+    let agendadoAteFimDoAno = 0;
 
-    if (
-      !objetivo
-      || agendamento.status !== "pendente"
-      || !dataAgendada
-      || dataAgendada > fimDoAnoAtual
-    ) {
-      return total;
+    for (const agendamento of agendamentosObjetivos) {
+      const movimento = getMovimentoObjetivo(agendamento.descricao);
+      const data = (agendamento.data_vencimento ?? "").slice(0, 10);
+      if (
+        agendamento.status !== "pendente"
+        || movimento?.operacao !== "guardar"
+        || !data
+      ) continue;
+
+      const item = { data, valor: Number(agendamento.valor) };
+      const objetivoId = movimento.objetivoId !== null
+        ? movimento.objetivoId
+        : movimento.nomeLegado
+          ? primeiroObjetivoPorNome.get(normalizarNomeObjetivo(movimento.nomeLegado))
+          : undefined;
+      if (objetivoId === undefined || !objetivosPorId.has(objetivoId)) continue;
+      const itens = itensPorId.get(objetivoId) ?? [];
+      itens.push(item);
+      itensPorId.set(objetivoId, itens);
+
+      if (data <= fimDoAnoAtual) agendadoAteFimDoAno += item.valor;
     }
 
-    return total + Number(agendamento.valor);
-  }, 0);
-  const previsaoFimDoAno = totalGuardado + totalAgendadoAteFimDoAno;
+    const seriesPorId = new Map<number, SerieAgendamentosObjetivo>();
+    itensPorId.forEach((itens, id) => seriesPorId.set(id, criarSerieAgendamentos(itens)));
 
-  const calcularPrevisaoObjetivo = (caixa: Caixinha): number | null => {
-    if (!caixa.data_prazo || diasAteData(caixa.data_prazo) < 0) return null;
+    const previsoes = new Map<number, number | null>();
+    for (const caixa of caixinhas) {
+      if (!caixa.data_prazo || diasAteData(caixa.data_prazo) < 0) {
+        previsoes.set(caixa.id, null);
+        continue;
+      }
 
-    const totalAgendadoAtePrazo = agendamentosObjetivos.reduce((total, agendamento) => {
-      const dataAgendada = (agendamento.data_vencimento ?? "").slice(0, 10);
-      const pertenceAoObjetivo = agendamento.status === "pendente"
-        && movimentoPertenceAoObjetivo(agendamento.descricao, caixa, "guardar");
+      const totalAgendado = totalDaSerieAte(seriesPorId.get(caixa.id), caixa.data_prazo);
+      previsoes.set(
+        caixa.id,
+        totalAgendado > 0 ? Number(caixa.saldo_atual) + totalAgendado : null,
+      );
+    }
 
-      if (!pertenceAoObjetivo || !dataAgendada || dataAgendada > caixa.data_prazo!) return total;
-      return total + Number(agendamento.valor);
-    }, 0);
+    const guardado = caixinhas.reduce(
+      (total, caixa) => total + Number(caixa.saldo_atual),
+      0,
+    );
+    return {
+      totalGuardado: guardado,
+      previsaoFimDoAno: guardado + agendadoAteFimDoAno,
+      previsaoPorObjetivo: previsoes,
+    };
+  }, [agendamentosObjetivos, caixinhas, fimDoAnoAtual]);
 
-    if (totalAgendadoAtePrazo <= 0) return null;
-    return Number(caixa.saldo_atual) + totalAgendadoAtePrazo;
-  };
+  const calcularPrevisaoObjetivo = (caixa: Caixinha): number | null =>
+    previsaoPorObjetivo.get(caixa.id) ?? null;
 
   const formatarDataPrazo = (dataStr: string): string => {
     const [ano, mes, dia] = dataStr.split("-");
@@ -535,7 +607,7 @@ export default function CaixinhasScreen() {
     outputRange: [7, 0],
     extrapolate: "clamp",
   });
-  const onScrollObjetivos = Animated.event(
+  const onScrollObjetivos = useMemo(() => Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
     {
       useNativeDriver: false,
@@ -550,7 +622,7 @@ export default function CaixinhasScreen() {
         }
       },
     }
-  );
+  ), [scrollY]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -626,7 +698,7 @@ export default function CaixinhasScreen() {
         style={styles.content}
         contentContainerStyle={[styles.contentContainer, { paddingBottom: 112 + Math.max(insets.bottom, 8) }]}
         onScroll={onScrollObjetivos}
-        scrollEventThrottle={16}
+        scrollEventThrottle={32}
         showsVerticalScrollIndicator={false}
       >
         <View style={[styles.quickActions, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
@@ -734,7 +806,8 @@ export default function CaixinhasScreen() {
       </Animated.ScrollView>
       </View>
 
-      <Modal animationType="fade" transparent visible={acaoRapidaPendente !== null} onRequestClose={() => setAcaoRapidaPendente(null)}>
+      {acaoRapidaPendente !== null && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setAcaoRapidaPendente(null)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.goalPicker, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.goalPickerHeader}>
@@ -776,9 +849,11 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL OPÇÕES */}
-      <Modal animationType="fade" transparent visible={modalOpcoesVisivel} onRequestClose={() => setModalOpcoesVisivel(false)}>
+      {modalOpcoesVisivel && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
             {caixaOpcoes && (
@@ -825,6 +900,7 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL AVISO CAIXINHA */}
       {modalAvisoCaixinha && (
@@ -883,7 +959,8 @@ export default function CaixinhasScreen() {
       )}
 
       {/* MODAL EDITAR CAIXINHA */}
-      <Modal animationType="slide" transparent visible={modalEditarVisivel} onRequestClose={() => setModalEditarVisivel(false)}>
+      {modalEditarVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalEditarVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -981,9 +1058,11 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL CRIAR CAIXINHA */}
-      <Modal animationType="slide" transparent visible={modalNovaVisivel} onRequestClose={() => setModalNovaVisivel(false)}>
+      {modalNovaVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalNovaVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1097,9 +1176,11 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL MOVIMENTAR */}
-      <Modal animationType="fade" transparent visible={modalMovimentoVisivel} onRequestClose={() => setModalMovimentoVisivel(false)}>
+      {modalMovimentoVisivel && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalMovimentoVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 20 }}>
@@ -1164,9 +1245,11 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL HISTÓRICO */}
-      <Modal animationType="slide" transparent visible={modalHistoricoVisivel} onRequestClose={() => setModalHistoricoVisivel(false)}>
+      {modalHistoricoVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalHistoricoVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "85%" }]}>
             {caixaHistorico && (
@@ -1266,6 +1349,7 @@ export default function CaixinhasScreen() {
           </View>
         </View>
       </Modal>
+      )}
     </SafeAreaView>
   );
 }

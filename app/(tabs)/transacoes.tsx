@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Alert,
@@ -105,6 +105,17 @@ const chaveDataLocal = (data: Date) =>
 
 const formatarDataCurta = (data: Date) =>
   `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}`;
+
+const normalizarBusca = (valor: string) => (valor || "")
+  .toLowerCase()
+  .normalize("NFD")
+  .replace(/[\u0300-\u036f]/g, "");
+
+const timestampDataLocal = (valor: string) => {
+  const [ano, mes, dia] = valor.slice(0, 10).split("-").map(Number);
+  if (!ano || !mes || !dia) return Number.NaN;
+  return new Date(ano, mes - 1, dia).getTime();
+};
 
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
@@ -213,9 +224,9 @@ export default function TransacoesScreen() {
     if (!session?.user?.id) return;
     try {
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
-        supabase.from("categorias").select("*").eq("user_id", session.user.id),
-        supabase.from("contas").select("*"),
-        supabase.from("transacoes").select("*"),
+        supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
+        supabase.from("contas").select("id, nome, saldo_inicial, arquivado"),
+        supabase.from("transacoes").select("id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status"),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
       ]);
@@ -674,24 +685,32 @@ export default function TransacoesScreen() {
     }
   };
 
-  const hojeRef = new Date(); hojeRef.setHours(0, 0, 0, 0);
-  const limiteProximosSeteDias = new Date(hojeRef);
-  limiteProximosSeteDias.setDate(limiteProximosSeteDias.getDate() + 7);
-  const chaveHoje = chaveDataLocal(hojeRef);
+  const chaveHoje = chaveDataLocal(new Date());
+  const hojeRef = useMemo(() => {
+    const [ano, mes, dia] = chaveHoje.split("-").map(Number);
+    return new Date(ano, mes - 1, dia);
+  }, [chaveHoje]);
+  const limiteProximosSeteDias = useMemo(() => {
+    const limite = new Date(hojeRef);
+    limite.setDate(limite.getDate() + 7);
+    return limite;
+  }, [hojeRef]);
   const chaveLimiteProximosSeteDias = chaveDataLocal(limiteProximosSeteDias);
 
-  const normalizar = (s: string) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const termoBusca = normalizar(busca.trim());
+  const termoBusca = useMemo(() => normalizarBusca(busca.trim()), [busca]);
+  const contasPorId = useMemo(() => new Map(contas.map((conta) => [conta.id, conta])), [contas]);
+  const filtroContasSet = useMemo(() => new Set(filtroContas), [filtroContas]);
+  const filtroCategoriasSet = useMemo(() => new Set(filtroCategorias), [filtroCategorias]);
 
-  const passaFiltrosBasicosHistorico = (t: Transacao) => {
-    const contaDaTransacao = contas.find((conta) => conta.id === t.conta_id);
+  const passaFiltrosBasicosHistorico = useCallback((t: Transacao) => {
+    const contaDaTransacao = contasPorId.get(t.conta_id);
     if (t.status === "paga" && contaDaTransacao?.arquivado) return false;
 
     const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
-    const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
-    const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
-    const passaCategoria = filtroCategorias.length === 0
-      || (!transferencia && t.categoria_id !== null && filtroCategorias.includes(t.categoria_id));
+    const passaBusca = !termoBusca || normalizarBusca(t.descricao).includes(termoBusca);
+    const passaConta = filtroContasSet.size === 0 || filtroContasSet.has(t.conta_id);
+    const passaCategoria = filtroCategoriasSet.size === 0
+      || (!transferencia && t.categoria_id !== null && filtroCategoriasSet.has(t.categoria_id));
 
     let passaTipo = true;
     if (filtroTipo === "transferencia") passaTipo = transferencia;
@@ -699,24 +718,19 @@ export default function TransacoesScreen() {
     else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !transferencia;
 
     return passaConta && passaCategoria && passaTipo && passaBusca;
-  };
+  }, [contasPorId, filtroCategoriasSet, filtroContasSet, filtroTipo, termoBusca]);
 
-  const quantidadeAtrasadasNoEscopo = transacoes.filter((t) => {
+  const quantidadeAtrasadasNoEscopo = useMemo(() => transacoes.filter((t) => {
     const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
     return t.status === "pendente"
       && Boolean(dataSegura)
       && dataSegura < chaveHoje
       && passaFiltrosBasicosHistorico(t);
-  }).length;
+  }).length, [chaveHoje, passaFiltrosBasicosHistorico, transacoes]);
 
-  const timestampDataLocal = (valor: string) => {
-    const [ano, mes, dia] = valor.slice(0, 10).split("-").map(Number);
-    if (!ano || !mes || !dia) return Number.NaN;
-    return new Date(ano, mes - 1, dia).getTime();
-  };
   const hojeTimestamp = hojeRef.getTime();
 
-  const transacoesDoMes = transacoes
+  const transacoesDoMes = useMemo(() => transacoes
     .filter((t) => {
       const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
       const passaFiltrosBasicos = passaFiltrosBasicosHistorico(t);
@@ -750,12 +764,25 @@ export default function TransacoesScreen() {
       if (aVencida !== bVencida) return aVencida ? -1 : 1;
       if (dataA !== dataB) return aVencida ? dataB - dataA : dataA - dataB;
       return b.id - a.id;
-    });
+    }), [
+      chaveHoje,
+      chaveLimiteProximosSeteDias,
+      filtroProximosSeteDias,
+      filtroStatus,
+      filtroVencidas,
+      hojeTimestamp,
+      mesSelecionado,
+      passaFiltrosBasicosHistorico,
+      transacoes,
+    ]);
 
-  const transacoesPaginadas = transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA);
+  const transacoesPaginadas = useMemo(
+    () => transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA),
+    [paginaAtual, transacoesDoMes],
+  );
   const temMais = transacoesPaginadas.length < transacoesDoMes.length;
 
-  const faturaGruposDoMes = faturaGrupos.flatMap((g) => {
+  const faturaGruposDoMes = useMemo(() => faturaGrupos.flatMap((g) => {
     if (filtroProximosSeteDias) return [];
     // Compras no cartão ainda não possuem uma conta bancária associada.
     if (filtroContas.length > 0) return [];
@@ -775,7 +802,7 @@ export default function TransacoesScreen() {
       );
     }
     if (termoBusca) {
-      itensEncontrados = itensEncontrados.filter((item) => normalizar(item.descricao).includes(termoBusca));
+      itensEncontrados = itensEncontrados.filter((item) => normalizarBusca(item.descricao).includes(termoBusca));
     }
     if (!termoBusca && filtroCategorias.length === 0) return [g];
     if (itensEncontrados.length === 0) return [];
@@ -784,14 +811,28 @@ export default function TransacoesScreen() {
       total: itensEncontrados.reduce((total, item) => total + item.valor, 0),
       filtrada: true,
     }];
-  });
+  }), [
+    faturaGrupos,
+    filtroCategorias,
+    filtroContas.length,
+    filtroProximosSeteDias,
+    filtroStatus,
+    filtroVencidas,
+    hojeRef,
+    mesSelecionado,
+    termoBusca,
+  ]);
 
-  const totalReceitas = transacoesDoMes
-    .filter((t) => t.tipo === "receita" && !isTransferencia(t.descricao) && !isMovimentoObjetivo(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
-  const totalDespesas = transacoesDoMes
-    .filter((t) => t.tipo === "despesa" && !isTransferencia(t.descricao) && !isMovimentoObjetivo(t.descricao))
-    .reduce((acc, t) => acc + t.valor, 0);
+  const { totalReceitas, totalDespesas } = useMemo(() => {
+    let receitas = 0;
+    let despesas = 0;
+    for (const transacao of transacoesDoMes) {
+      if (isTransferencia(transacao.descricao) || isMovimentoObjetivo(transacao.descricao)) continue;
+      if (transacao.tipo === "receita") receitas += transacao.valor;
+      else if (transacao.tipo === "despesa") despesas += transacao.valor;
+    }
+    return { totalReceitas: receitas, totalDespesas: despesas };
+  }, [transacoesDoMes]);
 
   const temFiltroAtivo = mesSelecionado !== mesAtualChave
     || filtroContas.length > 0
@@ -800,9 +841,18 @@ export default function TransacoesScreen() {
     || filtroVencidas
     || filtroProximosSeteDias
     || filtroStatus !== "todos";
-  const categoriasReceitaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "receita" || (filtroTipo === "receita" && categoria.tipo === "ambos")));
-  const categoriasDespesaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "despesa" || (filtroTipo === "despesa" && categoria.tipo === "ambos")));
-  const categoriasAmbasVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "ambos");
+  const categoriasReceitaVisiveis = useMemo(
+    () => categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "receita" || (filtroTipo === "receita" && categoria.tipo === "ambos"))),
+    [categorias, filtroTipo],
+  );
+  const categoriasDespesaVisiveis = useMemo(
+    () => categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "despesa" || (filtroTipo === "despesa" && categoria.tipo === "ambos"))),
+    [categorias, filtroTipo],
+  );
+  const categoriasAmbasVisiveis = useMemo(
+    () => categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "ambos"),
+    [categorias],
+  );
   const limparFiltros = () => {
     setAnoSelecionado(anoAtualNum);
     setMesSelecionado(mesAtualChave);
@@ -864,7 +914,7 @@ export default function TransacoesScreen() {
     outputRange: [8, 0],
     extrapolate: "clamp",
   });
-  const onScrollHistorico = Animated.event(
+  const onScrollHistorico = useMemo(() => Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
     {
       useNativeDriver: false,
@@ -879,7 +929,7 @@ export default function TransacoesScreen() {
         }
       },
     }
-  );
+  ), [scrollY]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -981,7 +1031,7 @@ export default function TransacoesScreen() {
         style={styles.mainScroll}
         contentContainerStyle={styles.mainScrollContent}
         onScroll={onScrollHistorico}
-        scrollEventThrottle={16}
+        scrollEventThrottle={32}
         keyboardDismissMode="on-drag"
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
@@ -1502,7 +1552,8 @@ export default function TransacoesScreen() {
 
       {/* MODAIS DE FILTRO */}
       {/* MODAL EDITAR TRANSAÇÃO */}
-      <Modal animationType="slide" transparent visible={modalEditarTransVisivel} onRequestClose={() => setModalEditarTransVisivel(false)}>
+      {modalEditarTransVisivel && (
+      <Modal animationType="slide" transparent visible onRequestClose={() => setModalEditarTransVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", width: "95%", maxHeight: "90%" }]}>
             <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
@@ -1606,6 +1657,7 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL OPÇÕES SÉRIE */}
       {modalOpcoesSerie && (
@@ -1678,7 +1730,8 @@ export default function TransacoesScreen() {
         </Modal>
       )}
 
-      <Modal animationType="fade" transparent visible={modalFiltroAno} onRequestClose={() => setModalFiltroAno(false)}>
+      {modalFiltroAno && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroAno(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1 }]}>
             <View style={styles.filterModalHeader}>
@@ -1711,8 +1764,10 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
-      <Modal animationType="fade" transparent visible={modalFiltroTipo} onRequestClose={() => setModalFiltroTipo(false)}>
+      {modalFiltroTipo && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroTipo(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1 }]}>
             <View style={styles.filterModalHeader}>
@@ -1748,8 +1803,10 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
-      <Modal animationType="fade" transparent visible={modalFiltroConta} onRequestClose={() => setModalFiltroConta(false)}>
+      {modalFiltroConta && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroConta(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1, maxHeight: "82%" }]}>
             <View style={styles.filterModalHeader}>
@@ -1786,8 +1843,10 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
-      <Modal animationType="fade" transparent visible={modalFiltroCat} onRequestClose={() => setModalFiltroCat(false)}>
+      {modalFiltroCat && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroCat(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1, maxHeight: "85%" }]}>
             <View style={styles.filterModalHeader}>
@@ -1888,6 +1947,7 @@ export default function TransacoesScreen() {
           </View>
         </View>
       </Modal>
+      )}
       </View>
     </SafeAreaView>
   );

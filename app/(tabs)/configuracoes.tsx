@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import * as LocalAuthentication from "expo-local-authentication";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -471,7 +471,7 @@ export default function ConfiguracoesScreen() {
     outputRange: [7, 0],
     extrapolate: "clamp",
   });
-  const onScrollAjustes = Animated.event(
+  const onScrollAjustes = useMemo(() => Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
     {
       useNativeDriver: false,
@@ -486,7 +486,7 @@ export default function ConfiguracoesScreen() {
         }
       },
     }
-  );
+  ), [scrollY]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -563,7 +563,7 @@ export default function ConfiguracoesScreen() {
           style={styles.mainScroll}
           contentContainerStyle={styles.mainScrollContent}
           onScroll={onScrollAjustes}
-          scrollEventThrottle={16}
+          scrollEventThrottle={32}
           keyboardDismissMode="on-drag"
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -792,7 +792,8 @@ export default function ConfiguracoesScreen() {
         </Animated.ScrollView>
       </View>
 
-      <Modal animationType="fade" transparent visible={modalPreferenciasNotificacoes} onRequestClose={() => setModalPreferenciasNotificacoes(false)}>
+      {modalPreferenciasNotificacoes && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalPreferenciasNotificacoes(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.notificationPreferencesModal, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
             <View style={styles.notificationPreferencesHeader}>
@@ -848,6 +849,7 @@ export default function ConfiguracoesScreen() {
           </View>
         </View>
       </Modal>
+      )}
 
       {/* MODAL FEEDBACK */}
       {modalFeedbackVisivel && (
