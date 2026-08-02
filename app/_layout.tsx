@@ -49,8 +49,12 @@ import {
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
 import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
-import { garantirCategoriaOutros } from "../lib/default-categories";
+import {
+  CATEGORIAS_INICIAIS_METADATA_KEY,
+  garantirCategoriaOutros,
+} from "../lib/default-categories";
 import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
@@ -156,6 +160,8 @@ export default function RootLayout() {
   const [isDark, setIsDark] = useState(systemTheme === "dark");
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [autenticandoBiometria, setAutenticandoBiometria] = useState(false);
+  const [erroDesbloqueio, setErroDesbloqueio] = useState("");
   const [isReady, setIsReady] = useState(false);
   const [session, setSession] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -202,6 +208,8 @@ export default function RootLayout() {
   const [toastTipo, setToastTipo] = useState<"success" | "error" | "info">("success");
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autenticacaoEmAndamento = useRef(false);
+  const categoriasIniciaisProcessadas = useRef(new Set<string>());
 
   const showToast = (msg: string, tipo: "success" | "error" | "info" = "success") => {
     setToastMsg(msg);
@@ -218,18 +226,40 @@ export default function RootLayout() {
   };
 
   const autenticar = useCallback(async () => {
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "Acesse sua Carteira",
-      fallbackLabel: "Usar senha padrão",
-    });
-    if (result.success) setIsUnlocked(true);
+    if (autenticacaoEmAndamento.current) return;
+
+    autenticacaoEmAndamento.current = true;
+    setAutenticandoBiometria(true);
+    setErroDesbloqueio("");
+
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "Desbloquear o FinFlow",
+        fallbackLabel: "Usar senha do dispositivo",
+        cancelLabel: "Cancelar",
+      });
+
+      if (result.success) {
+        setIsUnlocked(true);
+        return;
+      }
+
+      if (result.error !== "user_cancel" && result.error !== "system_cancel" && result.error !== "app_cancel") {
+        setErroDesbloqueio("Não foi possível confirmar sua identidade. Tente novamente.");
+      }
+    } catch {
+      setErroDesbloqueio("Não foi possível abrir a verificação do dispositivo.");
+    } finally {
+      autenticacaoEmAndamento.current = false;
+      setAutenticandoBiometria(false);
+    }
   }, []);
 
   const verificarBiometria = useCallback(async () => {
     const temHardware = await LocalAuthentication.hasHardwareAsync();
     const temBiometria = await LocalAuthentication.isEnrolledAsync();
     if (temHardware && temBiometria) {
-      autenticar();
+      await autenticar();
     } else {
       setIsUnlocked(true);
     }
@@ -377,12 +407,26 @@ export default function RootLayout() {
   useEffect(() => {
     const uid = session?.user?.id;
     if (!uid) return;
-    garantirCategoriaOutros(uid)
-      .then(() => DeviceEventEmitter.emit("finflow:categorias-padrao-prontas"))
+
+    const metadata = (session.user.user_metadata ?? {}) as Record<string, unknown>;
+    if (metadata[CATEGORIAS_INICIAIS_METADATA_KEY] === true) {
+      categoriasIniciaisProcessadas.current.add(uid);
+      return;
+    }
+    if (categoriasIniciaisProcessadas.current.has(uid)) return;
+
+    categoriasIniciaisProcessadas.current.add(uid);
+    garantirCategoriaOutros(uid, metadata)
+      .then(({ alterouCategorias }) => {
+        if (alterouCategorias) {
+          DeviceEventEmitter.emit("finflow:categorias-padrao-prontas");
+        }
+      })
       .catch((error) => {
-        console.warn("Não foi possível garantir a categoria Outros:", error);
+        categoriasIniciaisProcessadas.current.delete(uid);
+        console.warn("Não foi possível criar as categorias iniciais:", error);
       });
-  }, [session?.user?.id]);
+  }, [session?.user?.id, session?.user?.user_metadata]);
 
   const tutorialMarcadoPendente = session?.user?.user_metadata?.tutorial_pendente === true;
   const tutorialStatus = tutorialUsuario.userId === session?.user?.id
@@ -940,6 +984,8 @@ export default function RootLayout() {
     if (value) setIsUnlocked(true);
   };
 
+  const temaFinFlow = finFlowTheme(isDark);
+
   if (!isReady || !isAuthReady) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: isDark ? "#121212" : "#FFF" }}>
@@ -950,14 +996,69 @@ export default function RootLayout() {
 
   if (session && isBiometricEnabled && !isUnlocked) {
     return (
-      <View style={[styles.lockScreen, { backgroundColor: isDark ? "#121212" : "#FFF" }]}>
-        <MaterialIcons name="lock" size={80} color="#2A9D8F" />
-        <Text style={[styles.lockTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>
-          App Protegido
-        </Text>
-        <TouchableOpacity style={styles.button} onPress={autenticar}>
-          <Text style={styles.buttonText}>Entrar com Biometria</Text>
-        </TouchableOpacity>
+      <View style={[styles.lockScreen, { backgroundColor: temaFinFlow.background }]}>
+        <StatusBar style={isDark ? "light" : "dark"} />
+        <View pointerEvents="none" style={[styles.lockGlowTop, { backgroundColor: temaFinFlow.header }]} />
+        <View pointerEvents="none" style={[styles.lockGlowBottom, { backgroundColor: temaFinFlow.primarySoft }]} />
+
+        <View style={styles.lockContent}>
+          <View style={styles.lockBrand}>
+            <View style={[styles.lockBrandIcon, { backgroundColor: temaFinFlow.primary }]}>
+              <MaterialIcons name="account-balance-wallet" size={23} color="#FFF" />
+            </View>
+            <Text style={[styles.lockBrandText, { color: temaFinFlow.text }]}>FinFlow</Text>
+          </View>
+
+          <View style={[
+            styles.lockCard,
+            { backgroundColor: temaFinFlow.surfaceElevated, borderColor: temaFinFlow.border },
+          ]}>
+            <View style={[styles.lockIconHalo, { backgroundColor: temaFinFlow.primarySoft }]}>
+              <View style={[styles.lockIconCircle, { backgroundColor: temaFinFlow.primary }]}>
+                <MaterialIcons name="fingerprint" size={42} color="#FFF" />
+              </View>
+            </View>
+
+            <Text style={[styles.lockTitle, { color: temaFinFlow.text }]}>FinFlow protegido</Text>
+            <Text style={[styles.lockDescription, { color: temaFinFlow.textMuted }]}>
+              {"Confirme sua identidade para acessar suas informa\u00e7\u00f5es financeiras."}
+            </Text>
+
+            <View style={[styles.lockMethod, { backgroundColor: temaFinFlow.surfaceMuted }]}>
+              <MaterialIcons name="verified-user" size={17} color={temaFinFlow.primary} />
+              <Text style={[styles.lockMethodText, { color: temaFinFlow.text }]}>Biometria ou senha do dispositivo</Text>
+            </View>
+
+            {!!erroDesbloqueio && (
+              <View style={styles.lockError}>
+                <MaterialIcons name="error-outline" size={18} color="#E76F51" />
+                <Text style={styles.lockErrorText}>{erroDesbloqueio}</Text>
+              </View>
+            )}
+
+            <TouchableOpacity
+              disabled={autenticandoBiometria}
+              style={[styles.lockButton, { backgroundColor: temaFinFlow.primary, opacity: autenticandoBiometria ? 0.72 : 1 }]}
+              onPress={autenticar}
+              accessibilityRole="button"
+              accessibilityLabel="Desbloquear o FinFlow"
+            >
+              {autenticandoBiometria
+                ? <ActivityIndicator size="small" color="#FFF" />
+                : <MaterialIcons name="lock-open" size={20} color="#FFF" />}
+              <Text style={styles.lockButtonText}>
+                {autenticandoBiometria ? "Aguardando confirma\u00e7\u00e3o..." : "Desbloquear com seguran\u00e7a"}
+              </Text>
+            </TouchableOpacity>
+
+            <View style={styles.lockPrivacyRow}>
+              <MaterialIcons name="security" size={15} color={temaFinFlow.textMuted} />
+              <Text style={[styles.lockPrivacyText, { color: temaFinFlow.textMuted }]}>
+                {"A verifica\u00e7\u00e3o acontece no seu aparelho. O FinFlow n\u00e3o recebe sua biometria nem a senha do dispositivo."}
+              </Text>
+            </View>
+          </View>
+        </View>
       </View>
     );
   }
@@ -1525,10 +1626,51 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  lockScreen: { flex: 1, alignItems: "center", justifyContent: "center" },
-  lockTitle: { fontSize: 22, fontWeight: "bold", marginVertical: 20 },
-  button: { backgroundColor: "#2A9D8F", padding: 15, borderRadius: 10 },
-  buttonText: { color: "#FFF", fontWeight: "bold" },
+  lockScreen: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  lockGlowTop: {
+    position: "absolute",
+    width: 420,
+    height: 420,
+    borderRadius: 210,
+    top: -250,
+    right: -150,
+    opacity: 0.24,
+  },
+  lockGlowBottom: {
+    position: "absolute",
+    width: 360,
+    height: 360,
+    borderRadius: 180,
+    bottom: -245,
+    left: -175,
+    opacity: 0.48,
+  },
+  lockContent: { width: "100%", maxWidth: 460, paddingHorizontal: 24 },
+  lockBrand: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, marginBottom: 22 },
+  lockBrandIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  lockBrandText: { fontSize: 24, fontWeight: "900", letterSpacing: -0.5 },
+  lockCard: {
+    width: "100%",
+    alignItems: "center",
+    borderWidth: 1,
+    borderRadius: FinFlowRadius.large,
+    paddingHorizontal: 24,
+    paddingTop: 28,
+    paddingBottom: 24,
+    ...FinFlowShadow,
+  },
+  lockIconHalo: { width: 88, height: 88, borderRadius: 44, alignItems: "center", justifyContent: "center", marginBottom: 18 },
+  lockIconCircle: { width: 68, height: 68, borderRadius: 34, alignItems: "center", justifyContent: "center" },
+  lockTitle: { fontSize: 24, lineHeight: 30, fontWeight: "900", textAlign: "center" },
+  lockDescription: { maxWidth: 320, fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 8 },
+  lockMethod: { width: "100%", minHeight: 44, borderRadius: FinFlowRadius.small, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 20, paddingHorizontal: 12 },
+  lockMethodText: { fontSize: 12, fontWeight: "800", textAlign: "center" },
+  lockError: { width: "100%", flexDirection: "row", alignItems: "center", gap: 8, borderRadius: FinFlowRadius.small, backgroundColor: "rgba(231,111,81,0.12)", padding: 12, marginTop: 12 },
+  lockErrorText: { flex: 1, color: "#E76F51", fontSize: 12, lineHeight: 17, fontWeight: "700" },
+  lockButton: { width: "100%", minHeight: 54, borderRadius: FinFlowRadius.medium, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9, marginTop: 16, paddingHorizontal: 18 },
+  lockButtonText: { color: "#FFF", fontSize: 15, fontWeight: "900", textAlign: "center" },
+  lockPrivacyRow: { flexDirection: "row", alignItems: "flex-start", gap: 7, marginTop: 18, paddingHorizontal: 4 },
+  lockPrivacyText: { flex: 1, fontSize: 10, lineHeight: 15, textAlign: "left" },
   toast: {
     position: "absolute",
     bottom: 90,

@@ -20,6 +20,7 @@ import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
   dataEfetivaTransacao,
   getContaDestinoTransferencia,
+  isMovimentoObjetivo,
   isTransferencia,
 } from "../../lib/transacoes";
 
@@ -162,6 +163,10 @@ export default function RelatoriosScreen() {
       return [{ ...t, tipo: "receita", conta_id: destinoId }];
     }
 
+    if (isMovimentoObjetivo(t.descricao)) {
+      return idsEscopoFluxo.has(t.conta_id) ? [t] : [];
+    }
+
     // Transferências antigas possuem duas linhas. No consolidado elas são
     // internas e não representam receita ou despesa real.
     if (isTransferencia(t.descricao)) {
@@ -182,10 +187,17 @@ export default function RelatoriosScreen() {
 
   const isAnoAtual = anoSelecionado === anoAtualNum;
 
+  // Guardar ou resgatar valores de um objetivo altera o saldo disponível da
+  // conta, mas não representa receita nem despesa. Por isso, o movimento segue
+  // na coleção usada pela linha de saldo e sai apenas dos agregados do gráfico.
+  const lancamentosFinanceirosFiltrados = transacoesFiltradas.filter(
+    t => !isMovimentoObjetivo(t.descricao),
+  );
+
   // All 12 months bar data (paid transactions)
   const todosOsMeses = Array.from({ length: 12 }, (_, m) => {
     const yyyymm = `${anoSelecionado}-${String(m + 1).padStart(2, "0")}`;
-    const trans = transacoesFiltradas.filter(t => dataEfetivaTransacao(t).startsWith(yyyymm));
+    const trans = lancamentosFinanceirosFiltrados.filter(t => dataEfetivaTransacao(t).startsWith(yyyymm));
     return {
       mesIdx: m,
       label: MESES_ABREV[m],

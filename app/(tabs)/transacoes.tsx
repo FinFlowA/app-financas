@@ -25,8 +25,13 @@ import {
   descricaoVisivel,
   dataEfetivaTransacao,
   getContaDestinoTransferencia,
+  getIdSerie,
+  getMovimentoObjetivo,
+  getParcelaRecorrencia,
+  isMovimentoObjetivo,
   isRecorrenciaFixa,
   isTransferencia,
+  substituirDescricaoBase,
 } from "../../lib/transacoes";
 
 interface Categoria {
@@ -172,12 +177,11 @@ export default function TransacoesScreen() {
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
-  const mesAtualIdx = hoje.getMonth();
+  const mesAtualChave = `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
   const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
   const [mesSelecionado, setMesSelecionado] = useState<string>(
     `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
   );
-  const mesesScrollRef = useRef<any>(null);
   const paginaScrollRef = useRef<any>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const cabecalhoCompactoRef = useRef(false);
@@ -266,11 +270,7 @@ export default function TransacoesScreen() {
   useFocusEffect(useCallback(() => {
     setTransacaoConfirmar(null);
     carregarDados();
-    // Scroll para o mês atual ao entrar na aba
-    setTimeout(() => {
-      mesesScrollRef.current?.scrollTo({ x: mesAtualIdx * 72, animated: true });
-    }, 150);
-  }, [carregarDados, mesAtualIdx]));
+  }, [carregarDados]));
 
   React.useEffect(() => {
     const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
@@ -300,6 +300,18 @@ export default function TransacoesScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.filtroPeriodo]);
 
+  const buscarObjetivoDoMovimento = async (descricao?: string | null) => {
+    const movimento = getMovimentoObjetivo(descricao);
+    if (!movimento) return { movimento: null, caixinha: null };
+
+    let consulta = supabase.from("caixinhas").select("id, saldo_atual");
+    consulta = movimento.objetivoId !== null
+      ? consulta.eq("id", movimento.objetivoId)
+      : consulta.ilike("nome", movimento.nomeLegado ?? "");
+    const { data } = await consulta.maybeSingle();
+    return { movimento, caixinha: data };
+  };
+
   const executarDeleteUma = async (transacao: Transacao) => {
     const pagamentoFatura = (transacao.descricao ?? "").match(/\[PagFatura:(\d+):(\d{4}-\d{2}):([^:\]]+)(?::(\d+))?\]/);
     if (pagamentoFatura) {
@@ -318,20 +330,13 @@ export default function TransacoesScreen() {
     const { error } = await supabase.from("transacoes").delete().eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível apagar a transação."); return; }
 
-    const descricao = transacao.descricao ?? "";
-    let nomeCaixinha: string | null = null;
-    let operacao: "reverter_guardar" | "reverter_resgatar" | null = null;
-
-    if (descricao.startsWith("Guardar em: ")) { nomeCaixinha = descricao.replace("Guardar em: ", "").trim(); operacao = "reverter_guardar"; }
-    else if (descricao.startsWith("Resgate de: ")) { nomeCaixinha = descricao.replace("Resgate de: ", "").trim(); operacao = "reverter_resgatar"; }
-
-    if (transacao.status === "paga" && nomeCaixinha && operacao) {
-      const { data: caixinhaData } = await supabase.from("caixinhas").select("id, saldo_atual").ilike("nome", nomeCaixinha).single();
-      if (caixinhaData) {
-        const novoSaldo = operacao === "reverter_guardar"
-          ? Math.max(0, Number(caixinhaData.saldo_atual) - Number(transacao.valor))
-          : Number(caixinhaData.saldo_atual) + Number(transacao.valor);
-        await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaData.id);
+    if (transacao.status === "paga") {
+      const { movimento, caixinha } = await buscarObjetivoDoMovimento(transacao.descricao);
+      if (movimento && caixinha) {
+        const novoSaldo = movimento.operacao === "guardar"
+          ? Math.max(0, Number(caixinha.saldo_atual) - Number(transacao.valor))
+          : Number(caixinha.saldo_atual) + Number(transacao.valor);
+        await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinha.id);
       }
     }
     carregarDados();
@@ -340,7 +345,7 @@ export default function TransacoesScreen() {
   const deletarFuturas = async (transacao: Transacao) => {
     const desc = transacao.descricao ?? "";
     const isFixa = isRecorrenciaFixa(desc);
-    const parceladaMatch = desc.match(/^(.+) \((\d+)\/(\d+)\)$/);
+    const parcelaReferencia = getParcelaRecorrencia(desc);
     if (isFixa) {
       const { error } = await supabase.from("transacoes")
         .delete()
@@ -349,14 +354,27 @@ export default function TransacoesScreen() {
         .gte("data_vencimento", transacao.data_vencimento)
         .neq("status", "paga");
       if (error) Alert.alert("Erro", "Não foi possível apagar.");
-    } else if (parceladaMatch) {
-      const base = parceladaMatch[1];
-      const currentNum = parseInt(parceladaMatch[2]);
-      const totalStr = parceladaMatch[3];
+    } else if (parcelaReferencia) {
+      const serieReferencia = getIdSerie(desc);
+      const destinoReferencia = getContaDestinoTransferencia(desc);
+      const objetivoReferencia = getMovimentoObjetivo(desc);
       const ids = transacoes
         .filter((t) => {
-          const m = t.descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
-          return m && m[1] === base && m[3] === totalStr && parseInt(m[2]) >= currentNum && t.status !== "paga";
+          const parcela = getParcelaRecorrencia(t.descricao);
+          const objetivo = getMovimentoObjetivo(t.descricao);
+          const pertenceASerie = serieReferencia !== null
+            ? getIdSerie(t.descricao) === serieReferencia
+            : parcela?.base === parcelaReferencia.base
+              && parcela?.total === parcelaReferencia.total
+              && getContaDestinoTransferencia(t.descricao) === destinoReferencia
+              && objetivo?.objetivoId === objetivoReferencia?.objetivoId
+              && objetivo?.operacao === objetivoReferencia?.operacao;
+          return parcela
+            && pertenceASerie
+            && parcela.atual >= parcelaReferencia.atual
+            && t.conta_id === transacao.conta_id
+            && t.tipo === transacao.tipo
+            && t.status !== "paga";
         })
         .map((t) => t.id);
       if (ids.length > 0) {
@@ -367,27 +385,59 @@ export default function TransacoesScreen() {
     carregarDados();
   };
 
-  const deletarSerie = async (base: string, tipo: "fixa" | "parcelada", totalParcelas?: string) => {
-    if (tipo === "fixa") {
-      const dataCorte = `${mesSelecionado}-01`;
-      const idsParaDeletar = transacoes
-        .filter((t) => isRecorrenciaFixa(t.descricao) && descricaoBaseRecorrencia(t.descricao) === base && t.data_vencimento >= dataCorte && t.status !== "paga")
-        .map((t) => t.id);
-      const { error } = idsParaDeletar.length
-        ? await supabase.from("transacoes").delete().in("id", idsParaDeletar)
-        : { error: null };
-      if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
-    } else {
-      const idsParaDeletar = transacoes
-        .filter((t) => {
-          const m = t.descricao.match(/^(.+) \(\d+\/(\d+)\)$/);
-          return m && m[1] === base && m[2] === totalParcelas && t.status !== "paga";
-        })
-        .map((t) => t.id);
-      if (idsParaDeletar.length === 0) return;
-      const { error } = await supabase.from("transacoes").delete().in("id", idsParaDeletar);
-      if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
-    }
+  const deletarTodasParcelasEmAberto = async (transacao: Transacao) => {
+    const parcelaReferencia = getParcelaRecorrencia(transacao.descricao);
+    if (!parcelaReferencia) return;
+    const serieReferencia = getIdSerie(transacao.descricao);
+    const destinoReferencia = getContaDestinoTransferencia(transacao.descricao);
+    const objetivoReferencia = getMovimentoObjetivo(transacao.descricao);
+    const idsParaDeletar = transacoes
+      .filter((t) => {
+        const parcela = getParcelaRecorrencia(t.descricao);
+        const objetivo = getMovimentoObjetivo(t.descricao);
+        const pertenceASerie = serieReferencia !== null
+          ? getIdSerie(t.descricao) === serieReferencia
+          : parcela?.base === parcelaReferencia.base
+            && parcela?.total === parcelaReferencia.total
+            && getContaDestinoTransferencia(t.descricao) === destinoReferencia
+            && objetivo?.objetivoId === objetivoReferencia?.objetivoId
+            && objetivo?.operacao === objetivoReferencia?.operacao;
+        return parcela
+          && pertenceASerie
+          && t.conta_id === transacao.conta_id
+          && t.tipo === transacao.tipo
+          && t.status !== "paga";
+      })
+      .map((t) => t.id);
+
+    if (idsParaDeletar.length === 0) return;
+    const { error } = await supabase.from("transacoes").delete().in("id", idsParaDeletar);
+    if (error) Alert.alert("Erro", "Não foi possível apagar as parcelas em aberto.");
+    carregarDados();
+  };
+
+  const deletarSerie = async (transacao: Transacao) => {
+    const base = descricaoBaseRecorrencia(transacao.descricao);
+    const serieReferencia = getIdSerie(transacao.descricao);
+    const destinoReferencia = getContaDestinoTransferencia(transacao.descricao);
+    const objetivoReferencia = getMovimentoObjetivo(transacao.descricao);
+    const idsParaDeletar = transacoes
+      .filter((t) => {
+        if (!isRecorrenciaFixa(t.descricao) || t.status === "paga") return false;
+        if (t.conta_id !== transacao.conta_id || t.tipo !== transacao.tipo) return false;
+        if (serieReferencia !== null) return getIdSerie(t.descricao) === serieReferencia;
+
+        const objetivo = getMovimentoObjetivo(t.descricao);
+        return descricaoBaseRecorrencia(t.descricao) === base
+          && getContaDestinoTransferencia(t.descricao) === destinoReferencia
+          && objetivo?.objetivoId === objetivoReferencia?.objetivoId
+          && objetivo?.operacao === objetivoReferencia?.operacao;
+      })
+      .map((t) => t.id);
+    const { error } = idsParaDeletar.length
+      ? await supabase.from("transacoes").delete().in("id", idsParaDeletar)
+      : { error: null };
+    if (error) Alert.alert("Erro", "Não foi possível apagar a série.");
     carregarDados();
   };
 
@@ -397,24 +447,26 @@ export default function TransacoesScreen() {
 
     const descricao = transacao.descricao ?? "";
     const isFixa = isRecorrenciaFixa(descricao);
-    const parceladaMatch = descricao.match(/^(.+) \((\d+)\/(\d+)\)$/);
+    const parcelada = getParcelaRecorrencia(descricao);
 
-    if (transacao.status !== "paga" && (isFixa || parceladaMatch)) {
+    if (transacao.status !== "paga" && (isFixa || parcelada)) {
       setModalOpcoesSerie({
         titulo: "Apagar Agendamento",
         descricao: "Esta transação faz parte de uma série. O que deseja apagar?",
         labelSimples: "Apenas esta",
         // Parceladas: "Esta e as próximas" | Recorrentes: "Toda a série"
-        ...(parceladaMatch ? {
+        ...(parcelada ? {
           labelFuturas: "Esta e as próximas",
           onFuturas: () => { setModalOpcoesSerie(null); deletarFuturas(transacao); },
+          labelSerie: "Todas as parcelas em aberto",
+          corSerie: "#E76F51",
+          onSerie: () => { setModalOpcoesSerie(null); deletarTodasParcelasEmAberto(transacao); },
         } : {
           labelSerie: "Toda a série",
           corSerie: "#E76F51",
           onSerie: () => {
             setModalOpcoesSerie(null);
-            const base = descricaoBaseRecorrencia(descricao);
-            deletarSerie(base, "fixa");
+            deletarSerie(transacao);
           },
         }),
         onSimples: () => { setModalOpcoesSerie(null); executarDeleteUma(transacao); },
@@ -425,7 +477,7 @@ export default function TransacoesScreen() {
   };
 
   const isRecorrente = (t: Transacao) =>
-    isRecorrenciaFixa(t.descricao) || /\(\d+\/\d+\)(?:\s*\[Destino:\d+\])?$/.test(t.descricao);
+    isRecorrenciaFixa(t.descricao) || getParcelaRecorrencia(t.descricao) !== null;
 
   const descricaoBase = (desc: string) =>
     descricaoBaseRecorrencia(desc);
@@ -433,8 +485,7 @@ export default function TransacoesScreen() {
   const ehMovimentoInternoSemCategoria = (t: Transacao) => {
     const descricao = t.descricao ?? "";
     return isTransferencia(descricao)
-      || descricao.startsWith("Guardar em: ")
-      || descricao.startsWith("Resgate de: ")
+      || isMovimentoObjetivo(descricao)
       || descricao.includes("[PagFatura:");
   };
 
@@ -458,7 +509,7 @@ export default function TransacoesScreen() {
 
   const abrirEditarTransacao = (t: Transacao) => {
     setTransacaoEditando(t);
-    setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : t.descricao);
+    setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : descricaoVisivel(t.descricao));
     setEditValor(t.valor.toFixed(2).replace(".", ","));
     const partes = (t.data_vencimento || new Date().toISOString().split("T")[0]).split("-");
     setEditData(new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2])));
@@ -477,10 +528,12 @@ export default function TransacoesScreen() {
     const campos = { valor: valorNum, status: editStatus, categoria_id: editCategoriaId, conta_id: editContaId };
 
     if (apenasEsta) {
-      const { error } = await supabase.from("transacoes").update({ ...campos, descricao: editDescricao, data_vencimento: dataFormatada }).eq("id", transacaoEditando.id);
+      const descricaoAtualizada = substituirDescricaoBase(transacaoEditando.descricao, editDescricao);
+      const { error } = await supabase.from("transacoes").update({ ...campos, descricao: descricaoAtualizada, data_vencimento: dataFormatada }).eq("id", transacaoEditando.id);
       if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
     } else {
       const base = descricaoBase(transacaoEditando.descricao);
+      const serieId = getIdSerie(transacaoEditando.descricao);
       const novoBase = descricaoBase(editDescricao);
       const novoDia = editData.getDate();
       const { data: serie } = await supabase.from("transacoes")
@@ -488,7 +541,10 @@ export default function TransacoesScreen() {
         .eq("user_id", session.user.id)
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
-      const itens = (serie ?? []).filter((t) => descricaoBase(t.descricao) === base && t.status !== "paga");
+      const itens = (serie ?? []).filter((t) =>
+        t.status !== "paga"
+        && (serieId !== null ? getIdSerie(t.descricao) === serieId : descricaoBase(t.descricao) === base)
+      );
       const resultados = await Promise.all(
         itens.map((item) => {
           const partes = (item.data_vencimento || dataFormatada).split("-");
@@ -497,8 +553,7 @@ export default function TransacoesScreen() {
           const diasNoMes = new Date(ano, mes + 1, 0).getDate();
           const diaFinal = Math.min(novoDia, diasNoMes);
           const novaData = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
-          const sufixo = item.descricao.slice(descricaoBase(item.descricao).length);
-          const novaDescricao = novoBase + sufixo;
+          const novaDescricao = substituirDescricaoBase(item.descricao, novoBase);
           return supabase.from("transacoes").update({
             ...campos, status: editStatus, descricao: novaDescricao, data_vencimento: novaData,
           }).eq("id", item.id);
@@ -552,22 +607,15 @@ export default function TransacoesScreen() {
     if (error) { Alert.alert("Erro", "Não foi possível atualizar o estado."); return; }
 
     if (transacao) {
-      const desc = transacao.descricao ?? "";
-      let nomeCaixinha: string | null = null;
-      let operacao: "guardar" | "resgatar" | null = null;
-      if (desc.startsWith("Guardar em: ")) { nomeCaixinha = desc.replace("Guardar em: ", "").trim(); operacao = "guardar"; }
-      else if (desc.startsWith("Resgate de: ")) { nomeCaixinha = desc.replace("Resgate de: ", "").trim(); operacao = "resgatar"; }
-      if (nomeCaixinha && operacao) {
-        const { data: caixinhaData } = await supabase.from("caixinhas").select("id, saldo_atual").ilike("nome", nomeCaixinha).single();
-        if (caixinhaData) {
-          let novoSaldo = Number(caixinhaData.saldo_atual);
+      const { movimento, caixinha } = await buscarObjetivoDoMovimento(transacao.descricao);
+      if (movimento && caixinha) {
+          let novoSaldo = Number(caixinha.saldo_atual);
           if (novoStatus === "paga") {
-            novoSaldo = operacao === "guardar" ? novoSaldo + Number(transacao.valor) : Math.max(0, novoSaldo - Number(transacao.valor));
+            novoSaldo = movimento.operacao === "guardar" ? novoSaldo + Number(transacao.valor) : Math.max(0, novoSaldo - Number(transacao.valor));
           } else {
-            novoSaldo = operacao === "guardar" ? Math.max(0, novoSaldo - Number(transacao.valor)) : novoSaldo + Number(transacao.valor);
+            novoSaldo = movimento.operacao === "guardar" ? Math.max(0, novoSaldo - Number(transacao.valor)) : novoSaldo + Number(transacao.valor);
           }
-          await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinhaData.id);
-        }
+          await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinha.id);
       }
     }
 
@@ -577,7 +625,9 @@ export default function TransacoesScreen() {
     setAjusteValor("");
     const tipo = transacao.tipo;
     if (novoStatus === "paga") {
-      const label = tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
+      const label = isTransferencia(transacao.descricao) || isMovimentoObjetivo(transacao.descricao)
+        ? "Transferência concluída ✓"
+        : tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
       showToast(label, transacao.tipo === "receita" ? "success" : "info");
     } else {
       showToast("Marcado como pendente", "info");
@@ -637,7 +687,7 @@ export default function TransacoesScreen() {
     const contaDaTransacao = contas.find((conta) => conta.id === t.conta_id);
     if (t.status === "paga" && contaDaTransacao?.arquivado) return false;
 
-    const transferencia = isTransferencia(t.descricao);
+    const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
     const passaBusca = !termoBusca || normalizar(t.descricao).includes(termoBusca);
     const passaConta = filtroContas.length === 0 || filtroContas.includes(t.conta_id);
     const passaCategoria = filtroCategorias.length === 0
@@ -737,21 +787,13 @@ export default function TransacoesScreen() {
   });
 
   const totalReceitas = transacoesDoMes
-    .filter((t) => t.tipo === "receita" && !t.descricao.includes("[Transf.]"))
+    .filter((t) => t.tipo === "receita" && !isTransferencia(t.descricao) && !isMovimentoObjetivo(t.descricao))
     .reduce((acc, t) => acc + t.valor, 0);
   const totalDespesas = transacoesDoMes
-    .filter((t) => t.tipo === "despesa" && !t.descricao.includes("[Transf.]"))
+    .filter((t) => t.tipo === "despesa" && !isTransferencia(t.descricao) && !isMovimentoObjetivo(t.descricao))
     .reduce((acc, t) => acc + t.valor, 0);
 
-  const mesesDoAno = Array.from({ length: 12 }, (_, i) => `${anoSelecionado}-${String(i + 1).padStart(2, "0")}`);
-  const anosDisponiveis = Array.from(new Set([
-    anoAtualNum,
-    anoSelecionado,
-    ...transacoes.map((transacao) => Number(dataEfetivaTransacao(transacao).slice(0, 4))).filter(Number.isFinite),
-    ...faturaGrupos.map((fatura) => Number(fatura.mes_fatura.slice(0, 4))).filter(Number.isFinite),
-  ])).sort((a, b) => b - a);
-
-  const temFiltroAtivo = anoSelecionado !== anoAtualNum
+  const temFiltroAtivo = mesSelecionado !== mesAtualChave
     || filtroContas.length > 0
     || filtroCategorias.length > 0
     || filtroTipo !== "todas"
@@ -762,9 +804,8 @@ export default function TransacoesScreen() {
   const categoriasDespesaVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "despesa" || (filtroTipo === "despesa" && categoria.tipo === "ambos")));
   const categoriasAmbasVisiveis = categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "ambos");
   const limparFiltros = () => {
-    const mesSelecionadoNumero = mesSelecionado.slice(5, 7);
     setAnoSelecionado(anoAtualNum);
-    setMesSelecionado(`${anoAtualNum}-${mesSelecionadoNumero}`);
+    setMesSelecionado(mesAtualChave);
     setFiltroContas([]);
     setFiltroCategorias([]);
     setFiltroTipo("todas");
@@ -787,7 +828,11 @@ export default function TransacoesScreen() {
       : filtroCategorias.length === 1
         ? categorias.find((categoria) => categoria.id === filtroCategorias[0])?.nome ?? "1 categoria"
         : `${filtroCategorias.length} categorias`;
-  const tituloPeriodo = filtroProximosSeteDias ? "Próximos 7 dias" : formatarMesAno(mesSelecionado);
+  const tituloPeriodo = filtroProximosSeteDias
+    ? "Próximos 7 dias"
+    : filtroVencidas
+      ? "Lançamentos atrasados"
+      : formatarMesAno(mesSelecionado);
 
   const alturaCabecalho = scrollY.interpolate({
     inputRange: [0, HEADER_COLLAPSE_DISTANCE],
@@ -878,15 +923,6 @@ export default function TransacoesScreen() {
               )}
             </View>
           </View>
-          <View style={styles.headerMonthRow}>
-            <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.headerMonthButton} accessibilityLabel="Mês anterior">
-              <MaterialIcons name="chevron-left" size={25} color="#FFF" />
-            </TouchableOpacity>
-            <Text style={styles.headerMonthText}>{tituloPeriodo}</Text>
-            <TouchableOpacity onPress={() => alterarMes(1)} style={styles.headerMonthButton} accessibilityLabel="Próximo mês">
-              <MaterialIcons name="chevron-right" size={25} color="#FFF" />
-            </TouchableOpacity>
-          </View>
           <View style={styles.headerTotals}>
             <View>
               <Text style={styles.headerTotalLabel}>Entradas</Text>
@@ -928,17 +964,6 @@ export default function TransacoesScreen() {
             </View>
           </View>
           <View style={styles.compactHeaderSummary}>
-            <View style={styles.compactMonthSelector}>
-              <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.compactMonthButton} accessibilityLabel="Mês anterior">
-                <MaterialIcons name="chevron-left" size={19} color="#FFF" />
-              </TouchableOpacity>
-              <Text style={styles.compactMonthText} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.78}>
-                {tituloPeriodo}
-              </Text>
-              <TouchableOpacity onPress={() => alterarMes(1)} style={styles.compactMonthButton} accessibilityLabel="Próximo mês">
-                <MaterialIcons name="chevron-right" size={19} color="#FFF" />
-              </TouchableOpacity>
-            </View>
             <View style={styles.compactTotals}>
               <Text style={styles.compactIncome} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.7}>
                 + {fmtReais(totalReceitas)}
@@ -961,17 +986,6 @@ export default function TransacoesScreen() {
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-
-      {/* NAVEGADOR DE ANO */}
-      {false && <View style={[styles.anoNavBar, { backgroundColor: Cores.pillFundo }]}>
-        <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.anoNavBtn}>
-          <MaterialIcons name="chevron-left" size={28} color={Cores.textoPrincipal} />
-        </TouchableOpacity>
-        <Text style={[styles.anoNavText, { color: Cores.textoPrincipal }]}>{anoSelecionado}</Text>
-        <TouchableOpacity onPress={() => alterarAno(1)} style={styles.anoNavBtn}>
-          <MaterialIcons name="chevron-right" size={28} color={Cores.textoPrincipal} />
-        </TouchableOpacity>
-      </View>}
 
       <View style={styles.statusFilters}>
         {([
@@ -1027,7 +1041,7 @@ export default function TransacoesScreen() {
             </View>
             <View>
               <Text style={[styles.filtersPanelTitle, { color: Cores.textoPrincipal }]}>Refinar histórico</Text>
-              <Text style={[styles.filtersPanelSubtitle, { color: Cores.textoSecundario }]}>Ano, tipo, conta e categoria</Text>
+              <Text style={[styles.filtersPanelSubtitle, { color: Cores.textoSecundario }]}>Período, tipo, conta e categoria</Text>
             </View>
           </View>
           {temFiltroAtivo && (
@@ -1038,19 +1052,20 @@ export default function TransacoesScreen() {
           )}
         </View>
 
-        <View style={styles.filterButtonsRow}>
-          <TouchableOpacity
-            style={[styles.mainFilterButton, { backgroundColor: anoSelecionado !== anoAtualNum ? "#805AD514" : Cores.pillFundo, borderColor: anoSelecionado !== anoAtualNum ? "#805AD5" : Cores.borda }]}
-            onPress={() => setModalFiltroAno(true)}
-            accessibilityLabel={`Filtrar por ano. Seleção atual: ${anoSelecionado}`}
-          >
-            <View style={styles.mainFilterLabelRow}>
-              <MaterialIcons name="calendar-today" size={15} color={anoSelecionado !== anoAtualNum ? "#805AD5" : Cores.textoSecundario} />
-              <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>ANO</Text>
-            </View>
-            <Text style={[styles.mainFilterValue, { color: anoSelecionado !== anoAtualNum ? "#805AD5" : Cores.textoPrincipal }]}>{anoSelecionado}</Text>
+        <View style={[styles.periodSelector, { backgroundColor: Cores.pillFundo, borderColor: mesSelecionado !== mesAtualChave ? "#805AD5" : Cores.borda }]}>
+          <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.periodSelectorArrow} accessibilityLabel="Mês anterior">
+            <MaterialIcons name="chevron-left" size={25} color="#805AD5" />
           </TouchableOpacity>
+          <TouchableOpacity onPress={() => setModalFiltroAno(true)} style={styles.periodSelectorCenter} accessibilityLabel={`Período selecionado: ${formatarMesAno(mesSelecionado)}. Toque para alterar o ano.`}>
+            <MaterialIcons name="calendar-today" size={16} color="#805AD5" />
+            <Text style={[styles.periodSelectorText, { color: Cores.textoPrincipal }]}>{formatarMesAno(mesSelecionado)}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => alterarMes(1)} style={styles.periodSelectorArrow} accessibilityLabel="Próximo mês">
+            <MaterialIcons name="chevron-right" size={25} color="#805AD5" />
+          </TouchableOpacity>
+        </View>
 
+        <View style={styles.filterButtonsRow}>
           <TouchableOpacity
             style={[styles.mainFilterButton, { backgroundColor: filtroTipo !== "todas" ? "#F4A26114" : Cores.pillFundo, borderColor: filtroTipo !== "todas" ? "#F4A261" : Cores.borda }]}
             onPress={() => setModalFiltroTipo(true)}
@@ -1089,72 +1104,6 @@ export default function TransacoesScreen() {
           </TouchableOpacity>
         </View>
       </View>
-
-      {/* FILTRO DE STATUS */}
-      {false && <View style={{ flexDirection: "row", paddingHorizontal: 15, paddingBottom: 8, gap: 8 }}>
-        {(["todos", "concluidos", "pendentes"] as const).map((opcao) => {
-          const ativo = filtroStatus === opcao;
-          const label = opcao === "todos" ? "Todos" : opcao === "concluidos" ? "Concluídos" : "Pendentes";
-          const cor = opcao === "concluidos" ? "#2A9D8F" : opcao === "pendentes" ? "#E9C46A" : Cores.textoPrincipal;
-          return (
-            <TouchableOpacity
-              key={opcao}
-              onPress={() => { setFiltroStatus(opcao); setPaginaAtual(1); }}
-              style={{
-                flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6,
-                borderRadius: 20, borderWidth: 1,
-                backgroundColor: ativo ? cor + "22" : Cores.pillFundo,
-                borderColor: ativo ? cor : Cores.borda,
-              }}
-            >
-              {opcao !== "todos" && (
-                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: cor, marginRight: 5 }} />
-              )}
-              <Text style={{ fontSize: 12, fontWeight: ativo ? "700" : "500", color: ativo ? cor : Cores.textoSecundario }}>{label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>}
-
-      {/* SELETOR DE MÊS */}
-      {false && <View style={styles.mesesScrollContainer}>
-        <ScrollView ref={mesesScrollRef} horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 15 }}>
-          {mesesDoAno.map((yyyymm) => {
-            const isAtivo = mesSelecionado === yyyymm;
-            return (
-              <TouchableOpacity
-                key={yyyymm}
-                style={[styles.mesPill, { backgroundColor: isAtivo ? Cores.textoPrincipal : Cores.pillFundo, borderColor: isAtivo ? Cores.textoPrincipal : Cores.borda }]}
-                onPress={() => { setMesSelecionado(yyyymm); setPaginaAtual(1); }}
-              >
-                <Text style={[styles.mesPillText, { color: isAtivo ? Cores.fundo : Cores.textoSecundario }]}>
-                  {getNomeMes(yyyymm.split("-")[1])?.substring(0, 3)}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>}
-
-      {/* RESUMO RÁPIDO DO MÊS */}
-      {false && <View style={[styles.resumoBar, { backgroundColor: Cores.cardFundo, borderBottomColor: Cores.borda }]}>
-        <View style={styles.resumoItem}>
-          <MaterialIcons name="arrow-upward" size={14} color="#2A9D8F" />
-          <Text style={styles.resumoReceita}>{fmtReais(totalReceitas)}</Text>
-        </View>
-        <View style={[styles.resumoDivider, { backgroundColor: Cores.borda }]} />
-        <View style={styles.resumoItem}>
-          <MaterialIcons name="arrow-downward" size={14} color="#E76F51" />
-          <Text style={styles.resumoDespesa}>{fmtReais(totalDespesas)}</Text>
-        </View>
-        <View style={[styles.resumoDivider, { backgroundColor: Cores.borda }]} />
-        <View style={styles.resumoItem}>
-          <MaterialIcons name="account-balance" size={14} color={totalReceitas - totalDespesas >= 0 ? "#2A9D8F" : "#E76F51"} />
-          <Text style={[styles.resumoBalanco, { color: totalReceitas - totalDespesas >= 0 ? "#2A9D8F" : "#E76F51" }]}>
-            {fmtReais(totalReceitas - totalDespesas)}
-          </Text>
-        </View>
-      </View>}
 
       {/* LISTA DE TRANSAÇÕES */}
       <View style={styles.listContainer}>
@@ -1209,7 +1158,7 @@ export default function TransacoesScreen() {
               const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
               const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
               const isVencida = isPendente && dataT < hoje;
-              const transferencia = isTransferencia(t.descricao);
+              const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
               const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
               const prefixoValor = t.tipo === "receita" ? "+" : "-";
               const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
@@ -1414,7 +1363,7 @@ export default function TransacoesScreen() {
         const categoria = categorias.find((c) => c.id === t.categoria_id);
         const destinoId = getContaDestinoTransferencia(t.descricao);
         const destino = contas.find((c) => c.id === destinoId);
-        const transferencia = isTransferencia(t.descricao);
+        const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
         const concluida = t.status === "paga";
         return (
           <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoDetalhe(null)}>
@@ -1756,29 +1705,6 @@ export default function TransacoesScreen() {
               </TouchableOpacity>
             </View>
 
-            <Text style={[styles.yearFilterAvailableLabel, { color: Cores.textoSecundario }]}>ANOS COM REGISTROS</Text>
-            <View style={styles.yearFilterOptions}>
-              {anosDisponiveis.map((anoDisponivel) => {
-                const selecionado = anoSelecionado === anoDisponivel;
-                return (
-                  <TouchableOpacity
-                    key={anoDisponivel}
-                    onPress={() => {
-                      const mesNum = mesSelecionado.split("-")[1];
-                      setAnoSelecionado(anoDisponivel);
-                      setMesSelecionado(`${anoDisponivel}-${mesNum}`);
-                      setFiltroProximosSeteDias(false);
-                      setFiltroVencidas(false);
-                      setPaginaAtual(1);
-                    }}
-                    style={[styles.yearFilterOption, { backgroundColor: selecionado ? "#805AD5" : Cores.pillFundo, borderColor: selecionado ? "#805AD5" : Cores.borda }]}
-                  >
-                    <Text style={[styles.yearFilterOptionText, { color: selecionado ? "#FFF" : Cores.textoPrincipal }]}>{anoDisponivel}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
             <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#805AD5" }]} onPress={() => setModalFiltroAno(false)}>
               <Text style={styles.modalBotaoTexto}>Aplicar</Text>
             </TouchableOpacity>
@@ -2012,7 +1938,7 @@ const styles = StyleSheet.create({
   headerMonthRow: { height: 26, flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 2 },
   headerMonthButton: { width: 25, height: 25, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.14)" },
   headerMonthText: { color: "#FFF", fontSize: 13, fontWeight: "700", textTransform: "capitalize", minWidth: 130, textAlign: "center" },
-  headerTotals: { minHeight: 33, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 1, paddingHorizontal: 5 },
+  headerTotals: { minHeight: 33, flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginTop: 13, paddingHorizontal: 5 },
   headerTotalLabel: { color: "rgba(255,255,255,0.68)", fontSize: 9, marginBottom: 0 },
   headerIncome: { color: "#B7F5D8", fontSize: 14, fontWeight: "800" },
   headerExpense: { color: "#FFC0B5", fontSize: 14, fontWeight: "800", textAlign: "right" },
@@ -2030,13 +1956,13 @@ const styles = StyleSheet.create({
   },
   compactHeaderSearchInput: { flex: 1, minWidth: 0, paddingHorizontal: 5, paddingVertical: 3, color: "#FFF", fontSize: 11 },
   compactHeaderClear: { padding: 3 },
-  compactHeaderSummary: { flex: 1, minHeight: 28, flexDirection: "row", alignItems: "center", marginTop: 1 },
+  compactHeaderSummary: { flex: 1, minHeight: 28, flexDirection: "row", alignItems: "center", justifyContent: "flex-end", marginTop: 1 },
   compactMonthSelector: { flex: 1.2, minWidth: 0, flexDirection: "row", alignItems: "center" },
   compactMonthButton: { width: 23, height: 23, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.13)" },
   compactMonthText: { flex: 1, minWidth: 0, paddingHorizontal: 2, color: "#FFF", fontSize: 11, fontWeight: "700", textAlign: "center", textTransform: "capitalize" },
-  compactTotals: { flex: 1, minWidth: 0, alignItems: "flex-end", justifyContent: "center", gap: 1 },
-  compactIncome: { width: "100%", color: "#B7F5D8", fontSize: 10, fontWeight: "800", textAlign: "right" },
-  compactExpense: { width: "100%", color: "#FFC0B5", fontSize: 10, fontWeight: "800", textAlign: "right" },
+  compactTotals: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
+  compactIncome: { flex: 1, color: "#B7F5D8", fontSize: 10, fontWeight: "800", textAlign: "left" },
+  compactExpense: { flex: 1, color: "#FFC0B5", fontSize: 10, fontWeight: "800", textAlign: "right" },
   statusFilters: { flexDirection: "row", gap: 7, paddingHorizontal: 14, marginTop: 14, marginBottom: 12 },
   statusFilter: { flex: 1, paddingVertical: 8, borderRadius: 18, borderWidth: 1, alignItems: "center" },
   statusFilterContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
@@ -2056,6 +1982,10 @@ const styles = StyleSheet.create({
   clearFiltersButton: { minHeight: 32, paddingHorizontal: 9, borderRadius: 10, flexDirection: "row", alignItems: "center", gap: 4 },
   clearFiltersText: { color: "#E76F51", fontSize: 11, fontWeight: "800" },
   filterButtonsRow: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  periodSelector: { minHeight: 50, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", marginBottom: 8 },
+  periodSelectorArrow: { width: 48, alignSelf: "stretch", alignItems: "center", justifyContent: "center" },
+  periodSelectorCenter: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, paddingHorizontal: 6 },
+  periodSelectorText: { fontSize: 14, fontWeight: "900", textTransform: "capitalize" },
   mainFilterButton: { flexGrow: 1, flexBasis: "46%", minWidth: 0, minHeight: 62, justifyContent: "center", paddingVertical: 9, paddingHorizontal: 11, borderRadius: 13, borderWidth: 1 },
   mainFilterLabelRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 5 },
   mainFilterLabel: { fontSize: 8, fontWeight: "800", letterSpacing: 0.45 },

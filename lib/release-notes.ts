@@ -5,11 +5,13 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-01-telefone-opcional",
+  id: "2.0.0-2026-08-02-historico-categorias-objetivos",
   items: [
-    "O telefone deixou de bloquear o acesso e agora é uma informação opcional",
-    "A confirmação por e-mail continua protegendo a criação e as alterações da conta",
-    "A área Segurança agora identifica com clareza quando um telefone não foi verificado",
-    "Termos de Uso e Política de Privacidade foram atualizados para refletir essa mudança",
+    "Histórico com seleção mais simples de mês e ano junto aos filtros",
+    "Categorias podem ser excluídas ou arquivadas sem mover seus lançamentos",
+    "Parcelamentos permitem apagar todas as parcelas que ainda estão em aberto",
+    "Transferências para objetivos mostram a descrição e não entram no balanço mensal",
+    "Objetivos mostram a previsão de saldo até o fim do ano",
+    "Tela de acesso protegido e login receberam melhorias visuais",
   ],
 } as const;

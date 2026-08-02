@@ -476,6 +476,12 @@ export default function LoginScreen() {
                 styles.formPanel,
                 { backgroundColor: theme.surface, borderColor: theme.border },
                 isWide ? styles.formPanelWide : styles.formPanelMobile,
+                !isWide && Platform.OS === "web" && {
+                  width: Math.min(Math.max(viewportWidth - 74, 0), 520),
+                  marginHorizontal: 0,
+                  marginLeft: 15,
+                  alignSelf: "flex-start",
+                },
               ]}
             >
               <View style={styles.formInner}>
@@ -938,9 +944,8 @@ const styles = StyleSheet.create({
   formPanel: { borderWidth: 1 },
   formPanelMobile: {
     zIndex: 3,
-    width: "94%",
-    boxSizing: "border-box",
-    alignSelf: "center",
+    alignSelf: "stretch",
+    marginHorizontal: 15,
     marginTop: -38,
     paddingHorizontal: 21,
     paddingTop: 26,

@@ -18,6 +18,11 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import {
+  descricaoTransferenciaObjetivo,
+  getMovimentoObjetivo,
+  type OperacaoObjetivo,
+} from "../../lib/transacoes";
 import { fmtReais } from "../../lib/utils";
 import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
@@ -84,6 +89,25 @@ interface AgendamentoObjetivo {
   data_vencimento: string;
   descricao: string;
 }
+
+const normalizarNomeObjetivo = (nome: string): string =>
+  nome.trim().toLocaleLowerCase("pt-BR");
+
+const movimentoPertenceAoObjetivo = (
+  descricao: string,
+  caixa: Pick<Caixinha, "id" | "nome">,
+  operacao?: OperacaoObjetivo,
+): boolean => {
+  const movimento = getMovimentoObjetivo(descricao);
+  if (!movimento || (operacao && movimento.operacao !== operacao)) return false;
+
+  if (movimento.objetivoId !== null) {
+    return movimento.objetivoId === caixa.id;
+  }
+
+  return movimento.nomeLegado !== undefined
+    && normalizarNomeObjetivo(movimento.nomeLegado) === normalizarNomeObjetivo(caixa.nome);
+};
 
 const PALETA_CORES = [
   "#2A9D8F","#E9C46A","#F4A261","#E76F51",
@@ -186,16 +210,16 @@ export default function CaixinhasScreen() {
         supabase
           .from("transacoes")
           .select("id, tipo, valor, status, data_vencimento, descricao")
-          .eq("status", "pendente")
-          .eq("tipo", "despesa")
-          .like("descricao", "Guardar em: %"),
+          .eq("status", "pendente"),
       ]);
       if (resCaixinhas.data) setCaixinhas(resCaixinhas.data.map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })));
       if (resContas.data) setContas(resContas.data);
-      setAgendamentosObjetivos((resAgendamentos.data ?? []).map((agendamento) => ({
-        ...agendamento,
-        valor: Number(agendamento.valor),
-      })));
+      setAgendamentosObjetivos((resAgendamentos.data ?? [])
+        .filter((agendamento) => getMovimentoObjetivo(agendamento.descricao) !== null)
+        .map((agendamento) => ({
+          ...agendamento,
+          valor: Number(agendamento.valor),
+        })));
       const parceria = resParceria.data?.[0];
       setTemParceiro(!!parceria);
       if (parceria) {
@@ -225,16 +249,35 @@ export default function CaixinhasScreen() {
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
   const totalGuardado = caixinhas.reduce((acc, curr) => acc + Number(curr.saldo_atual), 0);
+  const anoAtual = new Date().getFullYear();
+  const fimDoAnoAtual = `${anoAtual}-12-31`;
+
+  const totalAgendadoAteFimDoAno = agendamentosObjetivos.reduce((total, agendamento) => {
+    const dataAgendada = (agendamento.data_vencimento ?? "").slice(0, 10);
+    const objetivo = caixinhas.find((caixa) =>
+      movimentoPertenceAoObjetivo(agendamento.descricao, caixa, "guardar")
+    );
+
+    if (
+      !objetivo
+      || agendamento.status !== "pendente"
+      || !dataAgendada
+      || dataAgendada > fimDoAnoAtual
+    ) {
+      return total;
+    }
+
+    return total + Number(agendamento.valor);
+  }, 0);
+  const previsaoFimDoAno = totalGuardado + totalAgendadoAteFimDoAno;
 
   const calcularPrevisaoObjetivo = (caixa: Caixinha): number | null => {
     if (!caixa.data_prazo || diasAteData(caixa.data_prazo) < 0) return null;
 
-    const descricaoObjetivo = `Guardar em: ${caixa.nome}`;
     const totalAgendadoAtePrazo = agendamentosObjetivos.reduce((total, agendamento) => {
       const dataAgendada = (agendamento.data_vencimento ?? "").slice(0, 10);
-      const pertenceAoObjetivo = agendamento.tipo === "despesa"
-        && agendamento.status === "pendente"
-        && agendamento.descricao === descricaoObjetivo;
+      const pertenceAoObjetivo = agendamento.status === "pendente"
+        && movimentoPertenceAoObjetivo(agendamento.descricao, caixa, "guardar");
 
       if (!pertenceAoObjetivo || !dataAgendada || dataAgendada > caixa.data_prazo!) return total;
       return total + Number(agendamento.valor);
@@ -355,10 +398,8 @@ export default function CaixinhasScreen() {
       .eq("user_id", session?.user?.id)
       .order("data_vencimento", { ascending: false });
 
-    const nomeGuardar = `Guardar em: ${caixa.nome}`;
-    const nomeResgate = `Resgate de: ${caixa.nome}`;
     const dataFiltrada = (data ?? []).filter(
-      (t) => t.descricao === nomeGuardar || t.descricao === nomeResgate
+      (t) => movimentoPertenceAoObjetivo(t.descricao, caixa)
     );
 
     setHistoricoMovimentos(dataFiltrada);
@@ -385,9 +426,12 @@ export default function CaixinhasScreen() {
     if (!caixaSelecionada) return;
     setLoadingMovimento(true);
 
-    const descricao = tipoMovimento === "guardar"
-      ? `Guardar em: ${caixaSelecionada.nome}`
-      : `Resgate de: ${caixaSelecionada.nome}`;
+    const descricao = descricaoTransferenciaObjetivo(
+      "",
+      caixaSelecionada.nome,
+      caixaSelecionada.id,
+      tipoMovimento,
+    );
 
     // Atômico: primeiro insere a transação, só depois atualiza saldo
     const { error: errorTrans } = await supabase.from("transacoes").insert([{
@@ -450,8 +494,12 @@ export default function CaixinhasScreen() {
     return m.user_id === filtroUsuarioHistorico;
   });
 
-  const totalGuardadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Guardar")).reduce((acc, m) => acc + Number(m.valor), 0);
-  const totalResgatadoHist = movimentosFiltrados.filter((m) => m.descricao.startsWith("Resgate")).reduce((acc, m) => acc + Number(m.valor), 0);
+  const totalGuardadoHist = movimentosFiltrados
+    .filter((movimento) => getMovimentoObjetivo(movimento.descricao)?.operacao === "guardar")
+    .reduce((total, movimento) => total + Number(movimento.valor), 0);
+  const totalResgatadoHist = movimentosFiltrados
+    .filter((movimento) => getMovimentoObjetivo(movimento.descricao)?.operacao === "resgatar")
+    .reduce((total, movimento) => total + Number(movimento.valor), 0);
   const objetivosAlcancados = caixinhas.filter(
     (caixa) => Number(caixa.saldo_atual) >= Number(caixa.meta_valor)
   ).length;
@@ -536,7 +584,11 @@ export default function CaixinhasScreen() {
               <Text style={styles.totalCardTitle}>Total guardado</Text>
               <Text style={styles.totalCardAmount}>{fmtReais(totalGuardado)}</Text>
             </View>
-            <Text style={styles.totalCardProgress}>{resumoProgresso}</Text>
+            <View style={styles.headerForecast}>
+              <Text style={styles.forecastLabel}>Previsto até dez. {anoAtual}</Text>
+              <Text style={styles.forecastAmount}>{fmtReais(previsaoFimDoAno)}</Text>
+              <Text style={styles.totalCardProgress}>{resumoProgresso}</Text>
+            </View>
           </View>
         </Animated.View>
 
@@ -561,6 +613,9 @@ export default function CaixinhasScreen() {
               {fmtReais(totalGuardado)}
             </Text>
           </View>
+          <Text style={styles.compactHeaderForecast} numberOfLines={1}>
+            Previsto até dez. {anoAtual}: {fmtReais(previsaoFimDoAno)}
+          </Text>
           <Text style={styles.compactHeaderProgress} numberOfLines={1}>
             {resumoProgresso}
           </Text>
@@ -1172,7 +1227,7 @@ export default function CaixinhasScreen() {
                 </Text>
               ) : (
                 movimentosFiltrados.map((mov) => {
-                  const isGuardar = mov.descricao.startsWith("Guardar");
+                  const isGuardar = getMovimentoObjetivo(mov.descricao)?.operacao === "guardar";
                   const conta = contas.find((c) => c.id === mov.conta_id);
                   const partes = (mov.data_vencimento || "0000-00-00").split("-");
                   const isEu = mov.user_id === session?.user?.id;
@@ -1268,14 +1323,15 @@ const styles = StyleSheet.create({
   },
   totalCardTitle: { color: "rgba(255,255,255,0.72)", fontSize: 10, lineHeight: 12, fontWeight: "600" },
   totalCardAmount: { color: "#FFF", fontSize: 23, lineHeight: 27, fontWeight: "900" },
+  headerForecast: { alignItems: "flex-end", flexShrink: 1, maxWidth: "54%" },
+  forecastLabel: { color: "rgba(255,255,255,0.72)", fontSize: 9, lineHeight: 11, fontWeight: "600" },
+  forecastAmount: { color: "#FFF", fontSize: 15, lineHeight: 18, fontWeight: "800", textAlign: "right" },
   totalCardProgress: {
     color: "rgba(255,255,255,0.76)",
-    fontSize: 10,
-    lineHeight: 12,
+    fontSize: 9,
+    lineHeight: 11,
     fontWeight: "600",
     textAlign: "right",
-    maxWidth: "46%",
-    paddingBottom: 2,
   },
   compactHeaderTopRow: {
     flexDirection: "row",
@@ -1285,11 +1341,18 @@ const styles = StyleSheet.create({
   },
   compactHeaderTitle: { color: "#FFF", fontSize: 18, fontWeight: "800" },
   compactHeaderAmount: { color: "#FFF", fontSize: 20, fontWeight: "900", flexShrink: 1, textAlign: "right" },
+  compactHeaderForecast: {
+    color: "rgba(255,255,255,0.82)",
+    fontSize: 10,
+    fontWeight: "700",
+    marginTop: 1,
+    textAlign: "right",
+  },
   compactHeaderProgress: {
     color: "rgba(255,255,255,0.7)",
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: "600",
-    marginTop: 2,
+    marginTop: 0,
     textAlign: "right",
   },
   addButton: { backgroundColor: "rgba(255,255,255,0.16)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20 },

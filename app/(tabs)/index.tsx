@@ -24,13 +24,16 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
-import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
+import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import {
   adicionarRecorrencia,
+  adicionarIdSerie,
   dataEfetivaTransacao,
   descricaoTransferencia,
+  descricaoTransferenciaObjetivo,
   getContaDestinoTransferencia,
+  isMovimentoObjetivo,
   isTransferencia,
   type FrequenciaRecorrencia,
   sufixoRecorrencia,
@@ -266,6 +269,11 @@ export default function Dashboard() {
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
+  const corTipoTransacao = tipoTransacao === "despesa"
+    ? "#E76F51"
+    : tipoTransacao === "receita"
+      ? "#2A9D8F"
+      : "#457B9D";
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
@@ -322,6 +330,12 @@ export default function Dashboard() {
       return [{ ...transacao, tipo: "receita", conta_id: destinoId }];
     }
 
+    // Guardar ou resgatar de um objetivo afeta somente a conta de origem.
+    // É uma movimentação interna, mas precisa continuar compondo o saldo dela.
+    if (isMovimentoObjetivo(transacao.descricao)) {
+      return contasEscopoHomeIds.has(transacao.conta_id) ? [transacao] : [];
+    }
+
     // Transferências legadas não informam o destino. A linha da conta é
     // segura em uma seleção individual; em um consolidado, seria duplicada.
     if (isTransferencia(transacao.descricao)) {
@@ -354,6 +368,9 @@ export default function Dashboard() {
   const transacoesDoMesConsideradas = transacoesDoMes.filter(
     (t) => !escopoHomeEhTodas || !isPagamentoFatura(t.descricao)
   );
+  const transacoesFinanceirasDoMes = transacoesDoMesConsideradas.filter(
+    (t) => !isMovimentoObjetivo(t.descricao)
+  );
   // As compras do cartão ainda não possuem conta vinculada no banco. Por
   // isso, entram apenas na visão de todas as contas, evitando atribuição errada.
   const comprasCartaoDoMes = escopoHomeEhTodas
@@ -361,10 +378,10 @@ export default function Dashboard() {
       `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}`
     ))
     : [];
-  const receitasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
-  const receitasRealizadasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
-  const despesasRealizadasDoMes = transacoesDoMesConsideradas.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
+  const receitasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "receita").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "despesa").reduce((acc, curr) => acc + curr.valor, 0);
+  const receitasRealizadasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "receita" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
+  const despesasRealizadasDoMes = transacoesFinanceirasDoMes.filter((t) => t.tipo === "despesa" && t.status === "paga").reduce((acc, curr) => acc + curr.valor, 0);
   const balancoMensal = receitasRealizadasDoMes - despesasRealizadasDoMes;
   const ultimoDiaMesSelecionado = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0).getDate();
   const dataFimMesSelecionado = `${mesAtual.getFullYear()}-${String(mesAtual.getMonth() + 1).padStart(2, "0")}-${String(ultimoDiaMesSelecionado).padStart(2, "0")}`;
@@ -435,28 +452,12 @@ export default function Dashboard() {
   // Cada movimentação entra em exatamente um bucket. Assim, categorias
   // arquivadas preservam o histórico e registros legados nunca somem do gráfico.
   const categoriasPorId = new Map(categorias.map((categoria) => [String(categoria.id), categoria]));
-  const nomeCategoriaNormalizado = (nome?: string | null) => (nome ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLocaleLowerCase("pt-BR");
   const categoriaCompativel = (categoria: Categoria, tipo: TipoFinanceiro) => {
     const tipoCategoria = (categoria.tipo ?? "").trim().toLocaleLowerCase("pt-BR");
     return tipoCategoria === tipo || tipoCategoria === "ambos";
   };
-  const categoriaOutrosPara = (tipo: TipoFinanceiro) => categorias
-    .filter((categoria) => nomeCategoriaNormalizado(categoria.nome) === "outros" && categoriaCompativel(categoria, tipo))
-    .sort((a, b) => {
-      const aExata = a.tipo === tipo ? 1 : 0;
-      const bExata = b.tipo === tipo ? 1 : 0;
-      const aAtiva = a.ativa !== 0 ? 1 : 0;
-      const bAtiva = b.ativa !== 0 ? 1 : 0;
-      return bExata - aExata || bAtiva - aAtiva;
-    })[0];
-
   const montarDistribuicao = (tipo: TipoFinanceiro, somenteRealizadas: boolean) => {
     const buckets = new Map<string, DadoDistribuicaoCategoria>();
-    const categoriaOutros = categoriaOutrosPara(tipo);
 
     const somarBucket = (chave: string, dados: Omit<DadoDistribuicaoCategoria, "valor">, valorBruto: number) => {
       const valor = Number(valorBruto);
@@ -469,20 +470,16 @@ export default function Dashboard() {
       }
     };
 
-    const somarOutros = (valor: number) => somarBucket("especial:outros", {
-      nome: "Outros",
-      cor: categoriaOutros?.cor || "#6D7280",
-      icone: categoriaOutros?.icone || "label",
+    const somarSemCategoria = (valor: number) => somarBucket("especial:sem-categoria", {
+      nome: "Sem categoria",
+      cor: "#6D7280",
+      icone: "help-outline",
     }, valor);
 
-    const somarCategoriaOuOutros = (categoriaId: number | null, valor: number) => {
+    const somarCategoriaOuSemCategoria = (categoriaId: number | null, valor: number) => {
       const categoria = categoriaId == null ? undefined : categoriasPorId.get(String(categoriaId));
       if (!categoria || !categoriaCompativel(categoria, tipo)) {
-        somarOutros(valor);
-        return;
-      }
-      if (nomeCategoriaNormalizado(categoria.nome) === "outros") {
-        somarOutros(valor);
+        somarSemCategoria(valor);
         return;
       }
       somarBucket(`categoria:${categoria.id}`, {
@@ -492,7 +489,7 @@ export default function Dashboard() {
       }, valor);
     };
 
-    transacoesDoMesConsideradas.forEach((transacao) => {
+    transacoesFinanceirasDoMes.forEach((transacao) => {
       if (transacao.tipo !== tipo || (somenteRealizadas && transacao.status !== "paga")) return;
 
       if (isTransferencia(transacao.descricao)) {
@@ -504,22 +501,13 @@ export default function Dashboard() {
         return;
       }
 
-      const descricao = (transacao.descricao ?? "").trim();
-      const movimentacaoObjetivo = tipo === "despesa"
-        ? descricao.toLocaleLowerCase("pt-BR").startsWith("guardar em:")
-        : descricao.toLocaleLowerCase("pt-BR").startsWith("resgate de:");
-      if (movimentacaoObjetivo) {
-        somarBucket("especial:objetivos", { nome: "Objetivos", cor: "#264653", icone: "savings" }, transacao.valor);
-        return;
-      }
-
-      somarCategoriaOuOutros(transacao.categoria_id, transacao.valor);
+      somarCategoriaOuSemCategoria(transacao.categoria_id, transacao.valor);
     });
 
     // A compra no cartão é realizada na data da compra, mesmo que a fatura ainda
     // esteja em aberto. O pagamento da fatura é excluído na visão consolidada.
     if (tipo === "despesa") {
-      comprasCartaoDoMes.forEach((item) => somarCategoriaOuOutros(item.categoria_id, Number(item.valor)));
+      comprasCartaoDoMes.forEach((item) => somarCategoriaOuSemCategoria(item.categoria_id, Number(item.valor)));
     }
 
     return [...buckets.values()]
@@ -730,21 +718,28 @@ export default function Dashboard() {
   };
 
   const deletarCategoria = async (cat: Categoria) => {
-    const { count } = await supabase
-      .from("transacoes")
-      .select("id", { count: "exact", head: true })
-      .eq("categoria_id", cat.id);
+    const [referenciasTransacoes, referenciasCartao] = await Promise.all([
+      supabase.from("transacoes").select("id", { count: "exact", head: true }).eq("categoria_id", cat.id),
+      supabase.from("fatura_itens").select("id", { count: "exact", head: true }).eq("categoria_id", cat.id),
+    ]);
 
-    if (count && count > 0) {
+    if (referenciasTransacoes.error || referenciasCartao.error) {
+      return Alert.alert("Não foi possível verificar", "Confira sua conexão e tente excluir a categoria novamente.");
+    }
+
+    const totalReferencias = (referenciasTransacoes.count ?? 0) + (referenciasCartao.count ?? 0);
+
+    if (totalReferencias > 0) {
       Alert.alert(
-        "Categoria com Lançamentos",
-        `A categoria "${cat.nome}" possui lançamentos vinculados e não pode ser apagada.\n\nDeseja arquivá-la em vez disso?`,
+        "Categoria com lançamentos",
+        `A categoria "${cat.nome}" possui lançamentos vinculados. Por segurança, ela será apenas arquivada.\n\nOs lançamentos atuais continuarão nesta categoria e não serão movidos para "Outros".`,
         [
           { text: "Cancelar", style: "cancel" },
           {
             text: "Arquivar",
             onPress: async () => {
-              await supabase.from("categorias").update({ ativa: 0 }).eq("id", cat.id);
+              const { error } = await supabase.from("categorias").update({ ativa: 0 }).eq("id", cat.id);
+              if (error) return Alert.alert("Erro", "Não foi possível arquivar a categoria.");
               if (catEditando?.id === cat.id) setCatEditando(null);
               carregarDados();
             },
@@ -758,7 +753,8 @@ export default function Dashboard() {
           text: "Apagar",
           style: "destructive",
           onPress: async () => {
-            await supabase.from("categorias").delete().eq("id", cat.id);
+            const { error } = await supabase.from("categorias").delete().eq("id", cat.id);
+            if (error) return Alert.alert("Erro", "Não foi possível apagar a categoria.");
             if (catEditando?.id === cat.id) setCatEditando(null);
             carregarDados();
           },
@@ -901,6 +897,11 @@ export default function Dashboard() {
 
     const statusBd = foiPago ? "paga" : "pendente";
     const novasTransacoes: any[] = [];
+    const serieId = frequencia === "unica"
+      ? null
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    const comIdentificadorDaSerie = (descricao: string) =>
+      serieId ? adicionarIdSerie(descricao, serieId) : descricao;
 
     for (let i = 0; i < totalRepeticoes; i++) {
       const dataIteracao = frequencia === "fixa"
@@ -916,17 +917,28 @@ export default function Dashboard() {
       if (tipoTransacao === "transferencia") {
         if (!contaSelecionadaId || (!contaDestinoId && !caixinhaDestinoId)) return Alert.alert("Aviso", "Seleciona a origem e destino.");
         if (caixinhaDestinoId) {
-          // Transferência para objetivo: cria despesa com descrição "Guardar em: X"
           const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
           if (!caixa) return Alert.alert("Aviso", "Objetivo não encontrado.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: `Guardar em: ${caixa.nome}`, categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({
+            tipo: "despesa",
+            valor: valorFinal,
+            data_vencimento: dataFormatadaSql,
+            data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null,
+            status: statusFinal,
+            descricao: comIdentificadorDaSerie(
+              descricaoTransferenciaObjetivo(descFinal, caixa.nome, caixa.id, "guardar"),
+            ),
+            categoria_id: null,
+            conta_id: contaSelecionadaId,
+            user_id: session.user.id,
+          });
         } else {
           if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
-          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: descricaoTransferencia(descFinal, contaDestinoId!), categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
+          novasTransacoes.push({ tipo: "despesa", valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: comIdentificadorDaSerie(descricaoTransferencia(descFinal, contaDestinoId!)), categoria_id: null, conta_id: contaSelecionadaId, user_id: session.user.id });
         }
       } else {
         if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
-        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: descFinal, categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
+        novasTransacoes.push({ tipo: tipoTransacao, valor: valorFinal, data_vencimento: dataFormatadaSql, data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null, status: statusFinal, descricao: comIdentificadorDaSerie(descFinal), categoria_id: catSelecionadaId, conta_id: contaSelecionadaId, user_id: session.user.id });
       }
     }
 
@@ -1787,10 +1799,6 @@ export default function Dashboard() {
                     </TouchableOpacity>
                   ))}
                 </View>
-                <TouchableOpacity style={[styles.botaoApagar, { marginBottom: 15 }]} onPress={() => deletarCategoria(catEditando)}>
-                  <MaterialIcons name="delete-outline" size={16} color="#FFF" />
-                  <Text style={styles.botaoApagarTexto}>Apagar Categoria</Text>
-                </TouchableOpacity>
                 <View style={styles.modalButtons}>
                   <Button title="Voltar" color="#999" onPress={() => setCatEditando(null)} />
                   <Button title="Salvar" color="#2A9D8F" onPress={salvarEdicaoCategoria} />
@@ -1825,6 +1833,9 @@ export default function Dashboard() {
                           </TouchableOpacity>
                           <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={styles.iconeBotao}>
                             <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
+                          </TouchableOpacity>
+                          <TouchableOpacity onPress={() => deletarCategoria(cat)} style={styles.iconeBotao} accessibilityLabel={`Excluir ${cat.nome}`}>
+                            <MaterialIcons name="delete-outline" size={18} color="#E76F51" />
                           </TouchableOpacity>
                         </View>
                       </View>
@@ -2015,8 +2026,8 @@ export default function Dashboard() {
           <View style={[styles.transactionSheet, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={[styles.transactionHandle, { backgroundColor: Cores.borda }]} />
             <View style={styles.transactionHeader}>
-              <View style={[styles.transactionHeaderIcon, { backgroundColor: Cores.pillAtivo }]}>
-                <MaterialIcons name="swap-horiz" size={24} color={novoTema.primary} />
+              <View style={[styles.transactionHeaderIcon, { backgroundColor: `${corTipoTransacao}22` }]}>
+                <MaterialIcons name="swap-horiz" size={24} color={corTipoTransacao} />
               </View>
               <View style={styles.transactionHeaderCopy}>
                 <Text style={[styles.transactionTitle, { color: Cores.textoPrincipal }]}>Nova transação</Text>
@@ -2042,7 +2053,7 @@ export default function Dashboard() {
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Repetição</Text>
               <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
                 {(["unica", "parcelada", "fixa"] as const).map((freq) => (
-                  <TouchableOpacity key={freq} style={[styles.freqButton, styles.transactionChoice, frequencia === freq && { backgroundColor: novoTema.primary }]} onPress={() => {
+                  <TouchableOpacity key={freq} style={[styles.freqButton, styles.transactionChoice, frequencia === freq && { backgroundColor: corTipoTransacao }]} onPress={() => {
                     setFrequencia(freq);
                     if (freq !== "unica") setFoiPago(false);
                   }}>
@@ -2059,7 +2070,7 @@ export default function Dashboard() {
                     {(["semanal", "mensal", "anual"] as const).map((periodo) => (
                       <TouchableOpacity
                         key={periodo}
-                        style={[styles.freqButton, styles.transactionChoice, frequenciaFixa === periodo && { backgroundColor: novoTema.primary }]}
+                        style={[styles.freqButton, styles.transactionChoice, frequenciaFixa === periodo && { backgroundColor: corTipoTransacao }]}
                         onPress={() => setFrequenciaFixa(periodo)}
                       >
                         <Text style={[styles.freqButtonText, { color: frequenciaFixa === periodo ? "#FFF" : Cores.textoSecundario }]}>
@@ -2074,10 +2085,10 @@ export default function Dashboard() {
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Status</Text>
                   <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
-                    <TouchableOpacity style={[styles.freqButton, styles.transactionChoice, foiPago && { backgroundColor: novoTema.primary }]} onPress={() => setFoiPago(true)}>
+                    <TouchableOpacity style={[styles.freqButton, styles.transactionChoice, foiPago && { backgroundColor: corTipoTransacao }]} onPress={() => setFoiPago(true)}>
                       <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, foiPago ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "Já Recebido" : "Já Pago"}</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.freqButton, styles.transactionChoice, !foiPago && { backgroundColor: novoTema.primary }]} onPress={() => setFoiPago(false)}>
+                    <TouchableOpacity style={[styles.freqButton, styles.transactionChoice, !foiPago && { backgroundColor: corTipoTransacao }]} onPress={() => setFoiPago(false)}>
                       <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
                     </TouchableOpacity>
                   </View>
@@ -2091,14 +2102,14 @@ export default function Dashboard() {
               </View>
 
               <TouchableOpacity style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]} onPress={() => setMostrarCalendario(true)}>
-                <MaterialIcons name="calendar-today" size={19} color={novoTema.primary} />
+                <MaterialIcons name="calendar-today" size={19} color={corTipoTransacao} />
                 <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
                 <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginLeft: "auto" }} />
               </TouchableOpacity>
               {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
               <View style={styles.rowInputs}>
                 <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flex: 1 }]}>
-                  <View style={[styles.transactionCurrency, { backgroundColor: Cores.pillAtivo }]}><Text style={{ color: novoTema.primary, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
+                  <View style={[styles.transactionCurrency, { backgroundColor: `${corTipoTransacao}22` }]}><Text style={{ color: corTipoTransacao, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
                   <TextInput style={[styles.transactionTextInput, { color: Cores.textoPrincipal, fontSize: 17, fontWeight: "700" }]} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))} keyboardType="number-pad" selectTextOnFocus />
                 </View>
               </View>
@@ -2107,7 +2118,7 @@ export default function Dashboard() {
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>O valor informado representa</Text>
                   <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
                     {(["parcela", "total"] as const).map((modo) => (
-                      <TouchableOpacity key={modo} style={[styles.freqButton, styles.transactionChoice, modoValorParcelado === modo && { backgroundColor: novoTema.primary }]} onPress={() => setModoValorParcelado(modo)}>
+                      <TouchableOpacity key={modo} style={[styles.freqButton, styles.transactionChoice, modoValorParcelado === modo && { backgroundColor: corTipoTransacao }]} onPress={() => setModoValorParcelado(modo)}>
                         <Text style={[styles.freqButtonText, { color: modoValorParcelado === modo ? "#FFF" : Cores.textoSecundario }]}>{modo === "parcela" ? "Valor da parcela" : "Valor total"}</Text>
                       </TouchableOpacity>
                     ))}
@@ -2134,8 +2145,8 @@ export default function Dashboard() {
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
                 {contas.filter(c => !c.arquivado).map((conta) => (
-                  <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? FinFlowColors.blue : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
-                    <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? FinFlowColors.blue : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                  <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
+                    <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
                     <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
                   </TouchableOpacity>
                 ))}
@@ -2146,13 +2157,13 @@ export default function Dashboard() {
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Conta ou objetivo de destino</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
                     {contas.filter(c => !c.arquivado).map((conta) => (
-                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: !caixinhaDestinoId && contaDestinoId === conta.id ? novoTema.primary : Cores.borda }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
-                        <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? novoTema.primary : Cores.textoSecundario} style={{ marginRight: 6 }} />
+                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: !caixinhaDestinoId && contaDestinoId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
+                        <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
                         <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
                       </TouchableOpacity>
                     ))}
                     {caixinhas.map((caixa) => (
-                      <TouchableOpacity key={`caixa-dest-${caixa.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: caixinhaDestinoId === caixa.id ? caixa.cor : Cores.borda }]} onPress={() => { setCaixinhaDestinoId(caixa.id); setContaDestinoId(null); }}>
+                      <TouchableOpacity key={`caixa-dest-${caixa.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: caixinhaDestinoId === caixa.id ? corTipoTransacao : Cores.borda }]} onPress={() => { setCaixinhaDestinoId(caixa.id); setContaDestinoId(null); }}>
                         <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: caixa.cor, alignItems: "center", justifyContent: "center", marginRight: 6 }}>
                           <MaterialIcons name={caixa.icone as any} size={11} color="#FFF" />
                         </View>
@@ -2166,7 +2177,7 @@ export default function Dashboard() {
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Categoria</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
                     {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).map((cat) => (
-                      <TouchableOpacity key={cat.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: catSelecionadaId === cat.id ? cat.cor : Cores.borda }]} onPress={() => setCatSelecionadaId(cat.id)}>
+                      <TouchableOpacity key={cat.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: catSelecionadaId === cat.id ? corTipoTransacao : Cores.borda }]} onPress={() => setCatSelecionadaId(cat.id)}>
                         <View style={[styles.colorDot, { backgroundColor: cat.cor }]} />
                         <Text style={{ color: Cores.textoPrincipal }}>{cat.nome}</Text>
                       </TouchableOpacity>
@@ -2177,7 +2188,7 @@ export default function Dashboard() {
 
               <View style={styles.transactionActions}>
                 <Button title="Cancelar" color={Cores.textoSecundario} onPress={() => setModalTransVisivel(false)} disabled={loadingTrans} style={styles.transactionActionButton} />
-                <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color={novoTema.primary} onPress={salvarTransacao} disabled={loadingTrans} style={styles.transactionActionButton} />
+                <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color={corTipoTransacao} onPress={salvarTransacao} disabled={loadingTrans} style={styles.transactionActionButton} />
               </View>
             </ScrollView>
           </View>
