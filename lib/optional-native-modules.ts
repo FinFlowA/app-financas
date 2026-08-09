@@ -9,6 +9,20 @@
  * contraparte nativa nunca derrube a inicializacao do aplicativo.
  */
 
+import { runtimeVersion } from "expo-updates";
+import { Platform } from "react-native";
+
+/**
+ * O primeiro binario 2.0 usa React Native Bridgeless. Nesse ambiente, tentar
+ * resolver um pacote nativo ausente pode disparar uma excecao fatal do host
+ * antes que o `try/catch` JavaScript consiga intercepta-la. Portanto, nesse
+ * runtime nao basta tratar a falha: nenhum dos pacotes novos pode ser
+ * solicitado ao Metro.
+ */
+const IS_LEGACY_NATIVE_RUNTIME =
+  (Platform.OS === "android" || Platform.OS === "ios")
+  && runtimeVersion === "2.0.0";
+
 export type OptionalSecureStore = {
   getItemAsync(key: string): Promise<string | null>;
   setItemAsync(key: string, value: string, options?: { keychainAccessible?: unknown }): Promise<void>;
@@ -48,6 +62,7 @@ let secureStoreModule: OptionalSecureStore | null = null;
 export function getOptionalSecureStore(): OptionalSecureStore | null {
   if (secureStoreResolved) return secureStoreModule;
   secureStoreResolved = true;
+  if (IS_LEGACY_NATIVE_RUNTIME) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const candidate = require("expo-secure-store") as Partial<OptionalSecureStore>;
@@ -70,6 +85,7 @@ let netInfoModule: OptionalNetInfo | null = null;
 export function getOptionalNetInfo(): OptionalNetInfo | null {
   if (netInfoResolved) return netInfoModule;
   netInfoResolved = true;
+  if (IS_LEGACY_NATIVE_RUNTIME) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const loaded = require("@react-native-community/netinfo") as {
@@ -94,6 +110,7 @@ let screenCaptureModule: OptionalScreenCapture | null = null;
 export function getOptionalScreenCapture(): OptionalScreenCapture | null {
   if (screenCaptureResolved) return screenCaptureModule;
   screenCaptureResolved = true;
+  if (IS_LEGACY_NATIVE_RUNTIME) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const candidate = require("expo-screen-capture") as Partial<OptionalScreenCapture>;
@@ -115,6 +132,7 @@ let expoCryptoModule: OptionalExpoCrypto | null = null;
 export function getOptionalExpoCrypto(): OptionalExpoCrypto | null {
   if (expoCryptoResolved) return expoCryptoModule;
   expoCryptoResolved = true;
+  if (IS_LEGACY_NATIVE_RUNTIME) return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const candidate = require("expo-crypto") as Partial<OptionalExpoCrypto>;

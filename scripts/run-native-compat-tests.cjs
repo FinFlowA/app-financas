@@ -22,6 +22,7 @@ const blockedModules = new Set([
   "expo-screen-capture",
   "expo-crypto",
 ]);
+const blockedLoadAttempts = [];
 
 const otaApplicationFiles = [
   path.join(root, "app", "_layout.tsx"),
@@ -44,7 +45,12 @@ for (const applicationFile of otaApplicationFiles) {
 
 const originalLoad = Module._load;
 Module._load = function loadWithoutNewNativeModules(request, parent, isMain) {
-  if (blockedModules.has(request)) throw new Error(`Native module unavailable: ${request}`);
+  if (request === "expo-updates") return { runtimeVersion: "2.0.0" };
+  if (request === "react-native") return { Platform: { OS: "android" } };
+  if (blockedModules.has(request)) {
+    blockedLoadAttempts.push(request);
+    throw new Error(`Native module unavailable: ${request}`);
+  }
   return originalLoad.call(this, request, parent, isMain);
 };
 
@@ -55,6 +61,11 @@ async function run() {
     assert.equal(compat.getOptionalNetInfo(), null);
     assert.equal(compat.getOptionalScreenCapture(), null);
     assert.equal(compat.getOptionalExpoCrypto(), null);
+    assert.deepEqual(
+      blockedLoadAttempts,
+      [],
+      "o runtime nativo 2.0.0 nao pode sequer solicitar pacotes ausentes",
+    );
 
     const firstId = compat.randomUuidCompat();
     const secondId = compat.randomUuidCompat();
@@ -67,6 +78,11 @@ async function run() {
     assert.equal(firstDigest, repeatedDigest);
     assert.notEqual(firstDigest, otherDigest);
     assert.match(firstDigest, /^[0-9a-f]{32}$/i);
+    assert.deepEqual(
+      blockedLoadAttempts,
+      [],
+      "os fallbacks tambem nao podem carregar pacotes nativos no runtime 2.0.0",
+    );
   } finally {
     Module._load = originalLoad;
     fs.rmSync(tempDir, { recursive: true, force: true });
