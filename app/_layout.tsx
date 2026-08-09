@@ -27,6 +27,7 @@ import {
   DeviceEventEmitter,
   Modal,
   Platform,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -207,6 +208,16 @@ export default function RootLayout() {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
   const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
+
+  const dispensarNovidades = useCallback(async () => {
+    try {
+      await AsyncStorage.setItem("@finflow_ultimas_novidades_exibidas", RELEASE_NOTES.id);
+    } catch (error) {
+      console.log("Não foi possível registrar a leitura das novidades:", error);
+    } finally {
+      setModalAtualizacao(null);
+    }
+  }, []);
   const [modalNotificacoes, setModalNotificacoes] = useState<"pergunta" | "ativado" | null>(null);
   const [decisoesCaixinha, setDecisoesCaixinha] = useState<DecisaoCaixinha[]>([]);
   const [definindoSaldoCaixinha, setDefinindoSaldoCaixinha] = useState(false);
@@ -1617,9 +1628,31 @@ export default function RootLayout() {
           decisoesCaixinha.length === 0 &&
           modalAtualizacao !== null
         }
+        onRequestClose={() => {
+          if (modalAtualizacao === "novidades") void dispensarNovidades();
+        }}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalLimite, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
+          <View
+            style={[
+              styles.modalLimite,
+              modalAtualizacao === "novidades" && styles.modalAtualizacaoCard,
+              { backgroundColor: isDark ? "#1E1E1E" : "#FFF" },
+            ]}
+          >
+            {modalAtualizacao === "novidades" && (
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Fechar novidades"
+                style={[
+                  styles.updateCloseButton,
+                  { backgroundColor: isDark ? "#2B3231" : "#EDF3F2" },
+                ]}
+                onPress={() => void dispensarNovidades()}
+              >
+                <MaterialIcons name="close" size={22} color={isDark ? "#E3E8E7" : "#42504E"} />
+              </TouchableOpacity>
+            )}
             <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
               {modalAtualizacao === "baixando"
                 ? <ActivityIndicator size="large" color="#2A9D8F" />
@@ -1647,20 +1680,25 @@ export default function RootLayout() {
                 <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D", marginBottom: 14 }]}>
                   Veja o que mudou nesta versão:
                 </Text>
-                <View style={[styles.updateList, { backgroundColor: isDark ? "#252B2A" : "#EEF7F5", borderColor: isDark ? "#334744" : "#D4EAE5" }]}>
-                  {RELEASE_NOTES.items.map((item) => (
-                    <View key={item} style={styles.updateItem}>
-                      <MaterialIcons name="check-circle" size={18} color="#2A9D8F" />
-                      <Text style={{ flex: 1, color: isDark ? "#DDD" : "#34404B", fontSize: 13, lineHeight: 19 }}>{item}</Text>
-                    </View>
-                  ))}
-                </View>
+                <ScrollView
+                  style={styles.updateScroll}
+                  contentContainerStyle={styles.updateScrollContent}
+                  showsVerticalScrollIndicator
+                  persistentScrollbar
+                  nestedScrollEnabled
+                >
+                  <View style={[styles.updateList, { backgroundColor: isDark ? "#252B2A" : "#EEF7F5", borderColor: isDark ? "#334744" : "#D4EAE5" }]}>
+                    {RELEASE_NOTES.items.map((item) => (
+                      <View key={item} style={styles.updateItem}>
+                        <MaterialIcons name="check-circle" size={18} color="#2A9D8F" />
+                        <Text style={{ flex: 1, color: isDark ? "#DDD" : "#34404B", fontSize: 13, lineHeight: 19 }}>{item}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </ScrollView>
                 <TouchableOpacity
-                  style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 18 }]}
-                  onPress={async () => {
-                    await AsyncStorage.setItem("@finflow_ultimas_novidades_exibidas", RELEASE_NOTES.id);
-                    setModalAtualizacao(null);
-                  }}
+                  style={[styles.modalLimiteBtnUpgrade, styles.updateContinueButton, { backgroundColor: "#2A9D8F" }]}
+                  onPress={() => void dispensarNovidades()}
                 >
                   <MaterialIcons name="check" size={18} color="#FFF" />
                   <Text style={styles.modalLimiteBtnText}>Continuar</Text>
@@ -2001,4 +2039,31 @@ const styles = StyleSheet.create({
   },
   updateList: { width: "100%", borderRadius: 14, padding: 14, gap: 10, borderWidth: 1 },
   updateItem: { flexDirection: "row", alignItems: "center", gap: 9 },
+  modalAtualizacaoCard: {
+    maxHeight: "90%",
+    padding: 20,
+  },
+  updateScroll: {
+    width: "100%",
+    flexShrink: 1,
+  },
+  updateScrollContent: {
+    paddingBottom: 2,
+  },
+  updateContinueButton: {
+    marginTop: 14,
+    marginBottom: 0,
+    flexShrink: 0,
+  },
+  updateCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    zIndex: 2,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
 });

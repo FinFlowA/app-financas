@@ -19,6 +19,7 @@
     "test:transaction-completion": "node scripts/run-transaction-completion-tests.cjs",
     "test:offline-queue": "node scripts/run-offline-queue-tests.cjs",
     "test:native-compat": "node scripts/run-native-compat-tests.cjs",
+    "test:release-notes-modal": "node scripts/run-release-notes-modal-tests.cjs",
     "test:edge-security": "node scripts/run-edge-security-tests.cjs",
     "test:local-demo": "node scripts/verify-local-demo-isolation.cjs && node scripts/run-local-demo-behavior-tests.cjs",
     "security:check": "node scripts/security-check.cjs",

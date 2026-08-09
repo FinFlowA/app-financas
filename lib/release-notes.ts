@@ -5,8 +5,9 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-09-ota-apk-original-v5",
+  id: "2.0.0-2026-08-09-novidades-rolaveis-v6",
   items: [
+    "A tela de novidades agora possui rolagem, botão Continuar sempre visível e um X para fechar",
     "Esta atualização agora chega automaticamente ao APK 2.0 que já estava instalado, sem exigir um novo download",
     "Pagamentos parciais agora permanecem no mesmo agendamento, com valores realizados e saldo restante no Histórico",
     "Ao abrir um agendamento, você pode consultar cada pagamento, sua data, valor e eventuais juros, descontos ou estornos",
