@@ -409,8 +409,11 @@ async function run() {
   assert.equal(tamperedStorage.payloads.size, 0);
 
   const adapterSource = fs.readFileSync(path.join(root, "lib", "offline-queue.ts"), "utf8");
-  assert.match(adapterSource, /Platform\.OS === "web" \? createMemoryStorage\(\) : nativeEncryptedStorage/);
-  assert.match(adapterSource, /SecureStore\.setItemAsync/);
+  assert.match(adapterSource, /Platform\.OS === "web" \? null : getOptionalSecureStore\(\)/);
+  assert.match(adapterSource, /createNativeEncryptedStorage\(optionalSecureStore\)/);
+  assert.match(adapterSource, /secureStore\.setItemAsync/);
+  assert.doesNotMatch(adapterSource, /import[^;]+from "expo-secure-store"/,
+    "O APK antigo nao pode carregar SecureStore estaticamente.");
   assert.match(adapterSource, /AsyncStorage\.setItem\(`\$\{INDEX_PREFIX\}\$\{userScope\}`, JSON\.stringify\(operationIds\)\)/);
   assert.doesNotMatch(adapterSource, /AsyncStorage\.setItem\([^\n]+value/);
 
@@ -422,7 +425,9 @@ async function run() {
     "A camada de serviço deve impedir a remoção de itens que ainda aguardam sincronização.");
 
   const layoutSource = fs.readFileSync(path.join(root, "app", "_layout.tsx"), "utf8");
-  assert.match(layoutSource, /NetInfo\.addEventListener/);
+  assert.match(layoutSource, /getOptionalNetInfo\(\)\?\.addEventListener/);
+  assert.doesNotMatch(layoutSource, /import[^;]+from "@react-native-community\/netinfo"/,
+    "O APK antigo nao pode carregar NetInfo estaticamente.");
   assert.match(layoutSource, /estado === "active"/);
   assert.doesNotMatch(layoutSource, /limparFilaFinanceiraDoUsuario/,
     "Logout comum deve preservar a fila segregada para o próximo login do mesmo usuário.");

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as Crypto from "expo-crypto";
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
+import { digestForLocalDeduplication } from "./optional-native-modules";
 
 const NOTIFICATION_SCHEDULE_VERSION = "2026-08-08-v5";
 const ANDROID_NOTIFICATION_CHANNEL_ID = "finflow-private-v2";
@@ -361,10 +361,7 @@ async function executarAgendamentoNotificacoesDoApp(
         cartoes: (cartoes ?? []).map((c) => [c.id, c.nome, c.dia_vencimento, c.dia_fechamento, c.limite, c.limite_usado, ...(c.faturas_pendentes ?? []).sort()]).sort(),
         preferencias,
       });
-      const assinatura = await Crypto.digestStringAsync(
-        Crypto.CryptoDigestAlgorithm.SHA256,
-        assinaturaBruta,
-      );
+      const assinatura = await digestForLocalDeduplication(assinaturaBruta);
       assinaturaAgendaCompleta = assinatura;
       const agendaAtual = await AsyncStorage.getItem(chaveAgendado);
       if (agendaAtual === assinatura) return;

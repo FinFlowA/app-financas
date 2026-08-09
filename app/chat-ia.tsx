@@ -1,6 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import * as SecureStore from "expo-secure-store";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -20,6 +19,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { usuarioPodeAcessarIA } from "../constants/features";
 import { parseFinanceAiHttpResponse } from "../lib/finance-ai/validation";
+import { getOptionalSecureStore } from "../lib/optional-native-modules";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
 
@@ -127,7 +127,7 @@ async function secureStorageGetItem(key: string): Promise<string | null> {
     }
   }
   try {
-    return await SecureStore.getItemAsync(key);
+    return await getOptionalSecureStore()?.getItemAsync(key) ?? null;
   } catch {
     return null;
   }
@@ -144,8 +144,10 @@ async function secureStorageSetItem(key: string, value: string): Promise<void> {
     return;
   }
   try {
-    await SecureStore.setItemAsync(key, value, {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    const secureStore = getOptionalSecureStore();
+    if (!secureStore) return;
+    await secureStore.setItemAsync(key, value, {
+      keychainAccessible: secureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
   } catch {
     // O servidor continua sendo a fonte de verdade da conversa e da proposta.
@@ -163,7 +165,7 @@ async function secureStorageRemoveItem(key: string): Promise<void> {
     return;
   }
   try {
-    await SecureStore.deleteItemAsync(key);
+    await getOptionalSecureStore()?.deleteItemAsync(key);
   } catch {
     // A expiração e o cancelamento continuam protegidos no servidor.
   }

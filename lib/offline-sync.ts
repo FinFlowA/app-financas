@@ -1,5 +1,5 @@
-import NetInfo, { type NetInfoState } from "@react-native-community/netinfo";
 import { IS_LOCAL_DEMO, supabase } from "./supabase";
+import { getOptionalNetInfo, type OptionalNetInfoState } from "./optional-native-modules";
 import {
   enfileirarAcaoOffline,
   limparAcoesOfflineDoUsuario,
@@ -47,14 +47,18 @@ const executor = createSupabaseOfflineExecutor(supabase);
 let activeSync: { userId: string; promise: Promise<OfflineSyncSummary | null> } | null = null;
 const activeUpdateTargets = new Map<string, Promise<OfflineActionResult>>();
 
-export function conexaoPermiteSincronizacao(state: NetInfoState): boolean {
+export function conexaoPermiteSincronizacao(state: OptionalNetInfoState): boolean {
   return state.isConnected === true && state.isInternetReachable !== false;
 }
 
 async function canAttemptSync(): Promise<boolean> {
   if (IS_LOCAL_DEMO) return false;
   try {
-    return conexaoPermiteSincronizacao(await NetInfo.fetch());
+    const netInfo = getOptionalNetInfo();
+    // No APK 2.0 original o monitor nativo ainda nao existia. Nesse caso a
+    // chamada idempotente ao servidor e a fonte confiavel sobre conectividade.
+    if (!netInfo) return true;
+    return conexaoPermiteSincronizacao(await netInfo.fetch());
   } catch {
     // Se o monitor nativo estiver temporariamente indisponível, a própria RPC
     // ainda falha de forma retryable e o item permanece idempotente na fila.
@@ -65,7 +69,9 @@ async function canAttemptSync(): Promise<boolean> {
 export async function dispositivoSemConexao(): Promise<boolean> {
   if (IS_LOCAL_DEMO) return false;
   try {
-    return !conexaoPermiteSincronizacao(await NetInfo.fetch());
+    const netInfo = getOptionalNetInfo();
+    if (!netInfo) return false;
+    return !conexaoPermiteSincronizacao(await netInfo.fetch());
   } catch {
     return false;
   }

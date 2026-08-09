@@ -1,6 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import * as SecureStore from "expo-secure-store";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import { Platform } from "react-native";
 import "react-native-url-polyfill/auto";
 import { createLocalDemoSupabaseClient } from "./local-demo/client";
@@ -12,38 +12,79 @@ export const IS_LOCAL_DEMO =
 
 if (IS_LOCAL_DEMO) installLocalDemoNetworkGuard();
 
+type SecureStoreOptions = {
+  keychainAccessible?: number;
+};
+
+type ExpoSecureStoreNativeModule = {
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY?: number;
+  getValueWithKeyAsync(key: string, options: SecureStoreOptions): Promise<string | null>;
+  setValueWithKeyAsync(
+    value: string,
+    key: string,
+    options: SecureStoreOptions,
+  ): Promise<void>;
+  deleteValueWithKeyAsync(key: string, options: SecureStoreOptions): Promise<void>;
+};
+
 /**
- * Tokens de sessão não podem permanecer em texto puro no AsyncStorage nativo.
- * O fallback web existe porque navegadores não expõem Keychain/Keystore. Ao
- * atualizar uma instalação antiga, a primeira leitura migra o token legado e
- * remove a cópia desprotegida sem obrigar o usuário a entrar novamente.
+ * O primeiro APK 2.0 não incluía expo-secure-store no binário nativo. A
+ * detecção opcional permite que ele receba atualizações OTA sem falhar no
+ * carregamento; builds novos continuam usando Keychain/Keystore normalmente.
+ */
+const nativeSecureStore =
+  Platform.OS === "web"
+    ? null
+    : requireOptionalNativeModule<ExpoSecureStoreNativeModule>("ExpoSecureStore");
+
+const secureStoreOptions: SecureStoreOptions =
+  nativeSecureStore?.WHEN_UNLOCKED_THIS_DEVICE_ONLY === undefined
+    ? {}
+    : {
+        keychainAccessible: nativeSecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      };
+
+/**
+ * Builds que possuem o módulo nativo guardam a sessão no Keychain/Keystore. O
+ * fallback web e de compatibilidade do APK 2.0 usa o armazenamento legado. Na
+ * primeira abertura de um build novo, a sessão é migrada automaticamente para
+ * o cofre nativo sem obrigar o usuário a entrar novamente.
  */
 const authStorage = {
   async getItem(key: string): Promise<string | null> {
-    if (Platform.OS === "web") return AsyncStorage.getItem(key);
-    const secured = await SecureStore.getItemAsync(key);
+    if (!nativeSecureStore) return AsyncStorage.getItem(key);
+    const secured = await nativeSecureStore.getValueWithKeyAsync(
+      key,
+      secureStoreOptions,
+    );
     if (secured !== null) return secured;
     const legacy = await AsyncStorage.getItem(key);
     if (legacy !== null) {
-      await SecureStore.setItemAsync(key, legacy, {
-        keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-      });
+      await nativeSecureStore.setValueWithKeyAsync(
+        legacy,
+        key,
+        secureStoreOptions,
+      );
       await AsyncStorage.removeItem(key);
     }
     return legacy;
   },
   async setItem(key: string, value: string): Promise<void> {
-    if (Platform.OS === "web") {
+    if (!nativeSecureStore) {
       await AsyncStorage.setItem(key, value);
       return;
     }
-    await SecureStore.setItemAsync(key, value, {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
+    await nativeSecureStore.setValueWithKeyAsync(
+      value,
+      key,
+      secureStoreOptions,
+    );
     await AsyncStorage.removeItem(key);
   },
   async removeItem(key: string): Promise<void> {
-    if (Platform.OS !== "web") await SecureStore.deleteItemAsync(key);
+    if (nativeSecureStore) {
+      await nativeSecureStore.deleteValueWithKeyAsync(key, secureStoreOptions);
+    }
     await AsyncStorage.removeItem(key);
   },
 };

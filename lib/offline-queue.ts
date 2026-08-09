@@ -1,8 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { randomUUID } from "expo-crypto";
-import * as SecureStore from "expo-secure-store";
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
+import {
+  getOptionalSecureStore,
+  randomUuidCompat,
+  type OptionalSecureStore,
+} from "./optional-native-modules";
 import {
   createOfflineQueue,
   type OfflineExecutor,
@@ -65,15 +68,20 @@ function parseManifest(raw: string | null): SecureManifest | null {
   }
 }
 
-async function removeRevision(base: string, manifest: SecureManifest | null): Promise<void> {
+async function removeRevision(
+  secureStore: OptionalSecureStore,
+  base: string,
+  manifest: SecureManifest | null,
+): Promise<void> {
   if (!manifest) return;
   await Promise.all(
     Array.from({ length: manifest.chunks }, (_, index) =>
-      SecureStore.deleteItemAsync(`${base}.${manifest.revision}.${index}`).catch(() => undefined)),
+      secureStore.deleteItemAsync(`${base}.${manifest.revision}.${index}`).catch(() => undefined)),
   );
 }
 
-const nativeEncryptedStorage: OfflineQueueStorage = {
+function createNativeEncryptedStorage(secureStore: OptionalSecureStore): OfflineQueueStorage {
+  return {
   async readIndex(userScope) {
     const raw = await AsyncStorage.getItem(`${INDEX_PREFIX}${userScope}`);
     if (!raw) return [];
@@ -90,44 +98,45 @@ const nativeEncryptedStorage: OfflineQueueStorage = {
   },
   async readPayload(userScope, operationId) {
     const base = payloadBase(userScope, operationId);
-    const manifest = parseManifest(await SecureStore.getItemAsync(base));
+    const manifest = parseManifest(await secureStore.getItemAsync(base));
     if (!manifest) return null;
     const values = await Promise.all(
       Array.from({ length: manifest.chunks }, (_, index) =>
-        SecureStore.getItemAsync(`${base}.${manifest.revision}.${index}`)),
+        secureStore.getItemAsync(`${base}.${manifest.revision}.${index}`)),
     );
     return values.some((value) => value === null) ? null : values.join("");
   },
   async writePayload(userScope, operationId, value) {
     const base = payloadBase(userScope, operationId);
-    const previous = parseManifest(await SecureStore.getItemAsync(base));
-    const revision = randomUUID().toLowerCase();
+    const previous = parseManifest(await secureStore.getItemAsync(base));
+    const revision = randomUuidCompat().toLowerCase();
     const chunks = splitSecureValue(value);
-    const options = { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
+    const options = { keychainAccessible: secureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY };
     try {
       for (let index = 0; index < chunks.length; index += 1) {
         // Índice inteiro, gerado pelo laço e limitado por MAX_SECURE_CHUNKS.
         // eslint-disable-next-line security/detect-object-injection
-        await SecureStore.setItemAsync(`${base}.${revision}.${index}`, chunks[index], options);
+        await secureStore.setItemAsync(`${base}.${revision}.${index}`, chunks[index], options);
       }
-      await SecureStore.setItemAsync(
+      await secureStore.setItemAsync(
         base,
         JSON.stringify({ version: 1, revision, chunks: chunks.length } satisfies SecureManifest),
         options,
       );
     } catch (error) {
-      await removeRevision(base, { version: 1, revision, chunks: chunks.length });
+      await removeRevision(secureStore, base, { version: 1, revision, chunks: chunks.length });
       throw error;
     }
-    await removeRevision(base, previous);
+    await removeRevision(secureStore, base, previous);
   },
   async removePayload(userScope, operationId) {
     const base = payloadBase(userScope, operationId);
-    const manifest = parseManifest(await SecureStore.getItemAsync(base));
-    await removeRevision(base, manifest);
-    await SecureStore.deleteItemAsync(base);
+    const manifest = parseManifest(await secureStore.getItemAsync(base));
+    await removeRevision(secureStore, base, manifest);
+    await secureStore.deleteItemAsync(base);
   },
-};
+  };
+}
 
 function createMemoryStorage(): OfflineQueueStorage {
   const indexes = new Map<string, string[]>();
@@ -142,11 +151,17 @@ function createMemoryStorage(): OfflineQueueStorage {
   };
 }
 
-const storage = Platform.OS === "web" ? createMemoryStorage() : nativeEncryptedStorage;
+const optionalSecureStore = Platform.OS === "web" ? null : getOptionalSecureStore();
+// Nunca grava valores financeiros em AsyncStorage como fallback. No APK 2.0
+// antigo, que nao possui SecureStore, a fila continua funcional nesta abertura
+// e deixa de persistir ao fechar o processo, evitando texto simples no disco.
+const storage = optionalSecureStore
+  ? createNativeEncryptedStorage(optionalSecureStore)
+  : createMemoryStorage();
 
 export const offlineQueue = createOfflineQueue({
   storage,
-  randomUuid: () => randomUUID(),
+  randomUuid: randomUuidCompat,
   getCurrentUserId: async () => {
     const { data, error } = await supabase.auth.getSession();
     if (error) throw error;

@@ -7,7 +7,6 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as Linking from "expo-linking";
 import { StatusBar } from "expo-status-bar";
 import * as LocalAuthentication from "expo-local-authentication";
-import * as ScreenCapture from "expo-screen-capture";
 import * as Updates from "expo-updates";
 import React, {
   Component,
@@ -37,7 +36,6 @@ import {
 } from "react-native";
 import "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import NetInfo from "@react-native-community/netinfo";
 import { MaterialIcons } from "@expo/vector-icons";
 import { IS_LOCAL_DEMO, supabase } from "../lib/supabase";
 import {
@@ -67,6 +65,7 @@ import {
   sincronizarFilaFinanceiraOffline,
 } from "../lib/offline-sync";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
+import { getOptionalNetInfo, getOptionalScreenCapture } from "../lib/optional-native-modules";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
@@ -475,14 +474,20 @@ export default function RootLayout() {
   useEffect(() => {
     if (IS_LOCAL_DEMO) return;
     let conexaoAnterior: boolean | null = null;
+    let removerRede: () => void = () => undefined;
 
-    const removerRede = NetInfo.addEventListener((estado) => {
-      const conectado = conexaoPermiteSincronizacao(estado);
-      if (conectado && conexaoAnterior === false && usuarioSessaoRef.current) {
-        void sincronizarPendenciasOffline();
-      }
-      conexaoAnterior = conectado;
-    });
+    try {
+      removerRede = getOptionalNetInfo()?.addEventListener((estado) => {
+        const conectado = conexaoPermiteSincronizacao(estado);
+        if (conectado && conexaoAnterior === false && usuarioSessaoRef.current) {
+          void sincronizarPendenciasOffline();
+        }
+        conexaoAnterior = conectado;
+      }) ?? removerRede;
+    } catch {
+      // O APK 2.0 original nao possui NetInfo. O retorno do app ao primeiro
+      // plano e as proprias tentativas de gravacao continuam sincronizando.
+    }
     const eventoApp = AppState.addEventListener("change", (estado) => {
       if (estado === "active" && usuarioSessaoRef.current) {
         void sincronizarPendenciasOffline();
@@ -500,24 +505,26 @@ export default function RootLayout() {
   // no iOS, o sistema aplica um desfoque quando o app perde o foco.
   useEffect(() => {
     if (Platform.OS === "web") return;
+    const screenCapture = getOptionalScreenCapture();
+    if (!screenCapture) return;
 
     let efeitoAtual = true;
     const aplicarProtecaoNativa = async (proteger: boolean) => {
       if (Platform.OS === "android") {
-        if (proteger) await ScreenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA);
-        else await ScreenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA);
+        if (proteger) await screenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA);
+        else await screenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA);
         return;
       }
       if (Platform.OS !== "ios") return;
 
       const resultados = await Promise.allSettled(proteger
         ? [
-            ScreenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA),
-            ScreenCapture.enableAppSwitcherProtectionAsync(0.85),
+            screenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA),
+            screenCapture.enableAppSwitcherProtectionAsync(0.85),
           ]
         : [
-            ScreenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA),
-            ScreenCapture.disableAppSwitcherProtectionAsync(),
+            screenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA),
+            screenCapture.disableAppSwitcherProtectionAsync(),
           ]);
       const falha = resultados.find((resultado) => resultado.status === "rejected");
       if (falha?.status === "rejected") throw falha.reason;

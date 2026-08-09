@@ -1,6 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
-import * as Crypto from "expo-crypto";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -37,6 +36,7 @@ import {
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
 import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
+import { randomUuidCompat } from "../../lib/optional-native-modules";
 import {
   createInvoiceOperationRequestId,
   listInvoicePaymentTransactions,
@@ -921,7 +921,7 @@ export default function TransacoesScreen() {
           ].join(":");
           let requestId = reaberturaRequestIdsRef.current.get(assinaturaReabertura);
           if (!requestId) {
-            requestId = Crypto.randomUUID();
+            requestId = randomUuidCompat();
             reaberturaRequestIdsRef.current.set(assinaturaReabertura, requestId);
           }
 
@@ -1013,7 +1013,7 @@ export default function TransacoesScreen() {
           ].join(":");
           let requestId = conclusaoRequestIdsRef.current.get(assinaturaConclusao);
           if (!requestId) {
-            requestId = Crypto.randomUUID();
+            requestId = randomUuidCompat();
             conclusaoRequestIdsRef.current.set(assinaturaConclusao, requestId);
           }
 

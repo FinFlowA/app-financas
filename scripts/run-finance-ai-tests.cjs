@@ -103,13 +103,17 @@ function assertSqlSafetyGuards() {
     throw new Error("Conversa ou token de confirmacao nao podem ser persistidos em armazenamento comum.");
   }
   for (const required of [
-    "SecureStore.setItemAsync",
-    "SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY",
+    "getOptionalSecureStore",
+    "secureStore.setItemAsync",
+    "secureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY",
     "globalThis.sessionStorage",
     "migrateLegacyNativeStorage",
     "AsyncStorage.removeItem",
   ]) {
     if (!chat.includes(required)) throw new Error(`Migracao do armazenamento seguro incompleta: ${required}.`);
+  }
+  if (/import[^;]+from ["']expo-secure-store["']/.test(chat)) {
+    throw new Error("O chat nao pode carregar SecureStore estaticamente no APK 2.0 original.");
   }
 }
 

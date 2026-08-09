@@ -314,8 +314,18 @@ requireText(
 );
 requireText(
   "lib/supabase.ts",
-  "SecureStore.setItemAsync",
-  "A sessão nativa precisa ser armazenada no cofre criptografado do sistema.",
+  'requireOptionalNativeModule<ExpoSecureStoreNativeModule>("ExpoSecureStore")',
+  "A sessão precisa detectar o cofre nativo sem impedir a inicialização do APK 2.0 original.",
+);
+requireText(
+  "lib/supabase.ts",
+  "nativeSecureStore.setValueWithKeyAsync",
+  "Builds com SecureStore precisam armazenar a sessão no cofre criptografado do sistema.",
+);
+requireText(
+  "lib/supabase.ts",
+  "if (!nativeSecureStore) return AsyncStorage.getItem(key);",
+  "O APK 2.0 original precisa preservar a sessão legada quando o módulo nativo não existe.",
 );
 requireText(
   "lib/notifications.ts",
