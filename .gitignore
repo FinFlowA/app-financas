@@ -27,6 +27,7 @@ GoogleService-Info.plist
 
 # Metro
 .metro-health-check*
+.codex-tmp-local-demo/
 
 # debug
 npm-debug.*

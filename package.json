@@ -1,19 +1,33 @@
 {
   "name": "meu-app-financas",
   "main": "expo-router/entry",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "web:local": "node scripts/start-local-demo.cjs",
+    "lint": "expo lint",
+    "test:finance-ai": "node scripts/run-finance-ai-tests.cjs",
+    "test:finance-ai-context": "node scripts/run-finance-ai-context-tests.cjs",
+    "test:finance-ai-state-guard": "node scripts/run-finance-ai-state-guard-tests.cjs",
+    "test:history-order": "node scripts/run-history-order-tests.cjs",
+    "test:money-input": "node scripts/run-money-input-tests.cjs",
+    "test:password": "node scripts/run-password-tests.cjs",
+    "test:transaction-completion": "node scripts/run-transaction-completion-tests.cjs",
+    "test:offline-queue": "node scripts/run-offline-queue-tests.cjs",
+    "test:edge-security": "node scripts/run-edge-security-tests.cjs",
+    "test:local-demo": "node scripts/verify-local-demo-isolation.cjs && node scripts/run-local-demo-behavior-tests.cjs",
+    "security:check": "node scripts/security-check.cjs",
+    "monitor:ai": "node scripts/check-ai-health.cjs"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",
     "@react-native-async-storage/async-storage": "2.2.0",
     "@react-native-community/datetimepicker": "8.4.4",
+    "@react-native-community/netinfo": "11.4.1",
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
@@ -21,6 +35,7 @@
     "axios": "^1.19.0",
     "expo": "~54.0.36",
     "expo-constants": "~18.0.13",
+    "expo-crypto": "~15.0.9",
     "expo-font": "~14.0.12",
     "expo-haptics": "~15.0.8",
     "expo-image": "~3.0.11",
@@ -28,6 +43,8 @@
     "expo-local-authentication": "~17.0.8",
     "expo-notifications": "~0.32.17",
     "expo-router": "~6.0.24",
+    "expo-screen-capture": "~8.0.9",
+    "expo-secure-store": "~15.0.8",
     "expo-splash-screen": "~31.0.13",
     "expo-sqlite": "~16.0.10",
     "expo-status-bar": "~3.0.9",
@@ -50,7 +67,14 @@
     "@types/react": "~19.1.0",
     "eslint": "^9.25.0",
     "eslint-config-expo": "~10.0.0",
+    "eslint-plugin-security": "^4.0.1",
     "typescript": "~5.9.2"
+  },
+  "overrides": {
+    "uuid": "11.1.1",
+    "@expo/metro-config": {
+      "postcss": "8.5.26"
+    }
   },
   "private": true
 }

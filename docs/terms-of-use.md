@@ -1,6 +1,6 @@
 # Termos de Uso — FinFlow
 
-**Última atualização:** 1º de agosto de 2026
+**Última atualização:** 8 de agosto de 2026
 
 ## 1. Aceitação
 
@@ -10,7 +10,7 @@ Se não concordar, o usuário não deve criar nem utilizar uma conta.
 
 ## 2. O serviço
 
-O FinFlow ajuda a registrar e visualizar contas, movimentações, categorias, objetivos, cartões, compras, faturas, projeções, relatórios, lembretes e registros compartilhados com parceiro autorizado. Algumas funções podem estar em desenvolvimento, teste ou limitadas por plano.
+O FinFlow ajuda a registrar e visualizar contas, movimentações, categorias, objetivos, cartões, compras, faturas, projeções, relatórios, lembretes e registros compartilhados com parceiro autorizado. Operações compatíveis podem ser guardadas temporariamente no dispositivo e sincronizadas quando a conexão voltar. Algumas funções podem estar em desenvolvimento, teste, exigir conexão ou ser limitadas por plano.
 
 > O FinFlow é uma ferramenta de organização. Não é banco, instituição de pagamento, corretora, consultoria contábil ou de investimentos e não movimenta dinheiro por conta própria.
 
@@ -49,7 +49,11 @@ Enquanto não houver meio de pagamento ativo e confirmação expressa da compra,
 
 ## 6. Assistente de IA
 
-Quando disponível, o assistente poderá gerar respostas imprecisas. Seu conteúdo é informativo e não constitui recomendação financeira, jurídica, contábil ou de investimento. Informações importantes devem ser conferidas, com auxílio de profissional qualificado quando necessário.
+Quando disponível, o assistente opera exclusivamente no controle financeiro do FinFlow. Ele pode consultar registros, preparar alterações e auxiliar nas mesmas operações financeiras disponíveis nas telas do aplicativo, conforme o plano contratado.
+
+Toda escrita exige uma prévia e confirmação explícita no botão do aplicativo. Mensagens como “sim” não executam a proposta. Mesmo após a confirmação, a operação pode ser recusada se os dados mudarem, o limite do plano for atingido ou a regra financeira não puder ser satisfeita. O usuário deve conferir valores, contas, categorias, datas, séries e efeitos em saldos ou faturas.
+
+Respostas e projeções podem conter imprecisões. O conteúdo é informativo e não constitui recomendação financeira, jurídica, contábil, tributária, de crédito ou de investimento. O assistente não movimenta dinheiro em instituições financeiras e não altera dados de acesso, identidade, parceria ou assinatura. Mutações financeiras confirmadas e consultas ao modelo possuem contadores separados; análises consomem uma consulta, mas não uma ação. Os limites diários, a disponibilidade e o provedor técnico variam conforme o plano e são informados no aplicativo.
 
 ## 7. Parceria e dados compartilhados
 
@@ -65,6 +69,8 @@ Ao encerrar a parceria:
 ## 8. Disponibilidade e mudanças
 
 O serviço pode passar por manutenção ou indisponibilidade temporária. Recursos podem ser corrigidos, alterados ou descontinuados, preservados os direitos aplicáveis e com comunicação quando necessária.
+
+No modo offline, o aplicativo somente registra uma operação local quando consegue preservar usuário, ordem e idempotência. A sincronização pode ser recusada se o recurso tiver mudado, a permissão não existir mais ou uma regra financeira impedir a operação. Nesse caso, o FinFlow mostra a pendência e não declara a alteração como concluída no servidor.
 
 ## 9. Propriedade intelectual
 

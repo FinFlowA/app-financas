@@ -23,8 +23,14 @@ export const fmtReaisSemCentavo = (valor: number): string => {
 };
 
 /** Formata a digitação como centavos: 1 -> 0,01; 123456 -> 1.234,56. */
+export const MAX_MONEY_CENTS = 99_999_999_999_999;
+export const MAX_MONEY_VALUE = MAX_MONEY_CENTS / 100;
+
 export const formatarEntradaMoeda = (texto: string): string => {
-  const digitos = texto.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+  const digitos = texto
+    .replace(/\D/g, "")
+    .replace(/^0+(?=\d)/, "")
+    .slice(0, String(MAX_MONEY_CENTS).length);
   const centavos = Number(digitos || "0");
   return (centavos / 100).toLocaleString("pt-BR", {
     minimumFractionDigits: 2,
@@ -35,5 +41,8 @@ export const formatarEntradaMoeda = (texto: string): string => {
 export const valorDaEntradaMoeda = (texto: string): number => {
   const normalizado = texto.replace(/\./g, "").replace(",", ".");
   const valor = Number(normalizado);
-  return Number.isFinite(valor) ? valor : 0;
+  if (!Number.isFinite(valor)) return 0;
+  const centavos = Math.round(valor * 100);
+  if (!Number.isSafeInteger(centavos) || Math.abs(centavos) > MAX_MONEY_CENTS) return 0;
+  return centavos / 100;
 };

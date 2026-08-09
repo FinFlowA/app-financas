@@ -31,6 +31,7 @@ import {
 import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { useAppTheme } from "./_layout";
 import { PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
+import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
 
 type AuthTheme = ReturnType<typeof finFlowTheme>;
 type MaterialIconName = React.ComponentProps<typeof MaterialIcons>["name"];
@@ -108,6 +109,7 @@ export default function LoginScreen() {
 
   const [mostrarSenha, setMostrarSenha] = useState(false);
   const [mostrarConfirmSenha, setMostrarConfirmSenha] = useState(false);
+  const senhaCadastroValida = validatePassword(password).valid;
 
   const [tentativasFalhadas, setTentativasFalhadas] = useState(0);
   const [bloqueadoAte, setBloqueadoAte] = useState<number | null>(null);
@@ -234,16 +236,18 @@ export default function LoginScreen() {
         "Digite um e-mail válido (ex: nome@dominio.com).",
       );
 
+    // Comparação local de confirmação; nenhum segredo é enviado neste ponto.
+    // eslint-disable-next-line security/detect-possible-timing-attacks
     if (password !== confirmPassword)
       return Alert.alert(
         "Senhas diferentes",
         "A senha e a confirmação não conferem. Verifique e tente novamente.",
       );
 
-    if (password.length < 6)
+    if (!senhaCadastroValida)
       return Alert.alert(
         "Senha fraca",
-        "A senha deve ter pelo menos 6 caracteres.",
+        PASSWORD_REQUIREMENTS_MESSAGE,
       );
 
     const telefoneE164 = telefone.trim() ? telefoneBrasilE164(telefone) : null;
@@ -546,7 +550,7 @@ export default function LoginScreen() {
                   {/* NOME — só no cadastro */}
                   {!isLogin && !isRecuperandoSenha && (
                     <AuthField
-                      label="Nome completo"
+                      label="Nome"
                       icon="person-outline"
                       theme={theme}
                       placeholder="Como você quer ser chamado"
@@ -620,7 +624,7 @@ export default function LoginScreen() {
                       label="Senha"
                       icon="lock-outline"
                       theme={theme}
-                      placeholder={isLogin ? "Digite sua senha" : "Mínimo de 6 caracteres"}
+                      placeholder={isLogin ? "Digite sua senha" : "Crie uma senha segura"}
                       onChangeText={setPassword}
                       value={password}
                       secureTextEntry={!mostrarSenha}
@@ -630,6 +634,8 @@ export default function LoginScreen() {
                       textContentType={isLogin ? "password" : "newPassword"}
                       returnKeyType={isLogin ? "done" : "next"}
                       onSubmitEditing={isLogin ? signInWithEmail : undefined}
+                      error={!isLogin && password.length > 0 && !senhaCadastroValida}
+                      success={!isLogin && password.length > 0 && senhaCadastroValida}
                       trailing={
                         <TouchableOpacity
                           onPress={() => setMostrarSenha((valor) => !valor)}
@@ -639,6 +645,18 @@ export default function LoginScreen() {
                           <MaterialIcons name={mostrarSenha ? "visibility-off" : "visibility"} size={20} color={theme.textMuted} />
                         </TouchableOpacity>
                       }
+                      helper={!isLogin ? (
+                        <View style={styles.passwordFeedback}>
+                          <MaterialIcons
+                            name={senhaCadastroValida ? "check-circle" : "info-outline"}
+                            size={14}
+                            color={senhaCadastroValida ? theme.primary : theme.textMuted}
+                          />
+                          <Text style={[styles.passwordFeedbackText, { color: senhaCadastroValida ? theme.primary : theme.textMuted }]}>
+                            {PASSWORD_REQUIREMENTS_MESSAGE}
+                          </Text>
+                        </View>
+                      ) : undefined}
                     />
                   )}
 
@@ -658,8 +676,8 @@ export default function LoginScreen() {
                       textContentType="newPassword"
                       returnKeyType="done"
                       onSubmitEditing={signUpWithEmail}
-                      error={confirmPassword.length > 0 && password !== confirmPassword}
-                      success={confirmPassword.length > 0 && password === confirmPassword}
+                      error={confirmPassword.length > 0 && (!senhaCadastroValida || password !== confirmPassword)}
+                      success={confirmPassword.length > 0 && senhaCadastroValida && password === confirmPassword}
                       trailing={
                         <TouchableOpacity
                           onPress={() => setMostrarConfirmSenha((valor) => !valor)}
@@ -672,12 +690,12 @@ export default function LoginScreen() {
                       helper={confirmPassword.length > 0 ? (
                         <View style={styles.passwordFeedback}>
                           <MaterialIcons
-                            name={password === confirmPassword ? "check-circle" : "error-outline"}
+                            name={senhaCadastroValida && password === confirmPassword ? "check-circle" : "error-outline"}
                             size={14}
-                            color={password === confirmPassword ? theme.primary : FinFlowColors.red}
+                            color={senhaCadastroValida && password === confirmPassword ? theme.primary : FinFlowColors.red}
                           />
-                          <Text style={[styles.passwordFeedbackText, { color: password === confirmPassword ? theme.primary : FinFlowColors.red }]}>
-                            {password === confirmPassword ? "As senhas conferem" : "As senhas não conferem"}
+                          <Text style={[styles.passwordFeedbackText, { color: senhaCadastroValida && password === confirmPassword ? theme.primary : FinFlowColors.red }]}>
+                            {senhaCadastroValida && password === confirmPassword ? "As senhas conferem" : "Confira a senha e os requisitos acima"}
                           </Text>
                         </View>
                       ) : undefined}

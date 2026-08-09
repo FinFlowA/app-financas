@@ -2,19 +2,49 @@ import { serverSecret } from "./supabase.ts";
 
 const API = "https://api.mercadopago.com";
 
+export class MercadoPagoRequestError extends Error {
+  readonly status: number | null;
+  readonly providerCode: string;
+
+  constructor(status: number | null, providerCode = "UNKNOWN") {
+    super(status == null ? "MERCADO_PAGO_NETWORK" : `MERCADO_PAGO_${status}`);
+    this.name = "MercadoPagoRequestError";
+    this.status = status;
+    this.providerCode = providerCode;
+  }
+}
+
+function safeProviderCode(body: unknown): string {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return "UNKNOWN";
+  const source = body as Record<string, unknown>;
+  const candidate = [source.error, source.code, source.status]
+    .find((value) => typeof value === "string");
+  if (typeof candidate !== "string") return "UNKNOWN";
+  const normalized = candidate.toUpperCase().replace(/[^A-Z0-9_]/g, "_").slice(0, 60);
+  return normalized || "UNKNOWN";
+}
+
 export async function mercadoPago(path: string, init: RequestInit = {}) {
-  const response = await fetch(`${API}${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${serverSecret("MERCADO_PAGO_ACCESS_TOKEN")}`,
-      "Content-Type": "application/json",
-      ...(init.headers ?? {}),
-    },
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API}${path}`, {
+      ...init,
+      headers: {
+        Authorization: `Bearer ${serverSecret("MERCADO_PAGO_ACCESS_TOKEN")}`,
+        "Content-Type": "application/json",
+        ...(init.headers ?? {}),
+      },
+      signal: init.signal ?? AbortSignal.timeout(15_000),
+    });
+  } catch {
+    console.error("Mercado Pago request failed", "NETWORK");
+    throw new MercadoPagoRequestError(null, "NETWORK");
+  }
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error("Mercado Pago request failed", response.status, body);
-    throw new Error(`MERCADO_PAGO_${response.status}`);
+    const providerCode = safeProviderCode(body);
+    console.error("Mercado Pago request failed", response.status, providerCode);
+    throw new MercadoPagoRequestError(response.status, providerCode);
   }
   return body;
 }

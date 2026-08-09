@@ -1,5 +1,6 @@
 import { Webhook } from "https://esm.sh/standardwebhooks@1.0.0";
 
+import { HttpRequestError, readJsonRequest } from "../_shared/http.ts";
 import { adminClient, serverSecret } from "../_shared/supabase.ts";
 
 type SendSmsHookEvent = {
@@ -13,10 +14,15 @@ type SendSmsHookEvent = {
   };
 };
 
-function response(body: unknown, status = 200) {
+function response(body: unknown, status = 200, extraHeaders: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "X-Content-Type-Options": "nosniff",
+      ...extraHeaders,
+    },
   });
 }
 
@@ -44,10 +50,13 @@ Deno.serve(async (req) => {
 
   let event: SendSmsHookEvent;
   try {
-    const payload = await req.text();
+    const { raw: payload } = await readJsonRequest(req, { maxBytes: 16_000 });
     const headers = Object.fromEntries(req.headers.entries());
     event = new Webhook(webhookSecret()).verify(payload, headers) as SendSmsHookEvent;
-  } catch {
+  } catch (error) {
+    if (error instanceof HttpRequestError) {
+      return hookError(error.status, error.message);
+    }
     console.warn("send-auth-sms: assinatura inválida");
     return hookError(401, "Assinatura do hook inválida.");
   }
@@ -60,7 +69,7 @@ Deno.serve(async (req) => {
   const phoneSource = event.user?.new_phone || event.user?.phone || "";
   const phone = normalizeBrazilianMobile(phoneSource);
   const otp = typeof event.sms?.otp === "string" ? event.sms.otp.trim() : "";
-  const validUserId = /^[0-9a-f-]{36}$/i.test(userId);
+  const validUserId = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(userId);
   const validOtp = /^\d{6}$/.test(otp);
   if (!validUserId || !phone || !validOtp) {
     console.warn("send-auth-sms: payload inválido", {
@@ -76,6 +85,37 @@ Deno.serve(async (req) => {
 
   try {
     const admin = adminClient();
+    // Limite duplo: impede tanto uma conta de rotacionar telefones quanto várias
+    // contas de bombardearem o mesmo número. O banco persiste apenas os hashes.
+    for (const subject of [`user:${userId}`, `phone:${phone}`]) {
+      const { data: limitData, error: limitError } = await admin.rpc(
+        "reserve_edge_rate_limit",
+        {
+          p_scope: "sms_verification",
+          p_subject: subject,
+          p_cooldown_seconds: 60,
+          p_window_seconds: 86_400,
+          p_max_attempts: 8,
+        },
+      );
+      if (limitError) {
+        console.error("send-auth-sms: rate limit indisponível", limitError.code ?? "UNKNOWN");
+        return hookError(503, "Não foi possível validar o limite de SMS agora.");
+      }
+      const limit = Array.isArray(limitData) ? limitData[0] : limitData;
+      if (!limit || typeof limit !== "object" || (limit as Record<string, unknown>).allowed !== true) {
+        const retryAfter = Math.max(
+          1,
+          Math.min(86_400, Number((limit as Record<string, unknown> | null)?.retry_after) || 60),
+        );
+        return response(
+          { error: { http_code: 429, message: "Limite de SMS atingido. Aguarde antes de tentar novamente." } },
+          429,
+          { "Retry-After": String(retryAfter) },
+        );
+      }
+    }
+
     const { data: reserved, error: reservationError } = await admin.rpc(
       "reserve_phone_verification",
       { p_user_id: userId, p_phone: phone },

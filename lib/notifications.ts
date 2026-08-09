@@ -1,7 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as Crypto from "expo-crypto";
 import { Platform } from "react-native";
+import { supabase } from "./supabase";
 
-const NOTIFICATION_SCHEDULE_VERSION = "2026-07-31-v3";
+const NOTIFICATION_SCHEDULE_VERSION = "2026-08-08-v5";
+const ANDROID_NOTIFICATION_CHANNEL_ID = "finflow-private-v2";
+const LOCAL_DEMO = process.env.EXPO_PUBLIC_FINFLOW_LOCAL_DEMO === "true";
 
 export type PreferenciasNotificacoes = {
   transacoesVencidas: boolean;
@@ -45,31 +49,75 @@ export async function salvarPreferenciasNotificacoes(
 
 // Importação lazy para não travar o app se o módulo falhar
 let Notif: any = null;
-try {
-  Notif = require("expo-notifications");
-  Notif.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowAlert: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-  // Canal Android obrigatório para exibir notificações no Android 8+
-  if (Platform.OS === "android") {
-    Notif.setNotificationChannelAsync("finflow", {
-      name: "FinFlow",
-      importance: Notif.AndroidImportance.MAX,
-      vibrationPattern: [0, 250, 250, 250],
-      sound: "default",
-      enableVibrate: true,
+let geracaoAgendaNotificacoes = 0;
+let geracaoSessaoNotificacoes = 0;
+if (!LOCAL_DEMO) {
+  try {
+    // Carregamento lazy evita derrubar web/local quando o módulo nativo não existe.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    Notif = require("expo-notifications");
+    Notif.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
     });
+    // Canal Android obrigatório para exibir notificações no Android 8+
+    if (Platform.OS === "android") {
+      Notif.setNotificationChannelAsync(ANDROID_NOTIFICATION_CHANNEL_ID, {
+        name: "FinFlow",
+        importance: Notif.AndroidImportance.MAX,
+        vibrationPattern: [0, 250, 250, 250],
+        sound: "default",
+        enableVibrate: true,
+        lockscreenVisibility: Notif.AndroidNotificationVisibility.PRIVATE,
+      });
+    }
+  } catch {
+    // expo-notifications não disponível — modo silencioso
   }
-} catch {
-  // expo-notifications não disponível — modo silencioso
+}
+
+async function gravarMarcadorSeSessaoAtiva(
+  chave: string,
+  valor: string,
+  userId: string,
+  geracaoEsperada: number,
+): Promise<boolean> {
+  if (geracaoEsperada !== geracaoAgendaNotificacoes) return false;
+  const { data: sessaoAntes } = await supabase.auth.getSession();
+  if (sessaoAntes.session?.user.id !== userId || geracaoEsperada !== geracaoAgendaNotificacoes) return false;
+
+  await AsyncStorage.setItem(chave, valor);
+  const { data: sessaoDepois } = await supabase.auth.getSession();
+  if (sessaoDepois.session?.user.id === userId && geracaoEsperada === geracaoAgendaNotificacoes) return true;
+
+  await AsyncStorage.removeItem(chave);
+  return false;
+}
+
+async function gravarMarcadorSistemaSeSessaoAtiva(
+  chave: string,
+  userId: string,
+  geracaoEsperada: number,
+): Promise<boolean> {
+  if (geracaoEsperada !== geracaoSessaoNotificacoes) return false;
+  const { data: sessaoAntes } = await supabase.auth.getSession();
+  if (sessaoAntes.session?.user.id !== userId || geracaoEsperada !== geracaoSessaoNotificacoes) return false;
+
+  await AsyncStorage.setItem(chave, "1");
+  const { data: sessaoDepois } = await supabase.auth.getSession();
+  if (sessaoDepois.session?.user.id === userId && geracaoEsperada === geracaoSessaoNotificacoes) return true;
+
+  await AsyncStorage.removeItem(chave);
+  return false;
 }
 
 export async function pedirPermissaoNotificacoes(): Promise<boolean> {
-  if (!Notif || Platform.OS === "web") return false;
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return false;
   try {
     const { status: existing } = await Notif.getPermissionsAsync();
     if (existing === "granted") return true;
@@ -92,16 +140,20 @@ export async function exibirEventoObrigatorioLocal(
   titulo: string,
   mensagem: string,
 ): Promise<void> {
-  if (!Notif || Platform.OS === "web") return;
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
 
   const chave = `@notif_sistema_${userId}_${eventoId}`;
+  const geracaoDoEvento = geracaoSessaoNotificacoes;
   try {
     if (await AsyncStorage.getItem(chave)) return;
 
     const { status } = await Notif.getPermissionsAsync();
     if (status !== "granted") return;
 
-    await Notif.scheduleNotificationAsync({
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user.id !== userId || geracaoDoEvento !== geracaoSessaoNotificacoes) return;
+
+    const identificador = await Notif.scheduleNotificationAsync({
       content: {
         title: titulo,
         body: mensagem,
@@ -110,16 +162,33 @@ export async function exibirEventoObrigatorioLocal(
         data: { origem: "finflow_sistema", eventoId },
       },
       trigger: Platform.OS === "android"
-        ? { type: "timeInterval", seconds: 1, repeats: false, channelId: "finflow" } as any
+        ? { type: "timeInterval", seconds: 1, repeats: false, channelId: ANDROID_NOTIFICATION_CHANNEL_ID } as any
         : null,
     });
-    await AsyncStorage.setItem(chave, "1");
+    const { data: sessaoDepoisDoAgendamento } = await supabase.auth.getSession();
+    if (
+      sessaoDepoisDoAgendamento.session?.user.id !== userId
+      || geracaoDoEvento !== geracaoSessaoNotificacoes
+    ) {
+      await Promise.allSettled([
+        Notif.cancelScheduledNotificationAsync(identificador),
+        Notif.dismissNotificationAsync(identificador),
+      ]);
+      return;
+    }
+    if (!await gravarMarcadorSistemaSeSessaoAtiva(chave, userId, geracaoDoEvento)) {
+      await Promise.allSettled([
+        Notif.cancelScheduledNotificationAsync(identificador),
+        Notif.dismissNotificationAsync(identificador),
+      ]);
+    }
   } catch {
     // Best-effort: o evento permanece salvo e visivel dentro do aplicativo.
   }
 }
 
 export async function notificacoesEstaoAtivas(): Promise<boolean> {
+  if (LOCAL_DEMO) return false;
   try {
     const val = await AsyncStorage.getItem("@notificacoes_enabled");
     return val === "true";
@@ -129,6 +198,7 @@ export async function notificacoesEstaoAtivas(): Promise<boolean> {
 }
 
 export async function notificacoesEstaoAtivasPara(userId: string): Promise<boolean> {
+  if (LOCAL_DEMO) return false;
   try {
     const val = await AsyncStorage.getItem(`@notificacoes_enabled_${userId}`);
     return val === "true";
@@ -137,25 +207,146 @@ export async function notificacoesEstaoAtivasPara(userId: string): Promise<boole
   }
 }
 
-export async function agendarNotificacoesDoApp(
+/**
+ * Remove os alertas locais pertencentes à sessão encerrada.
+ *
+ * Notificações locais continuam registradas no sistema operacional mesmo
+ * depois que o token do Supabase é removido. Por isso o logout precisa limpar
+ * tanto os agendamentos futuros quanto os avisos que já chegaram. Preferências
+ * do usuário são preservadas para o próximo login; apenas marcadores efêmeros
+ * de deduplicação são descartados.
+ */
+export async function limparNotificacoesAoSair(userId?: string | null): Promise<void> {
+  // Invalida imediatamente qualquer carregamento antigo que ainda esteja em
+  // andamento. Sem isso, ele poderia reagendar um aviso depois da limpeza.
+  geracaoAgendaNotificacoes += 1;
+  geracaoSessaoNotificacoes += 1;
+  try {
+    const chaves = await AsyncStorage.getAllKeys();
+    const chavesDaSessao = chaves.filter((chave) => {
+      if (!chave.startsWith("@notif_")) return false;
+      if (!userId) return true;
+      return chave.includes(`_${userId}_`) || chave.endsWith(`_${userId}`);
+    });
+    if (chavesDaSessao.length > 0) await AsyncStorage.multiRemove(chavesDaSessao);
+
+    if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+    await Promise.allSettled([
+      Notif.cancelAllScheduledNotificationsAsync(),
+      Notif.dismissAllNotificationsAsync(),
+      Notif.setBadgeCountAsync(0),
+    ]);
+  } catch {
+    // O logout nunca deve falhar por indisponibilidade do módulo nativo.
+  }
+}
+
+async function cancelarAgendamentosOpcionaisNativos(): Promise<void> {
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+  const agendadas = await Notif.getAllScheduledNotificationsAsync();
+  const identificadores: string[] = (agendadas ?? [])
+    .filter((item: any) => item?.content?.data?.origem !== "finflow_sistema")
+    .map((item: any) => item.identifier)
+    .filter((id: unknown): id is string => typeof id === "string");
+  await Promise.allSettled(
+    identificadores.map((id) => Notif.cancelScheduledNotificationAsync(id)),
+  );
+}
+
+/**
+ * Cancela somente lembretes configuráveis. Eventos obrigatórios do servidor
+ * permanecem visíveis, mesmo quando o usuário desativa os lembretes pessoais.
+ */
+export async function cancelarNotificacoesOpcionais(userId?: string | null): Promise<void> {
+  geracaoAgendaNotificacoes += 1;
+  try {
+    if (userId) {
+      const chaves = await AsyncStorage.getAllKeys();
+      const marcadoresOpcionais = chaves.filter((chave) => (
+        chave.startsWith("@notif_")
+        && !chave.startsWith("@notif_sistema_")
+        && (chave.includes(`_${userId}_`) || chave.endsWith(`_${userId}`))
+      ));
+      if (marcadoresOpcionais.length > 0) await AsyncStorage.multiRemove(marcadoresOpcionais);
+    }
+
+    if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+    const [agendadas, apresentadas] = await Promise.all([
+      Notif.getAllScheduledNotificationsAsync(),
+      Notif.getPresentedNotificationsAsync(),
+    ]);
+    const identificadoresAgendados: string[] = (agendadas ?? [])
+      .filter((item: any) => item?.content?.data?.origem !== "finflow_sistema")
+      .map((item: any) => item.identifier)
+      .filter((id: unknown): id is string => typeof id === "string");
+    const identificadoresApresentados: string[] = (apresentadas ?? [])
+      .filter((item: any) => item?.request?.content?.data?.origem !== "finflow_sistema")
+      .map((item: any) => item.request?.identifier)
+      .filter((id: unknown): id is string => typeof id === "string");
+    await Promise.allSettled([
+      ...identificadoresAgendados.map((id) => Notif.cancelScheduledNotificationAsync(id)),
+      ...identificadoresApresentados.map((id) => Notif.dismissNotificationAsync(id)),
+      Notif.setBadgeCountAsync(0),
+    ]);
+  } catch {
+    // A preferência permanece desativada; a próxima abertura tenta limpar de novo.
+  }
+}
+
+async function executarAgendamentoNotificacoesDoApp(
   transacoes: { status: string; data_vencimento: string; tipo: string }[],
   userId: string,
   caixinhas?: { nome: string; meta_valor: number; saldo_atual: number; data_prazo?: string }[],
-  cartoes?: { nome: string; dia_vencimento: number; dia_fechamento: number; limite?: number; limite_usado?: number; faturas_pendentes?: string[] }[],
+  cartoes?: { id?: number; nome: string; dia_vencimento: number; dia_fechamento: number; limite?: number; limite_usado?: number; faturas_pendentes?: string[] }[],
   dadosCompletos = false
 ) {
-  if (!Notif || Platform.OS === "web") return;
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+  const geracaoDestaAgenda = geracaoAgendaNotificacoes;
+  let chaveAgendaCompleta: string | null = null;
+  let assinaturaAgendaCompleta: string | null = null;
   try {
+    const { data: sessaoAtual } = await supabase.auth.getSession();
+    if (sessaoAtual.session?.user.id !== userId || geracaoDestaAgenda !== geracaoAgendaNotificacoes) return;
+
+    const agendarSeSessaoAtiva = async (solicitacao: object) => {
+      if (geracaoDestaAgenda !== geracaoAgendaNotificacoes) return null;
+      const { data } = await supabase.auth.getSession();
+      if (data.session?.user.id !== userId || geracaoDestaAgenda !== geracaoAgendaNotificacoes) return null;
+      const identificador = await Notif.scheduleNotificationAsync(solicitacao);
+      const { data: sessaoDepoisDoAgendamento } = await supabase.auth.getSession();
+      if (
+        sessaoDepoisDoAgendamento.session?.user.id !== userId
+        || geracaoDestaAgenda !== geracaoAgendaNotificacoes
+      ) {
+        await Promise.allSettled([
+          Notif.cancelScheduledNotificationAsync(identificador),
+          Notif.dismissNotificationAsync(identificador),
+        ]);
+        return null;
+      }
+      return identificador;
+    };
+
     const ativas = await notificacoesEstaoAtivasPara(userId);
-    if (!ativas) return;
+    if (!ativas || geracaoDestaAgenda !== geracaoAgendaNotificacoes) return;
     const preferencias = await obterPreferenciasNotificacoes(userId);
 
     const agora = new Date();
-    const hojeStr = agora.toISOString().split("T")[0];
+    const hojeStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
 
-    const channelId = Platform.OS === "android" ? "finflow" : undefined;
-    const notifBase = (extra?: object) => ({ badge: 0, ...(channelId ? { android: { channelId } } : {}), ...extra });
+    const channelId = Platform.OS === "android" ? ANDROID_NOTIFICATION_CHANNEL_ID : undefined;
+    const notifBase = (extra?: object) => ({
+      badge: 0,
+      data: { origem: "finflow_opcional" },
+      ...extra,
+    });
+    const gatilhoIntervalo = (seconds: number) => ({
+      type: "timeInterval",
+      seconds: Math.max(1, Math.floor(seconds)),
+      repeats: false,
+      ...(channelId ? { channelId } : {}),
+    }) as any;
 
     try { await Notif.setBadgeCountAsync(0); } catch {}
 
@@ -163,35 +354,48 @@ export async function agendarNotificacoesDoApp(
     // O cancelamento precisa acontecer antes dos alertas imediatos para não apagá-los.
     if (dadosCompletos) {
       const chaveAgendado = `@notif_agendado_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
-      const assinatura = JSON.stringify({
+      chaveAgendaCompleta = chaveAgendado;
+      const assinaturaBruta = JSON.stringify({
         transacoes: transacoes.map((t) => [t.status, t.data_vencimento, t.tipo]).sort(),
         caixinhas: (caixinhas ?? []).map((c) => [c.nome, c.meta_valor, c.saldo_atual, c.data_prazo]).sort(),
-        cartoes: (cartoes ?? []).map((c) => [c.nome, c.dia_vencimento, c.dia_fechamento, ...(c.faturas_pendentes ?? []).sort()]).sort(),
+        cartoes: (cartoes ?? []).map((c) => [c.id, c.nome, c.dia_vencimento, c.dia_fechamento, c.limite, c.limite_usado, ...(c.faturas_pendentes ?? []).sort()]).sort(),
         preferencias,
       });
+      const assinatura = await Crypto.digestStringAsync(
+        Crypto.CryptoDigestAlgorithm.SHA256,
+        assinaturaBruta,
+      );
+      assinaturaAgendaCompleta = assinatura;
       const agendaAtual = await AsyncStorage.getItem(chaveAgendado);
       if (agendaAtual === assinatura) return;
-      await Notif.cancelAllScheduledNotificationsAsync();
-      await AsyncStorage.setItem(chaveAgendado, assinatura);
+      // Reconstrói somente os lembretes configuráveis. Avisos obrigatórios de
+      // parceria possuem origem finflow_sistema e nunca podem ser apagados aqui.
+      await cancelarAgendamentosOpcionaisNativos();
     }
 
     // Alertas imediatos de limite de cartão próximo do máximo (dedup por cartão/dia)
     if (preferencias.limiteCartao && cartoes && cartoes.length > 0) {
-      for (const cartao of cartoes) {
+      for (const [indiceCartao, cartao] of cartoes.entries()) {
         if (cartao.limite && cartao.limite_usado && cartao.limite_usado / cartao.limite > 0.8) {
-          const chaveLimite = `@notif_limite_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${cartao.nome}_${hojeStr}`;
+          const escopoCartao = Number.isSafeInteger(cartao.id) ? String(cartao.id) : String(indiceCartao);
+          const chaveLimite = `@notif_limite_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${escopoCartao}_${hojeStr}`;
           const jaNotificouLimite = await AsyncStorage.getItem(chaveLimite);
           if (!jaNotificouLimite) {
-            await AsyncStorage.setItem(chaveLimite, "1");
             const pct = Math.round((cartao.limite_usado / cartao.limite) * 100);
-            await Notif.scheduleNotificationAsync({
+            const identificador = await agendarSeSessaoAtiva({
               content: {
                 ...notifBase(),
                 title: `⚠️ Cartão ${cartao.nome} — ${pct}% do limite usado`,
                 body: `Disponível: R$ ${(cartao.limite - cartao.limite_usado).toFixed(2)} de R$ ${cartao.limite.toFixed(2)}`,
               },
-              trigger: { type: "timeInterval", seconds: 3, repeats: false } as any,
+              trigger: gatilhoIntervalo(3),
             });
+            if (identificador && !await gravarMarcadorSeSessaoAtiva(chaveLimite, "1", userId, geracaoDestaAgenda)) {
+              await Promise.allSettled([
+                Notif.cancelScheduledNotificationAsync(identificador),
+                Notif.dismissNotificationAsync(identificador),
+              ]);
+            }
           }
         }
       }
@@ -208,20 +412,31 @@ export async function agendarNotificacoesDoApp(
     const chaveVencidos = `@notif_vencidos_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
     const jaNotificouVencidos = await AsyncStorage.getItem(chaveVencidos);
     if (vencidas.length > 0 && !jaNotificouVencidos) {
-      await AsyncStorage.setItem(chaveVencidos, "1");
+      const identificadoresVencidos: string[] = [];
       const despesasVencidas = vencidas.filter((t) => t.tipo === "despesa").length;
       const receitasVencidas = vencidas.filter((t) => t.tipo === "receita").length;
       if (despesasVencidas > 0) {
-        await Notif.scheduleNotificationAsync({
+        const identificador = await agendarSeSessaoAtiva({
           content: { ...notifBase(), title: "🔴 FinFlow — Despesas Vencidas", body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!` },
-          trigger: { type: "timeInterval", seconds: 4, repeats: false } as any,
+          trigger: gatilhoIntervalo(4),
         });
+        if (identificador) identificadoresVencidos.push(identificador);
       }
       if (receitasVencidas > 0) {
-        await Notif.scheduleNotificationAsync({
+        const identificador = await agendarSeSessaoAtiva({
           content: { ...notifBase(), title: "🟡 FinFlow — Receitas Vencidas", body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!` },
-          trigger: { type: "timeInterval", seconds: 5, repeats: false } as any,
+          trigger: gatilhoIntervalo(5),
         });
+        if (identificador) identificadoresVencidos.push(identificador);
+      }
+      if (
+        identificadoresVencidos.length > 0
+        && !await gravarMarcadorSeSessaoAtiva(chaveVencidos, "1", userId, geracaoDestaAgenda)
+      ) {
+        await Promise.allSettled(identificadoresVencidos.flatMap((identificador) => [
+          Notif.cancelScheduledNotificationAsync(identificador),
+          Notif.dismissNotificationAsync(identificador),
+        ]));
       }
     }
 
@@ -248,9 +463,9 @@ export async function agendarNotificacoesDoApp(
       hora8.setHours(8, 0, 0, 0);
       if (hora8 > agora) {
         const seg8 = Math.floor((hora8.getTime() - agora.getTime()) / 1000);
-        await Notif.scheduleNotificationAsync({
+        await agendarSeSessaoAtiva({
           content: { ...notifBase(), title: "📅 FinFlow — Vencimento Hoje", body: corpo },
-          trigger: { type: "timeInterval", seconds: seg8, repeats: false } as any,
+          trigger: gatilhoIntervalo(seg8),
         });
       }
 
@@ -258,9 +473,9 @@ export async function agendarNotificacoesDoApp(
       hora19.setHours(19, 0, 0, 0);
       if (hora19 > agora) {
         const seg19 = Math.floor((hora19.getTime() - agora.getTime()) / 1000);
-        await Notif.scheduleNotificationAsync({
+        await agendarSeSessaoAtiva({
           content: { ...notifBase(), title: "⏰ FinFlow — Lembrete de Hoje", body: corpo },
-          trigger: { type: "timeInterval", seconds: seg19, repeats: false } as any,
+          trigger: gatilhoIntervalo(seg19),
         });
       }
     }
@@ -282,13 +497,13 @@ export async function agendarNotificacoesDoApp(
           const segundos = Math.floor((alvo.getTime() - agora.getTime()) / 1000);
           const titulo = marcosDias === 0 ? "⏰ Prazo de objetivo hoje!" : `📌 Objetivo vence em ${marcosDias} dia${marcosDias > 1 ? "s" : ""}`;
           const falta = Number(caixa.meta_valor) - Number(caixa.saldo_atual);
-          await Notif.scheduleNotificationAsync({
+          await agendarSeSessaoAtiva({
             content: {
               ...notifBase(),
               title: titulo,
               body: `"${caixa.nome}" — faltam R$ ${falta.toFixed(2)} para atingir a meta.`,
             },
-            trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+            trigger: gatilhoIntervalo(segundos),
           });
         }
       }
@@ -323,9 +538,9 @@ export async function agendarNotificacoesDoApp(
             if (evento && (cartao.faturas_pendentes ?? []).includes(evento.mes)) {
               const segundos = Math.floor((evento.data.getTime() - agora.getTime()) / 1000);
               if (segundos > 0) {
-                await Notif.scheduleNotificationAsync({
+                await agendarSeSessaoAtiva({
                   content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
-                  trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+                  trigger: gatilhoIntervalo(segundos),
                 });
               }
             }
@@ -351,16 +566,54 @@ export async function agendarNotificacoesDoApp(
             if (!eventoFechamento) continue;
             const segundos = Math.floor((eventoFechamento.data.getTime() - agora.getTime()) / 1000);
             if (segundos > 0) {
-              await Notif.scheduleNotificationAsync({
+              await agendarSeSessaoAtiva({
                 content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
-                trigger: { type: "timeInterval", seconds: segundos, repeats: false } as any,
+                trigger: gatilhoIntervalo(segundos),
               });
             }
           }
         }
       }
     }
+    if (chaveAgendaCompleta && assinaturaAgendaCompleta) {
+      const agendaConfirmada = await gravarMarcadorSeSessaoAtiva(
+        chaveAgendaCompleta,
+        assinaturaAgendaCompleta,
+        userId,
+        geracaoDestaAgenda,
+      );
+      if (!agendaConfirmada) await cancelarAgendamentosOpcionaisNativos();
+    }
   } catch (e) {
+    if (dadosCompletos && chaveAgendaCompleta) {
+      await Promise.allSettled([
+        AsyncStorage.removeItem(chaveAgendaCompleta),
+        cancelarAgendamentosOpcionaisNativos(),
+      ]);
+    }
     console.log("Erro ao agendar notificações:", e);
   }
+}
+
+let filaAgendamentoNotificacoes: Promise<void> = Promise.resolve();
+
+/** Serializa os chamadores das telas para que cancelamento e reconstrução não
+ * se intercalem e produzam uma agenda parcial ou duplicada. */
+export function agendarNotificacoesDoApp(
+  transacoes: { status: string; data_vencimento: string; tipo: string }[],
+  userId: string,
+  caixinhas?: { nome: string; meta_valor: number; saldo_atual: number; data_prazo?: string }[],
+  cartoes?: { id?: number; nome: string; dia_vencimento: number; dia_fechamento: number; limite?: number; limite_usado?: number; faturas_pendentes?: string[] }[],
+  dadosCompletos = false,
+): Promise<void> {
+  const executar = () => executarAgendamentoNotificacoesDoApp(
+    transacoes,
+    userId,
+    caixinhas,
+    cartoes,
+    dadosCompletos,
+  );
+  const atual = filaAgendamentoNotificacoes.then(executar, executar);
+  filaAgendamentoNotificacoes = atual.catch(() => undefined);
+  return atual;
 }

@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
+  DeviceEventEmitter,
   Modal,
   Platform,
   ScrollView,
@@ -16,7 +17,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { supabase } from "../../lib/supabase";
+import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import {
   descricaoTransferenciaObjetivo,
@@ -27,9 +28,19 @@ import { fmtReais } from "../../lib/utils";
 import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import { useAppTheme } from "../_layout";
+import {
+  dispositivoSemConexao,
+  mensagemFalhaEdicaoOffline,
+  OFFLINE_EDIT_SAVED_MESSAGE,
+  OFFLINE_SAVED_MESSAGE,
+  OFFLINE_SYNC_COMPLETED_EVENT,
+  salvarCriacaoFinanceira,
+  salvarEdicaoFinanceira,
+} from "../../lib/offline-sync";
 
 interface Caixinha {
   id: number;
+  user_id?: string;
   nome: string;
   meta_valor: number;
   saldo_atual: number;
@@ -38,6 +49,7 @@ interface Caixinha {
   compartilhado?: boolean;
   data_prazo?: string | null;
   bloqueado_plano?: boolean;
+  version?: number;
 }
 
 const formatarReais = (valor: number): string => {
@@ -119,11 +131,12 @@ const totalDaSerieAte = (
   let fim = serie.datas.length;
   while (inicio < fim) {
     const meio = Math.floor((inicio + fim) / 2);
-    if (serie.datas[meio] <= dataLimite) inicio = meio + 1;
+    const dataDoMeio = serie.datas.at(meio);
+    if (dataDoMeio !== undefined && dataDoMeio <= dataLimite) inicio = meio + 1;
     else fim = meio;
   }
 
-  return inicio === 0 ? 0 : serie.totaisAcumulados[inicio - 1];
+  return inicio === 0 ? 0 : (serie.totaisAcumulados.at(inicio - 1) ?? 0);
 };
 
 const normalizarNomeObjetivo = (nome: string): string =>
@@ -288,6 +301,13 @@ export default function CaixinhasScreen() {
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
 
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(OFFLINE_SYNC_COMPLETED_EVENT, () => {
+      void carregarDados();
+    });
+    return () => subscription.remove();
+  }, [carregarDados]);
+
   const anoAtual = new Date().getFullYear();
   const fimDoAnoAtual = `${anoAtual}-12-31`;
 
@@ -385,6 +405,41 @@ export default function CaixinhasScreen() {
       ? `${dataPrazoCriacao.getFullYear()}-${String(dataPrazoCriacao.getMonth() + 1).padStart(2, "0")}-${String(dataPrazoCriacao.getDate()).padStart(2, "0")}`
       : null;
 
+    if (!IS_LOCAL_DEMO && !caixinhaCompartilhada) {
+      const payload: Record<string, unknown> = {
+        name: nomeCaixinha.trim(),
+        target_amount: valorNum,
+        initial_balance: saldoInicial,
+        color: corSelecionada,
+        icon: iconeSelecionado,
+      };
+      if (prazoStr) payload.target_date = prazoStr;
+      try {
+        const resultado = await salvarCriacaoFinanceira("create_goal", payload);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "O objetivo foi recusado pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar o objetivo. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setNomeCaixinha(""); setMetaValor(""); setSaldoInicialCaixinha("");
+        setIconeSelecionado("savings"); setCaixinhaCompartilhada(false); setDataPrazoCriacao(null);
+        setModalNovaVisivel(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        return Alert.alert("Não foi possível salvar", "O objetivo não pôde ser salvo no dispositivo. Tente novamente.");
+      }
+    }
+
+    if (!IS_LOCAL_DEMO && caixinhaCompartilhada && await dispositivoSemConexao()) {
+      return Alert.alert(
+        "Conexão necessária",
+        "Objetivos compartilhados ainda não podem ser salvos offline. Reconecte e tente novamente.",
+      );
+    }
+
     const { error } = await supabase.from("caixinhas").insert([{
       nome: nomeCaixinha, meta_valor: valorNum, saldo_atual: saldoInicial,
       cor: corSelecionada, icone: iconeSelecionado, user_id: session.user.id,
@@ -430,6 +485,54 @@ export default function CaixinhasScreen() {
     const prazoStr = dataPrazoEdit
       ? `${dataPrazoEdit.getFullYear()}-${String(dataPrazoEdit.getMonth() + 1).padStart(2, "0")}-${String(dataPrazoEdit.getDate()).padStart(2, "0")}`
       : null;
+
+    if (!IS_LOCAL_DEMO) {
+      const objetivoDoUsuarioAtual = caixaOpcoes.user_id === session.user.id;
+      const compartilhamentoAlterado = compartilhadoEditCaixa !== (caixaOpcoes.compartilhado ?? false);
+      if (objetivoDoUsuarioAtual && !compartilhamentoAlterado) {
+        const changes: Record<string, unknown> = {};
+        if (nomeEditCaixa.trim() !== caixaOpcoes.nome) changes.name = nomeEditCaixa.trim();
+        if (valorNum !== Number(caixaOpcoes.meta_valor)) changes.target_amount = valorNum;
+        if (corEditCaixa !== caixaOpcoes.cor) changes.color = corEditCaixa;
+        if (iconeEditCaixa !== caixaOpcoes.icone) changes.icon = iconeEditCaixa;
+        if (prazoStr !== (caixaOpcoes.data_prazo ?? null)) changes.target_date = prazoStr;
+        if (Object.keys(changes).length === 0) {
+          setModalEditarVisivel(false);
+          setCaixaOpcoes(null);
+          return;
+        }
+        try {
+          const resultado = await salvarEdicaoFinanceira(
+            "update_goal",
+            caixaOpcoes.id,
+            Number(caixaOpcoes.version),
+            changes,
+          );
+          if (resultado.state === "rejected") {
+            return Alert.alert("Não foi possível salvar", mensagemFalhaEdicaoOffline(resultado.errorCode));
+          }
+          if (resultado.state === "uncertain") {
+            return Alert.alert("Sessão alterada", "Não foi possível confirmar a edição. Entre novamente e confira os dados antes de reenviar.");
+          }
+          setModalEditarVisivel(false);
+          setCaixaOpcoes(null);
+          if (resultado.state === "queued") showToast(OFFLINE_EDIT_SAVED_MESSAGE, "info");
+          else void carregarDados();
+          return;
+        } catch {
+          return Alert.alert("Não foi possível salvar", "A edição não pôde ser protegida neste dispositivo. Tente novamente.");
+        }
+      }
+
+      if (await dispositivoSemConexao()) {
+        return Alert.alert(
+          "Conexão necessária",
+          compartilhamentoAlterado
+            ? "Alterar o compartilhamento do objetivo exige conexão para revalidar as permissões."
+            : "Este objetivo compartilhado pertence a outro usuário e só pode ser editado com conexão.",
+        );
+      }
+    }
 
     const { error } = await supabase.from("caixinhas").update({
       nome: nomeEditCaixa, meta_valor: valorNum, cor: corEditCaixa, icone: iconeEditCaixa,

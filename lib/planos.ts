@@ -34,6 +34,8 @@ export interface LimitesPlano {
   iaAnalitica: boolean;
   /** Ações de IA por dia. 0 = sem IA. -1 = ilimitado */
   iaAcoesDia: number;
+  /** Consultas ao modelo por dia, separadas das ações confirmadas. */
+  iaConsultasDia: number;
 }
 
 export interface InfoPlano {
@@ -60,6 +62,7 @@ export const LIMITES_PLANOS: Record<TipoPlano, LimitesPlano> = {
     iaOperacional: false,
     iaAnalitica: false,
     iaAcoesDia: 0,
+    iaConsultasDia: 0,
   },
   smart: {
     contas: 5,
@@ -71,6 +74,7 @@ export const LIMITES_PLANOS: Record<TipoPlano, LimitesPlano> = {
     iaOperacional: true,
     iaAnalitica: false,
     iaAcoesDia: 15,
+    iaConsultasDia: 60,
   },
   premium: {
     contas: -1,
@@ -82,6 +86,7 @@ export const LIMITES_PLANOS: Record<TipoPlano, LimitesPlano> = {
     iaOperacional: true,
     iaAnalitica: true,
     iaAcoesDia: 50,
+    iaConsultasDia: 200,
   },
 };
 
@@ -96,6 +101,7 @@ export const LIMITES_DESENVOLVIMENTO: LimitesPlano = {
   iaOperacional: true,
   iaAnalitica: true,
   iaAcoesDia: -1,
+  iaConsultasDia: 300,
 };
 
 // ─── Informações completas dos planos ────────────────────────────────────────
@@ -131,7 +137,7 @@ export const PLANOS: InfoPlano[] = [
       "3 cartões de crédito",
       "5 caixinhas",
       "14 categorias por tipo",
-      "IA operacional (15 ações/dia)",
+      "IA: 15 ações e até 60 consultas/dia",
     ],
   },
   {
@@ -143,10 +149,10 @@ export const PLANOS: InfoPlano[] = [
     precoAnual: 149.9,
     limites: LIMITES_PLANOS.premium,
     destaque: [
-      "Tudo ilimitado",
+      "Contas e lançamentos ilimitados",
       "IA operacional completa",
       "IA analítica e de insights",
-      "50 ações de IA por dia",
+      "IA: 50 ações e até 200 consultas/dia",
       "Projeções financeiras",
       "Análise de padrões de gastos",
     ],
@@ -200,6 +206,7 @@ export function msgLimiteAtingido(tipo: keyof LimitesPlano, plano: TipoPlano): s
     iaOperacional: "uso da IA operacional",
     iaAnalitica: "uso da IA analítica",
     iaAcoesDia: "ações de IA por dia",
+    iaConsultasDia: "consultas à IA por dia",
   };
   const nomeTipo = mapa[tipo] ?? tipo;
 
@@ -207,6 +214,9 @@ export function msgLimiteAtingido(tipo: keyof LimitesPlano, plano: TipoPlano): s
     return `Você atingiu o limite de ${nomeTipo} do plano Free.\n\nFaça upgrade para continuar.`;
   }
   if (plano === "smart") {
+    if (tipo === "iaAcoesDia" || tipo === "iaConsultasDia") {
+      return `Você atingiu o limite de ${nomeTipo} do plano Smart.\n\nFaça upgrade para o Premium e aumente sua franquia diária.`;
+    }
     return `Você atingiu o limite de ${nomeTipo} do plano Smart.\n\nFaça upgrade para o Premium e tenha acesso ilimitado.`;
   }
   return `Limite de ${nomeTipo} atingido.`;

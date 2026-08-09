@@ -24,6 +24,7 @@ import {
 } from "../constants/finflow-design";
 import { supabase } from "../lib/supabase";
 import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
+import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
 import { useAppTheme } from "./_layout";
 
 const SECURITY_WINDOW_MS = 5 * 60 * 1000;
@@ -147,6 +148,7 @@ export default function SegurancaScreen() {
 
   const securityDeadlineRef = useRef(0);
   const securityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const verifiedPasswordRef = useRef("");
 
   const lockSecurity = useCallback(() => {
     if (securityTimerRef.current) {
@@ -154,6 +156,7 @@ export default function SegurancaScreen() {
       securityTimerRef.current = null;
     }
     securityDeadlineRef.current = 0;
+    verifiedPasswordRef.current = "";
     setIsUnlocked(false);
     setCurrentPassword("");
     setShowCurrentPassword(false);
@@ -247,6 +250,7 @@ export default function SegurancaScreen() {
       return;
     }
 
+    verifiedPasswordRef.current = currentPassword;
     setCurrentPassword("");
     setIsUnlocked(true);
   }
@@ -292,7 +296,7 @@ export default function SegurancaScreen() {
 
     setIsUpdatingEmail(true);
     const { data, error } = await supabase.auth.updateUser(
-      { email: normalizedEmail },
+      { email: normalizedEmail, current_password: verifiedPasswordRef.current },
       { emailRedirectTo: "meuappfinancas://email-confirmed" },
     );
     setIsUpdatingEmail(false);
@@ -315,8 +319,8 @@ export default function SegurancaScreen() {
   async function updatePassword() {
     if (!hasValidSecurityWindow() || isUpdatingPassword) return;
 
-    if (newPassword.length < 6) {
-      Alert.alert("Senha fraca", "A nova senha deve ter pelo menos 6 caracteres.");
+    if (!validatePassword(newPassword).valid) {
+      Alert.alert("Senha fraca", PASSWORD_REQUIREMENTS_MESSAGE);
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -325,7 +329,10 @@ export default function SegurancaScreen() {
     }
 
     setIsUpdatingPassword(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    const { error } = await supabase.auth.updateUser({
+      password: newPassword,
+      current_password: verifiedPasswordRef.current,
+    });
     setIsUpdatingPassword(false);
 
     if (error) {
@@ -361,6 +368,7 @@ export default function SegurancaScreen() {
     setIsUpdatingPhone(true);
     const metadataAtual = session?.user?.user_metadata ?? {};
     const { error } = await supabase.auth.updateUser({
+      current_password: verifiedPasswordRef.current,
       data: {
         ...metadataAtual,
         telefone: normalizedPhone,
@@ -583,7 +591,7 @@ export default function SegurancaScreen() {
               <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>ALTERAR SENHA</Text>
               <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <Text style={[styles.cardTitle, { color: theme.text }]}>Crie uma nova senha</Text>
-                <Text style={[styles.cardDescription, { color: theme.textMuted }]}>Use pelo menos 6 caracteres e evite reutilizar senhas de outros serviços.</Text>
+                <Text style={[styles.cardDescription, { color: theme.textMuted }]}>{PASSWORD_REQUIREMENTS_MESSAGE} Evite reutilizar senhas de outros serviços.</Text>
 
                 <SecurityPasswordField
                   theme={theme}
@@ -610,14 +618,14 @@ export default function SegurancaScreen() {
                 />
 
                 {confirmPassword ? (
-                  <View style={[styles.passwordMatch, { backgroundColor: newPassword === confirmPassword ? `${theme.primary}12` : `${FinFlowColors.red}12` }]}>
+                  <View style={[styles.passwordMatch, { backgroundColor: validatePassword(newPassword).valid && newPassword === confirmPassword ? `${theme.primary}12` : `${FinFlowColors.red}12` }]}>
                     <MaterialIcons
-                      name={newPassword === confirmPassword ? "check-circle" : "error-outline"}
+                      name={validatePassword(newPassword).valid && newPassword === confirmPassword ? "check-circle" : "error-outline"}
                       size={17}
-                      color={newPassword === confirmPassword ? theme.primary : FinFlowColors.red}
+                      color={validatePassword(newPassword).valid && newPassword === confirmPassword ? theme.primary : FinFlowColors.red}
                     />
-                    <Text style={[styles.passwordMatchText, { color: newPassword === confirmPassword ? theme.primary : FinFlowColors.red }]}>
-                      {newPassword === confirmPassword ? "As senhas conferem" : "As senhas não conferem"}
+                    <Text style={[styles.passwordMatchText, { color: validatePassword(newPassword).valid && newPassword === confirmPassword ? theme.primary : FinFlowColors.red }]}>
+                      {validatePassword(newPassword).valid && newPassword === confirmPassword ? "As senhas conferem" : "Confira a senha e os requisitos acima"}
                     </Text>
                   </View>
                 ) : null}

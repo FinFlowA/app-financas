@@ -16,7 +16,8 @@ export function dataEfetivaTransacao(transacao: TransacaoComDatas): string {
 const DESTINO_TRANSFERENCIA_REGEX = /\s*\[Destino:(\d+)\]\s*$/;
 const OBJETIVO_TRANSFERENCIA_REGEX = /\s*\[Objetivo:(\d+):(guardar|resgatar)\]\s*$/;
 const SERIE_REGEX = /\s*\[Serie:([A-Za-z0-9_-]+)\]/;
-const METADADOS_INTERNOS_FINAIS_REGEX = /\s*(?:\[(?:Serie:[A-Za-z0-9_-]+|Destino:\d+|Objetivo:\d+:(?:guardar|resgatar))\]\s*)+$/;
+const SALDO_PARCIAL_REGEX = /\s*\[SaldoParcial:(\d+)\]/;
+const METADADOS_INTERNOS_FINAIS_REGEX = /\s*(?:\[(?:Serie:[A-Za-z0-9_-]+|Destino:\d+|Objetivo:\d+:(?:guardar|resgatar)|SaldoParcial:\d+)\]\s*)+$/;
 const MARCADORES_OBJETIVO = ["[Objetivo:", "Guardar em:", "Resgate de:"] as const;
 const CACHE_MOVIMENTOS_OBJETIVO_LIMITE = 2_000;
 const cacheMovimentosObjetivo = new Map<string, MovimentoObjetivo | null>();
@@ -67,6 +68,19 @@ export function getIdSerie(descricao?: string | null): string | null {
   return (descricao ?? "").match(SERIE_REGEX)?.[1] ?? null;
 }
 
+export function getIdSaldoParcial(descricao?: string | null): number | null {
+  const id = (descricao ?? "").match(SALDO_PARCIAL_REGEX)?.[1];
+  return id ? Number(id) : null;
+}
+
+export function adicionarVinculoSaldoParcial(descricao: string, transacaoRestanteId: number): string {
+  return `${descricao.trim()} [SaldoParcial:${transacaoRestanteId}]`;
+}
+
+export function removerVinculoSaldoParcial(descricao: string): string {
+  return descricao.replace(SALDO_PARCIAL_REGEX, "").trim();
+}
+
 export function descricaoTransferenciaObjetivo(
   descricao: string,
   nomeObjetivo: string,
@@ -91,6 +105,7 @@ export function descricaoVisivel(descricao: string): string {
     .replace(DESTINO_TRANSFERENCIA_REGEX, "")
     .replace(OBJETIVO_TRANSFERENCIA_REGEX, "")
     .replace(SERIE_REGEX, "")
+    .replace(SALDO_PARCIAL_REGEX, "")
     .replace(/^\[Transf\.\]\s*/, "")
     .trim();
 }
@@ -159,7 +174,7 @@ export function sufixoRecorrencia(frequencia: FrequenciaRecorrencia): string {
 }
 
 export function isRecorrenciaFixa(descricao: string): boolean {
-  return /\(Fixa(?: semanal| anual)?\)(?:\s*\[(?:Serie:[A-Za-z0-9_-]+|Destino:\d+|Objetivo:\d+:(?:guardar|resgatar))\])*$/.test(descricao);
+  return /\(Fixa(?: semanal| anual)?\)(?:\s*\[(?:Serie:[A-Za-z0-9_-]+|Destino:\d+|Objetivo:\d+:(?:guardar|resgatar)|SaldoParcial:\d+)\])*$/.test(descricao);
 }
 
 export function descricaoBaseRecorrencia(descricao: string): string {

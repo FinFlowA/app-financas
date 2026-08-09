@@ -1,5 +1,26 @@
 project_id = "qxnfpnabyytdbzdkklet"
 
+[auth]
+minimum_password_length = 8
+password_requirements = "lower_upper_letters_digits_symbols"
+
+[auth.sessions]
+inactivity_timeout = "30m"
+timebox = "24h"
+
+[auth.email]
+double_confirm_changes = true
+enable_confirmations = true
+secure_password_change = true
+
+[auth.rate_limit]
+email_sent = 4
+sms_sent = 8
+anonymous_users = 1
+token_refresh = 120
+sign_in_sign_ups = 20
+token_verifications = 30
+
 [functions.create-subscription-checkout]
 verify_jwt = true
 
@@ -13,6 +34,9 @@ verify_jwt = true
 verify_jwt = false
 
 [functions.groq-proxy]
+verify_jwt = true
+
+[functions.finance-ai]
 verify_jwt = true
 
 [functions.send-auth-sms]

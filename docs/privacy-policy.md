@@ -1,6 +1,6 @@
 # Política de Privacidade — FinFlow
 
-**Última atualização:** 1º de agosto de 2026
+**Última atualização:** 8 de agosto de 2026
 
 ## 1. Responsáveis pelo tratamento
 
@@ -16,10 +16,16 @@ Contato: **Finflowfinancas@gmail.com**
 | Dados financeiros inseridos | Contas, saldos, receitas, despesas, categorias, objetivos, cartões, compras e faturas | Entregar as funções de organização financeira solicitadas. |
 | Compartilhamento | Convites, vínculo com parceiro e registros compartilhados | Operar a função compartilhada quando ambos optarem por utilizá-la. |
 | Suporte | Feedback, sugestões, reclamações e mensagens | Responder solicitações e melhorar o serviço. |
-| Dispositivo | Permissão de notificação, preferências locais e dados técnicos necessários | Programar lembretes locais, guardar preferências e proteger a sessão. |
-| Interações com IA | Perguntas e contexto financeiro necessário à resposta | Fornecer o assistente quando estiver disponível e for acionado. |
+| Dispositivo | Permissão de notificação, preferências locais, fila temporária de operações offline e dados técnicos necessários | Programar lembretes, guardar preferências, proteger a sessão e sincronizar ações solicitadas quando a conexão voltar. |
+| Interações com IA | Perguntas, respostas, propostas de ação, contexto financeiro mínimo e métricas técnicas de uso do modelo | Fornecer o assistente financeiro quando ele for acionado, preparar ações solicitadas, controlar custos e prevenir abuso. |
 
 As notificações financeiras atuais são programadas localmente no aparelho. O FinFlow não registra token de notificação push no servidor enquanto esse recurso não estiver implementado.
+
+### Modo offline
+
+Quando o usuário solicita uma operação compatível sem conexão, o aplicativo pode manter temporariamente no dispositivo os dados necessários para tentar a sincronização depois. Em Android e iOS, o conteúdo financeiro da fila fica no cofre criptografado do sistema; somente identificadores opacos permanecem no armazenamento comum. A fila é isolada por usuário, não guarda senha nem token de sessão e é removida após sincronização confirmada ou descarte explícito. Na demonstração web local, os dados fictícios ficam somente na memória da aba e não são enviados ao Supabase.
+
+Algumas alterações podem exigir conexão quando não for possível garantir conflitos, permissões ou consistência de saldos com segurança. O aplicativo informa esses casos e não simula sucesso.
 
 ### Biometria
 
@@ -42,7 +48,7 @@ O FinFlow não vende dados pessoais. Conforme as funções utilizadas, dados pod
 - **Supabase:** autenticação e banco de dados;
 - **Brevo:** entrega de e-mails transacionais;
 - **Expo:** distribuição técnica e atualizações do aplicativo;
-- **Groq:** mensagens do assistente de IA, somente quando o recurso estiver disponível e for acionado.
+- **OpenAI ou Groq:** mensagens e contexto mínimo do assistente financeiro, somente quando o recurso for acionado. O provedor ativo pode mudar por disponibilidade, custo e qualidade, mas uma solicitação é enviada a apenas um provedor por vez.
 
 Fornecedores podem processar dados fora do Brasil, observadas medidas contratuais e técnicas compatíveis com a legislação. Dados também poderão ser divulgados para cumprir obrigação legal, ordem válida de autoridade ou proteger direitos e segurança.
 
@@ -60,7 +66,13 @@ Quando uma parceria for encerrada:
 
 ## 6. Retenção e segurança
 
-Os dados são mantidos enquanto a conta estiver ativa e pelo tempo necessário às finalidades informadas, ao cumprimento de obrigações legais, à prevenção de fraude e ao exercício de direitos. O telefone opcional pode ser removido pelo usuário na área de segurança. Após pedido de exclusão, os dados são excluídos ou anonimizados, ressalvadas hipóteses legais de retenção e cópias temporárias de segurança.
+Os dados são mantidos enquanto a conta estiver ativa e pelo tempo necessário às finalidades informadas, ao cumprimento de obrigações legais, à prevenção de fraude e ao exercício de direitos. Operações offline permanecem no dispositivo somente até a sincronização confirmada ou o descarte. Conversas, propostas e auditoria operacional do assistente são eliminadas por uma rotina global diária quando ultrapassam 30 dias, ressalvada necessidade legal devidamente justificada. O usuário pode apagar imediatamente as próprias conversas pelo aplicativo; os registros técnicos de propostas e auditoria seguem a janela operacional de 30 dias. Contagens técnicas de requisições, provedor, modelo e quantidade de tokens, sem o conteúdo da conversa ou dos dados financeiros, são eliminadas pela mesma rotina quando ultrapassam 90 dias. Propostas não confirmadas deixam de poder ser executadas em até 30 minutos. O telefone opcional pode ser removido pelo usuário na área de segurança. Após pedido de exclusão, os dados são excluídos ou anonimizados, ressalvadas hipóteses legais de retenção e cópias temporárias de segurança.
+
+### Assistente financeiro e decisões
+
+O assistente é limitado ao controle financeiro. Ele recebe apenas o contexto necessário para responder ao pedido ou preparar uma ação. Qualquer alteração de dados é apresentada previamente e depende de confirmação explícita no botão do aplicativo. A confirmação é vinculada ao usuário, expira e não pode ser reutilizada para duplicar uma operação. O assistente não altera credenciais, identidade, parceria ou assinatura.
+
+No aplicativo instalado, o token temporário de confirmação fica no armazenamento seguro do sistema operacional e é removido ao confirmar, cancelar, expirar, limpar a conversa ou trocar de usuário. Na versão web, esse token não é persistido no navegador.
 
 São adotadas medidas razoáveis de segurança, incluindo autenticação, conexões protegidas e controles de acesso. Nenhum sistema é totalmente imune; incidentes relevantes serão tratados conforme a legislação.
 

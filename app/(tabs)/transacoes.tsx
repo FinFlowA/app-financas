@@ -1,5 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as Crypto from "expo-crypto";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
@@ -16,10 +17,32 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../lib/supabase";
+import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
-import { fmtReais } from "../../lib/utils";
+import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
+import { compararHistoricoPorData, dataVencimentoFaturaHistorico } from "../../lib/history-order";
+import {
+  fallbackTransactionPaymentSummary,
+  normalizeTransactionPaymentHistory,
+  normalizeTransactionPaymentSummaries,
+  shouldShowTransactionPaymentBreakdown,
+  type TransactionPaymentHistory,
+  type TransactionPaymentSummary,
+} from "../../lib/transaction-payments";
+import {
+  dispositivoSemConexao,
+  mensagemFalhaEdicaoOffline,
+  OFFLINE_EDIT_SAVED_MESSAGE,
+  OFFLINE_SYNC_COMPLETED_EVENT,
+  salvarEdicaoFinanceira,
+} from "../../lib/offline-sync";
 import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
+import {
+  createInvoiceOperationRequestId,
+  listInvoicePaymentTransactions,
+  parseInvoicePaymentMarker,
+  reverseInvoicePayment,
+} from "../../lib/invoice-operations";
 import {
   descricaoBaseRecorrencia,
   descricaoVisivel,
@@ -62,6 +85,7 @@ interface FaturaGrupo {
 }
 interface Transacao {
   id: number;
+  user_id?: string;
   tipo: string;
   valor: number;
   data_vencimento: string;
@@ -70,7 +94,27 @@ interface Transacao {
   categoria_id: number | null;
   conta_id: number;
   status: string;
+  version?: number;
+  transacao_pai_id?: number | null;
 }
+
+type ItemHistorico =
+  | {
+      tipo: "transacao";
+      chave: string;
+      ordemId: number;
+      data: string;
+      transacao: Transacao;
+    }
+  | {
+      tipo: "fatura";
+      chave: string;
+      ordemId: number;
+      data: string;
+      fatura: FaturaGrupo;
+    };
+
+type TipoFiltroHistorico = "receita" | "despesa" | "transferencia" | "fatura";
 
 const getEstiloBanco = (nome: string, isDark: boolean) => {
   const n = nome.toLowerCase();
@@ -111,16 +155,10 @@ const normalizarBusca = (valor: string) => (valor || "")
   .normalize("NFD")
   .replace(/[\u0300-\u036f]/g, "");
 
-const timestampDataLocal = (valor: string) => {
-  const [ano, mes, dia] = valor.slice(0, 10).split("-").map(Number);
-  if (!ano || !mes || !dia) return Number.NaN;
-  return new Date(ano, mes - 1, dia).getTime();
-};
-
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
   const router = useRouter();
-  const params = useLocalSearchParams<{ filtroPeriodo?: "proximos-7-dias" | "atrasados" | string }>();
+  const params = useLocalSearchParams<{ filtroPeriodo?: "hoje" | "proximos-7-dias" | "atrasados" | string }>();
   const novoTema = finFlowTheme(isDark);
 
   const Cores = {
@@ -143,11 +181,23 @@ export default function TransacoesScreen() {
   const [faturaAbrirCartao, setFaturaAbrirCartao] = useState<FaturaGrupo | null>(null);
   const [faturaEstornar, setFaturaEstornar] = useState<FaturaGrupo | null>(null);
   const [transacaoDetalhe, setTransacaoDetalhe] = useState<Transacao | null>(null);
+  const [resumosPagamentos, setResumosPagamentos] = useState<Map<number, TransactionPaymentSummary>>(new Map());
+  const [historicoPagamentosDetalhe, setHistoricoPagamentosDetalhe] = useState<TransactionPaymentHistory | null>(null);
+  const [carregandoPagamentosDetalhe, setCarregandoPagamentosDetalhe] = useState(false);
+  const [erroPagamentosDetalhe, setErroPagamentosDetalhe] = useState<string | null>(null);
+  const [transacaoEstornarPagamento, setTransacaoEstornarPagamento] = useState<Transacao | null>(null);
+  const [avisoPagamentoVinculado, setAvisoPagamentoVinculado] = useState<{
+    titulo: string;
+    mensagem: string;
+  } | null>(null);
+  const requisicaoHistoricoPagamentosRef = useRef(0);
 
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
-  const [filtroTipo, setFiltroTipo] = useState<"todas" | "receita" | "despesa" | "transferencia">("todas");
+  // Lista vazia significa "todos". Os demais tipos podem ser combinados.
+  const [filtrosTipo, setFiltrosTipo] = useState<TipoFiltroHistorico[]>([]);
   const [filtroVencidas, setFiltroVencidas] = useState(false);
+  const [filtroHoje, setFiltroHoje] = useState(false);
   const [filtroProximosSeteDias, setFiltroProximosSeteDias] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes">("todos");
   const [busca, setBusca] = useState("");
@@ -181,10 +231,18 @@ export default function TransacoesScreen() {
   } | null>(null);
   const [modalDeleteSimples, setModalDeleteSimples] = useState<Transacao | null>(null);
   const [transacaoConfirmar, setTransacaoConfirmar] = useState<Transacao | null>(null);
+  const [loadingEstornoFatura, setLoadingEstornoFatura] = useState(false);
+  const estornoRequestIdsRef = useRef(new Map<number, string>());
+  const estornoFaturaAlvoRef = useRef<{ key: string; transactionId: number } | null>(null);
   const [dataRealizacao, setDataRealizacao] = useState(new Date());
   const [mostrarDataRealizacao, setMostrarDataRealizacao] = useState(false);
   const [ajusteTipo, setAjusteTipo] = useState<"nenhum" | "juros" | "desconto">("nenhum");
   const [ajusteValor, setAjusteValor] = useState("");
+  const [valorRealizado, setValorRealizado] = useState("");
+  const [salvandoRealizacao, setSalvandoRealizacao] = useState(false);
+  const salvandoRealizacaoRef = useRef(false);
+  const conclusaoRequestIdsRef = useRef(new Map<string, string>());
+  const reaberturaRequestIdsRef = useRef(new Map<string, string>());
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -199,6 +257,7 @@ export default function TransacoesScreen() {
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
   const alterarAno = (direcao: number) => {
+    setFiltroHoje(false);
     setFiltroProximosSeteDias(false);
     setFiltroVencidas(false);
     const novoAno = anoSelecionado + direcao;
@@ -209,6 +268,7 @@ export default function TransacoesScreen() {
   };
 
   const alterarMes = (direcao: number) => {
+    setFiltroHoje(false);
     setFiltroProximosSeteDias(false);
     setFiltroVencidas(false);
     const [ano, mes] = mesSelecionado.split("-").map(Number);
@@ -226,7 +286,7 @@ export default function TransacoesScreen() {
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
         supabase.from("contas").select("id, nome, saldo_inicial, arquivado"),
-        supabase.from("transacoes").select("id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status"),
+        supabase.from("transacoes").select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id"),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
       ]);
@@ -236,42 +296,64 @@ export default function TransacoesScreen() {
         ));
       }
       if (resContas.data) setContas(resContas.data);
-      if (resTransacoes.data) setTransacoes(resTransacoes.data);
+      if (resTransacoes.data) {
+        const todas = resTransacoes.data as Transacao[];
+        const raizes = todas.filter((transacao) => transacao.transacao_pai_id == null);
+        setTransacoes(todas);
+        let resumos = normalizeTransactionPaymentSummaries([], raizes);
+        if (raizes.length > 0) {
+          const { data: dadosResumo, error: erroResumo } = await supabase.rpc(
+            "list_transaction_payment_summaries",
+            { p_transaction_ids: raizes.map((transacao) => transacao.id) },
+          );
+          if (!erroResumo) {
+            resumos = normalizeTransactionPaymentSummaries(dadosResumo, raizes);
+          } else if (erroResumo.code !== "PGRST202") {
+            console.warn("Falha ao carregar resumos de pagamentos do Histórico:", erroResumo.message);
+          }
+        }
+        setResumosPagamentos(resumos);
+      }
 
       // Agrupar fatura_itens por (cartao_id, mes_fatura)
       if (resCartoes.data && resFaturas.data) {
-        const cartaoMap: Record<number, { nome: string; cor: string; dia_vencimento: number }> = {};
-        resCartoes.data.forEach((c: any) => { cartaoMap[c.id] = { nome: c.nome, cor: c.cor, dia_vencimento: c.dia_vencimento }; });
+        const cartaoMap = new Map<number, { nome: string; cor: string; dia_vencimento: number }>();
+        resCartoes.data.forEach((c: any) => {
+          cartaoMap.set(c.id, { nome: c.nome, cor: c.cor, dia_vencimento: c.dia_vencimento });
+        });
 
-        const grupos: Record<string, FaturaGrupo> = {};
+        const grupos = new Map<string, FaturaGrupo>();
         resFaturas.data.forEach((item: any) => {
           // Ignora itens de cartões arquivados (não estão no cartaoMap)
-          if (!cartaoMap[item.cartao_id]) return;
+          const cartao = cartaoMap.get(item.cartao_id);
+          if (!cartao) return;
           const key = `${item.cartao_id}_${item.mes_fatura}`;
-          if (!grupos[key]) {
-            grupos[key] = {
+          let grupo = grupos.get(key);
+          if (!grupo) {
+            grupo = {
               cartao_id: item.cartao_id,
-              cartao_nome: cartaoMap[item.cartao_id]?.nome ?? "Cartão",
-              cartao_cor: cartaoMap[item.cartao_id]?.cor ?? "#457B9D",
+              cartao_nome: cartao.nome,
+              cartao_cor: cartao.cor,
               mes_fatura: item.mes_fatura,
               total: 0,
               pago: true,
               itens_ids: [],
               itens: [],
-              dia_vencimento: cartaoMap[item.cartao_id]?.dia_vencimento ?? 1,
+              dia_vencimento: cartao.dia_vencimento,
             };
+            grupos.set(key, grupo);
           }
-          grupos[key].total += Number(item.valor);
-          if (!item.pago) grupos[key].pago = false;
-          grupos[key].itens_ids.push(item.id);
-          grupos[key].itens.push({
+          grupo.total += Number(item.valor);
+          if (!item.pago) grupo.pago = false;
+          grupo.itens_ids.push(item.id);
+          grupo.itens.push({
             id: item.id,
             descricao: item.descricao || "",
             valor: Number(item.valor),
             categoria_id: item.categoria_id ?? null,
           });
         });
-        setFaturaGrupos(Object.values(grupos));
+        setFaturaGrupos(Array.from(grupos.values()));
       }
     } catch (error) {
       console.error(error);
@@ -287,20 +369,27 @@ export default function TransacoesScreen() {
     const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
       void carregarDados();
     });
-    return () => subscription.remove();
+    const offlineSubscription = DeviceEventEmitter.addListener(OFFLINE_SYNC_COMPLETED_EVENT, () => {
+      void carregarDados();
+    });
+    return () => {
+      subscription.remove();
+      offlineSubscription.remove();
+    };
   }, [carregarDados]);
 
   React.useEffect(() => {
     const filtroRecebido = params.filtroPeriodo;
-    if (filtroRecebido !== "proximos-7-dias" && filtroRecebido !== "atrasados") return;
+    if (filtroRecebido !== "hoje" && filtroRecebido !== "proximos-7-dias" && filtroRecebido !== "atrasados") return;
 
     const agora = new Date();
     setAnoSelecionado(agora.getFullYear());
     setMesSelecionado(`${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}`);
     setFiltroContas([]);
     setFiltroCategorias([]);
-    setFiltroTipo("todas");
+    setFiltrosTipo([]);
     setFiltroVencidas(filtroRecebido === "atrasados");
+    setFiltroHoje(filtroRecebido === "hoje");
     setFiltroStatus("todos");
     setBusca("");
     setPaginaAtual(1);
@@ -310,6 +399,60 @@ export default function TransacoesScreen() {
     // O parâmetro do sino é consumido uma vez; os filtros podem ser alterados livremente depois.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.filtroPeriodo]);
+
+  const transacoesPrincipais = useMemo(
+    () => transacoes.filter((transacao) => transacao.transacao_pai_id == null),
+    [transacoes],
+  );
+
+  const resumoPagamentoDaTransacao = useCallback((transacao: Transacao) =>
+    resumosPagamentos.get(transacao.id) ?? fallbackTransactionPaymentSummary(transacao),
+  [resumosPagamentos]);
+
+  const temPagamentosRegistrados = useCallback((transactionId: number) =>
+    (resumosPagamentos.get(transactionId)?.paymentCount ?? 0) > 0,
+  [resumosPagamentos]);
+
+  const fecharDetalheTransacao = useCallback(() => {
+    requisicaoHistoricoPagamentosRef.current += 1;
+    setTransacaoDetalhe(null);
+    setHistoricoPagamentosDetalhe(null);
+    setErroPagamentosDetalhe(null);
+    setCarregandoPagamentosDetalhe(false);
+  }, []);
+
+  const abrirDetalheTransacao = useCallback(async (transacao: Transacao) => {
+    const fallback = fallbackTransactionPaymentSummary(transacao);
+    const requestNumber = requisicaoHistoricoPagamentosRef.current + 1;
+    requisicaoHistoricoPagamentosRef.current = requestNumber;
+    setTransacaoDetalhe(transacao);
+    setHistoricoPagamentosDetalhe({
+      summary: resumosPagamentos.get(transacao.id) ?? fallback,
+      payments: [],
+    });
+    setErroPagamentosDetalhe(null);
+    setCarregandoPagamentosDetalhe(true);
+
+    const { data, error } = await supabase.rpc(
+      "get_transaction_payment_history",
+      { p_transaction_id: transacao.id },
+    );
+    if (requisicaoHistoricoPagamentosRef.current !== requestNumber) return;
+    setCarregandoPagamentosDetalhe(false);
+    if (error) {
+      if (error.code !== "PGRST202") {
+        setErroPagamentosDetalhe("Não foi possível carregar a lista de pagamentos agora.");
+      }
+      return;
+    }
+    const historico = normalizeTransactionPaymentHistory(data, transacao);
+    setHistoricoPagamentosDetalhe(historico);
+    setResumosPagamentos((atuais) => {
+      const proximos = new Map(atuais);
+      proximos.set(historico.summary.rootTransactionId, historico.summary);
+      return proximos;
+    });
+  }, [resumosPagamentos]);
 
   const buscarObjetivoDoMovimento = async (descricao?: string | null) => {
     const movimento = getMovimentoObjetivo(descricao);
@@ -323,20 +466,76 @@ export default function TransacoesScreen() {
     return { movimento, caixinha: data };
   };
 
-  const executarDeleteUma = async (transacao: Transacao) => {
-    const pagamentoFatura = (transacao.descricao ?? "").match(/\[PagFatura:(\d+):(\d{4}-\d{2}):([^:\]]+)(?::(\d+))?\]/);
-    if (pagamentoFatura) {
-      const cartaoId = Number(pagamentoFatura[1]);
-      const mes = pagamentoFatura[2];
-      const modo = pagamentoFatura[3];
-      const itemId = pagamentoFatura[4] ? Number(pagamentoFatura[4]) : null;
-      if (modo === "parcial" && itemId) {
-        await supabase.from("fatura_itens").delete().eq("id", itemId);
-      } else {
-        await supabase.from("fatura_itens").update({ pago: false })
-          .eq("cartao_id", cartaoId).eq("mes_fatura", mes);
-        if (itemId) await supabase.from("fatura_itens").delete().eq("id", itemId);
+  const executarEstornoPagamentoPorId = async (transactionId: number) => {
+    const requestId = estornoRequestIdsRef.current.get(transactionId)
+      ?? createInvoiceOperationRequestId();
+    estornoRequestIdsRef.current.set(transactionId, requestId);
+    await reverseInvoicePayment(transactionId, requestId);
+    estornoRequestIdsRef.current.delete(transactionId);
+  };
+
+  const estornarTransacaoDeFatura = async (transacao: Transacao) => {
+    if (loadingEstornoFatura) return;
+    setLoadingEstornoFatura(true);
+    try {
+      await executarEstornoPagamentoPorId(transacao.id);
+      setModalDeleteSimples(null);
+      showToast("Pagamento da fatura estornado", "success");
+      await carregarDados();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível estornar o pagamento.", "error");
+      await carregarDados();
+    } finally {
+      setLoadingEstornoFatura(false);
+    }
+  };
+
+  const estornarPagamentosDaFatura = async (grupo: FaturaGrupo) => {
+    if (!session?.user?.id || loadingEstornoFatura) return;
+    setLoadingEstornoFatura(true);
+    try {
+      const key = `${grupo.cartao_id}:${grupo.mes_fatura}`;
+      let transactionId = estornoFaturaAlvoRef.current?.key === key
+        ? estornoFaturaAlvoRef.current.transactionId
+        : null;
+      if (transactionId === null) {
+        const pagamentos = await listInvoicePaymentTransactions(
+          session.user.id,
+          grupo.cartao_id,
+          grupo.mes_fatura,
+        );
+        transactionId = pagamentos[0]?.id ?? null;
+        if (transactionId !== null) {
+          estornoFaturaAlvoRef.current = { key, transactionId };
+        }
       }
+      if (transactionId === null) {
+        throw new Error("Nenhum pagamento rastreável foi encontrado para esta fatura.");
+      }
+      await executarEstornoPagamentoPorId(transactionId);
+      estornoFaturaAlvoRef.current = null;
+      setFaturaEstornar(null);
+      showToast("Pagamento mais recente da fatura estornado", "success");
+      await carregarDados();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível estornar o pagamento.", "error");
+      await carregarDados();
+    } finally {
+      setLoadingEstornoFatura(false);
+    }
+  };
+
+  const executarDeleteUma = async (transacao: Transacao) => {
+    if (parseInvoicePaymentMarker(transacao.descricao)) {
+      await estornarTransacaoDeFatura(transacao);
+      return;
+    }
+    if (temPagamentosRegistrados(transacao.id)) {
+      setAvisoPagamentoVinculado({
+        titulo: "Pagamentos vinculados",
+        mensagem: "Estorne os pagamentos deste agendamento, sempre do mais recente para o mais antigo, antes de excluí-lo. O histórico já realizado não será apagado.",
+      });
+      return;
     }
     const { error } = await supabase.from("transacoes").delete().eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível apagar a transação."); return; }
@@ -358,12 +557,19 @@ export default function TransacoesScreen() {
     const isFixa = isRecorrenciaFixa(desc);
     const parcelaReferencia = getParcelaRecorrencia(desc);
     if (isFixa) {
-      const { error } = await supabase.from("transacoes")
-        .delete()
-        .eq("user_id", session.user.id)
-        .eq("descricao", desc)
-        .gte("data_vencimento", transacao.data_vencimento)
-        .neq("status", "paga");
+      const serieReferencia = getIdSerie(desc);
+      const ids = transacoesPrincipais
+        .filter((item) => item.user_id === session.user.id
+          && item.status !== "paga"
+          && item.data_vencimento >= transacao.data_vencimento
+          && !temPagamentosRegistrados(item.id)
+          && (serieReferencia !== null
+            ? getIdSerie(item.descricao) === serieReferencia
+            : item.descricao === desc))
+        .map((item) => item.id);
+      const { error } = ids.length > 0
+        ? await supabase.from("transacoes").delete().in("id", ids)
+        : { error: null };
       if (error) Alert.alert("Erro", "Não foi possível apagar.");
     } else if (parcelaReferencia) {
       const serieReferencia = getIdSerie(desc);
@@ -382,10 +588,12 @@ export default function TransacoesScreen() {
               && objetivo?.operacao === objetivoReferencia?.operacao;
           return parcela
             && pertenceASerie
+            && t.transacao_pai_id == null
             && parcela.atual >= parcelaReferencia.atual
             && t.conta_id === transacao.conta_id
             && t.tipo === transacao.tipo
-            && t.status !== "paga";
+            && t.status !== "paga"
+            && !temPagamentosRegistrados(t.id);
         })
         .map((t) => t.id);
       if (ids.length > 0) {
@@ -415,9 +623,11 @@ export default function TransacoesScreen() {
             && objetivo?.operacao === objetivoReferencia?.operacao;
         return parcela
           && pertenceASerie
+          && t.transacao_pai_id == null
           && t.conta_id === transacao.conta_id
           && t.tipo === transacao.tipo
-          && t.status !== "paga";
+          && t.status !== "paga"
+          && !temPagamentosRegistrados(t.id);
       })
       .map((t) => t.id);
 
@@ -434,7 +644,8 @@ export default function TransacoesScreen() {
     const objetivoReferencia = getMovimentoObjetivo(transacao.descricao);
     const idsParaDeletar = transacoes
       .filter((t) => {
-        if (!isRecorrenciaFixa(t.descricao) || t.status === "paga") return false;
+        if (t.transacao_pai_id != null || !isRecorrenciaFixa(t.descricao) || t.status === "paga") return false;
+        if (temPagamentosRegistrados(t.id)) return false;
         if (t.conta_id !== transacao.conta_id || t.tipo !== transacao.tipo) return false;
         if (serieReferencia !== null) return getIdSerie(t.descricao) === serieReferencia;
 
@@ -457,6 +668,17 @@ export default function TransacoesScreen() {
     if (!transacao) return;
 
     const descricao = transacao.descricao ?? "";
+    if (parseInvoicePaymentMarker(descricao)) {
+      setModalDeleteSimples(transacao);
+      return;
+    }
+    if (temPagamentosRegistrados(transacao.id)) {
+      setAvisoPagamentoVinculado({
+        titulo: "Pagamentos vinculados",
+        mensagem: "Este agendamento já possui pagamentos. Estorne o mais recente no detalhe antes de tentar excluir. Os pagamentos anteriores nunca são apagados pelo fluxo genérico.",
+      });
+      return;
+    }
     const isFixa = isRecorrenciaFixa(descricao);
     const parcelada = getParcelaRecorrencia(descricao);
 
@@ -519,9 +741,13 @@ export default function TransacoesScreen() {
   };
 
   const abrirEditarTransacao = (t: Transacao) => {
+    if (parseInvoicePaymentMarker(t.descricao)) {
+      showToast("Pagamentos de fatura só podem ser estornados.", "info");
+      return;
+    }
     setTransacaoEditando(t);
     setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : descricaoVisivel(t.descricao));
-    setEditValor(t.valor.toFixed(2).replace(".", ","));
+    setEditValor(formatarEntradaMoeda(String(Math.round(Number(t.valor) * 100))));
     const partes = (t.data_vencimento || new Date().toISOString().split("T")[0]).split("-");
     setEditData(new Date(Number(partes[0]), Number(partes[1]) - 1, Number(partes[2])));
     setEditStatus(t.status === "paga" ? "paga" : "pendente");
@@ -532,14 +758,74 @@ export default function TransacoesScreen() {
 
   const executarEdicao = async (apenasEsta: boolean) => {
     if (!transacaoEditando) return;
+    if (!apenasEsta && temPagamentosRegistrados(transacaoEditando.id)) {
+      setAvisoPagamentoVinculado({
+        titulo: "Edição individual",
+        mensagem: "Como este agendamento já possui pagamentos, somente o saldo restante pode ser editado individualmente. Os pagamentos anteriores permanecem imutáveis.",
+      });
+      return;
+    }
     if (!validarCategoriaEdicao()) return;
-    const valorNum = parseFloat(editValor.replace(",", "."));
-    if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
+    const valorNum = valorDaEntradaMoeda(editValor);
+    if (!Number.isFinite(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
     const dataFormatada = `${editData.getFullYear()}-${String(editData.getMonth() + 1).padStart(2, "0")}-${String(editData.getDate()).padStart(2, "0")}`;
     const campos = { valor: valorNum, status: editStatus, categoria_id: editCategoriaId, conta_id: editContaId };
 
+    const transacaoDoUsuarioAtual = transacaoEditando.user_id === session.user.id;
+    if (!IS_LOCAL_DEMO && apenasEsta && transacaoDoUsuarioAtual && editStatus === transacaoEditando.status) {
+      const descricaoOriginal = isRecorrente(transacaoEditando)
+        ? descricaoBase(transacaoEditando.descricao)
+        : descricaoVisivel(transacaoEditando.descricao);
+      const changes: Record<string, unknown> = {};
+      if (editDescricao.trim() !== descricaoOriginal.trim()) changes.description = editDescricao.trim();
+      if (valorNum !== Number(transacaoEditando.valor)) changes.value = valorNum;
+      if (dataFormatada !== transacaoEditando.data_vencimento) changes.scheduled_date = dataFormatada;
+      if (editContaId !== transacaoEditando.conta_id) changes.account_id = editContaId;
+      if (editCategoriaId !== transacaoEditando.categoria_id && editCategoriaId !== null) {
+        changes.category_id = editCategoriaId;
+      }
+      if (Object.keys(changes).length === 0) {
+        setModalEditarTransVisivel(false);
+        setTransacaoEditando(null);
+        return;
+      }
+      try {
+        const resultado = await salvarEdicaoFinanceira(
+          "update_transaction",
+          transacaoEditando.id,
+          Number(transacaoEditando.version),
+          changes,
+        );
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", mensagemFalhaEdicaoOffline(resultado.errorCode));
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar a edição. Entre novamente e confira os dados antes de reenviar.");
+        }
+        setModalEditarTransVisivel(false);
+        setTransacaoEditando(null);
+        if (resultado.state === "queued") showToast(OFFLINE_EDIT_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        return Alert.alert("Não foi possível salvar", "A edição não pôde ser protegida neste dispositivo. Tente novamente.");
+      }
+    }
+
+    if (!IS_LOCAL_DEMO && await dispositivoSemConexao()) {
+      return Alert.alert(
+        "Conexão necessária",
+        !apenasEsta
+          ? "Editar uma série inteira ainda exige conexão para verificar todas as ocorrências."
+          : !transacaoDoUsuarioAtual
+            ? "Este lançamento compartilhado pertence a outro usuário e só pode ser editado com conexão."
+            : "Concluir ou reabrir um lançamento altera saldos e ainda exige conexão.",
+      );
+    }
+
     if (apenasEsta) {
-      const descricaoAtualizada = substituirDescricaoBase(transacaoEditando.descricao, editDescricao);
+      const baseEditada = isRecorrente(transacaoEditando) ? descricaoBase(editDescricao) : editDescricao.trim();
+      const descricaoAtualizada = substituirDescricaoBase(transacaoEditando.descricao, baseEditada);
       const { error } = await supabase.from("transacoes").update({ ...campos, descricao: descricaoAtualizada, data_vencimento: dataFormatada }).eq("id", transacaoEditando.id);
       if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
     } else {
@@ -548,12 +834,14 @@ export default function TransacoesScreen() {
       const novoBase = descricaoBase(editDescricao);
       const novoDia = editData.getDate();
       const { data: serie } = await supabase.from("transacoes")
-        .select("id, descricao, data_vencimento, status")
+        .select("id, descricao, data_vencimento, status, transacao_pai_id")
         .eq("user_id", session.user.id)
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
       const itens = (serie ?? []).filter((t) =>
         t.status !== "paga"
+        && t.transacao_pai_id == null
+        && !temPagamentosRegistrados(t.id)
         && (serieId !== null ? getIdSerie(t.descricao) === serieId : descricaoBase(t.descricao) === base)
       );
       const resultados = await Promise.all(
@@ -581,10 +869,12 @@ export default function TransacoesScreen() {
   const salvarEdicaoTransacao = async () => {
     if (!transacaoEditando) return;
     if (!validarCategoriaEdicao()) return;
-    const valorNum = parseFloat(editValor.replace(",", "."));
-    if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
+    const valorNum = valorDaEntradaMoeda(editValor);
+    if (!Number.isFinite(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
 
-    if (isRecorrente(transacaoEditando) && transacaoEditando.status !== "paga") {
+    if (isRecorrente(transacaoEditando)
+      && transacaoEditando.status !== "paga"
+      && !temPagamentosRegistrados(transacaoEditando.id)) {
       setModalOpcoesSerie({
         titulo: "Editar Recorrência",
         descricao: "Deseja alterar apenas este lançamento ou toda a série?",
@@ -599,55 +889,227 @@ export default function TransacoesScreen() {
   };
 
   const aplicarStatus = async (transacao: Transacao, novoStatus: "paga" | "pendente", data?: Date) => {
-    const atualizacao: { status: string; data_realizacao?: string | null; valor?: number } = {
-      status: novoStatus,
-      data_realizacao: novoStatus === "pendente" ? null : undefined,
-    };
-    if (novoStatus === "paga" && data) {
-      atualizacao.data_realizacao = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
-      const agendada = new Date(`${transacao.data_vencimento}T00:00:00`);
-      const realizada = new Date(data); realizada.setHours(0, 0, 0, 0);
-      const ajuste = Number(ajusteValor.replace(",", "."));
-      if (realizada > agendada && ajusteTipo !== "nenhum" && Number.isFinite(ajuste) && ajuste > 0) {
-        atualizacao.valor = ajusteTipo === "juros"
-          ? Number(transacao.valor) + ajuste
-          : Math.max(0.01, Number(transacao.valor) - ajuste);
-      }
-    }
-    const { error } = await supabase.from("transacoes").update(atualizacao).eq("id", transacao.id);
-    if (error) { Alert.alert("Erro", "Não foi possível atualizar o estado."); return; }
+    if (salvandoRealizacaoRef.current) return;
+    salvandoRealizacaoRef.current = true;
+    setSalvandoRealizacao(true);
+    let saldoRestanteConfirmado = 0;
 
-    if (transacao) {
-      const { movimento, caixinha } = await buscarObjetivoDoMovimento(transacao.descricao);
-      if (movimento && caixinha) {
-          let novoSaldo = Number(caixinha.saldo_atual);
-          if (novoStatus === "paga") {
-            novoSaldo = movimento.operacao === "guardar" ? novoSaldo + Number(transacao.valor) : Math.max(0, novoSaldo - Number(transacao.valor));
-          } else {
-            novoSaldo = movimento.operacao === "guardar" ? Math.max(0, novoSaldo - Number(transacao.valor)) : novoSaldo + Number(transacao.valor);
+    try {
+      const transacaoComum = (transacao.tipo === "receita" || transacao.tipo === "despesa")
+        && !ehMovimentoInternoSemCategoria(transacao);
+
+      if (novoStatus === "paga" && transacaoComum && transacao.categoria_id === null) {
+        Alert.alert(
+          "Categoria obrigatória",
+          "Este lançamento antigo está sem categoria. Escolha uma categoria antes de concluir para manter seus relatórios corretos.",
+          [
+            { text: "Cancelar", style: "cancel" },
+            { text: "Editar lançamento", onPress: () => abrirEditarTransacao(transacao) },
+          ],
+        );
+        return;
+      }
+
+      if (novoStatus === "pendente") {
+        if (transacaoComum) {
+          const assinaturaReabertura = [
+            transacao.id,
+            transacao.status,
+            Number(transacao.valor).toFixed(2),
+            transacao.data_realizacao ?? "",
+            transacao.descricao,
+          ].join(":");
+          let requestId = reaberturaRequestIdsRef.current.get(assinaturaReabertura);
+          if (!requestId) {
+            requestId = Crypto.randomUUID();
+            reaberturaRequestIdsRef.current.set(assinaturaReabertura, requestId);
           }
-          await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinha.id);
-      }
-    }
 
-    carregarDados();
-    setTransacaoConfirmar(null);
-    setAjusteTipo("nenhum");
-    setAjusteValor("");
-    const tipo = transacao.tipo;
-    if (novoStatus === "paga") {
-      const label = isTransferencia(transacao.descricao) || isMovimentoObjetivo(transacao.descricao)
-        ? "Transferência concluída ✓"
-        : tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
-      showToast(label, transacao.tipo === "receita" ? "success" : "info");
-    } else {
-      showToast("Marcado como pendente", "info");
+          const { data: resultadoReabertura, error: erroReabertura } = await supabase.rpc(
+            "reopen_transaction_completion",
+            {
+              p_transaction_id: transacao.id,
+              p_idempotency_key: requestId,
+            },
+          );
+          if (erroReabertura?.code === "PGRST202") {
+            Alert.alert(
+              "Atualização necessária",
+              "A reabertura segura ainda não está disponível no servidor. Nada foi alterado.",
+            );
+            return;
+          }
+          if (erroReabertura) throw erroReabertura;
+          if (!resultadoReabertura || resultadoReabertura.ok !== true) {
+            throw new Error("A reabertura atômica não devolveu um recibo válido.");
+          }
+          reaberturaRequestIdsRef.current.delete(assinaturaReabertura);
+        } else {
+          const { data: reaberta, error: erroReabrir } = await supabase
+            .from("transacoes")
+            .update({ status: "pendente", data_realizacao: null })
+            .eq("id", transacao.id)
+            .select("id")
+            .maybeSingle();
+          if (erroReabrir) throw erroReabrir;
+          if (!reaberta) throw new Error("O lançamento não pôde ser reaberto.");
+        }
+      } else {
+        if (!data) throw new Error("A data de realização é obrigatória.");
+
+        const dataFormatada = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+        const agendada = new Date(`${transacao.data_vencimento}T00:00:00`);
+        const realizada = new Date(data);
+        realizada.setHours(0, 0, 0, 0);
+        const ajusteAplicavel = realizada > agendada;
+
+        let valorDevido = Number(transacao.valor);
+        const ajuste = valorDaEntradaMoeda(ajusteValor);
+        if (ajusteAplicavel && ajusteTipo === "juros" && ajuste > valorDevido) {
+          Alert.alert("Juros inválidos", "O ajuste de juros não pode ser maior que o valor original do lançamento.");
+          return;
+        }
+        if (ajusteAplicavel && ajusteTipo === "desconto" && ajuste >= valorDevido) {
+          Alert.alert("Desconto inválido", "O desconto precisa ser menor que o valor original do lançamento.");
+          return;
+        }
+        if (ajusteAplicavel && ajusteTipo !== "nenhum" && ajuste > 0) {
+          valorDevido = ajusteTipo === "juros"
+            ? valorDevido + ajuste
+            : Math.max(0.01, valorDevido - ajuste);
+        }
+        valorDevido = Math.round(valorDevido * 100) / 100;
+
+        const permiteParcial = (transacao.tipo === "receita" || transacao.tipo === "despesa")
+          && !ehMovimentoInternoSemCategoria(transacao);
+        const valorInformado = permiteParcial ? valorDaEntradaMoeda(valorRealizado) : valorDevido;
+        if (!Number.isFinite(valorInformado) || valorInformado <= 0) {
+          Alert.alert("Valor inválido", "Informe quanto foi efetivamente pago ou recebido.");
+          return;
+        }
+        if (valorInformado > valorDevido) {
+          Alert.alert(
+            "Valor acima do previsto",
+            "O valor realizado não pode superar o valor devido. Se houve juros, informe o ajuste antes de confirmar.",
+          );
+          return;
+        }
+
+        const valorEfetivo = Math.round(valorInformado * 100) / 100;
+        let conclusaoAtomicaExecutada = false;
+
+        if (permiteParcial) {
+          const ajusteServidor = !ajusteAplicavel || ajusteTipo === "nenhum" || ajuste <= 0
+            ? "none"
+            : ajusteTipo === "juros" ? "interest" : "discount";
+          const valorAjusteServidor = ajusteServidor === "none" ? 0 : ajuste;
+          const assinaturaConclusao = [
+            transacao.id,
+            Number(transacao.valor).toFixed(2),
+            ajusteServidor,
+            valorAjusteServidor.toFixed(2),
+            valorEfetivo.toFixed(2),
+            dataFormatada,
+          ].join(":");
+          let requestId = conclusaoRequestIdsRef.current.get(assinaturaConclusao);
+          if (!requestId) {
+            requestId = Crypto.randomUUID();
+            conclusaoRequestIdsRef.current.set(assinaturaConclusao, requestId);
+          }
+
+          const { data: resultadoAtomico, error: erroAtomico } = await supabase.rpc(
+            "complete_transaction_with_partial",
+            {
+              p_transaction_id: transacao.id,
+              p_expected_value: Number(transacao.valor),
+              p_adjustment_type: ajusteServidor,
+              p_adjustment_value: valorAjusteServidor,
+              p_realized_value: valorEfetivo,
+              p_realization_date: dataFormatada,
+              p_idempotency_key: requestId,
+            },
+          );
+          if (erroAtomico?.code === "PGRST202") {
+            Alert.alert(
+              "Atualização necessária",
+              "A confirmação segura ainda não está disponível no servidor. Nada foi alterado.",
+            );
+            return;
+          }
+          if (erroAtomico) throw erroAtomico;
+          if (!resultadoAtomico || resultadoAtomico.ok !== true) {
+            throw new Error("A confirmação atômica não devolveu um recibo válido.");
+          }
+          const restanteServidor = Number(resultadoAtomico.remaining_value);
+          if (!Number.isFinite(restanteServidor) || restanteServidor < 0) {
+            throw new Error("A confirmação atômica devolveu um saldo restante inválido.");
+          }
+          saldoRestanteConfirmado = Math.round(restanteServidor * 100) / 100;
+          conclusaoAtomicaExecutada = true;
+          conclusaoRequestIdsRef.current.delete(assinaturaConclusao);
+        } else {
+          const { data: concluida, error: erroConcluir } = await supabase.from("transacoes").update({
+            status: "paga",
+            data_realizacao: dataFormatada,
+            valor: valorEfetivo,
+          }).eq("id", transacao.id).select("id").maybeSingle();
+          if (erroConcluir) throw erroConcluir;
+          if (!concluida) throw new Error("O lançamento não pôde ser concluído.");
+        }
+
+        const { movimento, caixinha } = conclusaoAtomicaExecutada
+          ? { movimento: null, caixinha: null }
+          : await buscarObjetivoDoMovimento(transacao.descricao);
+        if (!conclusaoAtomicaExecutada && movimento && caixinha) {
+          const saldoAtual = Number(caixinha.saldo_atual);
+          const novoSaldo = movimento.operacao === "guardar"
+            ? saldoAtual + valorEfetivo
+            : Math.max(0, saldoAtual - valorEfetivo);
+          const { error: erroObjetivo } = await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinha.id);
+          if (erroObjetivo) {
+            await supabase.from("transacoes").update({
+              status: transacao.status,
+              data_realizacao: transacao.data_realizacao ?? null,
+              valor: transacao.valor,
+              descricao: transacao.descricao,
+            }).eq("id", transacao.id);
+            throw erroObjetivo;
+          }
+        }
+      }
+
+      await carregarDados();
+      setTransacaoConfirmar(null);
+      setAjusteTipo("nenhum");
+      setAjusteValor("");
+      setValorRealizado("");
+      const tipo = transacao.tipo;
+      if (novoStatus === "paga") {
+        const label = saldoRestanteConfirmado > 0
+          ? `Valor realizado. Restam ${fmtReais(saldoRestanteConfirmado)} pendentes.`
+          : isTransferencia(transacao.descricao) || isMovimentoObjetivo(transacao.descricao)
+            ? "Transferência concluída ✓"
+            : tipo === "receita" ? "Receita recebida ✓" : "Despesa paga ✓";
+        showToast(label, transacao.tipo === "receita" ? "success" : "info");
+      } else {
+        showToast("Marcado como pendente", "info");
+      }
+    } catch (error) {
+      console.error("Falha ao alterar status da transação:", error);
+      Alert.alert("Erro", "Não foi possível atualizar o lançamento sem risco de inconsistência. Tente novamente.");
+    } finally {
+      salvandoRealizacaoRef.current = false;
+      setSalvandoRealizacao(false);
     }
   };
 
   const alternarStatus = async (id: number, statusAtual: string, _tipo: string) => {
     const transacao = transacoes.find((t) => t.id === id);
     if (!transacao) return;
+    if (parseInvoicePaymentMarker(transacao.descricao)) {
+      showToast("Pagamentos de fatura só podem ser estornados.", "info");
+      return;
+    }
     const conta = contas.find((c) => c.id === transacao.conta_id);
     if (statusAtual !== "paga" && conta?.arquivado) {
       Alert.alert("Conta arquivada", "Reative a conta antes de concluir este lançamento.");
@@ -657,9 +1119,23 @@ export default function TransacoesScreen() {
       aplicarStatus(transacao, "pendente");
       return;
     }
+    const transacaoComum = (transacao.tipo === "receita" || transacao.tipo === "despesa")
+      && !ehMovimentoInternoSemCategoria(transacao);
+    if (transacaoComum && transacao.categoria_id === null) {
+      Alert.alert(
+        "Categoria obrigatória",
+        "Este lançamento antigo está sem categoria. Escolha uma categoria antes de concluir para manter seus relatórios corretos.",
+        [
+          { text: "Cancelar", style: "cancel" },
+          { text: "Editar lançamento", onPress: () => abrirEditarTransacao(transacao) },
+        ],
+      );
+      return;
+    }
     setDataRealizacao(new Date());
     setAjusteTipo("nenhum");
     setAjusteValor("");
+    setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacao.valor) * 100))));
     setTransacaoConfirmar(transacao);
   };
 
@@ -672,15 +1148,28 @@ export default function TransacoesScreen() {
     setFiltroCategorias((prev) => prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]);
   };
 
-  const selecionarFiltroTipo = (tipo: "todas" | "receita" | "despesa" | "transferencia") => {
-    setFiltroTipo(tipo);
+  const selecionarFiltroTipo = (tipo: "todas" | TipoFiltroHistorico) => {
     setPaginaAtual(1);
-    if (tipo === "transferencia") {
+    if (tipo === "todas") {
+      setFiltrosTipo([]);
+      return;
+    }
+
+    const novosTipos = filtrosTipo.includes(tipo)
+      ? filtrosTipo.filter((item) => item !== tipo)
+      : [...filtrosTipo, tipo];
+    setFiltrosTipo(novosTipos);
+
+    const tiposComCategoria = novosTipos.filter((item) => item === "receita" || item === "despesa" || item === "fatura");
+    if (novosTipos.length > 0 && tiposComCategoria.length === 0) {
       setFiltroCategorias([]);
       return;
     }
-    if (tipo === "receita" || tipo === "despesa") {
-      const idsCompativeis = new Set(categorias.filter((categoria) => categoria.tipo === tipo || categoria.tipo === "ambos").map((categoria) => categoria.id));
+    const somenteReceita = tiposComCategoria.length > 0 && tiposComCategoria.every((item) => item === "receita");
+    const somenteDespesaOuFatura = tiposComCategoria.length > 0 && tiposComCategoria.every((item) => item === "despesa" || item === "fatura");
+    if (somenteReceita || somenteDespesaOuFatura) {
+      const tipoCategoria = somenteReceita ? "receita" : "despesa";
+      const idsCompativeis = new Set(categorias.filter((categoria) => categoria.tipo === tipoCategoria || categoria.tipo === "ambos").map((categoria) => categoria.id));
       setFiltroCategorias((atuais) => atuais.filter((id) => idsCompativeis.has(id)));
     }
   };
@@ -712,30 +1201,31 @@ export default function TransacoesScreen() {
     const passaCategoria = filtroCategoriasSet.size === 0
       || (!transferencia && t.categoria_id !== null && filtroCategoriasSet.has(t.categoria_id));
 
-    let passaTipo = true;
-    if (filtroTipo === "transferencia") passaTipo = transferencia;
-    else if (filtroTipo === "receita") passaTipo = t.tipo === "receita" && !transferencia;
-    else if (filtroTipo === "despesa") passaTipo = t.tipo === "despesa" && !transferencia;
+    const tipoHistorico: TipoFiltroHistorico = transferencia
+      ? "transferencia"
+      : t.tipo === "receita" ? "receita" : "despesa";
+    const passaTipo = filtrosTipo.length === 0 || filtrosTipo.includes(tipoHistorico);
 
     return passaConta && passaCategoria && passaTipo && passaBusca;
-  }, [contasPorId, filtroCategoriasSet, filtroContasSet, filtroTipo, termoBusca]);
+  }, [contasPorId, filtroCategoriasSet, filtroContasSet, filtrosTipo, termoBusca]);
 
-  const quantidadeAtrasadasNoEscopo = useMemo(() => transacoes.filter((t) => {
+  const quantidadeAtrasadasNoEscopo = useMemo(() => transacoesPrincipais.filter((t) => {
     const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
     return t.status === "pendente"
       && Boolean(dataSegura)
       && dataSegura < chaveHoje
       && passaFiltrosBasicosHistorico(t);
-  }).length, [chaveHoje, passaFiltrosBasicosHistorico, transacoes]);
+  }).length, [chaveHoje, passaFiltrosBasicosHistorico, transacoesPrincipais]);
 
-  const hojeTimestamp = hojeRef.getTime();
-
-  const transacoesDoMes = useMemo(() => transacoes
+  const transacoesDoMes = useMemo(() => transacoesPrincipais
     .filter((t) => {
       const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
       const passaFiltrosBasicos = passaFiltrosBasicosHistorico(t);
       if (filtroVencidas) {
         return t.status === "pendente" && Boolean(dataSegura) && dataSegura < chaveHoje && passaFiltrosBasicos;
+      }
+      if (filtroHoje) {
+        return t.status === "pendente" && dataSegura === chaveHoje && passaFiltrosBasicos;
       }
       if (filtroProximosSeteDias) {
         return t.status === "pendente"
@@ -751,48 +1241,70 @@ export default function TransacoesScreen() {
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
       return passaFiltrosBasicos && passaMes && passaStatus;
     })
-    .sort((a, b) => {
-      const dataA = timestampDataLocal(dataEfetivaTransacao(a));
-      const dataB = timestampDataLocal(dataEfetivaTransacao(b));
-      const distanciaA = Number.isFinite(dataA) ? Math.abs(dataA - hojeTimestamp) : Number.POSITIVE_INFINITY;
-      const distanciaB = Number.isFinite(dataB) ? Math.abs(dataB - hojeTimestamp) : Number.POSITIVE_INFINITY;
-
-      if (distanciaA !== distanciaB) return distanciaA - distanciaB;
-
-      const aVencida = Number.isFinite(dataA) && dataA < hojeTimestamp;
-      const bVencida = Number.isFinite(dataB) && dataB < hojeTimestamp;
-      if (aVencida !== bVencida) return aVencida ? -1 : 1;
-      if (dataA !== dataB) return aVencida ? dataB - dataA : dataA - dataB;
-      return b.id - a.id;
-    }), [
+    .sort((a, b) => compararHistoricoPorData(
+      { id: a.id, data: dataEfetivaTransacao(a) },
+      { id: b.id, data: dataEfetivaTransacao(b) },
+      hojeRef,
+    )), [
       chaveHoje,
       chaveLimiteProximosSeteDias,
+      filtroHoje,
       filtroProximosSeteDias,
       filtroStatus,
       filtroVencidas,
-      hojeTimestamp,
+      hojeRef,
+      mesSelecionado,
+      passaFiltrosBasicosHistorico,
+      transacoesPrincipais,
+    ]);
+
+  // Os filhos técnicos nunca viram cards, mas representam pagamentos realmente
+  // ocorridos. O rodapé soma cada evento pago na data realizada e a raiz
+  // pendente apenas uma vez, pelo saldo que ainda falta realizar.
+  const eventosFinanceirosDoMes = useMemo(() => transacoes
+    .filter((t) => {
+      const dataSegura = dataEfetivaTransacao(t).slice(0, 10);
+      const passaFiltrosBasicos = passaFiltrosBasicosHistorico(t);
+      if (filtroVencidas) {
+        return t.status === "pendente" && Boolean(dataSegura) && dataSegura < chaveHoje && passaFiltrosBasicos;
+      }
+      if (filtroHoje) {
+        return t.status === "pendente" && dataSegura === chaveHoje && passaFiltrosBasicos;
+      }
+      if (filtroProximosSeteDias) {
+        return t.status === "pendente"
+          && Boolean(dataSegura)
+          && dataSegura >= chaveHoje
+          && dataSegura <= chaveLimiteProximosSeteDias
+          && passaFiltrosBasicos;
+      }
+      const passaMes = (dataSegura || chaveHoje).startsWith(mesSelecionado);
+      let passaStatus = true;
+      if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
+      else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
+      return passaFiltrosBasicos && passaMes && passaStatus;
+    }), [
+      chaveHoje,
+      chaveLimiteProximosSeteDias,
+      filtroHoje,
+      filtroProximosSeteDias,
+      filtroStatus,
+      filtroVencidas,
       mesSelecionado,
       passaFiltrosBasicosHistorico,
       transacoes,
     ]);
 
-  const transacoesPaginadas = useMemo(
-    () => transacoesDoMes.slice(0, paginaAtual * ITENS_POR_PAGINA),
-    [paginaAtual, transacoesDoMes],
-  );
-  const temMais = transacoesPaginadas.length < transacoesDoMes.length;
-
   const faturaGruposDoMes = useMemo(() => faturaGrupos.flatMap((g) => {
-    if (filtroProximosSeteDias) return [];
+    if (filtrosTipo.length > 0 && !filtrosTipo.includes("fatura")) return [];
+    if (filtroHoje || filtroProximosSeteDias) return [];
     // Compras no cartão ainda não possuem uma conta bancária associada.
     if (filtroContas.length > 0) return [];
     if (g.mes_fatura !== mesSelecionado) return [];
     if (filtroStatus === "concluidos" && !g.pago) return [];
     if (filtroStatus === "pendentes" && g.pago) return [];
     if (filtroVencidas) {
-    const [ano, mes] = g.mes_fatura.split("-").map(Number);
-    const ultimoDia = new Date(ano, mes, 0).getDate();
-    const vencimento = new Date(ano, mes - 1, Math.min(g.dia_vencimento, ultimoDia));
+      const vencimento = new Date(`${dataVencimentoFaturaHistorico(g.mes_fatura, g.dia_vencimento)}T00:00:00`);
       if (g.pago || vencimento >= hojeRef) return [];
     }
     let itensEncontrados = g.itens;
@@ -815,39 +1327,74 @@ export default function TransacoesScreen() {
     faturaGrupos,
     filtroCategorias,
     filtroContas.length,
+    filtroHoje,
     filtroProximosSeteDias,
     filtroStatus,
     filtroVencidas,
+    filtrosTipo,
     hojeRef,
     mesSelecionado,
     termoBusca,
   ]);
 
+  const itensHistorico = useMemo<ItemHistorico[]>(() => [
+    ...transacoesDoMes.map((transacao) => {
+      const resumo = resumoPagamentoDaTransacao(transacao);
+      return {
+        tipo: "transacao" as const,
+        chave: `transacao:${transacao.id}`,
+        ordemId: transacao.id,
+        data: resumo.isFullyPaid
+          ? resumo.lastRealizationDate ?? dataEfetivaTransacao(transacao)
+          : resumo.scheduledDate ?? dataEfetivaTransacao(transacao),
+        transacao,
+      };
+    }),
+    ...faturaGruposDoMes.map((fatura) => ({
+      tipo: "fatura" as const,
+      chave: `fatura:${fatura.cartao_id}:${fatura.mes_fatura}`,
+      ordemId: fatura.itens_ids.reduce((maiorId, id) => Math.max(maiorId, id), fatura.cartao_id),
+      data: dataVencimentoFaturaHistorico(fatura.mes_fatura, fatura.dia_vencimento),
+      fatura,
+    })),
+  ].sort((a, b) => compararHistoricoPorData(
+    { id: a.ordemId, data: a.data },
+    { id: b.ordemId, data: b.data },
+    hojeRef,
+  )), [faturaGruposDoMes, hojeRef, resumoPagamentoDaTransacao, transacoesDoMes]);
+
+  const itensHistoricoPaginados = useMemo(
+    () => itensHistorico.slice(0, paginaAtual * ITENS_POR_PAGINA),
+    [itensHistorico, paginaAtual],
+  );
+  const temMais = itensHistoricoPaginados.length < itensHistorico.length;
+
   const { totalReceitas, totalDespesas } = useMemo(() => {
     let receitas = 0;
     let despesas = 0;
-    for (const transacao of transacoesDoMes) {
+    for (const transacao of eventosFinanceirosDoMes) {
       if (isTransferencia(transacao.descricao) || isMovimentoObjetivo(transacao.descricao)) continue;
       if (transacao.tipo === "receita") receitas += transacao.valor;
       else if (transacao.tipo === "despesa") despesas += transacao.valor;
     }
     return { totalReceitas: receitas, totalDespesas: despesas };
-  }, [transacoesDoMes]);
+  }, [eventosFinanceirosDoMes]);
 
   const temFiltroAtivo = mesSelecionado !== mesAtualChave
     || filtroContas.length > 0
     || filtroCategorias.length > 0
-    || filtroTipo !== "todas"
+    || filtrosTipo.length > 0
     || filtroVencidas
+    || filtroHoje
     || filtroProximosSeteDias
     || filtroStatus !== "todos";
   const categoriasReceitaVisiveis = useMemo(
-    () => categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "receita" || (filtroTipo === "receita" && categoria.tipo === "ambos"))),
-    [categorias, filtroTipo],
+    () => categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "receita"),
+    [categorias],
   );
   const categoriasDespesaVisiveis = useMemo(
-    () => categorias.filter((categoria) => categoria.ativa !== 0 && (categoria.tipo === "despesa" || (filtroTipo === "despesa" && categoria.tipo === "ambos"))),
-    [categorias, filtroTipo],
+    () => categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "despesa"),
+    [categorias],
   );
   const categoriasAmbasVisiveis = useMemo(
     () => categorias.filter((categoria) => categoria.ativa !== 0 && categoria.tipo === "ambos"),
@@ -858,28 +1405,43 @@ export default function TransacoesScreen() {
     setMesSelecionado(mesAtualChave);
     setFiltroContas([]);
     setFiltroCategorias([]);
-    setFiltroTipo("todas");
+    setFiltrosTipo([]);
     setFiltroVencidas(false);
+    setFiltroHoje(false);
     setFiltroProximosSeteDias(false);
     setFiltroStatus("todos");
     setBusca("");
     setPaginaAtual(1);
   };
-  const resumoFiltroTipo = filtroTipo === "todas" ? "Todos" : filtroTipo === "receita" ? "Receitas" : filtroTipo === "despesa" ? "Despesas" : "Transferências";
+  const rotulosTipo: Record<TipoFiltroHistorico, string> = {
+    receita: "Receitas",
+    despesa: "Despesas",
+    transferencia: "Transferências",
+    fatura: "Faturas",
+  };
+  const resumoFiltroTipo = filtrosTipo.length === 0
+    ? "Todos"
+    : filtrosTipo.length === 1
+      ? rotulosTipo[filtrosTipo[0]]
+      : `${filtrosTipo.length} tipos`;
   const resumoFiltroContas = filtroContas.length === 0
     ? "Todas"
     : filtroContas.length === 1
       ? contas.find((conta) => conta.id === filtroContas[0])?.nome ?? "1 conta"
       : `${filtroContas.length} contas`;
-  const resumoFiltroCategorias = filtroTipo === "transferencia"
+  const filtroSomenteSemCategoria = filtrosTipo.length > 0
+    && filtrosTipo.every((tipo) => tipo === "transferencia");
+  const resumoFiltroCategorias = filtroSomenteSemCategoria
     ? "Não se aplica"
     : filtroCategorias.length === 0
       ? "Todas"
       : filtroCategorias.length === 1
         ? categorias.find((categoria) => categoria.id === filtroCategorias[0])?.nome ?? "1 categoria"
         : `${filtroCategorias.length} categorias`;
-  const tituloPeriodo = filtroProximosSeteDias
-    ? "Próximos 7 dias"
+  const tituloPeriodo = filtroHoje
+    ? "Vencendo hoje"
+    : filtroProximosSeteDias
+      ? "Próximos 7 dias"
     : filtroVencidas
       ? "Lançamentos atrasados"
       : formatarMesAno(mesSelecionado);
@@ -930,6 +1492,30 @@ export default function TransacoesScreen() {
       },
     }
   ), [scrollY]);
+
+  const permiteValorParcial = Boolean(
+    transacaoConfirmar
+    && (transacaoConfirmar.tipo === "receita" || transacaoConfirmar.tipo === "despesa")
+    && !ehMovimentoInternoSemCategoria(transacaoConfirmar),
+  );
+  const ajusteConclusao = valorDaEntradaMoeda(ajusteValor);
+  const realizacaoAposAgendamento = Boolean(
+    transacaoConfirmar
+    && chaveDataLocal(dataRealizacao) > transacaoConfirmar.data_vencimento,
+  );
+  const valorDevidoConclusao = transacaoConfirmar
+    ? Math.max(
+      0.01,
+      Number(transacaoConfirmar.valor)
+        + (realizacaoAposAgendamento
+          ? ajusteTipo === "juros" ? ajusteConclusao : ajusteTipo === "desconto" ? -ajusteConclusao : 0
+          : 0),
+    )
+    : 0;
+  const saldoRestanteConclusao = Math.max(
+    0,
+    Math.round((valorDevidoConclusao - valorDaEntradaMoeda(valorRealizado)) * 100) / 100,
+  );
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -1044,11 +1630,12 @@ export default function TransacoesScreen() {
           { key: "pendentes", label: "Pendentes" },
           { key: "atrasados", label: "Atrasados" },
         ] as const).map((item) => {
-          const ativo = !filtroProximosSeteDias && (item.key === "atrasados" ? filtroVencidas : (!filtroVencidas && filtroStatus === item.key));
+          const ativo = !filtroHoje && !filtroProximosSeteDias && (item.key === "atrasados" ? filtroVencidas : (!filtroVencidas && filtroStatus === item.key));
           return (
             <TouchableOpacity
               key={item.key}
               onPress={() => {
+                setFiltroHoje(false);
                 setFiltroProximosSeteDias(false);
                 setFiltroVencidas(item.key === "atrasados");
                 setFiltroStatus(item.key === "atrasados" ? "todos" : item.key);
@@ -1066,6 +1653,21 @@ export default function TransacoesScreen() {
           );
         })}
       </View>
+
+      {filtroHoje && (
+        <View style={[styles.periodFilterBanner, { backgroundColor: novoTema.primarySoft, borderColor: novoTema.primary }]}>
+          <View style={styles.periodFilterIcon}>
+            <MaterialIcons name="today" size={20} color={novoTema.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.periodFilterTitle, { color: Cores.textoPrincipal }]}>Agendamentos vencendo hoje</Text>
+            <Text style={[styles.periodFilterText, { color: Cores.textoSecundario }]}>{formatarDataCurta(hojeRef)}</Text>
+          </View>
+          <TouchableOpacity onPress={() => { setFiltroHoje(false); setPaginaAtual(1); }} style={styles.periodFilterClose} accessibilityLabel="Remover filtro de hoje">
+            <MaterialIcons name="close" size={19} color={novoTema.primary} />
+          </TouchableOpacity>
+        </View>
+      )}
 
       {filtroProximosSeteDias && (
         <View style={[styles.periodFilterBanner, { backgroundColor: novoTema.primarySoft, borderColor: novoTema.primary }]}>
@@ -1117,15 +1719,15 @@ export default function TransacoesScreen() {
 
         <View style={styles.filterButtonsRow}>
           <TouchableOpacity
-            style={[styles.mainFilterButton, { backgroundColor: filtroTipo !== "todas" ? "#F4A26114" : Cores.pillFundo, borderColor: filtroTipo !== "todas" ? "#F4A261" : Cores.borda }]}
+            style={[styles.mainFilterButton, { backgroundColor: filtrosTipo.length > 0 ? "#F4A26114" : Cores.pillFundo, borderColor: filtrosTipo.length > 0 ? "#F4A261" : Cores.borda }]}
             onPress={() => setModalFiltroTipo(true)}
             accessibilityLabel={`Filtrar por tipo. Seleção atual: ${resumoFiltroTipo}`}
           >
             <View style={styles.mainFilterLabelRow}>
-              <MaterialIcons name="swap-vert" size={15} color={filtroTipo !== "todas" ? "#F4A261" : Cores.textoSecundario} />
+              <MaterialIcons name="swap-vert" size={15} color={filtrosTipo.length > 0 ? "#F4A261" : Cores.textoSecundario} />
               <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>TIPO</Text>
             </View>
-            <Text style={[styles.mainFilterValue, { color: filtroTipo !== "todas" ? "#D98324" : Cores.textoPrincipal }]} numberOfLines={1}>{resumoFiltroTipo}</Text>
+            <Text style={[styles.mainFilterValue, { color: filtrosTipo.length > 0 ? "#D98324" : Cores.textoPrincipal }]} numberOfLines={1}>{resumoFiltroTipo}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -1141,13 +1743,13 @@ export default function TransacoesScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            disabled={filtroTipo === "transferencia"}
-            style={[styles.mainFilterButton, { backgroundColor: filtroCategorias.length > 0 ? "#2A9D8F14" : Cores.pillFundo, borderColor: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.borda, opacity: filtroTipo === "transferencia" ? 0.48 : 1 }]}
+            disabled={filtroSomenteSemCategoria}
+            style={[styles.mainFilterButton, { backgroundColor: filtroCategorias.length > 0 ? "#2A9D8F14" : Cores.pillFundo, borderColor: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.borda, opacity: filtroSomenteSemCategoria ? 0.48 : 1 }]}
             onPress={() => setModalFiltroCat(true)}
             accessibilityLabel={`Filtrar por categoria. Seleção atual: ${resumoFiltroCategorias}`}
           >
             <View style={styles.mainFilterLabelRow}>
-              <MaterialIcons name={filtroTipo === "transferencia" ? "label-off" : "label"} size={15} color={filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario} />
+              <MaterialIcons name={filtroSomenteSemCategoria ? "label-off" : "label"} size={15} color={filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoSecundario} />
               <Text style={[styles.mainFilterLabel, { color: Cores.textoSecundario }]}>CATEGORIA</Text>
             </View>
             <Text style={[styles.mainFilterValue, { color: filtroCategorias.length > 0 ? "#2A9D8F" : Cores.textoPrincipal }]} numberOfLines={1}>{resumoFiltroCategorias}</Text>
@@ -1163,14 +1765,14 @@ export default function TransacoesScreen() {
             <Text style={[styles.monthHeaderText, { color: Cores.textoPrincipal }]}>
               {tituloPeriodo}
             </Text>
-            {transacoesDoMes.length > 0 && (
+            {itensHistorico.length > 0 && (
               <Text style={[styles.contadorText, { color: Cores.textoSecundario }]}>
-                {transacoesDoMes.length} registro{transacoesDoMes.length !== 1 ? "s" : ""}
+                {itensHistorico.length} registro{itensHistorico.length !== 1 ? "s" : ""}
               </Text>
             )}
           </View>
 
-          {transacoesDoMes.length === 0 ? (
+          {itensHistorico.length === 0 ? (
             <View style={styles.emptyContainer}>
               {temFiltroAtivo || busca.trim().length > 0 ? (
                 <>
@@ -1198,35 +1800,98 @@ export default function TransacoesScreen() {
               )}
             </View>
           ) : (
-            transacoesPaginadas.map((t, index) => {
-              const conta = contas.find((c) => c.id === t.conta_id);
-              const categoria = categorias.find((c) => c.id === t.categoria_id);
-              const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
-              const dataEfetiva = dataEfetivaTransacao(t) || "0000-00-00";
+            itensHistoricoPaginados.map((item, index) => {
+              const dataEfetiva = item.data || "0000-00-00";
               const partes = dataEfetiva.split("-");
-              const isPendente = t.status === "pendente";
-              const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
-              const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
-              const isVencida = isPendente && dataT < hoje;
-              const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
-              const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
-              const prefixoValor = t.tipo === "receita" ? "+" : "-";
-              const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
-              const corStatus = isVencida ? "#DC2626" : "#F59E0B";
-              const textoStatus = isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar";
-              const dataAnterior = index > 0 ? dataEfetivaTransacao(transacoesPaginadas[index - 1]) : null;
+              const dataAnterior = index > 0 ? itensHistoricoPaginados[index - 1].data : null;
               const mostrarCabecalhoDia = index === 0 || dataAnterior !== dataEfetiva;
-              const ontem = new Date(hoje); ontem.setDate(ontem.getDate() - 1);
-              const chaveHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
-              const chaveOntem = `${ontem.getFullYear()}-${String(ontem.getMonth() + 1).padStart(2, "0")}-${String(ontem.getDate()).padStart(2, "0")}`;
+              const ontem = new Date(hojeRef);
+              ontem.setDate(ontem.getDate() - 1);
+              const chaveOntem = chaveDataLocal(ontem);
               const rotuloDia = dataEfetiva === chaveHoje
                 ? "Hoje"
                 : dataEfetiva === chaveOntem
                   ? "Ontem"
                   : `${partes[2]} ${getNomeMes(partes[1])?.substring(0, 3)}`;
+              const bgRow = index % 2 === 0 ? Cores.rowImpar : Cores.rowPar;
+
+              if (item.tipo === "fatura") {
+                const g = item.fatura;
+                return (
+                  <React.Fragment key={item.chave}>
+                    {mostrarCabecalhoDia && (
+                      <Text style={[styles.dayHeading, { color: Cores.textoSecundario, backgroundColor: Cores.fundo }]}>{rotuloDia}</Text>
+                    )}
+                    <TouchableOpacity
+                      style={[styles.transacaoCard, {
+                        backgroundColor: bgRow,
+                        borderBottomColor: Cores.borda,
+                        borderLeftWidth: 3,
+                        borderLeftColor: g.cartao_cor,
+                      }]}
+                      onPress={() => {
+                        if (g.filtrada) return;
+                        if (g.pago) {
+                          const key = `${g.cartao_id}:${g.mes_fatura}`;
+                          if (estornoFaturaAlvoRef.current?.key !== key) {
+                            estornoFaturaAlvoRef.current = null;
+                            estornoRequestIdsRef.current.clear();
+                          }
+                          setFaturaEstornar(g);
+                        } else {
+                          router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(g.cartao_id), mesFatura: g.mes_fatura } } as any);
+                        }
+                      }}
+                      disabled={Boolean(g.filtrada)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
+                        <Text style={[styles.dataDia, { color: Cores.textoPrincipal }]}>FAT</Text>
+                        <Text style={[styles.dataMes, { color: Cores.textoSecundario }]}>{g.mes_fatura.split("-")[1]}/{g.mes_fatura.split("-")[0].slice(2)}</Text>
+                      </View>
+                      <View style={styles.transacaoInfo}>
+                        <View style={{ backgroundColor: g.cartao_cor + "22", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: "flex-start", marginBottom: 4 }}>
+                          <Text style={[styles.contaTag, { color: g.cartao_cor }]}>{g.cartao_nome}</Text>
+                        </View>
+                        <Text style={[styles.transacaoDesc, { color: Cores.textoPrincipal }]}>
+                          Fatura {formatarMesAno(g.mes_fatura)}
+                        </Text>
+                      </View>
+                      <View style={styles.transacaoAcoes}>
+                        <Text style={[styles.transacaoValor, { color: g.pago ? Cores.textoSecundario : "#EF4444" }]}>
+                          - {fmtReais(g.total)}
+                        </Text>
+                        <View style={[styles.statusBadge, { backgroundColor: g.pago ? "#D1FAE5" : "#FEE2E2" }]}>
+                          <Text style={[styles.statusBadgeText, { color: g.pago ? "#065F46" : "#991B1B" }]}>
+                            {g.filtrada ? "Resultado filtrado" : g.pago ? "Paga" : "Em aberto"}
+                          </Text>
+                        </View>
+                      </View>
+                    </TouchableOpacity>
+                  </React.Fragment>
+                );
+              }
+
+              const t = item.transacao;
+              const resumoPagamento = resumoPagamentoDaTransacao(t);
+              const conta = contas.find((c) => c.id === t.conta_id);
+              const categoria = categorias.find((c) => c.id === t.categoria_id);
+              const estiloConta = conta ? getEstiloBanco(conta.nome, isDark) : { bg: isDark ? "#333" : "#E3F2FD", text: isDark ? "#FFF" : "#1976D2" };
+              const isPendente = !resumoPagamento.isFullyPaid;
+              const dataT = new Date(parseInt(partes[0]), parseInt(partes[1]) - 1, parseInt(partes[2]));
+              const isVencida = isPendente && dataT < hojeRef;
+              const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
+              const corValor = transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51";
+              const prefixoValor = t.tipo === "receita" ? "+" : "-";
+              const pagamentoParcial = resumoPagamento.paymentCount > 0 && resumoPagamento.remainingValue > 0;
+              const corStatus = isVencida ? "#DC2626" : pagamentoParcial ? "#805AD5" : "#F59E0B";
+              const textoStatus = pagamentoParcial
+                ? isVencida ? "Parcial vencida" : "Pagamento parcial"
+                : isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar";
+              const mostrarResumoPagamento = shouldShowTransactionPaymentBreakdown(resumoPagamento);
 
               return (
-                <React.Fragment key={t.id}>
+                <React.Fragment key={item.chave}>
                 {mostrarCabecalhoDia && (
                   <Text style={[styles.dayHeading, { color: Cores.textoSecundario, backgroundColor: Cores.fundo }]}>{rotuloDia}</Text>
                 )}
@@ -1238,7 +1903,7 @@ export default function TransacoesScreen() {
                     borderLeftColor: corStatus,
                     opacity: isPendente ? 1 : 0.72,
                   }]}
-                  onPress={() => setTransacaoDetalhe(t)}
+                  onPress={() => { void abrirDetalheTransacao(t); }}
                   activeOpacity={0.75}
                 >
                   {/* Coluna esquerda: categoria */}
@@ -1272,8 +1937,18 @@ export default function TransacoesScreen() {
                   {/* Coluna direita: valor + ações */}
                   <View style={styles.transacaoAcoes}>
                     <Text style={[styles.valorText, { color: isPendente ? corValor : Cores.textoSecundario, textDecorationLine: isPendente ? "none" : "line-through", textDecorationColor: Cores.textoSecundario }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {prefixoValor} {fmtReais(t.valor)}
+                      {prefixoValor} {fmtReais(resumoPagamento.totalValue)}
                     </Text>
+                    {mostrarResumoPagamento && (
+                      <View style={styles.paymentCardBreakdown}>
+                        <Text style={[styles.paymentCardLine, { color: Cores.textoSecundario }]} numberOfLines={1}>
+                          Realizado: {fmtReais(resumoPagamento.paidTotal)}
+                        </Text>
+                        <Text style={[styles.paymentCardLine, { color: resumoPagamento.remainingValue > 0 ? corStatus : Cores.textoSecundario }]} numberOfLines={1}>
+                          Restante: {fmtReais(resumoPagamento.remainingValue)}
+                        </Text>
+                      </View>
+                    )}
                     <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginTop: 5 }} />
                   </View>
                 </TouchableOpacity>
@@ -1289,67 +1964,13 @@ export default function TransacoesScreen() {
               style={{ padding: 14, alignItems: "center", borderTopWidth: 1, borderTopColor: Cores.borda }}
             >
               <Text style={{ color: "#2563EB", fontWeight: "600" }}>
-                Ver mais ({transacoesDoMes.length - transacoesPaginadas.length} restantes)
+                Ver mais ({itensHistorico.length - itensHistoricoPaginados.length} restantes)
               </Text>
             </TouchableOpacity>
           )}
 
-          {/* ─── Faturas de Cartão do Mês (oculto no filtro de receita) ─── */}
-          {faturaGruposDoMes.length > 0 && (filtroTipo === "todas" || filtroTipo === "despesa") && (
-            <>
-              <View style={[styles.faturaSecHeader, { backgroundColor: isDark ? "#252525" : "#F3F4F6", borderColor: Cores.borda }]}>
-                <MaterialIcons name="credit-card" size={14} color={Cores.textoSecundario} />
-                <Text style={[styles.faturaSecLabel, { color: Cores.textoSecundario }]}>Faturas de Cartão</Text>
-              </View>
-              {faturaGruposDoMes.map((g) => (
-                <TouchableOpacity
-                  key={`${g.cartao_id}_${g.mes_fatura}`}
-                  style={[styles.transacaoCard, {
-                    backgroundColor: Cores.rowImpar,
-                    borderBottomColor: Cores.borda,
-                    borderLeftWidth: 3,
-                    borderLeftColor: g.cartao_cor,
-                  }]}
-                  onPress={() => {
-                    if (g.filtrada) return;
-                    if (g.pago) {
-                      setFaturaEstornar(g);
-                    } else {
-                      router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(g.cartao_id), mesFatura: g.mes_fatura } } as any);
-                    }
-                  }}
-                  disabled={Boolean(g.filtrada)}
-                  activeOpacity={0.7}
-                >
-                  <View style={[styles.dataBadge, { backgroundColor: Cores.blocoData }]}>
-                    <Text style={[styles.dataDia, { color: Cores.textoPrincipal }]}>FAT</Text>
-                    <Text style={[styles.dataMes, { color: Cores.textoSecundario }]}>{g.mes_fatura.split("-")[1]}/{g.mes_fatura.split("-")[0].slice(2)}</Text>
-                  </View>
-                  <View style={styles.transacaoInfo}>
-                    <View style={[{ backgroundColor: g.cartao_cor + "22", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, alignSelf: "flex-start", marginBottom: 4 }]}>
-                      <Text style={[styles.contaTag, { color: g.cartao_cor }]}>{g.cartao_nome}</Text>
-                    </View>
-                    <Text style={[styles.transacaoDesc, { color: Cores.textoPrincipal }]}>
-                      Fatura {formatarMesAno(g.mes_fatura)}
-                    </Text>
-                  </View>
-                  <View style={styles.transacaoAcoes}>
-                    <Text style={[styles.transacaoValor, { color: g.pago ? Cores.textoSecundario : "#EF4444" }]}>
-                      - {fmtReais(g.total)}
-                    </Text>
-                    <View style={[styles.statusBadge, { backgroundColor: g.pago ? "#D1FAE5" : "#FEE2E2" }]}>
-                      <Text style={[styles.statusBadgeText, { color: g.pago ? "#065F46" : "#991B1B" }]}>
-                        {g.filtrada ? "Resultado filtrado" : g.pago ? "Paga" : "Em aberto"}
-                      </Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              ))}
-            </>
-          )}
-
           {/* Rodapé */}
-          {transacoesDoMes.length > 0 && (
+          {eventosFinanceirosDoMes.length > 0 && (
             <View style={[styles.tabelaFooter, { backgroundColor: Cores.headerTabela, borderColor: Cores.borda }]}>
               <Text style={[styles.footerLabel, { color: Cores.textoSecundario }]}>Total do mês</Text>
               <View style={styles.footerTotais}>
@@ -1414,46 +2035,240 @@ export default function TransacoesScreen() {
         const destinoId = getContaDestinoTransferencia(t.descricao);
         const destino = contas.find((c) => c.id === destinoId);
         const transferencia = isTransferencia(t.descricao) || isMovimentoObjetivo(t.descricao);
-        const concluida = t.status === "paga";
+        const pagamentoFatura = parseInvoicePaymentMarker(t.descricao);
+        const resumoPagamento = historicoPagamentosDetalhe?.summary ?? resumoPagamentoDaTransacao(t);
+        const concluida = resumoPagamento.isFullyPaid;
+        const possuiPagamentos = resumoPagamento.paymentCount > 0 && !transferencia && !pagamentoFatura;
+        const transacaoPendenteAtual = resumoPagamento.currentPendingTransactionId === null
+          ? t
+          : transacoes.find((transacao) => transacao.id === resumoPagamento.currentPendingTransactionId) ?? t;
         return (
-          <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoDetalhe(null)}>
+          <Modal animationType="fade" transparent visible onRequestClose={fecharDetalheTransacao}>
             <View style={styles.modalOverlay}>
-              <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51" }]}>
+              <View style={[styles.modalContent, styles.paymentDetailModal, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: transferencia ? "#F4A261" : t.tipo === "receita" ? "#2A9D8F" : "#E76F51" }]}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, textAlign: "left", marginBottom: 4 }]}>Detalhes do lançamento</Text>
                     <Text style={{ color: Cores.textoSecundario, fontSize: 13 }}>{descricaoVisivel(t.descricao)}</Text>
                   </View>
-                  <TouchableOpacity onPress={() => setTransacaoDetalhe(null)} style={{ padding: 6 }}>
+                  <TouchableOpacity onPress={fecharDetalheTransacao} style={{ padding: 6 }}>
                     <MaterialIcons name="close" size={24} color={Cores.textoSecundario} />
                   </TouchableOpacity>
                 </View>
+                <ScrollView style={styles.paymentDetailBody} contentContainerStyle={styles.paymentDetailBodyContent} showsVerticalScrollIndicator={false}>
                 <View style={{ backgroundColor: Cores.blocoData, borderRadius: 12, padding: 14, gap: 10 }}>
-                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Valor</Text><Text style={{ color: t.tipo === "receita" ? "#2A9D8F" : "#E76F51", fontWeight: "800" }}>{fmtReais(t.valor)}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Total do agendamento</Text><Text style={{ color: t.tipo === "receita" ? "#2A9D8F" : "#E76F51", fontWeight: "800" }}>{fmtReais(resumoPagamento.totalValue)}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Total realizado</Text><Text style={{ color: "#2A9D8F", fontWeight: "800" }}>{fmtReais(resumoPagamento.paidTotal)}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Restante</Text><Text style={{ color: resumoPagamento.remainingValue > 0 ? "#F59E0B" : Cores.textoSecundario, fontWeight: "800" }}>{fmtReais(resumoPagamento.remainingValue)}</Text></View>
+                  {(!possuiPagamentos || concluida) && (
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Status</Text><Text style={{ color: concluida ? "#2A9D8F" : "#F59E0B", fontWeight: "700" }}>{concluida ? "Concluído" : "Pendente"}</Text></View>
-                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data agendada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_vencimento.split("-").reverse().join("/")}</Text></View>
+                  )}
+                  {possuiPagamentos && !concluida && (
+                    <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Status</Text><Text style={{ color: "#805AD5", fontWeight: "700" }}>Parcialmente realizado</Text></View>
+                  )}
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data agendada</Text><Text style={{ color: Cores.textoPrincipal }}>{(resumoPagamento.scheduledDate ?? t.data_vencimento).split("-").reverse().join("/")}</Text></View>
                   {t.data_realizacao && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data realizada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_realizacao.split("-").reverse().join("/")}</Text></View>}
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Conta</Text><Text style={{ color: Cores.textoPrincipal }}>{conta?.nome ?? "Não informada"}</Text></View>
                   {destino && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Destino</Text><Text style={{ color: Cores.textoPrincipal }}>{destino.nome}</Text></View>}
                   {categoria && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Categoria</Text><Text style={{ color: categoria.cor, fontWeight: "700" }}>{categoria.nome}</Text></View>}
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Tipo</Text><Text style={{ color: Cores.textoPrincipal }}>{transferencia ? "Transferência" : t.tipo === "receita" ? "Receita" : "Despesa"}</Text></View>
                 </View>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", marginTop: 18, gap: 10 }}>
-                  <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#457B9D22" }]} onPress={() => { setTransacaoDetalhe(null); abrirEditarTransacao(t); }}>
-                    <MaterialIcons name="edit" size={20} color="#457B9D" /><Text style={{ color: "#457B9D", fontWeight: "700" }}>Editar</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => { setTransacaoDetalhe(null); alternarStatus(t.id, t.status, t.tipo); }}>
-                    <MaterialIcons name={concluida ? "undo" : "check-circle"} size={20} color="#2A9D8F" /><Text style={{ color: "#2A9D8F", fontWeight: "700" }}>{concluida ? "Reabrir" : "Concluir"}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#E76F5122" }]} onPress={() => { setTransacaoDetalhe(null); deletarTransacao(t.id); }}>
-                    <MaterialIcons name="delete-outline" size={20} color="#E76F51" /><Text style={{ color: "#E76F51", fontWeight: "700" }}>Excluir</Text>
-                  </TouchableOpacity>
+                <View style={[styles.paymentHistorySection, { borderColor: Cores.borda }]}>
+                  <View style={styles.paymentHistoryHeader}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.paymentHistoryTitle, { color: Cores.textoPrincipal }]}>Pagamentos</Text>
+                      <Text style={[styles.paymentHistorySubtitle, { color: Cores.textoSecundario }]}>Cada baixa permanece ligada a este agendamento.</Text>
+                    </View>
+                    <View style={[styles.paymentHistoryCount, { backgroundColor: Cores.pillFundo }]}>
+                      <Text style={{ color: Cores.textoPrincipal, fontWeight: "800" }}>{resumoPagamento.paymentCount}</Text>
+                    </View>
+                  </View>
+                  {carregandoPagamentosDetalhe ? (
+                    <Text style={[styles.paymentHistoryEmpty, { color: Cores.textoSecundario }]}>Carregando pagamentos...</Text>
+                  ) : erroPagamentosDetalhe ? (
+                    <View style={{ gap: 8 }}>
+                      <Text style={[styles.paymentHistoryEmpty, { color: "#E76F51" }]}>{erroPagamentosDetalhe}</Text>
+                      <TouchableOpacity style={[styles.paymentHistoryRetry, { backgroundColor: Cores.pillFundo }]} onPress={() => { void abrirDetalheTransacao(t); }}>
+                        <Text style={{ color: Cores.textoPrincipal, fontWeight: "700" }}>Tentar novamente</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : (historicoPagamentosDetalhe?.payments.length ?? 0) === 0 ? (
+                    <Text style={[styles.paymentHistoryEmpty, { color: Cores.textoSecundario }]}>Nenhum pagamento registrado ainda.</Text>
+                  ) : (
+                    <View style={styles.paymentHistoryList}>
+                      {historicoPagamentosDetalhe?.payments.map((pagamento) => (
+                        <View key={pagamento.paymentId} style={[styles.paymentHistoryRow, { borderTopColor: Cores.borda, opacity: pagamento.active ? 1 : 0.58 }]}>
+                          <View style={[styles.paymentHistoryIcon, { backgroundColor: pagamento.active ? "#2A9D8F22" : "#E76F5122" }]}>
+                            <MaterialIcons name={pagamento.active ? "check" : "undo"} size={17} color={pagamento.active ? "#2A9D8F" : "#E76F51"} />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={{ color: Cores.textoPrincipal, fontWeight: "700" }}>
+                              Pagamento{pagamento.paymentSequence > 0 ? ` ${pagamento.paymentSequence}` : ""}
+                            </Text>
+                            <Text style={{ color: Cores.textoSecundario, fontSize: 11, marginTop: 2 }}>
+                              {pagamento.active ? "Realizado" : "Estornado"} em {pagamento.realizationDate.split("-").reverse().join("/")}
+                            </Text>
+                            {pagamento.adjustmentValue > 0 && (
+                              <Text style={{ color: Cores.textoSecundario, fontSize: 10, marginTop: 2 }}>
+                                {pagamento.adjustmentType === "interest" ? "Juros" : "Desconto"}: {fmtReais(pagamento.adjustmentValue)}
+                              </Text>
+                            )}
+                          </View>
+                          <Text style={{ color: pagamento.active ? "#2A9D8F" : Cores.textoSecundario, fontWeight: "800" }}>{fmtReais(pagamento.value)}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                </View>
+                </ScrollView>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", marginTop: 14, gap: 10 }}>
+                  {pagamentoFatura ? (
+                    <TouchableOpacity
+                      style={[styles.detalheAcao, { backgroundColor: "#F59E0B22" }]}
+                      onPress={() => {
+                        fecharDetalheTransacao();
+                        setModalDeleteSimples(t);
+                      }}
+                    >
+                      <MaterialIcons name="undo" size={20} color="#F59E0B" />
+                      <Text style={{ color: "#F59E0B", fontWeight: "700" }}>Estornar pagamento</Text>
+                    </TouchableOpacity>
+                  ) : (
+                    <>
+                      <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#457B9D22" }]} onPress={() => { fecharDetalheTransacao(); abrirEditarTransacao(t); }}>
+                        <MaterialIcons name="edit" size={20} color="#457B9D" /><Text style={{ color: "#457B9D", fontWeight: "700" }}>Editar</Text>
+                      </TouchableOpacity>
+                      {!concluida && (
+                        <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => { fecharDetalheTransacao(); void alternarStatus(transacaoPendenteAtual.id, transacaoPendenteAtual.status, transacaoPendenteAtual.tipo); }}>
+                          <MaterialIcons name="check-circle" size={20} color="#2A9D8F" /><Text style={{ color: "#2A9D8F", fontWeight: "700" }}>Concluir restante</Text>
+                        </TouchableOpacity>
+                      )}
+                      {possuiPagamentos && (
+                        <TouchableOpacity
+                          style={[styles.detalheAcao, { backgroundColor: "#F59E0B22" }]}
+                          onPress={() => {
+                            fecharDetalheTransacao();
+                            setTransacaoEstornarPagamento(t);
+                          }}
+                        >
+                          <MaterialIcons name="undo" size={20} color="#F59E0B" /><Text style={{ color: "#F59E0B", fontWeight: "700" }}>Estornar último</Text>
+                        </TouchableOpacity>
+                      )}
+                      {concluida && !possuiPagamentos && (
+                        <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => { fecharDetalheTransacao(); void aplicarStatus(t, "pendente"); }}>
+                          <MaterialIcons name="undo" size={20} color="#2A9D8F" /><Text style={{ color: "#2A9D8F", fontWeight: "700" }}>Reabrir</Text>
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#E76F5122" }]} onPress={() => { fecharDetalheTransacao(); deletarTransacao(t.id); }}>
+                        <MaterialIcons name="delete-outline" size={20} color="#E76F51" /><Text style={{ color: "#E76F51", fontWeight: "700" }}>Excluir</Text>
+                      </TouchableOpacity>
+                    </>
+                  )}
                 </View>
               </View>
             </View>
           </Modal>
         );
       })()}
+
+      {transacaoEstornarPagamento && (() => {
+        const alvo = transacaoEstornarPagamento;
+        const resumo = resumoPagamentoDaTransacao(alvo);
+        return (
+          <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoEstornarPagamento(null)}>
+            <View style={styles.modalOverlay}>
+              <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: "#F59E0B" }]}>
+                <View style={{ alignItems: "center", marginBottom: 12 }}>
+                  <View style={{ width: 58, height: 58, borderRadius: 29, backgroundColor: "#F59E0B22", alignItems: "center", justifyContent: "center" }}>
+                    <MaterialIcons name="undo" size={30} color="#F59E0B" />
+                  </View>
+                </View>
+                <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>Estornar último pagamento</Text>
+                <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 20, marginBottom: 16 }}>
+                  Somente o pagamento mais recente será desfeito. Os anteriores continuarão realizados e o valor voltará para o restante deste mesmo agendamento.
+                </Text>
+                <View style={[styles.paymentReopenSummary, { backgroundColor: Cores.blocoData }]}>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Realizado agora</Text><Text style={{ color: "#2A9D8F", fontWeight: "800" }}>{fmtReais(resumo.paidTotal)}</Text></View>
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Restante agora</Text><Text style={{ color: "#F59E0B", fontWeight: "800" }}>{fmtReais(resumo.remainingValue)}</Text></View>
+                </View>
+                <TouchableOpacity
+                  style={{ backgroundColor: "#F59E0B", minHeight: 50, borderRadius: 11, alignItems: "center", justifyContent: "center", marginBottom: 9, opacity: salvandoRealizacao ? 0.55 : 1 }}
+                  disabled={salvandoRealizacao}
+                  onPress={() => {
+                    setTransacaoEstornarPagamento(null);
+                    void aplicarStatus(alvo, "pendente");
+                  }}
+                >
+                  <Text style={{ color: "#FFF", fontWeight: "800" }}>{salvandoRealizacao ? "Estornando..." : "Confirmar estorno"}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={{ backgroundColor: Cores.pillFundo, minHeight: 48, borderRadius: 11, alignItems: "center", justifyContent: "center" }}
+                  onPress={() => setTransacaoEstornarPagamento(null)}
+                  disabled={salvandoRealizacao}
+                >
+                  <Text style={{ color: Cores.textoSecundario, fontWeight: "700" }}>Cancelar</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
+
+      {avisoPagamentoVinculado && (
+        <Modal
+          animationType="fade"
+          transparent
+          visible
+          onRequestClose={() => setAvisoPagamentoVinculado(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, {
+              backgroundColor: Cores.cardFundo,
+              borderTopWidth: 4,
+              borderTopColor: "#F59E0B",
+            }]}
+            >
+              <View style={{ alignItems: "center", marginBottom: 12 }}>
+                <View style={{
+                  width: 58,
+                  height: 58,
+                  borderRadius: 29,
+                  backgroundColor: "#F59E0B22",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                >
+                  <MaterialIcons name="payments" size={30} color="#F59E0B" />
+                </View>
+              </View>
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>
+                {avisoPagamentoVinculado.titulo}
+              </Text>
+              <Text style={{
+                color: Cores.textoSecundario,
+                textAlign: "center",
+                lineHeight: 20,
+                marginBottom: 18,
+              }}
+              >
+                {avisoPagamentoVinculado.mensagem}
+              </Text>
+              <TouchableOpacity
+                style={{
+                  backgroundColor: "#2A9D8F",
+                  minHeight: 50,
+                  borderRadius: 11,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+                onPress={() => setAvisoPagamentoVinculado(null)}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "800" }}>Entendi</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
 
       {faturaEstornar && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setFaturaEstornar(null)}>
@@ -1466,21 +2281,16 @@ export default function TransacoesScreen() {
               </View>
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>Estornar pagamento</Text>
               <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 20, marginBottom: 20 }}>
-                A fatura de {faturaEstornar.cartao_nome} — {formatarMesAno(faturaEstornar.mes_fatura)} voltará a ficar em aberto.
+                Somente o pagamento mais recente de {faturaEstornar.cartao_nome} — {formatarMesAno(faturaEstornar.mes_fatura)} será estornado. Pagamentos anteriores continuarão no Histórico.
               </Text>
-              <TouchableOpacity style={{ backgroundColor: "#F59E0B", minHeight: 50, borderRadius: 11, alignItems: "center", justifyContent: "center", marginBottom: 9 }} onPress={async () => {
-                const g = faturaEstornar;
-                setFaturaEstornar(null);
-                const descricao = `Fatura ${g.cartao_nome} - ${formatarMesAno(g.mes_fatura)}`;
-                await Promise.all([
-                  supabase.from("fatura_itens").update({ pago: false }).in("id", g.itens_ids),
-                  supabase.from("transacoes").delete().eq("user_id", session!.user.id).like("descricao", `${descricao}%`),
-                ]);
-                carregarDados();
-              }}>
-                <Text style={{ color: "#FFF", fontWeight: "800" }}>Confirmar estorno</Text>
+              <TouchableOpacity
+                style={{ backgroundColor: "#F59E0B", minHeight: 50, borderRadius: 11, alignItems: "center", justifyContent: "center", marginBottom: 9, opacity: loadingEstornoFatura ? 0.55 : 1 }}
+                onPress={() => estornarPagamentosDaFatura(faturaEstornar)}
+                disabled={loadingEstornoFatura}
+              >
+                <Text style={{ color: "#FFF", fontWeight: "800" }}>{loadingEstornoFatura ? "Estornando..." : "Confirmar estorno"}</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={{ backgroundColor: Cores.pillFundo, minHeight: 48, borderRadius: 11, alignItems: "center", justifyContent: "center" }} onPress={() => setFaturaEstornar(null)}>
+              <TouchableOpacity style={{ backgroundColor: Cores.pillFundo, minHeight: 48, borderRadius: 11, alignItems: "center", justifyContent: "center" }} onPress={() => setFaturaEstornar(null)} disabled={loadingEstornoFatura}>
                 <Text style={{ color: Cores.textoSecundario, fontWeight: "700" }}>Cancelar</Text>
               </TouchableOpacity>
             </View>
@@ -1510,10 +2320,19 @@ export default function TransacoesScreen() {
                   value={dataRealizacao}
                   mode="date"
                   display="default"
-                  onChange={(_e, d) => { setMostrarDataRealizacao(false); if (d) setDataRealizacao(d); }}
+                  onChange={(_e, d) => {
+                    setMostrarDataRealizacao(false);
+                    if (!d) return;
+                    setDataRealizacao(d);
+                    if (chaveDataLocal(d) <= transacaoConfirmar.data_vencimento) {
+                      setAjusteTipo("nenhum");
+                      setAjusteValor("");
+                      setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacaoConfirmar.valor) * 100))));
+                    }
+                  }}
                 />
               )}
-              {dataRealizacao > new Date(`${transacaoConfirmar.data_vencimento}T23:59:59`) && (
+              {realizacaoAposAgendamento && (
                 <View style={{ marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: isDark ? "#2A2418" : "#FFF7E6", borderWidth: 1, borderColor: isDark ? "#5A4722" : "#F4D79A" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
                     <MaterialIcons name="schedule" size={19} color="#D89014" />
@@ -1524,7 +2343,11 @@ export default function TransacoesScreen() {
                   </Text>
                   <View style={{ flexDirection: "row", gap: 6 }}>
                     {(["nenhum", "juros", "desconto"] as const).map((tipo) => (
-                      <TouchableOpacity key={tipo} onPress={() => { setAjusteTipo(tipo); if (tipo === "nenhum") setAjusteValor(""); }} style={{ flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: "center", backgroundColor: ajusteTipo === tipo ? (tipo === "desconto" ? "#2A9D8F" : tipo === "juros" ? "#E76F51" : "#68727D") : Cores.cardFundo }}>
+                      <TouchableOpacity key={tipo} onPress={() => {
+                        setAjusteTipo(tipo);
+                        setAjusteValor("");
+                        if (transacaoConfirmar) setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacaoConfirmar.valor) * 100))));
+                      }} style={{ flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: "center", backgroundColor: ajusteTipo === tipo ? (tipo === "desconto" ? "#2A9D8F" : tipo === "juros" ? "#E76F51" : "#68727D") : Cores.cardFundo }}>
                         <Text style={{ color: ajusteTipo === tipo ? "#FFF" : Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>{tipo === "nenhum" ? "Sem ajuste" : tipo === "juros" ? "Juros" : "Desconto"}</Text>
                       </TouchableOpacity>
                     ))}
@@ -1532,17 +2355,48 @@ export default function TransacoesScreen() {
                   {ajusteTipo !== "nenhum" && (
                     <View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                       <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
-                      <TextInput value={ajusteValor} onChangeText={setAjusteValor} keyboardType="decimal-pad" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
+                      <TextInput value={ajusteValor} onChangeText={(texto) => {
+                        const formatado = formatarEntradaMoeda(texto);
+                        setAjusteValor(formatado);
+                        const ajusteNumerico = valorDaEntradaMoeda(formatado);
+                        const novoValor = ajusteTipo === "juros"
+                          ? Number(transacaoConfirmar.valor) + ajusteNumerico
+                          : Math.max(0.01, Number(transacaoConfirmar.valor) - ajusteNumerico);
+                        setValorRealizado(formatarEntradaMoeda(String(Math.round(novoValor * 100))));
+                      }} keyboardType="numeric" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
                     </View>
                   )}
                 </View>
               )}
+              {permiteValorParcial && (
+                <View style={{ marginTop: 14 }}>
+                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", marginBottom: 6 }}>
+                    Quanto foi {transacaoConfirmar.tipo === "receita" ? "recebido" : "pago"}?
+                  </Text>
+                  <View style={[styles.editInput, { marginBottom: 6, backgroundColor: Cores.blocoData, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                    <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
+                    <TextInput
+                      value={valorRealizado}
+                      onChangeText={(texto) => setValorRealizado(formatarEntradaMoeda(texto))}
+                      keyboardType="numeric"
+                      placeholder="0,00"
+                      placeholderTextColor={Cores.textoSecundario}
+                      style={{ color: Cores.textoPrincipal, flex: 1, fontWeight: "700" }}
+                    />
+                  </View>
+                  <Text style={{ color: saldoRestanteConclusao > 0 ? "#F59E0B" : Cores.textoSecundario, fontSize: 12, lineHeight: 17 }}>
+                      {saldoRestanteConclusao > 0
+                        ? `O saldo de ${fmtReais(saldoRestanteConclusao)} continuará pendente neste mesmo agendamento. O pagamento realizado ficará registrado no detalhe.`
+                        : `Valor previsto: ${fmtReais(valorDevidoConclusao)}.`}
+                  </Text>
+                </View>
+              )}
               <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>
-                <TouchableOpacity style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: Cores.blocoData }} onPress={() => setTransacaoConfirmar(null)}>
+                <TouchableOpacity disabled={salvandoRealizacao} style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: Cores.blocoData, opacity: salvandoRealizacao ? 0.55 : 1 }} onPress={() => setTransacaoConfirmar(null)}>
                   <Text style={{ color: Cores.textoSecundario, fontWeight: "bold" }}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#2A9D8F" }} onPress={() => aplicarStatus(transacaoConfirmar, "paga", dataRealizacao)}>
-                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>Confirmar</Text>
+                <TouchableOpacity disabled={salvandoRealizacao} style={{ flex: 1, padding: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#2A9D8F", opacity: salvandoRealizacao ? 0.55 : 1 }} onPress={() => aplicarStatus(transacaoConfirmar, "paga", dataRealizacao)}>
+                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>{salvandoRealizacao ? "Salvando..." : "Confirmar"}</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -1566,10 +2420,13 @@ export default function TransacoesScreen() {
                 </Text>
                 <Switch
                   value={editStatus === "paga"}
-                  onValueChange={(v) => setEditStatus(v ? "paga" : "pendente")}
+                  disabled
                   trackColor={{ false: "#767577", true: "#2A9D8F" }}
                 />
               </View>
+              <Text style={{ color: isDark ? "#888" : "#777", fontSize: 11, lineHeight: 16, marginTop: -9, marginBottom: 14 }}>
+                Para concluir ou reabrir, use a ação do lançamento no histórico. Assim a data e o valor realizado são confirmados com segurança.
+              </Text>
 
               {/* Descrição */}
               <TextInput
@@ -1580,6 +2437,15 @@ export default function TransacoesScreen() {
                 onChangeText={setEditDescricao}
               />
 
+              {transacaoEditando && getParcelaRecorrencia(transacaoEditando.descricao) && (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 10, backgroundColor: Cores.blocoData }}>
+                  <MaterialIcons name="lock-outline" size={16} color={Cores.textoSecundario} />
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>
+                    Parcela {getParcelaRecorrencia(transacaoEditando.descricao)?.atual} de {getParcelaRecorrencia(transacaoEditando.descricao)?.total} — informação fixa
+                  </Text>
+                </View>
+              )}
+
               {/* Valor */}
               <View style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", borderColor: isDark ? "#444" : "#DDD", flexDirection: "row", alignItems: "center" }]}>
                 <Text style={{ color: isDark ? "#888" : "#AAA", fontSize: 15, marginRight: 4 }}>R$</Text>
@@ -1588,8 +2454,8 @@ export default function TransacoesScreen() {
                   placeholder="0,00"
                   placeholderTextColor={isDark ? "#888" : "#AAA"}
                   value={editValor}
-                  onChangeText={setEditValor}
-                  keyboardType="decimal-pad"
+                  onChangeText={(texto) => setEditValor(formatarEntradaMoeda(texto))}
+                  keyboardType="numeric"
                 />
               </View>
 
@@ -1703,25 +2569,37 @@ export default function TransacoesScreen() {
 
       {/* MODAL CONFIRMAR DELETE SIMPLES */}
       {modalDeleteSimples && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalDeleteSimples(null)}>
+        <Modal animationType="fade" transparent visible onRequestClose={() => { if (!loadingEstornoFatura) setModalDeleteSimples(null); }}>
           <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 3, borderTopColor: "#E76F51" }]}>
+            <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 3, borderTopColor: parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "#F59E0B" : "#E76F51" }]}>
               <View style={{ alignItems: "center", marginBottom: 12 }}>
-                <MaterialIcons name="delete-outline" size={36} color="#E76F51" />
+                <MaterialIcons name={parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "undo" : "delete-outline"} size={36} color={parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "#F59E0B" : "#E76F51"} />
               </View>
-              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>Excluir</Text>
+              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>{parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "Estornar pagamento" : "Excluir"}</Text>
               <Text style={{ color: isDark ? "#AAA" : "#555", textAlign: "center", marginBottom: 24, fontSize: 14 }}>
-                Tem certeza que deseja apagar esta transação?
+                {parseInvoicePaymentMarker(modalDeleteSimples.descricao)
+                  ? "Este pagamento será estornado conforme seus itens vinculados e o lançamento será removido do histórico."
+                  : "Tem certeza que deseja apagar esta transação?"}
               </Text>
               <TouchableOpacity
-                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: "#E76F51", marginBottom: 10 }}
-                onPress={() => { const t = modalDeleteSimples; setModalDeleteSimples(null); executarDeleteUma(t); }}
+                style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "#F59E0B" : "#E76F51", marginBottom: 10, opacity: loadingEstornoFatura ? 0.55 : 1 }}
+                onPress={() => {
+                  const transacao = modalDeleteSimples;
+                  if (parseInvoicePaymentMarker(transacao.descricao)) {
+                    void estornarTransacaoDeFatura(transacao);
+                  } else {
+                    setModalDeleteSimples(null);
+                    void executarDeleteUma(transacao);
+                  }
+                }}
+                disabled={loadingEstornoFatura}
               >
-                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Apagar</Text>
+                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{loadingEstornoFatura ? "Processando..." : parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "Estornar" : "Apagar"}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={{ paddingVertical: 13, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }}
                 onPress={() => setModalDeleteSimples(null)}
+                disabled={loadingEstornoFatura}
               >
                 <Text style={{ color: isDark ? "#AAA" : "#666", fontWeight: "bold" }}>Cancelar</Text>
               </TouchableOpacity>
@@ -1774,7 +2652,7 @@ export default function TransacoesScreen() {
               <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#F4A2611F" }]}><MaterialIcons name="swap-vert" size={22} color="#F4A261" /></View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Tipo de lançamento</Text>
-                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Escolha uma opção para refinar o histórico.</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Selecione um ou mais tipos para combinar no histórico.</Text>
               </View>
               <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroTipo(false)} accessibilityLabel="Fechar filtro por tipo">
                 <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
@@ -1786,13 +2664,14 @@ export default function TransacoesScreen() {
                 { key: "receita" as const, label: "Receitas", icon: "arrow-upward" as const, bgAtivo: "#2A9D8F" },
                 { key: "despesa" as const, label: "Despesas", icon: "arrow-downward" as const, bgAtivo: "#E76F51" },
                 { key: "transferencia" as const, label: "Transferências", icon: "swap-horiz" as const, bgAtivo: "#F4A261" },
+                { key: "fatura" as const, label: "Faturas", icon: "credit-card" as const, bgAtivo: "#805AD5" },
               ].map((op) => {
-                const isAtivo = filtroTipo === op.key;
+                const isAtivo = op.key === "todas" ? filtrosTipo.length === 0 : filtrosTipo.includes(op.key);
                 return (
                   <TouchableOpacity key={op.key} style={[styles.filterModalOption, { backgroundColor: isAtivo ? op.bgAtivo : Cores.pillFundo, borderColor: isAtivo ? op.bgAtivo : Cores.borda }]} onPress={() => selecionarFiltroTipo(op.key)}>
                     <MaterialIcons name={op.icon} size={18} color={isAtivo ? "#FFF" : op.bgAtivo} />
                     <Text style={[styles.filterModalOptionText, { color: isAtivo ? "#FFF" : Cores.textoPrincipal }]} numberOfLines={1}>{op.label}</Text>
-                    <MaterialIcons name={isAtivo ? "check-circle" : "radio-button-unchecked"} size={18} color={isAtivo ? "#FFF" : Cores.textoSecundario} />
+                    <MaterialIcons name={isAtivo ? "check-box" : "check-box-outline-blank"} size={18} color={isAtivo ? "#FFF" : Cores.textoSecundario} />
                   </TouchableOpacity>
                 );
               })}
@@ -1873,7 +2752,7 @@ export default function TransacoesScreen() {
               </View>
 
               {/* Receitas */}
-              {(filtroTipo === "todas" || filtroTipo === "receita") && categoriasReceitaVisiveis.length > 0 && (
+              {(filtrosTipo.length === 0 || filtrosTipo.includes("receita")) && categoriasReceitaVisiveis.length > 0 && (
                 <>
                   <View style={styles.catSecaoHeader}>
                     <MaterialIcons name="arrow-upward" size={13} color="#2A9D8F" />
@@ -1896,7 +2775,7 @@ export default function TransacoesScreen() {
               )}
 
               {/* Despesas */}
-              {(filtroTipo === "todas" || filtroTipo === "despesa") && categoriasDespesaVisiveis.length > 0 && (
+              {(filtrosTipo.length === 0 || filtrosTipo.includes("despesa") || filtrosTipo.includes("fatura")) && categoriasDespesaVisiveis.length > 0 && (
                 <>
                   <View style={styles.catSecaoHeader}>
                     <MaterialIcons name="arrow-downward" size={13} color="#E76F51" />
@@ -1918,7 +2797,7 @@ export default function TransacoesScreen() {
                 </>
               )}
 
-              {filtroTipo === "todas" && categoriasAmbasVisiveis.length > 0 && (
+              {(filtrosTipo.length === 0 || filtrosTipo.some((tipo) => tipo === "receita" || tipo === "despesa" || tipo === "fatura")) && categoriasAmbasVisiveis.length > 0 && (
                 <>
                   <View style={styles.catSecaoHeader}>
                     <MaterialIcons name="swap-vert" size={13} color="#457B9D" />
@@ -2091,6 +2970,8 @@ const styles = StyleSheet.create({
   transferText: { fontSize: 9, fontWeight: "700", color: "#F4A261", marginLeft: 2 },
   transacaoAcoes: { alignItems: "flex-end" },
   valorText: { fontSize: 14, fontWeight: "700", textAlign: "right" },
+  paymentCardBreakdown: { alignItems: "flex-end", gap: 1, marginTop: 3 },
+  paymentCardLine: { fontSize: 9, fontWeight: "700", textAlign: "right" },
   acaoBtn: { padding: 2 },
 
   emptyContainer: { alignItems: "center", paddingVertical: 40 },
@@ -2138,13 +3019,25 @@ const styles = StyleSheet.create({
   modalBotaoTexto: { fontSize: 15, fontWeight: "700", color: "#FFF" },
   catSecaoHeader: { flexDirection: "row", alignItems: "center", gap: 5, marginBottom: 10, paddingBottom: 6, borderBottomWidth: 1, borderBottomColor: "#33333322" },
   catSecaoTitulo: { fontSize: 13, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
-  faturaSecHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingVertical: 8, paddingHorizontal: 12, borderTopWidth: 1, borderBottomWidth: 1 },
-  faturaSecLabel: { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 10, marginTop: 4 },
   statusBadgeText: { fontSize: 10, fontWeight: "700" },
   contaTag: { fontSize: 11, fontWeight: "700" },
   transacaoDesc: { fontSize: 13, fontWeight: "600" },
   transacaoValor: { fontSize: 14, fontWeight: "700", textAlign: "right" },
   detalheLinha: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
-  detalheAcao: { flex: 1, minHeight: 54, borderRadius: 10, alignItems: "center", justifyContent: "center", gap: 3 },
+  paymentDetailModal: { maxHeight: "92%", paddingBottom: 18 },
+  paymentDetailBody: { flexShrink: 1 },
+  paymentDetailBodyContent: { paddingBottom: 2 },
+  paymentHistorySection: { marginTop: 12, borderWidth: 1, borderRadius: 14, padding: 12 },
+  paymentHistoryHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  paymentHistoryTitle: { fontSize: 14, fontWeight: "900" },
+  paymentHistorySubtitle: { fontSize: 10, lineHeight: 14, marginTop: 2 },
+  paymentHistoryCount: { minWidth: 30, height: 30, paddingHorizontal: 8, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  paymentHistoryList: { width: "100%" },
+  paymentHistoryRow: { minHeight: 57, borderTopWidth: 1, flexDirection: "row", alignItems: "center", gap: 9, paddingVertical: 8 },
+  paymentHistoryIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  paymentHistoryEmpty: { paddingVertical: 12, fontSize: 12, lineHeight: 17, textAlign: "center" },
+  paymentHistoryRetry: { minHeight: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  paymentReopenSummary: { borderRadius: 12, padding: 13, gap: 10, marginBottom: 16 },
+  detalheAcao: { flex: 1, flexBasis: "45%", minWidth: 120, minHeight: 54, borderRadius: 10, alignItems: "center", justifyContent: "center", gap: 3 },
 });

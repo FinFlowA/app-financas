@@ -1,15 +1,13 @@
 /**
- * Acesso temporário a funcionalidades em desenvolvimento.
+ * Trava exclusivamente visual da IA.
  *
- * A lista é somente uma trava de interface, não uma regra de segurança.
- * Para liberar outro testador, adicione o e-mail normalizado abaixo.
+ * Em desenvolvimento (limites globais desligados), a tela fica visível para
+ * permitir o beta controlado pelo servidor. Em produção, somente planos com IA
+ * exibem o acesso. A Edge Function continua sendo a autoridade final.
  */
-const IA_BETA_EMAILS = new Set([
-  "henrique0limah@gmail.com",
-]);
-
-const IA_BETA_ATIVA = false;
-
-export function usuarioPodeAcessarIA(email?: string | null): boolean {
-  return IA_BETA_ATIVA && IA_BETA_EMAILS.has((email ?? "").trim().toLowerCase());
+export function usuarioPodeAcessarIA(
+  planoPossuiIA = false,
+  limitsEnabled = false,
+): boolean {
+  return planoPossuiIA || !limitsEnabled;
 }

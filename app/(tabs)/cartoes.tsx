@@ -64,16 +64,31 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../lib/supabase";
+import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import {
+  createInvoiceOperationRequestId,
+  isInvoicePaymentAdjustment,
+  listInvoicePaymentTransactions,
+  payInvoice,
+  reverseInvoicePayment,
+} from "../../lib/invoice-operations";
 import {
   FinFlowColors,
   FinFlowRadius,
   FinFlowShadow,
   finFlowTheme,
 } from "../../constants/finflow-design";
+import {
+  mensagemFalhaEdicaoOffline,
+  OFFLINE_EDIT_SAVED_MESSAGE,
+  OFFLINE_SAVED_MESSAGE,
+  OFFLINE_SYNC_COMPLETED_EVENT,
+  salvarCriacaoFinanceira,
+  salvarEdicaoFinanceira,
+} from "../../lib/offline-sync";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -86,6 +101,7 @@ interface Cartao {
   dia_fechamento: number;
   ativo: boolean;
   bloqueado_plano?: boolean;
+  version?: number;
 }
 
 interface FaturaItem {
@@ -246,6 +262,11 @@ export default function CartoesScreen() {
   const [modalJuros, setModalJuros] = useState(false);
   const [tipoJuros, setTipoJuros] = useState<"valor" | "percentual">("valor");
   const [valorJuros, setValorJuros] = useState("");
+  const [loadingPagamento, setLoadingPagamento] = useState(false);
+  const [loadingEstorno, setLoadingEstorno] = useState(false);
+  const pagamentoRequestIdRef = useRef<string | null>(null);
+  const estornoRequestIdsRef = useRef(new Map<number, string>());
+  const estornoFaturaAlvoRef = useRef<{ key: string; transactionId: number } | null>(null);
 
   // Modal opções cartão (long-press) — substitui Alert
   const [modalOpcoesCartao, setModalOpcoesCartao] = useState<Cartao | null>(null);
@@ -311,7 +332,13 @@ export default function CartoesScreen() {
     const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
       void carregarDados();
     });
-    return () => subscription.remove();
+    const offlineSubscription = DeviceEventEmitter.addListener(OFFLINE_SYNC_COMPLETED_EVENT, () => {
+      void carregarDados();
+    });
+    return () => {
+      subscription.remove();
+      offlineSubscription.remove();
+    };
   }, [carregarDados]);
 
   useEffect(() => {
@@ -328,6 +355,7 @@ export default function CartoesScreen() {
     setCartaoAberto(cartao);
     setMesFaturaAtivo(mes);
     setMesPagamento(mes);
+    pagamentoRequestIdRef.current = createInvoiceOperationRequestId();
     setValorPagamento(formatarEntradaMoeda(String(Math.round(total * 100))));
     setValorJuros("");
     setContaPagamentoId(contas[0]?.id ?? null);
@@ -393,6 +421,36 @@ export default function CartoesScreen() {
     if (!verificarLimite("cartoes", cartoes.length)) return;
 
     setLoadingNovoCartao(true);
+    if (!IS_LOCAL_DEMO) {
+      try {
+        const resultado = await salvarCriacaoFinanceira("create_card", {
+          name: nomeCartao.trim(),
+          value: limiteNum,
+          color: corCartao,
+          due_day: venc,
+          closing_day: fecha,
+        });
+        setLoadingNovoCartao(false);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "O cartão foi recusado pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar o cartão. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setNomeCartao(""); setLimiteCartao(""); setDiaVencimento("10"); setDiaFechamento("3");
+        setCorCartao(CORES_CARTAO[0]);
+        setModalNovoCartao(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else {
+          showToast("Cartão criado com sucesso ✓", "success");
+          void carregarDados();
+        }
+        return;
+      } catch {
+        setLoadingNovoCartao(false);
+        return Alert.alert("Não foi possível salvar", "O cartão não pôde ser salvo no dispositivo. Tente novamente.");
+      }
+    }
     const { error } = await supabase.from("cartoes").insert([{
       user_id: session.user.id,
       nome: nomeCartao.trim(),
@@ -447,6 +505,47 @@ export default function CartoesScreen() {
     const dataFechamento = new Date(anoFatura, mesFatura - 1, Math.min(cartaoAberto.dia_fechamento, ultimoDia), 23, 59, 59);
     if (new Date() > dataFechamento) {
       return Alert.alert("Fatura fechada", `A fatura de ${formatarMes(mesPrimeiro)} já fechou. Não é possível adicionar novas compras nela.`);
+    }
+
+    if (!IS_LOCAL_DEMO) {
+      const dataCompraSql = `${dataCompra.getFullYear()}-${String(dataCompra.getMonth() + 1).padStart(2, "0")}-${String(dataCompra.getDate()).padStart(2, "0")}`;
+      const frequency = tipoCompra === "fixa" ? "mensal" : tipoCompra;
+      const totalValue = tipoCompra === "parcelada" && modoValorParcelado === "parcela"
+        ? Number((valor * parcelasInformadas).toFixed(2))
+        : valor;
+      const payload: Record<string, unknown> = {
+        card_id: cartaoAberto.id,
+        category_id: categoriaCompra.id,
+        description: descCompra.trim(),
+        value: totalValue,
+        purchase_date: dataCompraSql,
+        frequency,
+      };
+      if (tipoCompra === "parcelada") payload.installments = parcelasInformadas;
+      if (tipoCompra === "fixa") payload.recurrence_count = 60;
+
+      setLoadingCompra(true);
+      try {
+        const resultado = await salvarCriacaoFinanceira("create_card_purchase", payload);
+        setLoadingCompra(false);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "A compra foi recusada pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar a compra. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setDescCompra(""); setValorCompra(""); setParcelasCompra("2"); setModoValorParcelado("total"); setTipoCompra("unica"); setDataCompra(new Date()); setCategCompraId(null);
+        setModalNovaCompra(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else {
+          showToast(tipoCompra === "fixa" ? "Compra fixa mensal adicionada ✓" : `Compra adicionada${tipoCompra === "parcelada" ? ` em ${parcelasInformadas}x` : ""} ✓`, "success");
+          void carregarDados();
+        }
+        return;
+      } catch {
+        setLoadingCompra(false);
+        return Alert.alert("Não foi possível salvar", "A compra não pôde ser salva no dispositivo. Tente novamente.");
+      }
     }
 
     setLoadingCompra(true);
@@ -528,6 +627,7 @@ export default function CartoesScreen() {
   const iniciarPagamentoFatura = (mes: string) => {
     const totalFatura = calcularTotalFatura(cartaoAberto!.id, mes);
     if (totalFatura === 0) return showToast("Fatura já está zerada", "info");
+    pagamentoRequestIdRef.current = createInvoiceOperationRequestId();
     setMesPagamento(mes);
     setValorPagamento(formatarEntradaMoeda(String(Math.round(totalFatura * 100))));
     setValorJuros("");
@@ -536,7 +636,7 @@ export default function CartoesScreen() {
   };
 
   const confirmarPagamentoFatura = async () => {
-    if (!cartaoAberto || !contaPagamentoId) return;
+    if (!cartaoAberto || !contaPagamentoId || loadingPagamento) return;
     const totalFatura = calcularTotalFatura(cartaoAberto.id, mesPagamento);
     const valorPago = valorDaEntradaMoeda(valorPagamento);
     if (!Number.isFinite(valorPago) || valorPago <= 0) {
@@ -551,123 +651,116 @@ export default function CartoesScreen() {
       setModalPagamentoParcial(true);
       return;
     }
-    const hoje = new Date().toISOString().slice(0, 10);
-    const descPagamento = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)} [PagFatura:${cartaoAberto.id}:${mesPagamento}:total]`;
-
-    const resUpdate = await supabase.from("fatura_itens").update({ pago: true })
-      .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false);
-    if (resUpdate.error) {
-      showToast("Erro ao atualizar a fatura", "error");
-      return;
+    const requestId = pagamentoRequestIdRef.current ?? createInvoiceOperationRequestId();
+    pagamentoRequestIdRef.current = requestId;
+    setLoadingPagamento(true);
+    try {
+      await payInvoice({
+        cardId: cartaoAberto.id,
+        invoiceMonth: mesPagamento,
+        accountId: contaPagamentoId,
+        paymentAmount: valorPago,
+        remainderMode: "full",
+        requestId,
+      });
+      pagamentoRequestIdRef.current = null;
+      setModalPagamento(false);
+      showToast("Fatura paga ✓", "success");
+      await carregarDados();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.", "error");
+    } finally {
+      setLoadingPagamento(false);
     }
-    const resTrans = await supabase.from("transacoes").insert([{
-        user_id: session!.user.id,
-        tipo: "despesa",
-        valor: totalFatura,
-        descricao: descPagamento,
-        data_vencimento: hoje,
-        data_realizacao: hoje,
-        conta_id: contaPagamentoId,
-        status: "paga",
-        categoria_id: null,
-      }]);
-
-    if (resTrans.error) {
-      await supabase.from("fatura_itens").update({ pago: false })
-        .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento);
-      showToast("Erro ao registrar pagamento", "error");
-      return;
-    }
-
-    setModalPagamento(false);
-    showToast("Fatura paga ✓", "success");
-    carregarDados();
   };
 
   const registrarPagamentoMenor = async (levarSaldo: boolean) => {
-    if (!cartaoAberto || !contaPagamentoId || !session?.user?.id) return;
+    if (!cartaoAberto || !contaPagamentoId || !session?.user?.id || loadingPagamento) return;
     const total = calcularTotalFatura(cartaoAberto.id, mesPagamento);
     const pago = valorDaEntradaMoeda(valorPagamento);
-    const hoje = new Date().toISOString().slice(0, 10);
-    let itemVinculado: number | null = null;
-    let erro: any = null;
-
-    if (levarSaldo) {
-      const restante = total - pago;
-      const jurosInformado = Math.max(
-        0,
-        tipoJuros === "valor"
-          ? valorDaEntradaMoeda(valorJuros)
-          : Number(valorJuros.replace(",", ".")) || 0,
-      );
-      const juros = tipoJuros === "percentual" ? restante * jurosInformado / 100 : jurosInformado;
-      const atualizado = await supabase.from("fatura_itens").update({ pago: true })
-        .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento).eq("pago", false);
-      const inserido = await supabase.from("fatura_itens").insert([{
-        cartao_id: cartaoAberto.id, user_id: session.user.id,
-        descricao: `Saldo da fatura anterior (${formatarMes(mesPagamento)})`,
-        valor: +(restante + juros).toFixed(2), data_compra: hoje,
-        mes_fatura: proximoMesStr(mesPagamento), parcela_atual: 1, total_parcelas: 1,
-        grupo_parcela_id: null, categoria_id: null, pago: false,
-      }]).select("id").single();
-      erro = atualizado.error || inserido.error;
-      itemVinculado = inserido.data?.id ?? null;
-    } else {
-      const inserido = await supabase.from("fatura_itens").insert([{
-        cartao_id: cartaoAberto.id, user_id: session.user.id,
-        descricao: "Pagamento parcial da fatura", valor: -pago, data_compra: hoje,
-        mes_fatura: mesPagamento, parcela_atual: 1, total_parcelas: 1,
-        grupo_parcela_id: null, categoria_id: null, pago: false,
-      }]).select("id").single();
-      erro = inserido.error;
-      itemVinculado = inserido.data?.id ?? null;
+    if (!Number.isFinite(pago) || pago <= 0 || pago >= total) {
+      showToast("O pagamento parcial precisa ser maior que zero e menor que a fatura.", "error");
+      return;
     }
 
-    if (erro) {
-      if (itemVinculado) await supabase.from("fatura_itens").delete().eq("id", itemVinculado);
-      if (levarSaldo) {
-        await supabase.from("fatura_itens").update({ pago: false })
-          .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento);
-      }
-      return showToast("Erro ao atualizar a fatura", "error");
+    const jurosInformado = levarSaldo
+      ? Math.max(
+          0,
+          tipoJuros === "valor"
+            ? valorDaEntradaMoeda(valorJuros)
+            : Number(valorJuros.replace(",", ".")) || 0,
+        )
+      : 0;
+    const requestId = pagamentoRequestIdRef.current ?? createInvoiceOperationRequestId();
+    pagamentoRequestIdRef.current = requestId;
+    setLoadingPagamento(true);
+    try {
+      await payInvoice({
+        cardId: cartaoAberto.id,
+        invoiceMonth: mesPagamento,
+        accountId: contaPagamentoId,
+        paymentAmount: pago,
+        remainderMode: levarSaldo ? "carry" : "keep_open",
+        interestValue: levarSaldo && tipoJuros === "valor" ? jurosInformado : null,
+        interestPercent: levarSaldo && tipoJuros === "percentual" ? jurosInformado : null,
+        requestId,
+      });
+      pagamentoRequestIdRef.current = null;
+      setModalJuros(false);
+      setModalPagamentoParcial(false);
+      setModalPagamento(false);
+      showToast(levarSaldo ? "Saldo levado para a próxima fatura ✓" : "Pagamento parcial registrado ✓", "success");
+      await carregarDados();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível registrar o pagamento.", "error");
+    } finally {
+      setLoadingPagamento(false);
     }
-
-    const modo = levarSaldo ? "saldo_transferido" : "parcial";
-    const desc = `Fatura ${cartaoAberto.nome} - ${formatarMes(mesPagamento)} [PagFatura:${cartaoAberto.id}:${mesPagamento}:${modo}:${itemVinculado}]`;
-    const movimento = await supabase.from("transacoes").insert([{
-      user_id: session.user.id, tipo: "despesa", valor: pago, descricao: desc,
-      data_vencimento: hoje, data_realizacao: hoje, conta_id: contaPagamentoId, status: "paga", categoria_id: null,
-    }]);
-    if (movimento.error) {
-      if (itemVinculado) await supabase.from("fatura_itens").delete().eq("id", itemVinculado);
-      if (levarSaldo) {
-        await supabase.from("fatura_itens").update({ pago: false })
-          .eq("cartao_id", cartaoAberto.id).eq("mes_fatura", mesPagamento);
-      }
-      return showToast("Erro ao registrar pagamento", "error");
-    }
-    setModalPagamentoParcial(false);
-    setModalPagamento(false);
-    showToast(levarSaldo ? "Saldo levado para a próxima fatura ✓" : "Pagamento parcial registrado ✓", "success");
-    carregarDados();
   };
 
   const estornarFatura = async (cartaoId: number, mes: string) => {
+    const key = `${cartaoId}:${mes}`;
+    if (estornoFaturaAlvoRef.current?.key !== key) {
+      estornoFaturaAlvoRef.current = null;
+      estornoRequestIdsRef.current.clear();
+    }
     setEstornoPendente({ cartaoId, mes });
   };
 
   const confirmarEstornoFatura = async () => {
-    if (!estornoPendente) return;
+    if (!estornoPendente || !session?.user?.id || loadingEstorno) return;
     const { cartaoId, mes } = estornoPendente;
-    const nomeCartao = cartoes.find(c => c.id === cartaoId)?.nome ?? "";
-    const descPagamento = `Fatura ${nomeCartao} - ${formatarMes(mes)}`;
-    setEstornoPendente(null);
-    await Promise.all([
-      supabase.from("fatura_itens").update({ pago: false }).eq("cartao_id", cartaoId).eq("mes_fatura", mes).eq("pago", true),
-      supabase.from("transacoes").delete().eq("user_id", session!.user.id).like("descricao", `${descPagamento}%`),
-    ]);
-    showToast("Pagamento estornado", "success");
-    carregarDados();
+    setLoadingEstorno(true);
+    try {
+      const key = `${cartaoId}:${mes}`;
+      let transactionId = estornoFaturaAlvoRef.current?.key === key
+        ? estornoFaturaAlvoRef.current.transactionId
+        : null;
+      if (transactionId === null) {
+        const pagamentos = await listInvoicePaymentTransactions(session.user.id, cartaoId, mes);
+        transactionId = pagamentos[0]?.id ?? null;
+        if (transactionId !== null) {
+          estornoFaturaAlvoRef.current = { key, transactionId };
+        }
+      }
+      if (transactionId === null) {
+        throw new Error("Nenhum pagamento rastreável foi encontrado para esta fatura.");
+      }
+      const requestId = estornoRequestIdsRef.current.get(transactionId)
+        ?? createInvoiceOperationRequestId();
+      estornoRequestIdsRef.current.set(transactionId, requestId);
+      await reverseInvoicePayment(transactionId, requestId);
+      estornoRequestIdsRef.current.delete(transactionId);
+      estornoFaturaAlvoRef.current = null;
+      setEstornoPendente(null);
+      showToast("Pagamento mais recente estornado", "success");
+      await carregarDados();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Não foi possível estornar o pagamento.", "error");
+      await carregarDados();
+    } finally {
+      setLoadingEstorno(false);
+    }
   };
 
   // ─── Editar cartão ─────────────────────────────────────────────────────────
@@ -693,6 +786,47 @@ export default function CartoesScreen() {
     if (isNaN(fecha) || fecha < 1 || fecha > 31) return showToast("Fechamento inválido (1–31)", "error");
 
     setLoadingEditar(true);
+    if (!IS_LOCAL_DEMO) {
+      const changes: Record<string, unknown> = {};
+      if (editNome.trim() !== cartaoEditando.nome) changes.name = editNome.trim();
+      if (editCor !== cartaoEditando.cor) changes.color = editCor;
+      if (limiteNum !== Number(cartaoEditando.limite)) changes.value = limiteNum;
+      if (venc !== Number(cartaoEditando.dia_vencimento)) changes.due_day = venc;
+      if (fecha !== Number(cartaoEditando.dia_fechamento)) changes.closing_day = fecha;
+      if (Object.keys(changes).length === 0) {
+        setLoadingEditar(false);
+        setModalEditarCartao(false);
+        return;
+      }
+      try {
+        const resultado = await salvarEdicaoFinanceira(
+          "update_card",
+          cartaoEditando.id,
+          Number(cartaoEditando.version),
+          changes,
+        );
+        setLoadingEditar(false);
+        if (resultado.state === "rejected") {
+          showToast(mensagemFalhaEdicaoOffline(resultado.errorCode), "error");
+          return;
+        }
+        if (resultado.state === "uncertain") {
+          showToast("Sessão alterada. Entre novamente e confira o cartão antes de reenviar.", "error");
+          return;
+        }
+        setModalEditarCartao(false);
+        if (resultado.state === "queued") showToast(OFFLINE_EDIT_SAVED_MESSAGE, "info");
+        else {
+          showToast("Cartão atualizado ✓", "success");
+          void carregarDados();
+        }
+        return;
+      } catch {
+        setLoadingEditar(false);
+        showToast("A edição não pôde ser protegida neste dispositivo.", "error");
+        return;
+      }
+    }
     const { error } = await supabase.from("cartoes").update({
       nome: editNome.trim(), cor: editCor, limite: limiteNum,
       dia_vencimento: venc, dia_fechamento: fecha,
@@ -734,6 +868,14 @@ export default function CartoesScreen() {
   // ─── Excluir compra ────────────────────────────────────────────────────────
 
   const excluirCompra = (item: FaturaItem) => {
+    if (item.pago) {
+      showToast("Estorne o pagamento da fatura antes de excluir esta compra.", "info");
+      return;
+    }
+    if (isInvoicePaymentAdjustment(item.descricao)) {
+      showToast("Este ajuste só pode ser removido estornando o pagamento correspondente.", "info");
+      return;
+    }
     setModalExcluirItem(item);
   };
 
@@ -1260,7 +1402,7 @@ export default function CartoesScreen() {
                     value={valorCompra}
                     onChangeText={(texto) => setValorCompra(formatarEntradaMoeda(texto))}
                     keyboardType="number-pad"
-                    selectTextOnFocus
+                    selectTextOnFocus={false}
                   />
                 </View>
                 {tipoCompra === "parcelada" && <><View style={{ width: 12 }} />
@@ -1391,11 +1533,15 @@ export default function CartoesScreen() {
               <TextInput
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
                 value={valorPagamento}
-                onChangeText={(texto) => setValorPagamento(formatarEntradaMoeda(texto))}
+                onChangeText={(texto) => {
+                  setValorPagamento(formatarEntradaMoeda(texto));
+                  pagamentoRequestIdRef.current = createInvoiceOperationRequestId();
+                }}
                 keyboardType="number-pad"
                 placeholder="0,00"
                 placeholderTextColor={Cores.secundario}
-                selectTextOnFocus
+                selectTextOnFocus={false}
+                editable={!loadingPagamento}
               />
 
               <Text style={[estilos.label, { color: Cores.secundario }]}>Pagar com qual conta?</Text>
@@ -1403,7 +1549,11 @@ export default function CartoesScreen() {
                 <TouchableOpacity
                   key={conta.id}
                   style={[estilos.contaOpcao, { borderColor: contaPagamentoId === conta.id ? Cores.primary : Cores.borda, backgroundColor: contaPagamentoId === conta.id ? Cores.primarySoft : Cores.pillFundo }]}
-                  onPress={() => setContaPagamentoId(conta.id)}
+                  onPress={() => {
+                    setContaPagamentoId(conta.id);
+                    pagamentoRequestIdRef.current = createInvoiceOperationRequestId();
+                  }}
+                  disabled={loadingPagamento}
                 >
                   <View style={[estilos.opcaoIcone, { backgroundColor: contaPagamentoId === conta.id ? `${Cores.primary}1F` : Cores.input }]}>
                     <MaterialIcons name="account-balance-wallet" size={18} color={contaPagamentoId === conta.id ? Cores.primary : Cores.secundario} />
@@ -1414,12 +1564,12 @@ export default function CartoesScreen() {
               ))}
 
               <View style={estilos.modalBtns}>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamento(false)}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalPagamento(false)} disabled={loadingPagamento}>
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary }, !contaPagamentoId && estilos.botaoDesabilitado]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary }, (!contaPagamentoId || loadingPagamento) && estilos.botaoDesabilitado]} onPress={confirmarPagamentoFatura} disabled={!contaPagamentoId || loadingPagamento}>
                   <MaterialIcons name="check" size={18} color="#FFF" />
-                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar</Text>
+                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>{loadingPagamento ? "Processando..." : "Confirmar"}</Text>
                 </TouchableOpacity>
               </View>
               </ScrollView>
@@ -1452,7 +1602,7 @@ export default function CartoesScreen() {
                 <Text style={[estilos.resumoPagamentoValor, { color: Cores.texto }]}>{fmtReais(valorDaEntradaMoeda(valorPagamento))}</Text>
                 <Text style={[estilos.resumoPagamentoTexto, { color: Cores.secundario }]}>de {fmtReais(calcularTotalFatura(cartaoAberto.id, mesPagamento))}</Text>
               </View>
-              <TouchableOpacity style={[estilos.opcaoAcaoCard, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]} onPress={() => registrarPagamentoMenor(false)}>
+              <TouchableOpacity style={[estilos.opcaoAcaoCard, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }, loadingPagamento && estilos.botaoDesabilitado]} onPress={() => registrarPagamentoMenor(false)} disabled={loadingPagamento}>
                 <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.blue}1A` }]}>
                   <MaterialIcons name="payments" size={20} color={FinFlowColors.blue} />
                 </View>
@@ -1462,7 +1612,7 @@ export default function CartoesScreen() {
                 </View>
                 <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
               </TouchableOpacity>
-              <TouchableOpacity style={[estilos.opcaoAcaoCard, { borderColor: `${FinFlowColors.orange}66`, backgroundColor: Cores.pillFundo }]} onPress={() => { setModalPagamentoParcial(false); setModalJuros(true); }}>
+              <TouchableOpacity style={[estilos.opcaoAcaoCard, { borderColor: `${FinFlowColors.orange}66`, backgroundColor: Cores.pillFundo }, loadingPagamento && estilos.botaoDesabilitado]} onPress={() => { setModalPagamentoParcial(false); setModalJuros(true); }} disabled={loadingPagamento}>
                 <View style={[estilos.opcaoIcone, { backgroundColor: `${FinFlowColors.orange}1A` }]}>
                   <MaterialIcons name="event-repeat" size={20} color={FinFlowColors.orange} />
                 </View>
@@ -1508,7 +1658,12 @@ export default function CartoesScreen() {
                 {(["valor", "percentual"] as const).map((tipo) => (
                   <TouchableOpacity
                     key={tipo}
-                    onPress={() => { setTipoJuros(tipo); setValorJuros(""); }}
+                    onPress={() => {
+                      setTipoJuros(tipo);
+                      setValorJuros("");
+                      pagamentoRequestIdRef.current = createInvoiceOperationRequestId();
+                    }}
+                    disabled={loadingPagamento}
                     style={[estilos.tipoCompraBtn, tipoJuros === tipo && { backgroundColor: Cores.primary }]}
                   >
                     <Text style={{ color: tipoJuros === tipo ? "#FFF" : Cores.texto, fontWeight: "700" }}>{tipo === "valor" ? "Valor em R$" : "Percentual %"}</Text>
@@ -1519,15 +1674,19 @@ export default function CartoesScreen() {
               <TextInput
                 style={[estilos.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
                 value={valorJuros}
-                onChangeText={(texto) => setValorJuros(tipoJuros === "valor" ? formatarEntradaMoeda(texto) : texto.replace(/[^0-9,]/g, ""))}
+                onChangeText={(texto) => {
+                  setValorJuros(tipoJuros === "valor" ? formatarEntradaMoeda(texto) : texto.replace(/[^0-9,]/g, ""));
+                  pagamentoRequestIdRef.current = createInvoiceOperationRequestId();
+                }}
                 keyboardType={tipoJuros === "valor" ? "number-pad" : "decimal-pad"}
                 placeholder={tipoJuros === "valor" ? "0,00 (opcional)" : "0 (opcional)"}
                 placeholderTextColor={Cores.secundario}
-                selectTextOnFocus
+                selectTextOnFocus={false}
+                editable={!loadingPagamento}
               />
-              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary, flex: 0 }]} onPress={() => { setModalJuros(false); registrarPagamentoMenor(true); }}>
+              <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.primary, flex: 0 }, loadingPagamento && estilos.botaoDesabilitado]} onPress={() => registrarPagamentoMenor(true)} disabled={loadingPagamento}>
                 <MaterialIcons name="arrow-forward" size={18} color="#FFF" />
-                <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Confirmar e lançar na próxima fatura</Text>
+                <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>{loadingPagamento ? "Processando..." : "Confirmar e lançar na próxima fatura"}</Text>
               </TouchableOpacity>
             </View>
           </KeyboardAvoidingView>
@@ -1732,7 +1891,9 @@ export default function CartoesScreen() {
                   setModalExcluirItem(null);
                   if (item.total_parcelas > 1 || item.descricao.endsWith("(Fixa)")) {
                     const ids = itens
-                      .filter(i => i.grupo_parcela_id === (item.grupo_parcela_id || item.id))
+                      .filter(i => i.grupo_parcela_id === (item.grupo_parcela_id || item.id)
+                        && !i.pago
+                        && !isInvoicePaymentAdjustment(i.descricao))
                       .map(i => i.id);
                     await executarExclusao(ids);
                   } else {
@@ -1772,7 +1933,7 @@ export default function CartoesScreen() {
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={[estilos.modalTitulo, { color: Cores.texto }]}>Estornar pagamento</Text>
-                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>A fatura voltará a ficar em aberto.</Text>
+                    <Text style={[estilos.modalSubtitle, { color: Cores.secundario }]}>Somente o pagamento mais recente será afetado.</Text>
                   </View>
                 </View>
                 <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)} accessibilityLabel="Fechar">
@@ -1781,15 +1942,15 @@ export default function CartoesScreen() {
               </View>
               <View style={[estilos.avisoCard, { backgroundColor: `${FinFlowColors.orange}12`, borderColor: `${FinFlowColors.orange}55` }]}>
                 <MaterialIcons name="info-outline" size={20} color={FinFlowColors.orange} />
-                <Text style={[estilos.avisoCardTexto, { color: Cores.secundario }]}>A fatura de <Text style={{ color: Cores.texto, fontWeight: "800" }}>{formatarMes(estornoPendente.mes)}</Text> voltará a ficar em aberto e o lançamento de pagamento será removido do histórico.</Text>
+                <Text style={[estilos.avisoCardTexto, { color: Cores.secundario }]}>O pagamento mais recente da fatura de <Text style={{ color: Cores.texto, fontWeight: "800" }}>{formatarMes(estornoPendente.mes)}</Text> será estornado. Se houver pagamentos anteriores, eles continuarão registrados e poderão ser estornados individualmente no Histórico.</Text>
               </View>
               <View style={estilos.modalBtns}>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: Cores.pillFundo }]} onPress={() => setEstornoPendente(null)} disabled={loadingEstorno}>
                   <Text style={[estilos.modalBtnText, { color: Cores.texto }]}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: FinFlowColors.orange }]} onPress={confirmarEstornoFatura}>
+                <TouchableOpacity style={[estilos.modalBtn, { backgroundColor: FinFlowColors.orange }, loadingEstorno && estilos.botaoDesabilitado]} onPress={confirmarEstornoFatura} disabled={loadingEstorno}>
                   <MaterialIcons name="undo" size={18} color="#FFF" />
-                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>Estornar</Text>
+                  <Text style={[estilos.modalBtnText, { color: "#FFF" }]}>{loadingEstorno ? "Estornando..." : "Estornar"}</Text>
                 </TouchableOpacity>
               </View>
             </View>

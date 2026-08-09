@@ -1,4 +1,4 @@
-export const LEGAL_DOCUMENT_VERSION = "2026-08-01-telefone-opcional";
+export const LEGAL_DOCUMENT_VERSION = "2026-08-08-offline-seguranca-ia";
 
 export type PendenciaCadastro = "data_nascimento" | "termos";
 

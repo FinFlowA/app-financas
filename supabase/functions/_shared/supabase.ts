@@ -1,4 +1,4 @@
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient } from "npm:@supabase/supabase-js@2.111.0";
 
 function required(name: string) {
   const value = Deno.env.get(name);
@@ -12,13 +12,18 @@ export function adminClient() {
   });
 }
 
-export async function authenticatedUser(req: Request) {
+export function authenticatedClient(req: Request) {
   const authorization = req.headers.get("Authorization");
   if (!authorization?.startsWith("Bearer ")) throw new Error("UNAUTHORIZED");
-  const client = createClient(required("SUPABASE_URL"), required("SUPABASE_ANON_KEY"), {
+
+  return createClient(required("SUPABASE_URL"), required("SUPABASE_ANON_KEY"), {
     global: { headers: { Authorization: authorization } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
+}
+
+export async function authenticatedUser(req: Request) {
+  const client = authenticatedClient(req);
   const { data, error } = await client.auth.getUser();
   if (error || !data.user) throw new Error("UNAUTHORIZED");
   return data.user;

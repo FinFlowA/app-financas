@@ -22,43 +22,67 @@ type TutorialStep = {
 const STEPS: TutorialStep[] = [
   {
     icon: "account-balance-wallet",
-    eyebrow: "Seu ponto de partida",
-    title: "Veja seu dinheiro com clareza",
+    eyebrow: "Início",
+    title: "Monte sua visão financeira",
     description:
-      "Na tela Início, acompanhe o saldo das contas selecionadas e acesse rapidamente as ações principais.",
-    hint: "Use Contas para criar, editar, arquivar e escolher o que aparece no painel.",
+      "Na tela Início, toque no seletor de contas para criar, editar, arquivar e escolher quais contas entram no saldo geral.",
+    hint: "O ícone de olho oculta seus valores. O sino reúne atrasos, vencimentos de hoje e os próximos agendamentos.",
   },
   {
     icon: "receipt-long",
-    eyebrow: "Movimentações",
-    title: "Registre e acompanhe",
+    eyebrow: "Transações",
+    title: "Registre cada movimentação",
     description:
-      "Adicione receitas, despesas e transferências. No Histórico, acompanhe o que foi concluído ou ainda está pendente.",
-    hint: "Ao concluir um lançamento, confirme a data em que ele realmente aconteceu.",
+      "Use Transação para lançar uma receita, despesa ou transferência. Escolha conta, categoria, valor, data e se já aconteceu ou ficou pendente.",
+    hint: "Você também pode parcelar ou criar uma recorrência. Transferências entre suas contas não são receitas nem despesas.",
+  },
+  {
+    icon: "history",
+    eyebrow: "Histórico",
+    title: "Encontre e conclua lançamentos",
+    description:
+      "No Histórico, navegue pelos meses e filtre por situação, conta, categoria e tipo para localizar rapidamente o que procura.",
+    hint: "Ao dar baixa em um lançamento pendente, confirme a data e o valor realmente pago ou recebido.",
   },
   {
     icon: "savings",
     eyebrow: "Objetivos",
-    title: "Transforme planos em metas",
+    title: "Guarde dinheiro em caixinhas",
     description:
-      "Crie caixinhas, guarde ou resgate valores e acompanhe quanto falta para alcançar cada objetivo.",
-    hint: "Os valores das caixinhas ficam separados do saldo disponível das contas.",
+      "Crie um objetivo com valor e data, depois use Guardar ou Resgatar para mover dinheiro entre uma conta e a caixinha.",
+    hint: "Guardar ou resgatar é uma transferência e não altera o balanço do mês. Uma despesa paga depois do resgate entra normalmente.",
+  },
+  {
+    icon: "credit-card",
+    eyebrow: "Cartões",
+    title: "Acompanhe compras e faturas",
+    description:
+      "Cadastre seus cartões, lance compras na fatura correta e acompanhe fechamento, vencimento e pagamentos.",
+    hint: "Você pode pagar a fatura inteira, fazer um pagamento parcial ou levar o saldo restante para a próxima fatura.",
   },
   {
     icon: "query-stats",
     eyebrow: "Fluxo de caixa",
-    title: "Antecipe os próximos meses",
+    title: "Entenda o presente e o futuro",
     description:
-      "Compare entradas e saídas realizadas e previstas para entender como seu saldo pode evoluir.",
-    hint: "Selecione uma ou mais contas para analisar exatamente o cenário que deseja.",
+      "Compare no mesmo gráfico as entradas, saídas e a evolução do saldo realizado e previsto ao longo dos meses.",
+    hint: "Selecione uma ou mais contas e arraste o gráfico para os lados para consultar outros meses.",
   },
   {
-    icon: "tune",
-    eyebrow: "Tudo pronto",
-    title: "Deixe o FinFlow do seu jeito",
+    icon: "auto-awesome",
+    eyebrow: "IA FinFlow",
+    title: "Peça ajuda em linguagem natural",
     description:
-      "Em Ajustes, personalize tema e notificações, cuide da segurança e gerencie seus dados e vínculos.",
-    hint: "Você poderá consultar estas opções sempre que precisar.",
+      "Consulte seus dados financeiros ou peça para a IA preparar ações, como criar lançamentos, contas, categorias e objetivos.",
+    hint: "Revise a prévia antes de confirmar: a IA nunca deve alterar seus dados sem sua confirmação.",
+  },
+  {
+    icon: "shield",
+    eyebrow: "Ajustes e segurança",
+    title: "Proteja e personalize sua conta",
+    description:
+      "Em Ajustes, escolha tema e notificações, atualize dados de acesso, ative a proteção do app e gerencie vínculos e privacidade.",
+    hint: "Tudo pronto. Você pode pular este tutorial agora e consultar as funções do app quando precisar.",
   },
 ];
 
@@ -76,7 +100,7 @@ export default function FinFlowOnboarding({
   onSkip,
 }: FinFlowOnboardingProps) {
   const [stepIndex, setStepIndex] = useState(0);
-  const step = STEPS[stepIndex];
+  const step = STEPS.find((_, index) => index === stepIndex) ?? STEPS[0];
   const lastStep = stepIndex === STEPS.length - 1;
 
   useEffect(() => {

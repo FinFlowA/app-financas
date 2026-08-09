@@ -20,6 +20,8 @@ import Button from "../components/FinFlowButton";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { supabase } from "../lib/supabase";
 import { lerFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import { limparNotificacoesAoSair } from "../lib/notifications";
+import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
 import { useAppTheme } from "./_layout";
 
 type PasswordFieldProps = {
@@ -93,13 +95,14 @@ export default function ResetPasswordScreen() {
   const concluiu = useRef(false);
 
   const confirmacaoPreenchida = confirmarSenha.length > 0;
-  const senhasConferem = confirmacaoPreenchida && novaSenha === confirmarSenha;
+  const novaSenhaValida = validatePassword(novaSenha).valid;
+  const senhasConferem = confirmacaoPreenchida && novaSenhaValida && novaSenha === confirmarSenha;
 
   // Se o usuário sair da tela sem redefinir a senha, desconecta para evitar acesso indevido.
   useEffect(() => {
     return () => {
       if (!concluiu.current) {
-        supabase.auth.signOut();
+        void limparNotificacoesAoSair().finally(() => supabase.auth.signOut());
       }
     };
   }, []);
@@ -140,8 +143,8 @@ export default function ResetPasswordScreen() {
     if (!novaSenha || !confirmarSenha) {
       return Alert.alert("Aviso", "Preencha os dois campos.");
     }
-    if (novaSenha.length < 6) {
-      return Alert.alert("Senha fraca", "A senha deve ter pelo menos 6 caracteres.");
+    if (!novaSenhaValida) {
+      return Alert.alert("Senha fraca", PASSWORD_REQUIREMENTS_MESSAGE);
     }
     if (novaSenha !== confirmarSenha) {
       return Alert.alert("Senhas diferentes", "As senhas não conferem.");
@@ -165,8 +168,9 @@ export default function ResetPasswordScreen() {
     );
   }
 
-  function voltarAoLogin() {
-    supabase.auth.signOut();
+  async function voltarAoLogin() {
+    await limparNotificacoesAoSair();
+    await supabase.auth.signOut();
     router.replace("/login");
   }
 
@@ -209,7 +213,7 @@ export default function ResetPasswordScreen() {
               </View>
               <View style={styles.securityNoteCopy}>
                 <Text style={[styles.securityNoteTitle, { color: theme.text }]}>Proteja sua conta</Text>
-                <Text style={[styles.securityNoteText, { color: theme.textMuted }]}>Use no mínimo 6 caracteres e não compartilhe sua senha.</Text>
+                <Text style={[styles.securityNoteText, { color: theme.textMuted }]}>{PASSWORD_REQUIREMENTS_MESSAGE} Não compartilhe sua senha.</Text>
               </View>
             </View>
 
@@ -222,6 +226,7 @@ export default function ResetPasswordScreen() {
               visible={mostrarNova}
               onToggleVisibility={() => setMostrarNova((value) => !value)}
               icon="lock-outline"
+              hasError={novaSenha.length > 0 && !novaSenhaValida}
             />
 
             <ResetPasswordField
@@ -249,7 +254,7 @@ export default function ResetPasswordScreen() {
                   color={senhasConferem ? theme.primary : "#EE6B63"}
                 />
                 <Text style={[styles.validationText, { color: senhasConferem ? theme.primary : "#EE6B63" }]}>
-                  {senhasConferem ? "As senhas conferem" : "As senhas não conferem"}
+                  {senhasConferem ? "As senhas conferem" : "Confira a senha e os requisitos acima"}
                 </Text>
               </View>
             )}

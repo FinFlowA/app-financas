@@ -3,9 +3,9 @@
     "name": "FinFlow",
     "owner": "app-financas",
     "slug": "meu-app-financas",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/icon-square-v2.png",
     "scheme": "meuappfinancas",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -17,10 +17,10 @@
       "bundleIdentifier": "com.luishpalacio.meuappfinancas"
     },
     "android": {
+      "allowBackup": false,
       "adaptiveIcon": {
-        "backgroundColor": "#FFFFFF",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#062C2A",
+        "foregroundImage": "./assets/images/android-icon-foreground-v2.png"
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -33,7 +33,7 @@
     "web": {
       "bundler": "metro",
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/icon-square-v2.png"
     },
     "plugins": [
       "expo-router",
@@ -62,7 +62,8 @@
       "expo-sqlite",
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,

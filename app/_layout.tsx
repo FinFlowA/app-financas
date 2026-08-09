@@ -7,6 +7,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import * as Linking from "expo-linking";
 import { StatusBar } from "expo-status-bar";
 import * as LocalAuthentication from "expo-local-authentication";
+import * as ScreenCapture from "expo-screen-capture";
 import * as Updates from "expo-updates";
 import React, {
   Component,
@@ -26,6 +27,7 @@ import {
   AppState,
   DeviceEventEmitter,
   Modal,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -35,9 +37,15 @@ import {
 } from "react-native";
 import "react-native-reanimated";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import NetInfo from "@react-native-community/netinfo";
 import { MaterialIcons } from "@expo/vector-icons";
-import { supabase } from "../lib/supabase";
-import { exibirEventoObrigatorioLocal, pedirPermissaoNotificacoes } from "../lib/notifications";
+import { IS_LOCAL_DEMO, supabase } from "../lib/supabase";
+import {
+  cancelarNotificacoesOpcionais,
+  exibirEventoObrigatorioLocal,
+  limparNotificacoesAoSair,
+  pedirPermissaoNotificacoes,
+} from "../lib/notifications";
 import {
   type TipoPlano,
   type LimitesPlano,
@@ -48,13 +56,16 @@ import {
   nomePlano,
 } from "../lib/planos";
 import { DEVELOPMENT_ENTITLEMENT, fetchMyEntitlement } from "../lib/subscriptions";
-import { verificarCotaIA, consumirAcaoIA, msgCotaEsgotada } from "../lib/ia-limites";
 import { RELEASE_NOTES } from "../lib/release-notes";
 import {
-  CATEGORIAS_INICIAIS_METADATA_KEY,
   garantirCategoriaOutros,
 } from "../lib/default-categories";
 import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import {
+  conexaoPermiteSincronizacao,
+  OFFLINE_SYNC_COMPLETED_EVENT,
+  sincronizarFilaFinanceiraOffline,
+} from "../lib/offline-sync";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
@@ -96,15 +107,17 @@ const notificacoesParceriaIguais = (
   atuais: NotificacaoParceria[],
   proximas: NotificacaoParceria[],
 ) => atuais.length === proximas.length && atuais.every((atual, indice) => {
-  const proxima = proximas[indice];
-  return Boolean(proxima) &&
+  const proxima = proximas.at(indice);
+  if (!proxima) return false;
+  return (
     atual.id === proxima.id &&
     atual.tipo === proxima.tipo &&
     atual.referencia_id === proxima.referencia_id &&
     atual.titulo === proxima.titulo &&
     atual.mensagem === proxima.mensagem &&
     JSON.stringify(atual.dados) === JSON.stringify(proxima.dados) &&
-    atual.criada_em === proxima.criada_em;
+    atual.criada_em === proxima.criada_em
+  );
 });
 
 // ERROR BOUNDARY
@@ -155,10 +168,6 @@ export const ThemeContext = createContext({
   verificarLimite: (_tipo: keyof LimitesPlano, _qtdAtual: number): boolean => true,
   /** Mostra modal de limite com mensagem customizada */
   mostrarModalLimite: (_mensagem: string, _planoNecessario?: TipoPlano) => {},
-  // Controle de cota da IA
-  iaAcoesHoje: 0,
-  /** Tenta consumir 1 ação de IA. Retorna false se cota esgotada (e exibe modal) */
-  tentarAcaoIA: async (): Promise<boolean> => false,
   billingEnabled: false,
   limitsEnabled: false,
   temCadastroPendente: false,
@@ -167,6 +176,22 @@ export const ThemeContext = createContext({
 });
 
 export const useAppTheme = () => useContext(ThemeContext);
+
+const TEMPO_PARA_BLOQUEIO_MS = 2 * 60 * 1000;
+const TEMPO_PARA_LOGOUT_SEM_BIOMETRIA_MS = 15 * 60 * 1000;
+const CHAVE_PROTECAO_TELA = "finflow-sensitive-content";
+
+const limitesDoPlano = (plano: TipoPlano): LimitesPlano => {
+  if (plano === "smart") return LIMITES_PLANOS.smart;
+  if (plano === "premium") return LIMITES_PLANOS.premium;
+  return LIMITES_PLANOS.free;
+};
+
+const ordemDoPlano = (plano: TipoPlano): number => {
+  if (plano === "smart") return 1;
+  if (plano === "premium") return 2;
+  return 0;
+};
 
 export default function RootLayout() {
   const systemTheme = useColorScheme();
@@ -208,7 +233,6 @@ export default function RootLayout() {
 
   // Sistema de planos
   const [plano, setPlanoState] = useState<TipoPlano>("free");
-  const [iaAcoesHoje, setIaAcoesHoje] = useState(0);
   const [entitlement, setEntitlement] = useState(DEVELOPMENT_ENTITLEMENT);
   const [modalLimite, setModalLimite] = useState<{
     visivel: boolean;
@@ -226,6 +250,8 @@ export default function RootLayout() {
   const toastOpacity = useRef(new Animated.Value(0)).current;
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const autenticacaoEmAndamento = useRef(false);
+  const usuarioSessaoRef = useRef<string | null>(null);
+  const inicioInatividadeRef = useRef<number | null>(null);
   const categoriasIniciaisProcessadas = useRef(new Set<string>());
 
   const substituirNotificacoesParceria = useCallback((proximas: NotificacaoParceria[]) => {
@@ -248,6 +274,30 @@ export default function RootLayout() {
       }).start();
     }, 1800);
   }, [toastOpacity]);
+
+  const sincronizarPendenciasOffline = useCallback(async () => {
+    if (IS_LOCAL_DEMO || !usuarioSessaoRef.current) return;
+    try {
+      const resumo = await sincronizarFilaFinanceiraOffline();
+      if (!resumo) return;
+      if (resumo.succeeded > 0 || resumo.failed > 0) {
+        DeviceEventEmitter.emit(OFFLINE_SYNC_COMPLETED_EVENT);
+      }
+      if (resumo.succeeded > 0) {
+        showToast(
+          resumo.succeeded === 1
+            ? "1 item salvo no dispositivo foi sincronizado."
+            : `${resumo.succeeded} itens salvos no dispositivo foram sincronizados.`,
+          "success",
+        );
+      }
+      if (resumo.failed > 0) {
+        showToast("Um item salvo no dispositivo não pôde ser sincronizado.", "error");
+      }
+    } catch {
+      console.log("Não foi possível verificar a fila offline.");
+    }
+  }, [showToast]);
 
   const autenticar = useCallback(async () => {
     if (autenticacaoEmAndamento.current) return;
@@ -398,21 +448,133 @@ export default function RootLayout() {
     carregarConfiguracoes();
 
     supabase.auth.getSession().then(({ data: { session } }) => {
+      usuarioSessaoRef.current = session?.user?.id ?? null;
       setSession(session);
+      if (!session) void limparNotificacoesAoSair(null);
+      else void sincronizarPendenciasOffline();
       setIsAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const usuarioAnterior = usuarioSessaoRef.current;
+      usuarioSessaoRef.current = session?.user?.id ?? null;
       setSession(session);
       if (event === "PASSWORD_RECOVERY") {
         void iniciarFluxoRecuperacaoSenha(session?.user.id);
       } else if (event === "SIGNED_OUT") {
         void AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
+        void limparNotificacoesAoSair(usuarioAnterior);
+      } else if (session?.user?.id) {
+        void sincronizarPendenciasOffline();
       }
     });
 
     return () => subscription.unsubscribe();
-  }, [carregarConfiguracoes, iniciarFluxoRecuperacaoSenha]);
+  }, [carregarConfiguracoes, iniciarFluxoRecuperacaoSenha, sincronizarPendenciasOffline]);
+
+  useEffect(() => {
+    if (IS_LOCAL_DEMO) return;
+    let conexaoAnterior: boolean | null = null;
+
+    const removerRede = NetInfo.addEventListener((estado) => {
+      const conectado = conexaoPermiteSincronizacao(estado);
+      if (conectado && conexaoAnterior === false && usuarioSessaoRef.current) {
+        void sincronizarPendenciasOffline();
+      }
+      conexaoAnterior = conectado;
+    });
+    const eventoApp = AppState.addEventListener("change", (estado) => {
+      if (estado === "active" && usuarioSessaoRef.current) {
+        void sincronizarPendenciasOffline();
+      }
+    });
+
+    return () => {
+      removerRede();
+      eventoApp.remove();
+    };
+  }, [sincronizarPendenciasOffline]);
+
+  // Protege saldos e movimentações na visualização de aplicativos recentes.
+  // No Android, FLAG_SECURE também bloqueia capturas enquanto houver sessão;
+  // no iOS, o sistema aplica um desfoque quando o app perde o foco.
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+
+    let efeitoAtual = true;
+    const aplicarProtecaoNativa = async (proteger: boolean) => {
+      if (Platform.OS === "android") {
+        if (proteger) await ScreenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA);
+        else await ScreenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA);
+        return;
+      }
+      if (Platform.OS !== "ios") return;
+
+      const resultados = await Promise.allSettled(proteger
+        ? [
+            ScreenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA),
+            ScreenCapture.enableAppSwitcherProtectionAsync(0.85),
+          ]
+        : [
+            ScreenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA),
+            ScreenCapture.disableAppSwitcherProtectionAsync(),
+          ]);
+      const falha = resultados.find((resultado) => resultado.status === "rejected");
+      if (falha?.status === "rejected") throw falha.reason;
+    };
+    const aplicar = async (proteger: boolean) => {
+      try {
+        await aplicarProtecaoNativa(proteger);
+
+        // Uma chamada antiga pode terminar depois de uma troca de sessão. Nesse
+        // caso, reconcilia com a sessão corrente para que a última operação
+        // nativa nunca deixe visíveis dados do usuário conectado.
+        if (!efeitoAtual) {
+          const deveProtegerAgora = Boolean(usuarioSessaoRef.current);
+          await aplicarProtecaoNativa(deveProtegerAgora);
+        }
+      } catch (error) {
+        console.log("Não foi possível atualizar a proteção de tela:", error);
+      }
+    };
+
+    void aplicar(Boolean(session?.user?.id));
+    return () => {
+      // O cleanup de uma troca de sessão não desativa a proteção. A nova
+      // execução aplica o estado desejado e a antiga se reconcilia acima.
+      efeitoAtual = false;
+    };
+  }, [session?.user?.id]);
+
+  // Ao voltar depois de dois minutos fora do app, exige novamente a
+  // autenticação local quando a proteção biométrica está habilitada.
+  // Sem biometria, encerra a sessão local após 15 minutos para que um
+  // aparelho perdido não permaneça indefinidamente aberto.
+  useEffect(() => {
+    const eventoApp = AppState.addEventListener("change", (estado) => {
+      if (estado === "inactive" || estado === "background") {
+        if (inicioInatividadeRef.current === null) inicioInatividadeRef.current = Date.now();
+        return;
+      }
+      if (estado !== "active") return;
+
+      const inicio = inicioInatividadeRef.current;
+      inicioInatividadeRef.current = null;
+      if (inicio === null || !session?.user?.id) return;
+
+      const tempoForaDoApp = Date.now() - inicio;
+      if (isBiometricEnabled && tempoForaDoApp >= TEMPO_PARA_BLOQUEIO_MS) {
+        setIsUnlocked(false);
+        void verificarBiometria();
+      } else if (!isBiometricEnabled && tempoForaDoApp >= TEMPO_PARA_LOGOUT_SEM_BIOMETRIA_MS) {
+        const userId = session.user.id;
+        void limparNotificacoesAoSair(userId)
+          .finally(() => supabase.auth.signOut({ scope: "local" }));
+      }
+    });
+
+    return () => eventoApp.remove();
+  }, [isBiometricEnabled, session?.user?.id, verificarBiometria]);
 
   const verificarCadastroPendente = useCallback(() => {
     const metadata = session?.user?.user_metadata as Record<string, unknown> | undefined;
@@ -433,7 +595,7 @@ export default function RootLayout() {
     if (!uid) return;
 
     const metadata = (session.user.user_metadata ?? {}) as Record<string, unknown>;
-    if (metadata[CATEGORIAS_INICIAIS_METADATA_KEY] === true) {
+    if (metadata.categorias_iniciais_criadas === true) {
       categoriasIniciaisProcessadas.current.add(uid);
       return;
     }
@@ -831,20 +993,15 @@ export default function RootLayout() {
   // Carrega direitos do servidor. O dispositivo nunca é a fonte oficial do plano.
   useEffect(() => {
     if (!session?.user?.id) return;
-    const uid = session.user.id;
     fetchMyEntitlement().then((next) => {
       setEntitlement(next);
       setPlanoState(next.plan);
-      if (next.limitsEnabled) {
-        verificarCotaIA(uid, next.plan).then(({ usadas }) => setIaAcoesHoje(usadas));
-      } else {
-        setIaAcoesHoje(0);
-      }
     });
   }, [session?.user?.id]);
 
   // Solicita permissão de notificação na primeira sessão do usuário neste dispositivo
   useEffect(() => {
+    if (IS_LOCAL_DEMO) return;
     const uid = session?.user?.id;
     if (!uid) return;
     const chave = `@notificacoes_perguntado_${uid}`;
@@ -876,9 +1033,8 @@ export default function RootLayout() {
       console.warn("Alteração local de plano bloqueada. Use o fluxo seguro de assinatura.");
       return;
     }
-    const planOrder: Record<TipoPlano, number> = { free: 0, smart: 1, premium: 2 };
-    const eDowngrade = planOrder[novoPlano] < planOrder[plano];
-    const eUpgrade = planOrder[novoPlano] > planOrder[plano];
+    const eDowngrade = ordemDoPlano(novoPlano) < ordemDoPlano(plano);
+    const eUpgrade = ordemDoPlano(novoPlano) > ordemDoPlano(plano);
     const uid = session?.user?.id;
 
     if (eUpgrade && uid) {
@@ -892,7 +1048,7 @@ export default function RootLayout() {
     }
 
     if (eDowngrade && uid) {
-      const limites = LIMITES_PLANOS[novoPlano];
+      const limites = limitesDoPlano(novoPlano);
       const bloqueados: { tipo: string; nome: string }[] = [];
 
       if (limites.contas > 0) {
@@ -955,7 +1111,9 @@ export default function RootLayout() {
 
   const verificarLimite = useCallback((tipo: keyof LimitesPlano, qtdAtual: number): boolean => {
     if (!entitlement.limitsEnabled) return true;
-    const limite = LIMITES_PLANOS[plano][tipo] as number;
+    const limiteCandidato = Reflect.get(limitesDoPlano(plano), tipo);
+    if (typeof limiteCandidato !== "number") return true;
+    const limite = limiteCandidato;
     if (dentroDoLimite(limite, qtdAtual)) return true;
 
     const msg = msgLimiteAtingido(tipo, plano);
@@ -968,34 +1126,20 @@ export default function RootLayout() {
     setModalLimite({ visivel: true, mensagem, planoNecessario });
   }, []);
 
-  const tentarAcaoIA = useCallback(async (): Promise<boolean> => {
-    if (!session?.user?.id) return false;
-    if (!entitlement.limitsEnabled) return true;
-    const uid = session.user.id;
-
-    const resultado = await consumirAcaoIA(uid, plano);
-    if (!resultado) {
-      const msg = msgCotaEsgotada(plano);
-      const proxPlano: TipoPlano = plano === "free" ? "smart" : plano === "smart" ? "premium" : "premium";
-      setModalLimite({ visivel: true, mensagem: msg, planoNecessario: proxPlano !== plano ? proxPlano : undefined });
-      return false;
-    }
-
-    // Atualiza contador local
-    verificarCotaIA(uid, plano).then(({ usadas }) => setIaAcoesHoje(usadas));
-    return true;
-  }, [entitlement.limitsEnabled, plano, session?.user?.id]);
-
   const toggleNotificacoes = useCallback(async (value: boolean) => {
+    const userId = session?.user?.id;
+    if (!userId) return;
     if (value) {
       const concedida = await pedirPermissaoNotificacoes();
       if (!concedida) {
         Alert.alert("Permissão Negada", "Para ativar as notificações, habilite-as nas configurações do seu celular.");
         return;
       }
+    } else {
+      await cancelarNotificacoesOpcionais(userId);
     }
     setNotificacoesAtivas(value);
-    await AsyncStorage.setItem(`@notificacoes_enabled_${session?.user?.id}`, value ? "true" : "false");
+    await AsyncStorage.setItem(`@notificacoes_enabled_${userId}`, value ? "true" : "false");
   }, [session?.user?.id]);
 
   const toggleTheme = useCallback(async () => {
@@ -1031,7 +1175,7 @@ export default function RootLayout() {
     toggleNotificacoes,
     plano,
     setPlano,
-    limites: entitlement.limitsEnabled ? LIMITES_PLANOS[plano] : LIMITES_DESENVOLVIMENTO,
+    limites: entitlement.limitsEnabled ? limitesDoPlano(plano) : LIMITES_DESENVOLVIMENTO,
     billingEnabled: entitlement.billingEnabled,
     limitsEnabled: entitlement.limitsEnabled,
     temCadastroPendente,
@@ -1039,12 +1183,9 @@ export default function RootLayout() {
     refreshEntitlement,
     verificarLimite,
     mostrarModalLimite,
-    iaAcoesHoje,
-    tentarAcaoIA,
   }), [
     entitlement.billingEnabled,
     entitlement.limitsEnabled,
-    iaAcoesHoje,
     isBiometricEnabled,
     isDark,
     notificacoesAtivas,
@@ -1055,7 +1196,6 @@ export default function RootLayout() {
     showToast,
     temCadastroPendente,
     temPopupPrioritario,
-    tentarAcaoIA,
     toggleBiometric,
     toggleNotificacoes,
     toggleTheme,
@@ -1166,6 +1306,15 @@ export default function RootLayout() {
       </ErrorBoundary>
 
       <FinFlowAlertHost isDark={isDark} />
+
+      {IS_LOCAL_DEMO && (
+        <View pointerEvents="none" style={styles.localDemoBadge}>
+          <MaterialIcons name="science" size={15} color="#08352F" />
+          <Text style={styles.localDemoBadgeText}>
+            MODO LOCAL · dados fictícios · sem sincronização
+          </Text>
+        </View>
+      )}
 
       {/* Toast global */}
       <Animated.View
@@ -1685,6 +1834,37 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  localDemoBadge: {
+    position: "absolute",
+    top: 10,
+    alignSelf: "center",
+    zIndex: 10000,
+    elevation: 30,
+    maxWidth: "92%",
+    minHeight: 30,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: "rgba(8,53,47,0.25)",
+    backgroundColor: "#8CE4C9",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.18,
+    shadowRadius: 4,
+  },
+  localDemoBadgeText: {
+    flexShrink: 1,
+    color: "#08352F",
+    fontSize: 11,
+    lineHeight: 15,
+    fontWeight: "900",
+    textAlign: "center",
+  },
   lockScreen: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   lockGlowTop: {
     position: "absolute",

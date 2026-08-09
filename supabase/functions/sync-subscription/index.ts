@@ -5,10 +5,11 @@ import { adminClient, authenticatedUser } from "../_shared/supabase.ts";
 Deno.serve(async (req) => {
   const options = handleOptions(req);
   if (options) return options;
+  if (req.method !== "POST") return json({ error: "METHOD_NOT_ALLOWED" }, 405, req);
   try {
     const user = await authenticatedUser(req);
     const admin = adminClient();
-    const { data: subscription } = await admin
+    const { data: subscription, error: subscriptionError } = await admin
       .from("subscriptions")
       .select("*")
       .eq("user_id", user.id)
@@ -17,7 +18,8 @@ Deno.serve(async (req) => {
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (!subscription) return json({ status: "none" });
+    if (subscriptionError) throw new Error("SUBSCRIPTION_LOOKUP_FAILED");
+    if (!subscription) return json({ status: "none" }, 200, req);
 
     const mp = await mercadoPago(`/preapproval/${encodeURIComponent(subscription.provider_subscription_id)}`);
     const status = mapMercadoPagoStatus(mp.status);
@@ -25,7 +27,7 @@ Deno.serve(async (req) => {
     const accessUntil = status === "active"
       ? nextPayment
       : subscription.access_until;
-    await admin.from("subscriptions").update({
+    const { error: updateError } = await admin.from("subscriptions").update({
       status,
       started_at: subscription.started_at ?? mp.date_created,
       current_period_end: nextPayment,
@@ -33,12 +35,16 @@ Deno.serve(async (req) => {
       last_provider_sync_at: new Date().toISOString(),
       provider_payload: { ...subscription.provider_payload, last_status: mp.status },
       updated_at: new Date().toISOString(),
-    }).eq("id", subscription.id);
+    }).eq("id", subscription.id).eq("user_id", user.id);
+    if (updateError) throw new Error("SUBSCRIPTION_UPDATE_FAILED");
 
-    return json({ status, plan: subscription.plan, accessUntil });
+    return json({ status, plan: subscription.plan, accessUntil }, 200, req);
   } catch (error) {
-    if (error instanceof Error && error.message === "UNAUTHORIZED") return json({ error: "UNAUTHORIZED" }, 401);
-    console.error("sync-subscription", error);
-    return json({ error: "SYNC_FAILED" }, 500);
+    if (error instanceof Error && error.message === "UNAUTHORIZED") return json({ error: "UNAUTHORIZED" }, 401, req);
+    const code = error instanceof Error && /^[A-Z][A-Z0-9_]{2,79}$/.test(error.message)
+      ? error.message
+      : "UNKNOWN";
+    console.error("sync-subscription", code);
+    return json({ error: "SYNC_FAILED" }, 500, req);
   }
 });

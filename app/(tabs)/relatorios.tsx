@@ -71,7 +71,8 @@ const indiceAposData = (datas: string[], dataLimite: string): number => {
   let fim = datas.length;
   while (inicio < fim) {
     const meio = Math.floor((inicio + fim) / 2);
-    if (datas[meio] <= dataLimite) inicio = meio + 1;
+    const dataDoMeio = datas.at(meio);
+    if (dataDoMeio !== undefined && dataDoMeio <= dataLimite) inicio = meio + 1;
     else fim = meio;
   }
   return inicio;
@@ -82,7 +83,7 @@ const totalAcumuladoAte = (
   dataLimite: string,
 ): number => {
   const indice = indiceAposData(serie.datas, dataLimite);
-  return indice === 0 ? 0 : serie.acumulados[indice - 1];
+  return indice === 0 ? 0 : (serie.acumulados.at(indice - 1) ?? 0);
 };
 
 const MESES_ABREV = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
@@ -248,7 +249,7 @@ export default function RelatoriosScreen() {
     const datasPendentesValidas: string[] = [];
     const meses = Array.from({ length: 12 }, (_, mesIdx) => ({
       mesIdx,
-      label: MESES_ABREV[mesIdx],
+      label: MESES_ABREV.at(mesIdx) ?? "",
       isAtual: isAnoAtual && mesIdx === mesAtualIdx,
       recPagas: 0,
       despPagas: 0,
@@ -278,7 +279,7 @@ export default function RelatoriosScreen() {
       if (!dataEfetiva.startsWith(`${anoSelecionado}-`)) continue;
 
       const mesIdx = Number(dataEfetiva.slice(5, 7)) - 1;
-      const mes = meses[mesIdx];
+      const mes = meses.at(mesIdx);
       if (!mes) continue;
       if (transacao.tipo === "receita") {
         if (realizada) mes.recPagas += valor;
@@ -336,7 +337,7 @@ export default function RelatoriosScreen() {
   const chartMax = Math.max(...barMaxes, ...balanceSaldos, saldoAtualGlobal, 0);
   const chartMin = Math.min(...balanceSaldos, saldoAtualGlobal, 0);
   const chartRange = chartMax - chartMin || 1;
-  const mesDetalhe = todosOsMeses[mesProjSelecionado];
+  const mesDetalhe = todosOsMeses.at(mesProjSelecionado) ?? todosOsMeses.at(0);
   const saldoDetalhe = projecaoSaldo.find(p => p.mesIdx === mesProjSelecionado);
   const saldoAcumuladoSelecionado = saldoDetalhe?.saldo ?? saldoAtualGlobal;
 
@@ -703,7 +704,7 @@ export default function RelatoriosScreen() {
               }}
             >
               <Text style={[styles.detalheTitulo, { color: Cores.textoPrincipal }]}>
-                {MESES_ABREV[mesDetalhe.mesIdx]} {anoSelecionado}
+                {MESES_ABREV.at(mesDetalhe.mesIdx)} {anoSelecionado}
                 {mesDetalhe.isAtual ? "  •  Mês atual" : ""}
               </Text>
 

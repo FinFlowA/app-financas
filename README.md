@@ -53,7 +53,7 @@ O projeto é mantido de forma colaborativa pela equipe FinFlow. O histórico té
 | Backend | Supabase, PostgreSQL e Supabase Auth |
 | Segurança de dados | Row Level Security (RLS) |
 | Armazenamento local | AsyncStorage e Expo SQLite |
-| Inteligência artificial | Groq API e Llama 3.3 70B |
+| Inteligência artificial | Edge Function segura, OpenAI Responses API ou Groq API |
 | Recursos mobile | Biometria, notificações locais e EAS Update |
 
 ## Arquitetura
@@ -68,17 +68,18 @@ Uma transferência é registrada como uma única movimentação vinculada às co
 
 ### Assistente financeiro
 
-O assistente converte a mensagem do usuário em uma ação estruturada:
+O assistente converte a mensagem do usuário em uma proposta financeira estruturada:
 
 ```text
 Linguagem natural
     → intenção estruturada
     → validação dos campos
-    → confirmação do usuário
-    → operação no Supabase
+    → prévia persistida e com expiração
+    → confirmação explícita do usuário
+    → RPC transacional e idempotente no Supabase
 ```
 
-A IA não deve executar alterações financeiras sem validação e confirmação.
+A IA não recebe chaves privilegiadas, não controla a confirmação e não escreve diretamente nas tabelas. O backend mantém o prompt de sistema, valida a resposta estruturada, aplica a cota do plano no servidor e executa apenas ações financeiras permitidas. Credenciais, identidade, parceria, assinatura e exclusão do usuário permanecem fora do alcance da IA.
 
 ## Executando localmente
 
@@ -105,9 +106,13 @@ EXPO_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
 ```
 
-As chaves privadas do Groq e dos provedores de pagamento pertencem somente às
+As chaves privadas dos provedores de IA e de pagamento pertencem somente às
 Edge Functions do Supabase. Consulte
-[`docs/billing-setup.md`](./docs/billing-setup.md) para configurar o backend.
+[`docs/billing-setup.md`](./docs/billing-setup.md) para pagamentos e
+[`docs/ai-setup.md`](./docs/ai-setup.md) para o assistente financeiro. A
+implantação da IA exige as sete migrações `20260802000000` a `20260802000600`,
+na ordem documentada; a primeira garante a coluna `data_realizacao` antes do
+núcleo seguro.
 
 Depois execute:
 
@@ -131,7 +136,8 @@ npx tsc --noEmit
 - Nunca use a chave `service_role` do Supabase no aplicativo.
 - A chave publicável/anon do Supabase pode ser utilizada no cliente somente com políticas RLS corretamente configuradas.
 - Variáveis com o prefixo `EXPO_PUBLIC_` são incorporadas ao bundle e podem ser extraídas do APK.
-- A chave Groq é mantida em segredo na Edge Function `groq-proxy`; ela nunca deve usar o prefixo `EXPO_PUBLIC_`.
+- Chaves OpenAI/Groq ficam exclusivamente nos secrets da Edge Function `finance-ai`; nunca devem usar o prefixo `EXPO_PUBLIC_`.
+- A Edge Function escolhe um único provedor por solicitação e nunca faz fallback com dados do usuário sem configuração explícita.
 - Assinaturas são confirmadas no backend e por webhook. O retorno do navegador não concede plano ao usuário.
 - Revogue imediatamente qualquer chave que tenha sido publicada, enviada em conversas ou exposta em capturas de tela.
 
@@ -182,6 +188,9 @@ lib/
   transacoes.ts        regras compartilhadas de movimentações
 docs/
   supabase-migration.sql
+supabase/
+  migrations/           migrações versionadas do banco
+  functions/finance-ai/ Edge Function segura do assistente
 ```
 
 ## Colaboração

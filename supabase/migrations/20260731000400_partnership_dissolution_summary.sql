@@ -314,6 +314,14 @@ BEGIN
     RAISE EXCEPTION USING ERRCODE = '42501', MESSAGE = 'authentication required';
   END IF;
 
+  -- A IA usa a mesma trava antes de calcular/confirmar qualquer ação sobre
+  -- recursos compartilhados. Assim a parceria não pode desaparecer entre a
+  -- autorização e a escrita financeira, nem a dissolução pode observar uma
+  -- movimentação parcialmente confirmada.
+  PERFORM pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('finflow:partnership:' || p_parceria_id::TEXT, 73119)
+  );
+
   SELECT *
     INTO v_parceria
     FROM public.parcerias

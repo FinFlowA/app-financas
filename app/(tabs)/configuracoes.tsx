@@ -18,15 +18,26 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { supabase } from "../../lib/supabase";
+import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
+  cancelarNotificacoesOpcionais,
+  limparNotificacoesAoSair,
   obterPreferenciasNotificacoes,
   PREFERENCIAS_NOTIFICACOES_PADRAO,
   salvarPreferenciasNotificacoes,
   type PreferenciasNotificacoes,
 } from "../../lib/notifications";
+import {
+  limparFilaFinanceiraDoUsuario,
+  OFFLINE_SYNC_COMPLETED_EVENT,
+  obterResumoFilaFinanceiraOffline,
+  removerItemFalhoDaFilaFinanceira,
+  sincronizarFilaFinanceiraOffline,
+  type OfflineQueuePanelItem,
+  type OfflineQueuePanelSnapshot,
+} from "../../lib/offline-sync";
 
 // URLs das páginas legais (GitHub Pages — atualizar quando publicado)
 const URL_PRIVACIDADE = "https://finflowa.github.io/finflow-legal/#privacidade";
@@ -42,6 +53,23 @@ const OPCOES_NOTIFICACOES: { key: keyof PreferenciasNotificacoes; titulo: string
 ];
 
 const SETTINGS_HEADER_COLLAPSE_DISTANCE = FinFlowTabHeader.expandedHeight - FinFlowTabHeader.compactHeight;
+
+const EMPTY_OFFLINE_QUEUE_SNAPSHOT: OfflineQueuePanelSnapshot = {
+  queued: 0,
+  failed: 0,
+  items: [],
+};
+
+function formatarDataItemOffline(createdAt: string): string {
+  const data = new Date(createdAt);
+  if (!Number.isFinite(data.getTime())) return "Data indisponível";
+  return data.toLocaleString("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
 
 export default function ConfiguracoesScreen() {
   const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, limitsEnabled } = useAppTheme();
@@ -90,6 +118,11 @@ export default function ConfiguracoesScreen() {
   const [modalPreferenciasNotificacoes, setModalPreferenciasNotificacoes] = useState(false);
   const [loadingPreferenciasNotificacoes, setLoadingPreferenciasNotificacoes] = useState(false);
   const [preferenciasNotificacoes, setPreferenciasNotificacoes] = useState<PreferenciasNotificacoes>(PREFERENCIAS_NOTIFICACOES_PADRAO);
+  const [modalFilaOfflineVisivel, setModalFilaOfflineVisivel] = useState(false);
+  const [resumoFilaOffline, setResumoFilaOffline] = useState<OfflineQueuePanelSnapshot>(EMPTY_OFFLINE_QUEUE_SNAPSHOT);
+  const [loadingFilaOffline, setLoadingFilaOffline] = useState(false);
+  const [sincronizandoFilaOffline, setSincronizandoFilaOffline] = useState(false);
+  const [removendoItemOfflineId, setRemovendoItemOfflineId] = useState<string | null>(null);
 
   const carregarParceria = async () => {
     if (!meuId || !meuEmail) return;
@@ -114,6 +147,23 @@ export default function ConfiguracoesScreen() {
     setParceria(aceito ?? data[0]);
   };
 
+  const carregarResumoFilaOffline = useCallback(async (exibirLoading = false): Promise<OfflineQueuePanelSnapshot | null> => {
+    if (!meuId) {
+      setResumoFilaOffline(EMPTY_OFFLINE_QUEUE_SNAPSHOT);
+      return EMPTY_OFFLINE_QUEUE_SNAPSHOT;
+    }
+    if (exibirLoading) setLoadingFilaOffline(true);
+    try {
+      const resumo = await obterResumoFilaFinanceiraOffline();
+      setResumoFilaOffline(resumo);
+      return resumo;
+    } catch {
+      return null;
+    } finally {
+      if (exibirLoading) setLoadingFilaOffline(false);
+    }
+  }, [meuId]);
+
   // Mantém o mesmo ciclo de montagem da última versão estável desta tela.
   // `session` é a fonte única dos dados de perfil durante o foco da aba.
   useFocusEffect(useCallback(() => {
@@ -127,6 +177,17 @@ export default function ConfiguracoesScreen() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]));
+
+  useFocusEffect(useCallback(() => {
+    void carregarResumoFilaOffline();
+  }, [carregarResumoFilaOffline]));
+
+  React.useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(OFFLINE_SYNC_COMPLETED_EVENT, () => {
+      void carregarResumoFilaOffline();
+    });
+    return () => subscription.remove();
+  }, [carregarResumoFilaOffline]);
 
   const abrirPreferenciasNotificacoes = async () => {
     setModalPreferenciasNotificacoes(true);
@@ -144,6 +205,7 @@ export default function ConfiguracoesScreen() {
     setLoadingPreferenciasNotificacoes(true);
     try {
       const atualizadas = await salvarPreferenciasNotificacoes(meuId, preferenciasNotificacoes);
+      await cancelarNotificacoesOpcionais(meuId);
       setPreferenciasNotificacoes(atualizadas);
       DeviceEventEmitter.emit("finflow:notificacoes-alteradas", atualizadas);
       setModalPreferenciasNotificacoes(false);
@@ -151,6 +213,69 @@ export default function ConfiguracoesScreen() {
     } finally {
       setLoadingPreferenciasNotificacoes(false);
     }
+  };
+
+  const abrirFilaOffline = async () => {
+    setModalFilaOfflineVisivel(true);
+    const resumo = await carregarResumoFilaOffline(true);
+    if (!resumo) showToast("Não foi possível consultar a fila deste dispositivo.", "error");
+  };
+
+  const sincronizarFilaOfflineAgora = async () => {
+    if (sincronizandoFilaOffline || removendoItemOfflineId || IS_LOCAL_DEMO) return;
+    setSincronizandoFilaOffline(true);
+    try {
+      const resultado = await sincronizarFilaFinanceiraOffline();
+      const resumoAtualizado = await carregarResumoFilaOffline();
+      if (resultado && (resultado.succeeded > 0 || resultado.failed > 0)) {
+        DeviceEventEmitter.emit(OFFLINE_SYNC_COMPLETED_EVENT);
+      }
+      if (!resumoAtualizado) {
+        showToast("Não foi possível atualizar o estado da sincronização.", "error");
+      } else if (resultado === null && resumoAtualizado.items.length > 0) {
+        showToast("Sem conexão. Os itens continuam protegidos neste dispositivo.", "info");
+      } else if (resumoAtualizado.failed > 0) {
+        showToast("Há itens que ainda não puderam ser sincronizados.", "error");
+      } else if (resumoAtualizado.queued > 0) {
+        showToast("A sincronização continuará quando a conexão estiver disponível.", "info");
+      } else {
+        showToast("Tudo sincronizado.", "success");
+      }
+    } catch {
+      showToast("Não foi possível sincronizar agora. Seus itens continuam protegidos.", "error");
+      await carregarResumoFilaOffline();
+    } finally {
+      setSincronizandoFilaOffline(false);
+    }
+  };
+
+  const removerItemOfflineFalho = async (itemId: string) => {
+    if (sincronizandoFilaOffline || removendoItemOfflineId) return;
+    setModalConfirmarAcao(null);
+    setRemovendoItemOfflineId(itemId);
+    try {
+      const removido = await removerItemFalhoDaFilaFinanceira(itemId);
+      await carregarResumoFilaOffline();
+      showToast(
+        removido ? "Item falho removido deste dispositivo." : "Este item não está mais disponível para remoção.",
+        removido ? "success" : "info",
+      );
+    } catch {
+      showToast("Não foi possível remover este item. Tente novamente.", "error");
+    } finally {
+      setRemovendoItemOfflineId(null);
+    }
+  };
+
+  const confirmarRemocaoItemOffline = (item: OfflineQueuePanelItem) => {
+    if (item.status !== "failed" || sincronizandoFilaOffline || removendoItemOfflineId) return;
+    setModalConfirmarAcao({
+      titulo: "Remover item com falha?",
+      mensagem: "Esta ação local será descartada e não chegará ao servidor. Somente este item será removido; as demais pendências continuarão protegidas.",
+      labelConfirm: "Remover este item",
+      cor: "#E76F51",
+      onConfirm: () => void removerItemOfflineFalho(item.id),
+    });
   };
 
   React.useEffect(() => {
@@ -320,7 +445,11 @@ export default function ConfiguracoesScreen() {
       mensagem: "Tem certeza que deseja sair?",
       labelConfirm: "Sair",
       cor: "#E76F51",
-      onConfirm: () => { setModalConfirmarAcao(null); supabase.auth.signOut(); },
+      onConfirm: async () => {
+        setModalConfirmarAcao(null);
+        await limparNotificacoesAoSair(meuId);
+        await supabase.auth.signOut();
+      },
     });
   };
 
@@ -399,6 +528,10 @@ export default function ConfiguracoesScreen() {
         return;
       }
 
+      await Promise.allSettled([
+        limparNotificacoesAoSair(meuId),
+        limparFilaFinanceiraDoUsuario(meuId),
+      ]);
       await supabase.auth.signOut();
       setModalInfo({ titulo: "Conta apagada", mensagem: "Sua conta e todos os dados foram removidos com sucesso.", cor: "#2A9D8F" });
     } catch {
@@ -646,6 +779,36 @@ export default function ConfiguracoesScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* SINCRONIZAÇÃO OFFLINE */}
+          <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>SINCRONIZAÇÃO</Text>
+          <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+            <TouchableOpacity
+              style={styles.configRow}
+              onPress={() => void abrirFilaOffline()}
+              activeOpacity={0.75}
+              accessibilityLabel="Abrir dados aguardando sincronização"
+            >
+              <View style={[styles.configLeft, { flex: 1, minWidth: 0 }]}>
+                <View style={[styles.offlineSettingsIcon, { backgroundColor: novoTema.primarySoft }]}>
+                  <MaterialIcons name="cloud-sync" size={22} color="#2A9D8F" />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.configText, styles.offlineSettingsText, { color: Cores.texto }]}>Dados aguardando sincronização</Text>
+                  <Text style={[styles.configSubtext, styles.offlineSettingsSubtext, { color: Cores.secundario }]}>
+                    {loadingFilaOffline
+                      ? "Atualizando…"
+                      : resumoFilaOffline.items.length === 0
+                        ? "Tudo sincronizado"
+                        : `${resumoFilaOffline.queued} aguardando · ${resumoFilaOffline.failed} com falha`}
+                  </Text>
+                </View>
+              </View>
+              {loadingFilaOffline
+                ? <ActivityIndicator size="small" color="#2A9D8F" />
+                : <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />}
+            </TouchableOpacity>
+          </View>
+
           {/* CONTA CONJUNTA */}
           <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>CONTA CONJUNTA (PARCEIRO)</Text>
           <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda, padding: 15 }]}>
@@ -769,7 +932,7 @@ export default function ConfiguracoesScreen() {
 
           {/* VERSÃO */}
           <Text style={[{ color: Cores.secundario, fontSize: 12, textAlign: "center", marginTop: 16 }]}>
-            FinFlow v2.0.0
+            FinFlow v2.1.0
           </Text>
 
           {/* SAIR */}
@@ -791,6 +954,117 @@ export default function ConfiguracoesScreen() {
         </View>
         </Animated.ScrollView>
       </View>
+
+      {modalFilaOfflineVisivel && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFilaOfflineVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.offlineQueueModal, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+            <View style={styles.notificationPreferencesHeader}>
+              <View style={[styles.notificationPreferencesIcon, { backgroundColor: novoTema.primarySoft }]}>
+                <MaterialIcons name="cloud-sync" size={24} color="#2A9D8F" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.notificationPreferencesTitle, { color: Cores.texto }]}>Sincronização offline</Text>
+                <Text style={[styles.notificationPreferencesSubtitle, { color: Cores.secundario }]}>Acompanhe apenas o estado das ações salvas neste dispositivo.</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.notificationPreferencesClose}
+                onPress={() => setModalFilaOfflineVisivel(false)}
+                disabled={sincronizandoFilaOffline || Boolean(removendoItemOfflineId)}
+                accessibilityLabel="Fechar sincronização offline"
+              >
+                <MaterialIcons name="close" size={22} color={Cores.secundario} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.offlineQueueMetrics}>
+              <View style={[styles.offlineQueueMetric, { backgroundColor: Cores.input, borderColor: Cores.borda }]}>
+                <View style={[styles.offlineQueueMetricIcon, { backgroundColor: "rgba(69,123,157,0.14)" }]}>
+                  <MaterialIcons name="schedule" size={19} color="#457B9D" />
+                </View>
+                <Text style={[styles.offlineQueueMetricValue, { color: Cores.texto }]}>{resumoFilaOffline.queued}</Text>
+                <Text style={[styles.offlineQueueMetricLabel, { color: Cores.secundario }]}>Aguardando</Text>
+              </View>
+              <View style={[styles.offlineQueueMetric, { backgroundColor: Cores.input, borderColor: Cores.borda }]}>
+                <View style={[styles.offlineQueueMetricIcon, { backgroundColor: "rgba(231,111,81,0.14)" }]}>
+                  <MaterialIcons name="error-outline" size={19} color="#E76F51" />
+                </View>
+                <Text style={[styles.offlineQueueMetricValue, { color: Cores.texto }]}>{resumoFilaOffline.failed}</Text>
+                <Text style={[styles.offlineQueueMetricLabel, { color: Cores.secundario }]}>Com falha</Text>
+              </View>
+            </View>
+
+            <View style={[styles.offlineQueueNotice, { backgroundColor: Cores.input, borderColor: Cores.borda }]}>
+              <MaterialIcons name="privacy-tip" size={17} color="#2A9D8F" />
+              <Text style={[styles.offlineQueueNoticeText, { color: Cores.secundario }]}>Valores, descrições e referências financeiras não são exibidos aqui.</Text>
+            </View>
+
+            {IS_LOCAL_DEMO && (
+              <View style={styles.offlineQueueLocalNotice}>
+                <MaterialIcons name="memory" size={17} color="#F4A261" />
+                <Text style={styles.offlineQueueLocalNoticeText}>No modo local da web, a fila fica somente na memória desta sessão e não envia dados ao banco.</Text>
+              </View>
+            )}
+
+            <ScrollView style={styles.offlineQueueList} contentContainerStyle={resumoFilaOffline.items.length === 0 ? styles.offlineQueueEmptyList : undefined} showsVerticalScrollIndicator={false}>
+              {loadingFilaOffline ? (
+                <ActivityIndicator size="small" color="#2A9D8F" style={{ marginVertical: 30 }} />
+              ) : resumoFilaOffline.items.length === 0 ? (
+                <View style={styles.offlineQueueEmpty}>
+                  <View style={[styles.offlineQueueEmptyIcon, { backgroundColor: novoTema.primarySoft }]}>
+                    <MaterialIcons name="cloud-done" size={28} color="#2A9D8F" />
+                  </View>
+                  <Text style={[styles.offlineQueueEmptyTitle, { color: Cores.texto }]}>Tudo sincronizado</Text>
+                  <Text style={[styles.offlineQueueEmptyText, { color: Cores.secundario }]}>Nenhuma ação financeira está aguardando neste dispositivo.</Text>
+                </View>
+              ) : resumoFilaOffline.items.map((item) => {
+                const itemComFalha = item.status === "failed";
+                const removendoEsteItem = removendoItemOfflineId === item.id;
+                return (
+                  <View key={item.id} style={[styles.offlineQueueItem, { borderBottomColor: Cores.borda }]}>
+                    <View style={[styles.offlineQueueItemIcon, { backgroundColor: itemComFalha ? "rgba(231,111,81,0.14)" : "rgba(69,123,157,0.14)" }]}>
+                      <MaterialIcons name={itemComFalha ? "error-outline" : "schedule"} size={19} color={itemComFalha ? "#E76F51" : "#457B9D"} />
+                    </View>
+                    <View style={styles.offlineQueueItemContent}>
+                      <Text style={[styles.offlineQueueItemTitle, { color: Cores.texto }]}>{item.actionLabel}</Text>
+                      <Text style={[styles.offlineQueueItemMeta, { color: Cores.secundario }]}>
+                        {formatarDataItemOffline(item.createdAt)} · {item.attempts} {item.attempts === 1 ? "tentativa" : "tentativas"}
+                      </Text>
+                      <Text style={[styles.offlineQueueItemStatus, { color: itemComFalha ? "#E76F51" : "#457B9D" }]}>
+                        {itemComFalha ? item.failureMessage : "Aguardando conexão"}
+                      </Text>
+                    </View>
+                    {itemComFalha && (
+                      <TouchableOpacity
+                        style={[styles.offlineQueueRemoveButton, { borderColor: "rgba(231,111,81,0.35)" }, (sincronizandoFilaOffline || removendoItemOfflineId) && { opacity: 0.45 }]}
+                        onPress={() => confirmarRemocaoItemOffline(item)}
+                        disabled={sincronizandoFilaOffline || Boolean(removendoItemOfflineId)}
+                        accessibilityLabel={`Remover ${item.actionLabel.toLowerCase()} com falha`}
+                      >
+                        {removendoEsteItem
+                          ? <ActivityIndicator size="small" color="#E76F51" />
+                          : <MaterialIcons name="delete-outline" size={20} color="#E76F51" />}
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.offlineQueueSyncButton, (IS_LOCAL_DEMO || sincronizandoFilaOffline || loadingFilaOffline || removendoItemOfflineId) && { opacity: 0.5 }]}
+              onPress={() => void sincronizarFilaOfflineAgora()}
+              disabled={IS_LOCAL_DEMO || sincronizandoFilaOffline || loadingFilaOffline || Boolean(removendoItemOfflineId)}
+            >
+              {sincronizandoFilaOffline
+                ? <ActivityIndicator size="small" color="#FFF" />
+                : <MaterialIcons name="sync" size={20} color="#FFF" />}
+              <Text style={styles.offlineQueueSyncText}>Sincronizar agora</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      )}
 
       {modalPreferenciasNotificacoes && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalPreferenciasNotificacoes(false)}>
@@ -1051,6 +1325,9 @@ const styles = StyleSheet.create({
   configLeft: { flexDirection: "row", alignItems: "center" },
   configText: { fontSize: 16, fontWeight: "600", marginLeft: 15 },
   configSubtext: { fontSize: 10, marginLeft: 15, marginTop: 2 },
+  offlineSettingsIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", marginRight: 12 },
+  offlineSettingsText: { marginLeft: 0, fontSize: 14 },
+  offlineSettingsSubtext: { marginLeft: 0, fontSize: 10, marginTop: 3 },
 
   logoutButton: { flexDirection: "row", alignItems: "center", justifyContent: "center", padding: 18, marginTop: 30, borderRadius: 12, borderWidth: 1, backgroundColor: "rgba(231, 111, 81, 0.1)" },
   logoutText: { color: "#E76F51", fontSize: 16, fontWeight: "bold", marginLeft: 10 },
@@ -1089,6 +1366,31 @@ const styles = StyleSheet.create({
   notificationOptionText: { fontSize: 10, lineHeight: 14, marginTop: 2 },
   notificationSaveButton: { minHeight: 50, borderRadius: 15, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginTop: 16 },
   notificationSaveText: { color: "#FFF", fontSize: 14, fontWeight: "800" },
+  offlineQueueModal: { width: "100%", maxWidth: 520, maxHeight: "90%", borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  offlineQueueMetrics: { flexDirection: "row", gap: 10, marginBottom: 10 },
+  offlineQueueMetric: { flex: 1, minHeight: 92, borderRadius: 16, borderWidth: 1, alignItems: "center", justifyContent: "center", padding: 10 },
+  offlineQueueMetricIcon: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", marginBottom: 5 },
+  offlineQueueMetricValue: { fontSize: 20, fontWeight: "900", lineHeight: 23 },
+  offlineQueueMetricLabel: { fontSize: 10, fontWeight: "700", marginTop: 1 },
+  offlineQueueNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, borderWidth: 1, padding: 10, marginBottom: 8 },
+  offlineQueueNoticeText: { flex: 1, fontSize: 10, lineHeight: 15 },
+  offlineQueueLocalNotice: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 12, padding: 10, backgroundColor: "rgba(244,162,97,0.12)", marginBottom: 8 },
+  offlineQueueLocalNoticeText: { flex: 1, color: "#C47C2B", fontSize: 10, lineHeight: 15 },
+  offlineQueueList: { maxHeight: 315 },
+  offlineQueueEmptyList: { minHeight: 165, justifyContent: "center" },
+  offlineQueueEmpty: { alignItems: "center", paddingHorizontal: 20, paddingVertical: 22 },
+  offlineQueueEmptyIcon: { width: 50, height: 50, borderRadius: 25, alignItems: "center", justifyContent: "center", marginBottom: 9 },
+  offlineQueueEmptyTitle: { fontSize: 14, fontWeight: "900" },
+  offlineQueueEmptyText: { fontSize: 10, lineHeight: 15, textAlign: "center", marginTop: 4 },
+  offlineQueueItem: { flexDirection: "row", alignItems: "center", minHeight: 82, borderBottomWidth: 1, paddingVertical: 10 },
+  offlineQueueItemIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center", marginRight: 10 },
+  offlineQueueItemContent: { flex: 1, minWidth: 0 },
+  offlineQueueItemTitle: { fontSize: 13, fontWeight: "800" },
+  offlineQueueItemMeta: { fontSize: 9, lineHeight: 13, marginTop: 2 },
+  offlineQueueItemStatus: { fontSize: 10, lineHeight: 14, fontWeight: "700", marginTop: 2 },
+  offlineQueueRemoveButton: { width: 38, height: 38, borderRadius: 19, borderWidth: 1, alignItems: "center", justifyContent: "center", marginLeft: 9 },
+  offlineQueueSyncButton: { minHeight: 50, borderRadius: 15, backgroundColor: "#2A9D8F", flexDirection: "row", gap: 8, alignItems: "center", justifyContent: "center", marginTop: 16 },
+  offlineQueueSyncText: { color: "#FFF", fontSize: 14, fontWeight: "800" },
   abaSelector: { flexDirection: "row", borderRadius: 10, padding: 3, marginBottom: 20 },
   abaBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: "center" },
   abaBtnText: { fontWeight: "600", fontSize: 14 },

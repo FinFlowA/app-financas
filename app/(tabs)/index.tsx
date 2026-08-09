@@ -19,13 +19,22 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { supabase } from "../../lib/supabase";
+import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
+import {
+  dispositivoSemConexao,
+  mensagemFalhaEdicaoOffline,
+  OFFLINE_EDIT_SAVED_MESSAGE,
+  OFFLINE_SAVED_MESSAGE,
+  OFFLINE_SYNC_COMPLETED_EVENT,
+  salvarCriacaoFinanceira,
+  salvarEdicaoFinanceira,
+} from "../../lib/offline-sync";
 import {
   adicionarRecorrencia,
   adicionarIdSerie,
@@ -46,15 +55,18 @@ interface Categoria {
   icone: string;
   tipo: string;
   ativa: number;
+  version?: number;
 }
 interface Conta {
   id: number;
+  user_id?: string;
   nome: string;
   saldo_inicial: number;
   compartilhado: boolean;
   cor?: string;
   arquivado?: boolean;
   bloqueado_plano?: boolean;
+  version?: number;
 }
 interface Caixinha {
   id: number;
@@ -74,6 +86,7 @@ interface Transacao {
   categoria_id: number | null;
   conta_id: number;
   status: string;
+  transacao_pai_id?: number | null;
 }
 
 interface CompraCartao {
@@ -114,6 +127,30 @@ const PALETA_CORES = [
   "#3A86FF",
 ];
 
+type CacheHomeEmMemoria = {
+  categorias: Categoria[];
+  contas: Conta[];
+  transacoes: Transacao[];
+  caixinhas: Caixinha[];
+  temParceiro: boolean;
+};
+
+// O cache financeiro vive somente no processo. AsyncStorage não é cifrado no
+// dispositivo e não deve conter saldos, contas ou lançamentos.
+const cacheHomePorUsuario = new Map<string, CacheHomeEmMemoria>();
+const CHAVES_CACHE_HOME_LEGADO = [
+  "@cache_categorias",
+  "@cache_contas",
+  "@cache_transacoes",
+  "@cache_caixinhas",
+  "@cache_parceiro",
+  "@finflow_demo:cache_categorias",
+  "@finflow_demo:cache_contas",
+  "@finflow_demo:cache_transacoes",
+  "@finflow_demo:cache_caixinhas",
+  "@finflow_demo:cache_parceiro",
+];
+
 const LISTA_ICONES = [
   "label", "restaurant", "directions-car", "home", "favorite",
   "shopping-cart", "school", "fitness-center", "local-hospital",
@@ -142,7 +179,7 @@ const mesesEmPortugues = [
 ];
 
 // Gráfico de barras horizontais por categoria
-const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total, isDark }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean }) {
+const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total, isDark, valoresVisiveis }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean; valoresVisiveis: boolean }) {
   if (total === 0 || dados.length === 0) return (
     <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 20 }}>
       <MaterialIcons name="bar-chart" size={32} color={isDark ? "#333" : "#DDD"} />
@@ -167,7 +204,7 @@ const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total
                   {pct.toFixed(0)}%
                 </Text>
                 <Text style={{ fontSize: 10, color: isDark ? "#AAA" : "#666" }}>
-                  {fmtReais(item.valor)}
+                  {valoresVisiveis ? fmtReais(item.valor) : "R$ ••••••"}
                 </Text>
               </View>
             </View>
@@ -182,7 +219,11 @@ const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total
 });
 
 export default function Dashboard() {
-  const { isDark, session, notificacoesAtivas, verificarLimite, temPopupPrioritario } = useAppTheme();
+  const { isDark, session, showToast, notificacoesAtivas, verificarLimite, temPopupPrioritario, limites, limitsEnabled } = useAppTheme();
+  const iaDisponivel = usuarioPodeAcessarIA(
+    limitsEnabled && limites.iaOperacional,
+    limitsEnabled,
+  );
   const alertaVencidoMostrado = useRef(false);
   const router = useRouter();
   const novoTema = finFlowTheme(isDark);
@@ -276,7 +317,10 @@ export default function Dashboard() {
       : "#457B9D";
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
+  const [modalBalancoAtualVisivel, setModalBalancoAtualVisivel] = useState(false);
   const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
+  // Começa oculto para uma preferência salva como privada nunca piscar na tela.
+  const [valoresVisiveis, setValoresVisiveis] = useState(false);
   const [assinaturaAvisosVisualizada, setAssinaturaAvisosVisualizada] = useState("");
   const [leituraAvisosCarregada, setLeituraAvisosCarregada] = useState(false);
   const [modalContasHomeVisivel, setModalContasHomeVisivel] = useState(false);
@@ -433,12 +477,13 @@ export default function Dashboard() {
     };
   }, [comprasCartao, contasEscopoHome, escopoHomeEhTodas, mesAtual, transacoesEscopoHome]);
 
-  const { transacoesVencidasHome, transacoesProximasHome } = useMemo(() => {
+  const { transacoesVencidasHome, transacoesHojeHome, transacoesProximasHome } = useMemo(() => {
     const hoje = new Date();
     hoje.setHours(0, 0, 0, 0);
     const limite = new Date(hoje);
     limite.setDate(limite.getDate() + 7);
     const vencidas: Transacao[] = [];
+    const hojePendentes: Transacao[] = [];
     const proximas: Transacao[] = [];
 
     transacoesEscopoHome.forEach((transacao) => {
@@ -446,20 +491,27 @@ export default function Dashboard() {
       const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
       const vencimento = new Date(ano, mes - 1, dia);
       if (vencimento < hoje) vencidas.push(transacao);
+      else if (vencimento.getTime() === hoje.getTime()) hojePendentes.push(transacao);
       else if (vencimento <= limite) proximas.push(transacao);
     });
 
-    return { transacoesVencidasHome: vencidas, transacoesProximasHome: proximas };
+    return {
+      transacoesVencidasHome: vencidas,
+      transacoesHojeHome: hojePendentes,
+      transacoesProximasHome: proximas,
+    };
   }, [transacoesEscopoHome]);
   const qtdVencidasHome = transacoesVencidasHome.length;
+  const qtdVencendoHoje = transacoesHojeHome.length;
   const qtdProximosVencimentos = transacoesProximasHome.length;
   const temFaturaVencidaHome = escopoHomeEhTodas && temFaturaVencida;
   const assinaturaAvisosAtual = useMemo(() => [
     `atrasados:${transacoesVencidasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
+    `hoje:${transacoesHojeHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
     `proximos:${transacoesProximasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
     `fatura:${temFaturaVencidaHome ? "1" : "0"}`,
-  ].join("|"), [temFaturaVencidaHome, transacoesProximasHome, transacoesVencidasHome]);
-  const temAvisosFinanceiros = qtdVencidasHome > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome;
+  ].join("|"), [temFaturaVencidaHome, transacoesHojeHome, transacoesProximasHome, transacoesVencidasHome]);
+  const temAvisosFinanceiros = qtdVencidasHome > 0 || qtdVencendoHoje > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome;
   const mostrarBadgeAvisos = leituraAvisosCarregada
     && temAvisosFinanceiros
     && assinaturaAvisosVisualizada !== assinaturaAvisosAtual;
@@ -488,6 +540,27 @@ export default function Dashboard() {
       });
 
     return () => { efeitoAtivo = false; };
+  }, [session?.user?.id]);
+
+  React.useEffect(() => {
+    let ativo = true;
+    const userId = session?.user?.id;
+    // Falha fechado enquanto a preferencia da nova sessao e carregada, evitando
+    // um flash com valores da conta anterior durante a troca de usuario.
+    setValoresVisiveis(false);
+    if (!userId) {
+      return () => { ativo = false; };
+    }
+
+    void AsyncStorage.getItem(`@finflow_valores_visiveis:${userId}`)
+      .then((valor) => {
+        if (ativo) setValoresVisiveis(valor !== "false");
+      })
+      .catch(() => {
+        if (ativo) setValoresVisiveis(false);
+      });
+
+    return () => { ativo = false; };
   }, [session?.user?.id]);
 
   // Cada movimentação entra em exatamente um bucket. Assim, categorias
@@ -596,7 +669,7 @@ export default function Dashboard() {
       const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
-        supabase.from("transacoes").select("*"),    // RLS retorna próprias + de contas compartilhadas
+        supabase.from("transacoes").select("id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, transacao_pai_id"), // RLS retorna próprias + compartilhadas
         supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
@@ -607,14 +680,17 @@ export default function Dashboard() {
 
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
 
-      if (resCategorias.data) {
-        setCategorias(resCategorias.data.map((c: Categoria) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })).sort((a, b) =>
+      const categoriasCarregadas = (resCategorias.data ?? []).map((c: Categoria) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })).sort((a, b) =>
           a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
-        ));
-      }
-      if (resContas.data) setContas(resContas.data.map((c: Conta) => ({ ...c, cor: c.cor && PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[6] })));
-      if (resTransacoes.data) setTransacoes(resTransacoes.data);
-      if (resCaixinhas.data) setCaixinhas(resCaixinhas.data.map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })));
+        );
+      const contasCarregadas = (resContas.data ?? []).map((c: Conta) => ({ ...c, cor: c.cor && PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[6] }));
+      const transacoesCarregadas = (resTransacoes.data ?? []) as Transacao[];
+      const caixinhasCarregadas = (resCaixinhas.data ?? []).map((c: Caixinha) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] }));
+
+      setCategorias(categoriasCarregadas);
+      setContas(contasCarregadas);
+      setTransacoes(transacoesCarregadas);
+      setCaixinhas(caixinhasCarregadas);
       if (resFaturas.data) setComprasCartao(resFaturas.data as CompraCartao[]);
 
       const hoje = new Date();
@@ -635,11 +711,14 @@ export default function Dashboard() {
       setTemParceiro(temParc);
 
       setIsOffline(false);
-      await AsyncStorage.setItem("@cache_categorias", JSON.stringify(resCategorias.data ?? []));
-      await AsyncStorage.setItem("@cache_contas", JSON.stringify(resContas.data ?? []));
-      await AsyncStorage.setItem("@cache_transacoes", JSON.stringify(resTransacoes.data ?? []));
-      await AsyncStorage.setItem("@cache_caixinhas", JSON.stringify(resCaixinhas.data ?? []));
-      await AsyncStorage.setItem("@cache_parceiro", JSON.stringify(temParc));
+      cacheHomePorUsuario.set(session.user.id, {
+        categorias: categoriasCarregadas,
+        contas: contasCarregadas,
+        transacoes: transacoesCarregadas,
+        caixinhas: caixinhasCarregadas,
+        temParceiro: temParc,
+      });
+      void AsyncStorage.multiRemove(CHAVES_CACHE_HOME_LEGADO).catch(() => {});
 
       // Mantém a central do sino atualizada; o popup automático aparece apenas uma vez.
       if (resTransacoes.data) {
@@ -681,24 +760,22 @@ export default function Dashboard() {
         );
       }
     } catch {
-      const catCache = await AsyncStorage.getItem("@cache_categorias");
-      const conCache = await AsyncStorage.getItem("@cache_contas");
-      const transCache = await AsyncStorage.getItem("@cache_transacoes");
-      const caixCache = await AsyncStorage.getItem("@cache_caixinhas");
-      const parcCache = await AsyncStorage.getItem("@cache_parceiro");
-
-      if (catCache) {
-        setCategorias(JSON.parse(catCache).sort((a: Categoria, b: Categoria) =>
-          a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
-        ));
+      const cache = cacheHomePorUsuario.get(session.user.id);
+      if (cache) {
+        setCategorias(cache.categorias);
+        setContas(cache.contas);
+        setTransacoes(cache.transacoes);
+        setCaixinhas(cache.caixinhas);
+        setTemParceiro(cache.temParceiro);
+      } else {
+        setCategorias([]);
+        setContas([]);
+        setTransacoes([]);
+        setCaixinhas([]);
+        setComprasCartao([]);
+        setTemParceiro(false);
       }
-      if (conCache) setContas(JSON.parse(conCache));
-      if (transCache) {
-        const todas: Transacao[] = JSON.parse(transCache);
-        setTransacoes(todas);
-      }
-      if (caixCache) setCaixinhas(JSON.parse(caixCache));
-      if (parcCache) setTemParceiro(JSON.parse(parcCache));
+      void AsyncStorage.multiRemove(CHAVES_CACHE_HOME_LEGADO).catch(() => {});
       setIsOffline(true);
     }
   }, [notificacoesAtivas, session?.user?.id]);
@@ -709,7 +786,13 @@ export default function Dashboard() {
     const subscription = DeviceEventEmitter.addListener("finflow:categorias-padrao-prontas", () => {
       void carregarDados();
     });
-    return () => subscription.remove();
+    const offlineSubscription = DeviceEventEmitter.addListener(OFFLINE_SYNC_COMPLETED_EVENT, () => {
+      void carregarDados();
+    });
+    return () => {
+      subscription.remove();
+      offlineSubscription.remove();
+    };
   }, [carregarDados]);
 
   const { saldoPorConta, contasComLancamentos } = useMemo(() => {
@@ -755,6 +838,33 @@ export default function Dashboard() {
     const tipoLimite = tipoNovaCategoria === "receita" ? "categoriasReceita" : "categoriasDespesa";
     if (!verificarLimite(tipoLimite, catDoTipo)) return;
     setLoadingCat(true);
+    if (!IS_LOCAL_DEMO) {
+      try {
+        const resultado = await salvarCriacaoFinanceira("create_category", {
+          name: nomeCategoria.trim(),
+          type: tipoNovaCategoria,
+          color: corSelecionada,
+          icon: iconeSelecionado,
+        });
+        setLoadingCat(false);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "A categoria foi recusada pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar a categoria. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setNomeCategoria("");
+        setTipoNovaCategoria("despesa");
+        setIconeSelecionado("label");
+        setModalCatVisivel(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        setLoadingCat(false);
+        return Alert.alert("Não foi possível salvar", "A categoria não pôde ser salva no dispositivo. Tente novamente.");
+      }
+    }
     const { error } = await supabase.from("categorias").insert([{
       nome: nomeCategoria, cor: corSelecionada, icone: iconeSelecionado,
       tipo: tipoNovaCategoria, ativa: 1, user_id: session.user.id,
@@ -777,6 +887,36 @@ export default function Dashboard() {
 
   const salvarEdicaoCategoria = async () => {
     if (!catEditando || nomeEditCat.trim() === "") return;
+    if (!IS_LOCAL_DEMO) {
+      const changes: Record<string, unknown> = {};
+      if (nomeEditCat.trim() !== catEditando.nome) changes.name = nomeEditCat.trim();
+      if (corEditCat !== catEditando.cor) changes.color = corEditCat;
+      if (iconeEditCat !== catEditando.icone) changes.icon = iconeEditCat;
+      if (Object.keys(changes).length === 0) {
+        setCatEditando(null);
+        return;
+      }
+      try {
+        const resultado = await salvarEdicaoFinanceira(
+          "update_category",
+          catEditando.id,
+          Number(catEditando.version),
+          changes,
+        );
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", mensagemFalhaEdicaoOffline(resultado.errorCode));
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar a edição. Entre novamente e confira os dados antes de reenviar.");
+        }
+        setCatEditando(null);
+        if (resultado.state === "queued") showToast(OFFLINE_EDIT_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        return Alert.alert("Não foi possível salvar", "A edição não pôde ser protegida neste dispositivo. Tente novamente.");
+      }
+    }
     const { error } = await supabase.from("categorias").update({
       nome: nomeEditCat, cor: corEditCat, icone: iconeEditCat,
     }).eq("id", catEditando.id);
@@ -853,6 +993,44 @@ export default function Dashboard() {
     if (!verificarLimite("contas", contasAtivas.length)) return;
     setLoadingConta(true);
     const saldoNum = valorDaEntradaMoeda(saldoInicialConta);
+    if (!Number.isFinite(saldoNum) || saldoNum < 0) {
+      setLoadingConta(false);
+      return Alert.alert("Aviso", "Saldo inicial inválido.");
+    }
+    if (!IS_LOCAL_DEMO && !contaCompartilhada) {
+      try {
+        const resultado = await salvarCriacaoFinanceira("create_account", {
+          name: nomeConta.trim(),
+          initial_balance: saldoNum,
+          color: corNovaConta,
+        });
+        setLoadingConta(false);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "A conta foi recusada pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar a conta. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setNomeConta("");
+        setSaldoInicialConta("");
+        setContaCompartilhada(false);
+        setCorNovaConta(PALETA_CORES[6]);
+        setModalContaVisivel(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        setLoadingConta(false);
+        return Alert.alert("Não foi possível salvar", "A conta não pôde ser salva no dispositivo. Tente novamente.");
+      }
+    }
+    if (!IS_LOCAL_DEMO && contaCompartilhada && await dispositivoSemConexao()) {
+      setLoadingConta(false);
+      return Alert.alert(
+        "Conexão necessária",
+        "Contas compartilhadas ainda não podem ser salvas offline. Reconecte e tente novamente.",
+      );
+    }
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
     let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
     if (res.error) {
@@ -882,10 +1060,63 @@ export default function Dashboard() {
   const salvarEdicaoConta = async () => {
     if (!contaEditando || nomeEditConta.trim() === "") return Alert.alert("Aviso", "Nome inválido.");
     const base: any = { nome: nomeEditConta, compartilhado: compartilhadoEditConta };
+    let saldoNumEditado: number | null = null;
     if (editandoSaldoConta) {
       const saldoNum = valorDaEntradaMoeda(saldoEditConta);
       if (isNaN(saldoNum)) return Alert.alert("Aviso", "Saldo inválido.");
       base.saldo_inicial = saldoNum;
+      saldoNumEditado = saldoNum;
+    }
+
+    if (!IS_LOCAL_DEMO) {
+      const contaDoUsuarioAtual = contaEditando.user_id === session.user.id;
+      const compartilhamentoAlterado = compartilhadoEditConta !== contaEditando.compartilhado;
+      if (contaDoUsuarioAtual && !compartilhamentoAlterado) {
+        const changes: Record<string, unknown> = {};
+        if (nomeEditConta.trim() !== contaEditando.nome) changes.name = nomeEditConta.trim();
+        if (corEditConta !== contaEditando.cor) changes.color = corEditConta;
+        if (saldoNumEditado !== null && saldoNumEditado !== Number(contaEditando.saldo_inicial)) {
+          changes.initial_balance = saldoNumEditado;
+        }
+        if (Object.keys(changes).length === 0) {
+          setModalEditarContaVisivel(false);
+          setContaEditando(null);
+          setEditandoSaldoConta(false);
+          return;
+        }
+        try {
+          const resultado = await salvarEdicaoFinanceira(
+            "update_account",
+            contaEditando.id,
+            Number(contaEditando.version),
+            changes,
+          );
+          if (resultado.state === "rejected") {
+            return Alert.alert("Não foi possível salvar", mensagemFalhaEdicaoOffline(resultado.errorCode));
+          }
+          if (resultado.state === "uncertain") {
+            return Alert.alert("Sessão alterada", "Não foi possível confirmar a edição. Entre novamente e confira os dados antes de reenviar.");
+          }
+          setContaConfirmarArquivo(null);
+          setModalEditarContaVisivel(false);
+          setContaEditando(null);
+          setEditandoSaldoConta(false);
+          if (resultado.state === "queued") showToast(OFFLINE_EDIT_SAVED_MESSAGE, "info");
+          else void carregarDados();
+          return;
+        } catch {
+          return Alert.alert("Não foi possível salvar", "A edição não pôde ser protegida neste dispositivo. Tente novamente.");
+        }
+      }
+
+      if (await dispositivoSemConexao()) {
+        return Alert.alert(
+          "Conexão necessária",
+          compartilhamentoAlterado
+            ? "Alterar o compartilhamento da conta exige conexão para revalidar as permissões."
+            : "Esta conta compartilhada pertence a outro usuário e só pode ser editada com conexão.",
+        );
+      }
     }
     let res = await supabase.from("contas").update({ ...base, cor: corEditConta }).eq("id", contaEditando.id);
     if (res.error) {
@@ -960,7 +1191,10 @@ export default function Dashboard() {
       return Alert.alert("Aviso", "Preenche a descrição e o valor.");
     // Verificar limite de lançamentos do mês
     const mesStr = `${dataSelecionada.getFullYear()}-${String(dataSelecionada.getMonth() + 1).padStart(2, "0")}`;
-    const lancsMes = transacoes.filter(t => (t.data_vencimento || "").startsWith(mesStr)).length;
+    const lancsMes = transacoes.filter((t) =>
+      t.transacao_pai_id == null
+      && (t.data_vencimento || "").startsWith(mesStr)
+    ).length;
     if (!verificarLimite("lancamentosMes", lancsMes)) return;
     const valorNum = valorDaEntradaMoeda(valorTransacao);
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "O valor deve ser maior que zero.");
@@ -979,6 +1213,160 @@ export default function Dashboard() {
     }
 
     const statusBd = foiPago ? "paga" : "pendente";
+    const dataBaseSql = `${dataSelecionada.getFullYear()}-${String(dataSelecionada.getMonth() + 1).padStart(2, "0")}-${String(dataSelecionada.getDate()).padStart(2, "0")}`;
+
+    if (!IS_LOCAL_DEMO && tipoTransacao !== "transferencia") {
+      if (!catSelecionadaId || !contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta e categoria.");
+      const frequency = frequencia === "fixa" ? frequenciaFixa : frequencia;
+      const totalValue = frequencia === "parcelada" && modoValorParcelado === "parcela"
+        ? Number((valorNum * totalRepeticoes).toFixed(2))
+        : valorNum;
+      const payload: Record<string, unknown> = {
+        type: tipoTransacao,
+        value: totalValue,
+        description: descTransacao.trim(),
+        status: statusBd,
+        scheduled_date: dataBaseSql,
+        account_id: contaSelecionadaId,
+        category_id: catSelecionadaId,
+        frequency,
+      };
+      if (foiPago) payload.realization_date = dataBaseSql;
+      if (frequencia === "parcelada") {
+        payload.installments = totalRepeticoes;
+      } else if (frequencia === "fixa") {
+        payload.recurrence_count = totalRepeticoes;
+      }
+
+      setLoadingTrans(true);
+      try {
+        const resultado = await salvarCriacaoFinanceira("create_transaction", payload);
+        setLoadingTrans(false);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "O lançamento foi recusado pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar o lançamento. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
+        setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
+        setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+        setModalTransVisivel(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        setLoadingTrans(false);
+        return Alert.alert("Não foi possível salvar", "O lançamento não pôde ser salvo no dispositivo. Tente novamente.");
+      }
+    }
+
+    if (!IS_LOCAL_DEMO && tipoTransacao === "transferencia" && !caixinhaDestinoId) {
+      if (!contaSelecionadaId || !contaDestinoId) return Alert.alert("Aviso", "Seleciona a origem e destino.");
+      if (contaSelecionadaId === contaDestinoId) return Alert.alert("Aviso", "As contas não podem ser iguais.");
+      const frequency = frequencia === "fixa" ? frequenciaFixa : frequencia;
+      const totalValue = frequencia === "parcelada" && modoValorParcelado === "parcela"
+        ? Number((valorNum * totalRepeticoes).toFixed(2))
+        : valorNum;
+      const payload: Record<string, unknown> = {
+        account_id: contaSelecionadaId,
+        destination_account_id: contaDestinoId,
+        value: totalValue,
+        description: descTransacao.trim(),
+        status: statusBd,
+        scheduled_date: dataBaseSql,
+        frequency,
+      };
+      if (foiPago) payload.realization_date = dataBaseSql;
+      if (frequencia === "parcelada") {
+        payload.installments = totalRepeticoes;
+      } else if (frequencia === "fixa") {
+        payload.recurrence_count = totalRepeticoes;
+      }
+
+      setLoadingTrans(true);
+      try {
+        const resultado = await salvarCriacaoFinanceira("transfer_between_accounts", payload);
+        setLoadingTrans(false);
+        if (resultado.state === "rejected") {
+          return Alert.alert("Não foi possível salvar", "A transferência foi recusada pelo servidor. Revise os dados e tente novamente.");
+        }
+        if (resultado.state === "uncertain") {
+          return Alert.alert("Sessão alterada", "Não foi possível confirmar a transferência. Entre novamente e confira seus dados antes de reenviar.");
+        }
+        setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
+        setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
+        setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+        setModalTransVisivel(false);
+        if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+        else void carregarDados();
+        return;
+      } catch {
+        setLoadingTrans(false);
+        return Alert.alert("Não foi possível salvar", "A transferência não pôde ser salva no dispositivo. Tente novamente.");
+      }
+    }
+
+    if (!IS_LOCAL_DEMO && tipoTransacao === "transferencia" && caixinhaDestinoId) {
+      if (!contaSelecionadaId) return Alert.alert("Aviso", "Seleciona a conta de origem.");
+      const caixa = caixinhas.find((item) => item.id === caixinhaDestinoId);
+      if (!caixa) return Alert.alert("Aviso", "Objetivo não encontrado.");
+
+      // A RPC de `move_goal` preserva de forma atômica a transação e o saldo do
+      // objetivo para movimentos realizados. Séries fixas inteiramente pendentes
+      // também têm equivalência exata; os demais formatos continuam online-only.
+      const movimentoUnicoRealizado = frequencia === "unica" && foiPago;
+      const serieFixaPendente = frequencia === "fixa" && !foiPago;
+      if (movimentoUnicoRealizado || serieFixaPendente) {
+        const payload: Record<string, unknown> = {
+          operation: "guardar",
+          goal_id: caixinhaDestinoId,
+          account_id: contaSelecionadaId,
+          value: valorFinal,
+          description: descTransacao.trim(),
+          frequency: movimentoUnicoRealizado ? "unica" : frequenciaFixa,
+        };
+        if (movimentoUnicoRealizado) {
+          payload.realization_date = dataBaseSql;
+        } else {
+          payload.scheduled_date = dataBaseSql;
+          payload.recurrence_count = totalRepeticoes;
+        }
+
+        setLoadingTrans(true);
+        try {
+          const resultado = await salvarCriacaoFinanceira("move_goal", payload);
+          setLoadingTrans(false);
+          if (resultado.state === "rejected") {
+            return Alert.alert("Não foi possível salvar", "A movimentação do objetivo foi recusada pelo servidor. Revise os dados e tente novamente.");
+          }
+          if (resultado.state === "uncertain") {
+            return Alert.alert("Sessão alterada", "Não foi possível confirmar a movimentação. Entre novamente e confira seus dados antes de reenviar.");
+          }
+          setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
+          setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
+          setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+          setModalTransVisivel(false);
+          if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
+          else void carregarDados();
+          return;
+        } catch {
+          setLoadingTrans(false);
+          return Alert.alert("Não foi possível salvar", "A movimentação não pôde ser salva no dispositivo. Tente novamente.");
+        }
+      }
+
+      if (await dispositivoSemConexao()) {
+        return Alert.alert(
+          "Conexão necessária",
+          frequencia === "parcelada"
+            ? "Movimentações parceladas de objetivos ainda precisam de conexão. Reconecte e tente novamente."
+            : frequencia === "unica"
+              ? "Movimentações únicas de objetivo agendadas como pendentes ainda precisam de conexão."
+              : "Este agendamento mistura uma realização imediata com ocorrências futuras e ainda precisa de conexão.",
+        );
+      }
+    }
     const novasTransacoes: any[] = [];
     const serieId = frequencia === "unica"
       ? null
@@ -1100,6 +1488,23 @@ export default function Dashboard() {
     setModalContasHomeVisivel(false);
   };
 
+  const formatarValorPrivado = (valor: number) =>
+    valoresVisiveis ? fmtReais(valor) : "R$ ••••••";
+
+  const alternarVisibilidadeValores = () => {
+    setValoresVisiveis((visiveisAgora) => {
+      const proximoValor = !visiveisAgora;
+      const userId = session?.user?.id;
+      if (userId) {
+        void AsyncStorage.setItem(
+          `@finflow_valores_visiveis:${userId}`,
+          String(proximoValor),
+        ).catch((error) => console.warn("Não foi possível salvar a preferência de privacidade:", error));
+      }
+      return proximoValor;
+    });
+  };
+
   const abrirAvisosFinanceiros = () => {
     setModalNotificacoesHome(true);
     setAssinaturaAvisosVisualizada(assinaturaAvisosAtual);
@@ -1137,7 +1542,17 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
           <Text style={styles.homeBalanceLabel}>Saldo geral</Text>
-          <Text style={styles.homeBalanceValue}>{fmtReais(saldoAtualGlobal)}</Text>
+          <View style={styles.homeBalanceRow}>
+            <Text style={styles.homeBalanceValue}>{formatarValorPrivado(saldoAtualGlobal)}</Text>
+            <TouchableOpacity
+              style={styles.homeBalanceVisibility}
+              onPress={alternarVisibilidadeValores}
+              accessibilityRole="button"
+              accessibilityLabel={valoresVisiveis ? "Ocultar valores financeiros" : "Mostrar valores financeiros"}
+            >
+              <MaterialIcons name={valoresVisiveis ? "visibility" : "visibility-off"} size={20} color="#D6F8E8" />
+            </TouchableOpacity>
+          </View>
           <TouchableOpacity
             style={styles.homeHeroTrend}
             onPress={abrirSeletorContasHome}
@@ -1157,7 +1572,7 @@ export default function Dashboard() {
             { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => setModalTransVisivel(true) },
             { label: "Categorias", icon: "category", color: "#4D76E8", action: () => setModalGerenciarCatVisivel(true) },
             { label: "Cartões", icon: "credit-card", color: "#EE6B63", action: () => router.push("/(tabs)/cartoes" as any) },
-            { label: "IA", icon: "auto-awesome", color: "#805AD5", action: () => usuarioPodeAcessarIA(session?.user?.email) ? router.push("/chat-ia") : setModalIaEmBreve(true) },
+            { label: "IA", icon: "auto-awesome", color: "#805AD5", action: () => router.push("/chat-ia") },
           ].map((item) => (
             <TouchableOpacity key={item.label} style={styles.homeActionItem} onPress={item.action}>
               <View style={[styles.homeActionIcon, { backgroundColor: `${item.color}1F` }]}>
@@ -1175,16 +1590,27 @@ export default function Dashboard() {
             <View style={[styles.homeCalendarIcon, { backgroundColor: novoTema.surfaceMuted }]}><MaterialIcons name="calendar-today" size={15} color={novoTema.textMuted} /></View>
           </View>
           <View style={styles.homeMonthMetrics}>
-            <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{fmtReais(receitasDoMes)}</Text></View>
-            <View style={[styles.homeMetricColumn, { alignItems: "center" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Balanço atual</Text><Text style={[styles.homeMetricValue, { color: balancoMensal < 0 ? "#EE6B63" : novoTema.text }]} numberOfLines={1} adjustsFontSizeToFit>{fmtReais(balancoMensal)}</Text></View>
-            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#EE6B63" }]} numberOfLines={1} adjustsFontSizeToFit>{fmtReais(despesasDoMes)}</Text></View>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(receitasDoMes)}</Text></View>
+            <TouchableOpacity
+              style={[styles.homeMetricColumn, styles.homeMetricInfoButton, { alignItems: "center" }]}
+              onPress={() => setModalBalancoAtualVisivel(true)}
+              accessibilityRole="button"
+              accessibilityLabel="Entender o Balanço atual"
+            >
+              <View style={styles.homeMetricLabelRow}>
+                <Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Balanço atual</Text>
+                <MaterialIcons name="info-outline" size={12} color={novoTema.textMuted} />
+              </View>
+              <Text style={[styles.homeMetricValue, { color: balancoMensal < 0 ? "#EE6B63" : novoTema.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(balancoMensal)}</Text>
+            </TouchableOpacity>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#EE6B63" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(despesasDoMes)}</Text></View>
           </View>
           <View style={[styles.homeMonthTrack, { backgroundColor: novoTema.surfaceMuted }]}>
             <View style={{ flex: Math.max(receitasDoMes, 1), backgroundColor: "#42C78B" }} />
             <View style={{ flex: Math.max(despesasDoMes, 1), backgroundColor: "#EE6B63" }} />
           </View>
           <Text style={{ color: saldoPrevistoFimDoMes < 0 ? (isDark ? "#F28B82" : "#C96A6A") : novoTema.textMuted, fontSize: 11, marginTop: 9 }}>
-            Saldo previsto no fim do mês: {fmtReais(saldoPrevistoFimDoMes)}
+            Saldo previsto no fim do mês: {formatarValorPrivado(saldoPrevistoFimDoMes)}
           </Text>
         </View>
 
@@ -1200,9 +1626,9 @@ export default function Dashboard() {
             </Text>
           </View>
           <TouchableOpacity
-            style={[styles.iaBotaoFixo, !usuarioPodeAcessarIA(session?.user?.email) && { opacity: 0.55 }]}
+            style={[styles.iaBotaoFixo, !iaDisponivel && { opacity: 0.55 }]}
             onPress={() => {
-              if (usuarioPodeAcessarIA(session?.user?.email)) {
+              if (iaDisponivel) {
                 router.push("/chat-ia");
               } else {
                 setModalIaEmBreve(true);
@@ -1342,10 +1768,11 @@ export default function Dashboard() {
               dados={modoDistribuicao === "concluidos" ? dadosDespesasPorCatRealizadas : dadosDespesasPorCat}
               total={modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat}
               isDark={isDark}
+              valoresVisiveis={valoresVisiveis}
             />
             {(modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat) > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: {fmtReais(modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat)}
+                Total: {formatarValorPrivado(modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat)}
               </Text>
             )}
           </View>
@@ -1360,10 +1787,11 @@ export default function Dashboard() {
               dados={modoDistribuicao === "concluidos" ? dadosReceitasPorCatRealizadas : dadosReceitasPorCat}
               total={modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat}
               isDark={isDark}
+              valoresVisiveis={valoresVisiveis}
             />
             {(modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat) > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
-                Total: {fmtReais(modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat)}
+                Total: {formatarValorPrivado(modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat)}
               </Text>
             )}
           </View>
@@ -1445,7 +1873,7 @@ export default function Dashboard() {
                           <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]} numberOfLines={1}>{conta.nome}</Text>
                           {conta.compartilhado && <MaterialIcons name="people" size={13} color={novoTema.primary} />}
                         </View>
-                        <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{fmtReais(calcularSaldoConta(conta))}</Text>
+                        <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{formatarValorPrivado(calcularSaldoConta(conta))}</Text>
                       </View>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1518,6 +1946,33 @@ export default function Dashboard() {
       </Modal>
       )}
 
+      {modalBalancoAtualVisivel && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalBalancoAtualVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.balanceExplanationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={[styles.balanceExplanationIcon, { backgroundColor: novoTema.primarySoft }]}>
+              <MaterialIcons name="insights" size={28} color={novoTema.primary} />
+            </View>
+            <Text style={[styles.balanceExplanationTitle, { color: Cores.textoPrincipal }]}>Como funciona o Balanço atual?</Text>
+            <Text style={[styles.balanceExplanationText, { color: Cores.textoSecundario }]}>Ele mostra a diferença entre as receitas e as despesas já realizadas no mês e nas contas selecionadas.</Text>
+
+            <View style={[styles.balanceExplanationNote, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <MaterialIcons name="savings" size={21} color={novoTema.primary} />
+              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>Guardar dinheiro em um objetivo não é uma saída: é uma transferência entre sua conta e sua caixinha.</Text>
+            </View>
+            <View style={[styles.balanceExplanationNote, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <MaterialIcons name="receipt-long" size={21} color="#E76F51" />
+              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>Resgatar da caixinha também não é receita. Porém, quando esse valor é usado em uma despesa registrada e paga, a despesa entra no balanço normalmente.</Text>
+            </View>
+
+            <TouchableOpacity style={[styles.balanceExplanationButton, { backgroundColor: novoTema.primary }]} onPress={() => setModalBalancoAtualVisivel(false)}>
+              <Text style={styles.balanceExplanationButtonText}>Entendi</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+      )}
+
       {modalNotificacoesHome && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalNotificacoesHome(false)}>
         <View style={styles.modalOverlay}>
@@ -1548,6 +2003,16 @@ export default function Dashboard() {
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
                 </TouchableOpacity>
               )}
+              {qtdVencendoHoje > 0 && (
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
+                  setModalNotificacoesHome(false);
+                  router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
+                }}>
+                  <View style={[styles.notificationItemIcon, { backgroundColor: `${novoTema.primary}22` }]}><MaterialIcons name="today" size={20} color={novoTema.primary} /></View>
+                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Agendamentos vencendo hoje</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencendoHoje} lançamento{qtdVencendoHoje === 1 ? "" : "s"} precisa{qtdVencendoHoje === 1 ? "" : "m"} ser acompanhado{qtdVencendoHoje === 1 ? "" : "s"} hoje.</Text></View>
+                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
+                </TouchableOpacity>
+              )}
               {qtdProximosVencimentos > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
                   setModalNotificacoesHome(false);
@@ -1565,7 +2030,7 @@ export default function Dashboard() {
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
                 </TouchableOpacity>
               )}
-              {qtdVencidasHome === 0 && qtdProximosVencimentos === 0 && !temFaturaVencidaHome && (
+              {qtdVencidasHome === 0 && qtdVencendoHoje === 0 && qtdProximosVencimentos === 0 && !temFaturaVencidaHome && (
                 <View style={styles.notificationEmpty}>
                   <MaterialIcons name="task-alt" size={38} color="#2A9D8F" />
                   <Text style={[styles.notificationEmptyTitle, { color: Cores.textoPrincipal }]}>Tudo em dia</Text>
@@ -1608,7 +2073,7 @@ export default function Dashboard() {
                   <Text style={{ color: Cores.textoSecundario, fontSize: 12 }}>
                     {contaConfirmarArquivo.temLancamentos ? "Saldo que ficará arquivado" : "Saldo que será removido"}
                   </Text>
-                  <Text style={{ color: Cores.textoPrincipal, fontSize: 22, fontWeight: "bold", marginTop: 3 }}>{fmtReais(contaConfirmarArquivo.saldoAtual)}</Text>
+                  <Text style={{ color: Cores.textoPrincipal, fontSize: 22, fontWeight: "bold", marginTop: 3 }}>{formatarValorPrivado(contaConfirmarArquivo.saldoAtual)}</Text>
                 </View>
               )}
               {contaConfirmarArquivo.temLancamentos ? (
@@ -1690,7 +2155,7 @@ export default function Dashboard() {
                 <View style={{ alignItems: "center", marginBottom: 20, padding: 15, backgroundColor: Cores.pillFundo, borderRadius: 12 }}>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 12, marginBottom: 4 }}>Saldo Atual</Text>
                   <Text style={{ color: "#2A9D8F", fontSize: 26, fontWeight: "bold" }}>
-                    {fmtReais(calcularSaldoConta(contaEditando))}
+                    {formatarValorPrivado(calcularSaldoConta(contaEditando))}
                   </Text>
                 </View>
               )}
@@ -2017,7 +2482,7 @@ export default function Dashboard() {
                         {tipo === "receita" ? "Receitas" : "Despesas"}
                       </Text>
                       <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 15 }}>
-                        {fmtReais(totalTipo)}
+                        {formatarValorPrivado(totalTipo)}
                       </Text>
                     </View>
                     {dadosCat.length === 0 ? (
@@ -2030,7 +2495,7 @@ export default function Dashboard() {
                             <Text style={{ color: Cores.textoPrincipal, fontWeight: "500", flex: 1 }} numberOfLines={1}>{item.nome}</Text>
                           </View>
                           <View style={{ alignItems: "flex-end" }}>
-                            <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 13 }}>{fmtReais(item.valor)}</Text>
+                            <Text style={{ color: corTipo, fontWeight: "bold", fontSize: 13 }}>{formatarValorPrivado(item.valor)}</Text>
                             <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>
                               {totalTipo > 0 ? `${((item.valor / totalTipo) * 100).toFixed(1)}%` : "0%"}
                             </Text>
@@ -2214,7 +2679,16 @@ export default function Dashboard() {
               <View style={styles.rowInputs}>
                 <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flex: 1 }]}>
                   <View style={[styles.transactionCurrency, { backgroundColor: `${corTipoTransacao}22` }]}><Text style={{ color: corTipoTransacao, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
-                  <TextInput style={[styles.transactionTextInput, { color: Cores.textoPrincipal, fontSize: 17, fontWeight: "700" }]} placeholder="0,00" placeholderTextColor={Cores.textoSecundario} value={valorTransacao} onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))} keyboardType="number-pad" selectTextOnFocus />
+                  <TextInput
+                    style={[styles.transactionTextInput, { color: Cores.textoPrincipal, fontSize: 17, fontWeight: "700" }]}
+                    placeholder="0,00"
+                    placeholderTextColor={Cores.textoSecundario}
+                    value={valorTransacao}
+                    onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))}
+                    keyboardType="number-pad"
+                    selectTextOnFocus={false}
+                    selection={{ start: valorTransacao.length, end: valorTransacao.length }}
+                  />
                 </View>
               </View>
               {frequencia === "parcelada" && (
@@ -2308,10 +2782,10 @@ export default function Dashboard() {
             </View>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>IA FinFlow</Text>
             <View style={{ backgroundColor: "#7C6FF022", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 14 }}>
-              <Text style={{ color: "#7C6FF0", fontWeight: "900", letterSpacing: 1 }}>EM BREVE</Text>
+              <Text style={{ color: "#7C6FF0", fontWeight: "900", letterSpacing: 1 }}>SMART E PREMIUM</Text>
             </View>
             <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 21, marginBottom: 20 }}>
-              Estamos preparando um assistente financeiro inteligente, seguro e realmente útil para sua rotina.
+              A IA financeira prepara lançamentos e consultas com confirmação segura. O recurso está disponível conforme o seu plano.
             </Text>
             <TouchableOpacity style={{ width: "100%", minHeight: 50, borderRadius: 12, backgroundColor: "#7C6FF0", alignItems: "center", justifyContent: "center" }} onPress={() => setModalIaEmBreve(false)}>
               <Text style={{ color: "#FFF", fontWeight: "800" }}>Entendi</Text>
@@ -2341,7 +2815,9 @@ const styles = StyleSheet.create({
   homeBell: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
   homeBellBadge: { position: "absolute", right: 3, top: 3, width: 9, height: 9, borderRadius: 5, backgroundColor: "#FF6B5F", borderWidth: 1.5, borderColor: "#FFF" },
   homeBalanceLabel: { color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 22 },
+  homeBalanceRow: { flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "flex-start" },
   homeBalanceValue: { color: "#FFF", fontSize: 36, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
+  homeBalanceVisibility: { width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.14)", alignItems: "center", justifyContent: "center", marginTop: 2 },
   homeHeroTrend: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 9, backgroundColor: "rgba(0,0,0,0.13)", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, alignSelf: "flex-start" },
   homeHeroTrendText: { color: "#B8F4D7", fontSize: 10, fontWeight: "600" },
   homeActions: { marginHorizontal: 10, marginTop: -12, borderRadius: 20, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 8, flexDirection: "row", justifyContent: "space-around", elevation: 6 },
@@ -2355,6 +2831,8 @@ const styles = StyleSheet.create({
   homeCalendarIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   homeMonthMetrics: { flexDirection: "row", justifyContent: "space-between" },
   homeMetricColumn: { flex: 1, minWidth: 0 },
+  homeMetricInfoButton: { borderRadius: 10, paddingVertical: 2 },
+  homeMetricLabelRow: { flexDirection: "row", alignItems: "center", gap: 3 },
   homeMetricLabel: { fontSize: 10, marginBottom: 4 },
   homeMetricValue: { fontSize: 14, fontWeight: "800" },
   homeMonthTrack: { height: 5, borderRadius: 3, overflow: "hidden", flexDirection: "row", marginTop: 14 },
@@ -2405,6 +2883,14 @@ const styles = StyleSheet.create({
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
   modalContent: { width: "92%", maxWidth: 520, padding: 22, borderRadius: 22, elevation: 10 },
+  balanceExplanationPanel: { width: "92%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 22, elevation: 12 },
+  balanceExplanationIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 14 },
+  balanceExplanationTitle: { fontSize: 20, lineHeight: 25, fontWeight: "900", textAlign: "center" },
+  balanceExplanationText: { fontSize: 13, lineHeight: 20, textAlign: "center", marginTop: 8, marginBottom: 16 },
+  balanceExplanationNote: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderWidth: 1, borderRadius: 15, padding: 13, marginBottom: 10 },
+  balanceExplanationNoteText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
+  balanceExplanationButton: { minHeight: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 8 },
+  balanceExplanationButtonText: { color: "#FFF", fontSize: 15, fontWeight: "900" },
   transactionOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "flex-end", alignItems: "center" },
   transactionSheet: {
     width: "100%",
