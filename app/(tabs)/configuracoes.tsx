@@ -932,7 +932,7 @@ export default function ConfiguracoesScreen() {
 
           {/* VERSÃO */}
           <Text style={[{ color: Cores.secundario, fontSize: 12, textAlign: "center", marginTop: 16 }]}>
-            FinFlow v2.1.0
+            FinFlow v2.0.0
           </Text>
 
           {/* SAIR */}

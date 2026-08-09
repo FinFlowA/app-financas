@@ -5,7 +5,7 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.1.0-2026-08-08-pagamentos-agrupados-v3",
+  id: "2.0.0-2026-08-09-pagamentos-agrupados-v4",
   items: [
     "Pagamentos parciais agora permanecem no mesmo agendamento, com valores realizados e saldo restante no Histórico",
     "Ao abrir um agendamento, você pode consultar cada pagamento, sua data, valor e eventuais juros, descontos ou estornos",

@@ -3,7 +3,7 @@
     "name": "FinFlow",
     "owner": "app-financas",
     "slug": "meu-app-financas",
-    "version": "2.1.0",
+    "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon-square-v2.png",
     "scheme": "meuappfinancas",
