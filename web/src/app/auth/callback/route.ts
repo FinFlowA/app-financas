@@ -4,6 +4,7 @@ import {
   RECOVERY_COOKIE_MAX_AGE_SECONDS,
   RECOVERY_COOKIE_NAME,
 } from "@/lib/auth/constants";
+import { getAppOrigin } from "@/lib/auth/origin";
 import { createClient } from "@/lib/supabase/server";
 
 type AuthFlow = "signup" | "recovery" | "email-change";
@@ -12,19 +13,20 @@ function safeFlow(value: string | null): AuthFlow | null {
   return value === "signup" || value === "recovery" || value === "email-change" ? value : null;
 }
 
-function errorRedirect(request: NextRequest, flow: AuthFlow | null): NextResponse {
-  const url = new URL(flow === "recovery" ? "/esqueci-senha" : "/login", request.url);
+function errorRedirect(origin: string, flow: AuthFlow | null): NextResponse {
+  const url = new URL(flow === "recovery" ? "/esqueci-senha" : "/login", origin);
   url.searchParams.set(flow === "recovery" ? "link_invalido" : "erro_confirmacao", "1");
   return NextResponse.redirect(url);
 }
 
 export async function GET(request: NextRequest) {
+  const origin = await getAppOrigin();
   const flow = safeFlow(request.nextUrl.searchParams.get("flow"));
-  if (!flow) return errorRedirect(request, null);
+  if (!flow) return errorRedirect(origin, null);
 
   const code = request.nextUrl.searchParams.get("code");
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
-  if (!code && !tokenHash) return errorRedirect(request, flow);
+  if (!code && !tokenHash) return errorRedirect(origin, flow);
 
   const supabase = await createClient();
   const result = code
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
         type: flow === "email-change" ? "email_change" : flow,
       });
 
-  if (result.error) return errorRedirect(request, flow);
+  if (result.error) return errorRedirect(origin, flow);
 
   if (flow === "recovery") {
     const cookieStore = await cookies();
@@ -45,8 +47,8 @@ export async function GET(request: NextRequest) {
       path: "/",
       maxAge: RECOVERY_COOKIE_MAX_AGE_SECONDS,
     });
-    return NextResponse.redirect(new URL("/redefinir-senha", request.url));
+    return NextResponse.redirect(new URL("/redefinir-senha", origin));
   }
 
-  return NextResponse.redirect(new URL(flow === "email-change" ? "/configuracoes?email_atualizado=1" : "/", request.url));
+  return NextResponse.redirect(new URL(flow === "email-change" ? "/configuracoes?email_atualizado=1" : "/", origin));
 }
