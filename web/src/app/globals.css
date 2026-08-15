@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+/* Tokens portados de constants/finflow-design.ts (app mobile) para manter a
+   mesma identidade visual do FinFlow no site. */
+:root {
+  --ff-primary: #16966e;
+  --ff-primary-dark: #08745b;
+  --ff-primary-soft: #ddf4e9;
+  --ff-mint: #56d39b;
+  --ff-blue: #4d76e8;
+  --ff-orange: #f28a55;
+  --ff-red: #ee6b63;
+  --ff-purple: #805ad5;
+
+  --background: #f6f8f6;
+  --surface: #ffffff;
+  --surface-muted: #eef3f0;
+  --foreground: #173129;
+  --foreground-muted: #6c7d77;
+  --border: #dde7e2;
+  --header: #1ea778;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #081116;
+    --surface: #111b20;
+    --surface-muted: #1c292e;
+    --foreground: #f4f8f6;
+    --foreground-muted: #92a49e;
+    --border: #26363c;
+    --header: #075348;
+    --ff-primary-soft: #113d31;
+  }
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
+  --color-foreground: var(--foreground);
+  --color-foreground-muted: var(--foreground-muted);
+  --color-border: var(--border);
+  --color-header: var(--header);
+  --color-primary: var(--ff-primary);
+  --color-primary-dark: var(--ff-primary-dark);
+  --color-primary-soft: var(--ff-primary-soft);
+  --color-mint: var(--ff-mint);
+  --color-blue: var(--ff-blue);
+  --color-orange: var(--ff-orange);
+  --color-red: var(--ff-red);
+  --color-purple: var(--ff-purple);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --radius-ff-sm: 10px;
+  --radius-ff-md: 16px;
+  --radius-ff-lg: 22px;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
