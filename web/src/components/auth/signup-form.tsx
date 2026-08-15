@@ -11,21 +11,28 @@ import {
 import { INITIAL_AUTH_STATE } from "@/lib/auth/state";
 import {
   FieldError,
+  FIELD_CLASS,
+  FORM_CLASS,
   FormFeedback,
+  FORM_PROMPT_CLASS,
+  HELPER_CLASS,
   INPUT_CLASS,
   LABEL_CLASS,
+  PRIMARY_BUTTON_CLASS,
+  TEXT_LINK_CLASS,
 } from "@/components/auth/form-feedback";
+import styles from "./auth.module.css";
 
 export function SignupForm() {
   const [state, action, pending] = useActionState(signUpAction, INITIAL_AUTH_STATE);
 
   if (state.status === "success") {
     return (
-      <div className="space-y-5">
+      <div className={FORM_CLASS}>
         <FormFeedback state={state} />
         <Link
           href="/login"
-          className="block w-full rounded-ff-md bg-primary py-3 text-center text-sm font-bold text-white transition hover:bg-primary-dark"
+          className={PRIMARY_BUTTON_CLASS}
         >
           Ir para o login
         </Link>
@@ -34,10 +41,10 @@ export function SignupForm() {
   }
 
   return (
-    <form action={action} className="space-y-5" noValidate>
+    <form action={action} className={FORM_CLASS} noValidate>
       <FormFeedback state={state} />
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="nome" className={LABEL_CLASS}>
           Nome
         </label>
@@ -48,6 +55,7 @@ export function SignupForm() {
           autoComplete="name"
           maxLength={80}
           required
+          placeholder="Como você quer ser chamado"
           defaultValue={state.values?.nome}
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.nome)}
@@ -55,7 +63,7 @@ export function SignupForm() {
         <FieldError message={state.errors?.nome} />
       </div>
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="email" className={LABEL_CLASS}>
           E-mail
         </label>
@@ -67,6 +75,8 @@ export function SignupForm() {
           inputMode="email"
           maxLength={254}
           required
+          placeholder="voce@exemplo.com"
+          spellCheck={false}
           defaultValue={state.values?.email}
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.email)}
@@ -74,9 +84,9 @@ export function SignupForm() {
         <FieldError message={state.errors?.email} />
       </div>
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="telefone" className={LABEL_CLASS}>
-          Telefone com DDD <span className="font-normal normal-case">(opcional)</span>
+          Telefone com DDD <span>(opcional)</span>
         </label>
         <input
           id="telefone"
@@ -90,13 +100,13 @@ export function SignupForm() {
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.telefone)}
         />
-        <p className="mt-1.5 text-xs leading-5 text-foreground-muted">
+        <p className={HELPER_CLASS}>
           O telefone não será usado para entrar ou recuperar a conta nesta versão.
         </p>
         <FieldError message={state.errors?.telefone} />
       </div>
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="dataNascimento" className={LABEL_CLASS}>
           Data de nascimento
         </label>
@@ -110,11 +120,11 @@ export function SignupForm() {
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.dataNascimento)}
         />
-        <p className="mt-1.5 text-xs text-foreground-muted">Uso permitido apenas para maiores de 18 anos.</p>
+        <p className={HELPER_CLASS}>Uso permitido apenas para maiores de 18 anos.</p>
         <FieldError message={state.errors?.dataNascimento} />
       </div>
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="senha" className={LABEL_CLASS}>
           Senha
         </label>
@@ -126,16 +136,17 @@ export function SignupForm() {
           minLength={8}
           maxLength={128}
           required
+          placeholder="Crie uma senha forte"
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.senha)}
         />
-        <p className="mt-1.5 text-xs leading-5 text-foreground-muted">
+        <p className={HELPER_CLASS}>
           {PASSWORD_REQUIREMENTS_MESSAGE}
         </p>
         <FieldError message={state.errors?.senha} />
       </div>
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="confirmarSenha" className={LABEL_CLASS}>
           Confirmar senha
         </label>
@@ -147,19 +158,20 @@ export function SignupForm() {
           minLength={8}
           maxLength={128}
           required
+          placeholder="Repita sua senha"
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.confirmarSenha)}
         />
         <FieldError message={state.errors?.confirmarSenha} />
       </div>
 
-      <div>
-        <label className="flex cursor-pointer items-start gap-3 rounded-ff-sm border border-border bg-surface-muted p-3 text-sm leading-5 text-foreground">
+      <div className={FIELD_CLASS}>
+        <label className={styles.checkboxRow}>
           <input
             name="aceiteLegal"
             type="checkbox"
             required
-            className="mt-1 h-4 w-4 shrink-0 accent-primary"
+            className={styles.checkbox}
             aria-invalid={Boolean(state.errors?.aceiteLegal)}
           />
           <span>
@@ -168,7 +180,7 @@ export function SignupForm() {
               href={TERMS_URL}
               target="_blank"
               rel="noreferrer"
-              className="font-bold text-primary hover:underline"
+              className={TEXT_LINK_CLASS}
             >
               Termos de Uso
             </a>{" "}
@@ -177,7 +189,7 @@ export function SignupForm() {
               href={PRIVACY_URL}
               target="_blank"
               rel="noreferrer"
-              className="font-bold text-primary hover:underline"
+              className={TEXT_LINK_CLASS}
             >
               Política de Privacidade
             </a>
@@ -190,14 +202,15 @@ export function SignupForm() {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-ff-md bg-primary py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+        className={PRIMARY_BUTTON_CLASS}
+        aria-busy={pending}
       >
         {pending ? "Criando conta..." : "Criar conta"}
       </button>
 
-      <p className="text-center text-sm text-foreground-muted">
+      <p className={FORM_PROMPT_CLASS}>
         Já possui uma conta?{" "}
-        <Link href="/login" className="font-bold text-primary hover:underline">
+        <Link href="/login" className={TEXT_LINK_CLASS}>
           Entrar
         </Link>
       </p>

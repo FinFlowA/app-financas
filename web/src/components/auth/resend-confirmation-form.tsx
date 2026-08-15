@@ -3,7 +3,11 @@
 import { useActionState } from "react";
 import { resendConfirmationAction } from "@/lib/auth/actions";
 import { INITIAL_AUTH_STATE } from "@/lib/auth/state";
-import { FormFeedback } from "@/components/auth/form-feedback";
+import {
+  FormFeedback,
+  SECONDARY_BUTTON_CLASS,
+} from "@/components/auth/form-feedback";
+import styles from "./auth.module.css";
 
 export function ResendConfirmationForm({ email }: { email: string }) {
   const [state, action, pending] = useActionState(
@@ -12,13 +16,14 @@ export function ResendConfirmationForm({ email }: { email: string }) {
   );
 
   return (
-    <form action={action} className="mt-4 space-y-3">
+    <form action={action} className={styles.compactForm}>
       <input type="hidden" name="email" value={email} />
       <FormFeedback state={state} />
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-ff-md border border-primary px-4 py-2.5 text-sm font-bold text-primary transition hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-60"
+        className={SECONDARY_BUTTON_CLASS}
+        aria-busy={pending}
       >
         {pending ? "Reenviando..." : "Reenviar e-mail de confirmação"}
       </button>

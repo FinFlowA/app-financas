@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useSyncExternalStore } from "react";
+import styles from "./web-platform.module.css";
 
 function subscribe(callback: () => void) {
   window.addEventListener("online", callback);
@@ -19,5 +20,23 @@ export default function WebPlatform() {
     }
   }, []);
   if (online) return null;
-  return <div role="status" className="fixed inset-x-0 top-0 z-[120] bg-orange px-4 py-2 text-center text-xs font-extrabold text-white shadow-lg">Você está offline. Dados financeiros privados não são armazenados no cache do navegador; reconecte para salvar alterações.</div>;
+  return (
+    <div className={styles.region} aria-live="polite" aria-atomic="true">
+      <div role="status" className={styles.notice}>
+        <span className={styles.icon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 8.6A11 11 0 0 1 17.4 7" />
+            <path d="M8.3 12a6.5 6.5 0 0 1 5.6-1.2" />
+            <path d="M11.5 15.6a1 1 0 0 1 1 0" />
+            <path d="m3 3 18 18" />
+          </svg>
+        </span>
+        <span className={styles.copy}>
+          <strong>Você está offline</strong>
+          <small>Dados financeiros privados não são armazenados no cache do navegador; reconecte para salvar alterações.</small>
+        </span>
+        <span className={styles.statusDot} aria-hidden="true" />
+      </div>
+    </div>
+  );
 }

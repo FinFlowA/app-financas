@@ -845,12 +845,19 @@ export default function CaixinhasScreen() {
             const porcentagem = Math.min((Number(caixa.saldo_atual) / metaSegura) * 100, 100);
             const isCompleto = porcentagem === 100;
             const previsaoAtePrazo = calcularPrevisaoObjetivo(caixa);
+            const previsaoAbaixoDaMeta = previsaoAtePrazo !== null
+              && previsaoAtePrazo < Number(caixa.meta_valor);
+            const corPrevisao = previsaoAbaixoDaMeta ? "#E76F51" : Cores.textoSecundario;
             return (
               <TouchableOpacity
                 key={caixa.id}
                 style={[styles.card, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, opacity: bloqueado ? 0.55 : 1 }]}
                 onPress={() => !bloqueado && abrirOpcoes(caixa)}
                 activeOpacity={bloqueado ? 1 : 0.8}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: bloqueado }}
+                accessibilityLabel={`${caixa.nome}. Guardado: ${formatarReais(Number(caixa.saldo_atual))}. Meta: ${formatarReais(Number(caixa.meta_valor))}.${caixa.data_prazo && previsaoAtePrazo !== null ? ` Previsão na data-meta: ${formatarReais(previsaoAtePrazo)}${previsaoAbaixoDaMeta ? ", abaixo da meta" : ""}.` : ""}`}
+                accessibilityHint={bloqueado ? "Objetivo indisponível no plano atual" : "Abre as ações deste objetivo"}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.titleRow}>
@@ -883,10 +890,16 @@ export default function CaixinhasScreen() {
                 </View>
 
                 {caixa.data_prazo && previsaoAtePrazo !== null && (
-                  <View style={[styles.forecastRow, { backgroundColor: `${caixa.cor}14` }]}>
-                    <MaterialIcons name="trending-up" size={13} color={caixa.cor} />
+                  <View
+                    style={[styles.forecastRow, { backgroundColor: previsaoAbaixoDaMeta ? "#E76F5118" : `${caixa.cor}14` }]}
+                    accessible
+                    accessibilityLabel={`Previsão até ${formatarDataPrazo(caixa.data_prazo)}: ${formatarReais(previsaoAtePrazo)}${previsaoAbaixoDaMeta ? ", abaixo da meta" : ""}`}
+                  >
+                    <MaterialIcons name="trending-up" size={13} color={previsaoAbaixoDaMeta ? "#E76F51" : caixa.cor} />
                     <Text style={[styles.forecastText, { color: Cores.textoSecundario }]} numberOfLines={1}>
-                      Previsto até {formatarDataPrazo(caixa.data_prazo)}: {formatarReais(previsaoAtePrazo)}
+                      Previsto até {formatarDataPrazo(caixa.data_prazo)}:{" "}
+                      <Text style={{ color: corPrevisao, fontWeight: "800" }}>{formatarReais(previsaoAtePrazo)}</Text>
+                      {previsaoAbaixoDaMeta && <Text style={{ color: corPrevisao }}> · abaixo da meta</Text>}
                     </Text>
                   </View>
                 )}

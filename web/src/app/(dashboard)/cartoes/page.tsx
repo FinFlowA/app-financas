@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { mesAtualEmSaoPaulo } from "@/lib/date";
+import { invoicePresentationStatus } from "@/lib/invoice-status";
 import type { Cartao, FaturaItem } from "@/lib/types";
 import { adicionarMeses } from "./card-utils";
 import CartoesManager, { type CartaoResumo } from "./cartoes-manager";
@@ -33,6 +34,7 @@ export default async function CartoesPage() {
   const cartoes = (cartoesData ?? []) as Cartao[];
   const itens = (itensData ?? []) as FaturaItem[];
   const resumos: CartaoResumo[] = cartoes.map((cartao) => {
+    const itensDaFaturaAtual = itens.filter((item) => item.cartao_id === cartao.id && item.mes_fatura === mesAtual);
     const itensDoCartao = itens.filter((item) => item.cartao_id === cartao.id && !item.pago);
     const limiteUsado = Math.max(0, itensDoCartao
       .filter((item) => item.mes_fatura >= mesAtual)
@@ -46,6 +48,13 @@ export default async function CartoesPage() {
       ...cartao,
       limiteUsado,
       faturaAtual: totalDoMes(mesAtual),
+      faturaAtualPaga: invoicePresentationStatus({
+        invoiceMonth: mesAtual,
+        closingDay: cartao.dia_fechamento,
+        itemCount: itensDaFaturaAtual.length,
+        openTotal: totalDoMes(mesAtual),
+        allItemsPaid: itensDaFaturaAtual.length > 0 && itensDaFaturaAtual.every((item) => item.pago),
+      }) === "paid",
       proximaFatura: totalDoMes(proximoMes),
     };
   });

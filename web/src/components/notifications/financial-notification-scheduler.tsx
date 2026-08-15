@@ -64,13 +64,20 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
     let rerunRequested = false;
 
     async function sessionStillBelongsToUser(expectedGeneration: number): Promise<boolean> {
-      if (stopped || expectedGeneration !== sessionGeneration || !navigator.onLine || !notificationsAreAvailable()) {
+      if (
+        stopped
+        || expectedGeneration !== sessionGeneration
+        || document.visibilityState !== "visible"
+        || !navigator.onLine
+        || !notificationsAreAvailable()
+      ) {
         return false;
       }
       const { data } = await supabase.auth.getSession();
       return !stopped
         && expectedGeneration === sessionGeneration
         && data.session?.user.id === userId
+        && document.visibilityState === "visible"
         && navigator.onLine
         && notificationsAreAvailable();
     }
@@ -163,8 +170,8 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
         try {
           await registration.showNotification(event.title.slice(0, 80), {
             body: event.body.slice(0, 240),
-            icon: "/icon",
-            badge: "/icon",
+            icon: "/icon.png",
+            badge: "/icon.png",
             tag: `${LOCAL_NOTIFICATION_TAG_PREFIX}${event.key}`,
             data: { route: event.route },
           });
@@ -181,7 +188,7 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
     }
 
     function requestEvaluation() {
-      if (stopped) return;
+      if (stopped || document.visibilityState !== "visible") return;
       if (running) {
         rerunRequested = true;
         return;
@@ -198,7 +205,14 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
     }
 
     function handleVisibilityChange() {
-      if (document.visibilityState === "visible") requestEvaluation();
+      if (document.visibilityState === "visible") {
+        requestEvaluation();
+        return;
+      }
+      // Invalida com segurança uma avaliação que estava em andamento. Ao
+      // voltar para a aba, uma nova geração consulta apenas dados atuais.
+      sessionGeneration += 1;
+      rerunRequested = false;
     }
 
     function handlePreferenceChange(event: Event) {

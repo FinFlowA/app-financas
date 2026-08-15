@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
+import { isInvoicePaymentAdjustment } from "../../lib/invoice-operations";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
@@ -92,6 +93,7 @@ interface Transacao {
 interface CompraCartao {
   id: number;
   cartao_id: number;
+  descricao: string;
   valor: number;
   data_compra: string;
   mes_fatura: string;
@@ -463,7 +465,7 @@ export default function Dashboard() {
     // entram na visão consolidada, evitando atribuição incorreta a uma conta.
     const prefixoMes = `${anoSelecionado}-${String(mesSelecionado + 1).padStart(2, "0")}`;
     const comprasDoMes = escopoHomeEhTodas
-      ? comprasCartao.filter((item) => item.data_compra?.startsWith(prefixoMes))
+      ? comprasCartao.filter((item) => item.mes_fatura === prefixoMes && !isInvoicePaymentAdjustment(item.descricao))
       : [];
 
     return {
@@ -628,8 +630,8 @@ export default function Dashboard() {
       somarCategoriaOuSemCategoria(transacao.categoria_id, transacao.valor);
     });
 
-    // A compra no cartão é realizada na data da compra, mesmo que a fatura ainda
-    // esteja em aberto. O pagamento da fatura é excluído na visão consolidada.
+    // Cada compra/parcela entra na categoria do respectivo mês da fatura. O
+    // pagamento bancário da fatura é excluído para não duplicar a despesa.
     if (tipo === "despesa") {
       comprasCartaoDoMes.forEach((item) => somarCategoriaOuSemCategoria(item.categoria_id, Number(item.valor)));
     }
@@ -675,7 +677,7 @@ export default function Dashboard() {
         ),
         supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, data_prazo, cor, icone"),
         supabase.from("cartoes").select("id, nome, dia_vencimento, dia_fechamento").eq("user_id", session.user.id).eq("ativo", true),
-        supabase.from("fatura_itens").select("id, cartao_id, valor, data_compra, mes_fatura, categoria_id, pago").eq("user_id", session.user.id),
+        supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, data_compra, mes_fatura, categoria_id, pago").eq("user_id", session.user.id),
       ]);
 
       if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");

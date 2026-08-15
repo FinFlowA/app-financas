@@ -23,9 +23,9 @@ function normalizedText(value: string): string {
 }
 
 /**
- * Linhas de controle criadas por pagamentos parciais nÃ£o sÃ£o novas compras.
- * ExcluÃ­-las do balanÃ§o por data da compra evita contabilizar a mesma despesa
- * novamente quando o restante Ã© mantido ou levado para a prÃ³xima fatura.
+ * Linhas de controle criadas por pagamentos parciais não são novas compras.
+ * Excluí-las da distribuição por categoria evita contabilizar a mesma despesa
+ * novamente quando o restante é mantido ou levado para a próxima fatura.
  */
 export function isSyntheticInvoiceItem(item: Pick<FaturaItem, "descricao">): boolean {
   const description = item.descricao.trim();
@@ -34,7 +34,9 @@ export function isSyntheticInvoiceItem(item: Pick<FaturaItem, "descricao">): boo
 }
 
 export function invoicePurchasesInMonth(items: FaturaItem[], month: string): FaturaItem[] {
-  return items.filter((item) => item.data_compra.slice(0, 7) === month && !isSyntheticInvoiceItem(item));
+  // Parcelamentos preservam a data original da compra em todas as linhas.
+  // `mes_fatura` é o período correto para atribuir cada parcela à categoria.
+  return items.filter((item) => item.mes_fatura === month && !isSyntheticInvoiceItem(item));
 }
 
 /** MantÃ©m o vencimento dentro do mÃªs, inclusive para dias 29, 30 e 31. */

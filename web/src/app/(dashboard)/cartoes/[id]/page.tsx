@@ -122,7 +122,6 @@ export default async function CartaoDetalhePage({ params, searchParams }: Cartao
           conta: pagamento.conta,
           modo: pagamento.modo,
         }))}
-      mesAtual={mesAtual}
       mesSelecionado={mesSelecionado}
       mesesDisponiveis={mesesDisponiveis}
     />

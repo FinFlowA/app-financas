@@ -10,7 +10,7 @@ import PlansClient, {
 } from "./plans-client";
 
 export const metadata: Metadata = {
-  title: "Planos | FinFlow",
+  title: "Planos",
   description: "Compare e gerencie os planos do FinFlow.",
 };
 
@@ -121,18 +121,15 @@ export default async function PlansPage() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-ff-lg bg-header p-6 text-white shadow-sm sm:p-8">
+      <section className="ff-page-hero p-6 sm:p-8">
         <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
           <div>
-            <p className="text-sm font-bold text-white/75">Assinatura FinFlow</p>
-            <h1 className="mt-1 text-3xl font-extrabold">Escolha o plano ideal</h1>
+            <p className="text-xs font-extrabold uppercase tracking-[.14em] text-white/70">Assinatura FinFlow</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Escolha o plano ideal</h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">
               Compare recursos, abra o checkout oficial e acompanhe o status sem expor dados de pagamento ao FinFlow.
             </p>
           </div>
-          <Link href="/configuracoes" className="ff-focus self-start rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm font-bold text-white hover:bg-white/20">
-            Voltar às configurações
-          </Link>
         </div>
       </section>
 

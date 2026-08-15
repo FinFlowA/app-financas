@@ -1,5 +1,5 @@
-const STATIC_CACHE = "finflow-static-v2";
-const STATIC_PATHS = ["/manifest.webmanifest", "/icon", "/favicon.ico"];
+const STATIC_CACHE = "finflow-static-v3";
+const STATIC_PATHS = ["/manifest.webmanifest", "/icon.png", "/apple-icon.png"];
 const NOTIFICATION_PATHS = new Set([
   "/", "/transacoes", "/objetivos", "/cartoes", "/relatorios",
   "/assistente", "/configuracoes", "/contas", "/categorias", "/planos",
@@ -40,7 +40,7 @@ self.addEventListener("push", (event) => {
   let payload = { title: "FinFlow", body: "Você tem uma nova atualização financeira.", route: "/" };
   try { payload = { ...payload, ...(event.data ? event.data.json() : {}) }; } catch { /* payload seguro padrão */ }
   event.waitUntil(self.registration.showNotification(String(payload.title).slice(0, 80), {
-    body: String(payload.body).slice(0, 240), icon: "/icon", badge: "/icon", tag: "finflow-web", data: { route: String(payload.route || "/") },
+    body: String(payload.body).slice(0, 240), icon: "/icon.png", badge: "/icon.png", tag: "finflow-web", data: { route: String(payload.route || "/") },
   }));
 });
 

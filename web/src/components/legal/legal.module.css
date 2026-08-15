@@ -1,0 +1,106 @@
+.page {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+}
+.page::before {
+  position: fixed;
+  z-index: -1;
+  top: -18rem;
+  right: -14rem;
+  width: 36rem;
+  height: 36rem;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--ff-primary) 9%, transparent);
+  content: "";
+  filter: blur(3rem);
+  pointer-events: none;
+}
+
+.topbar {
+  padding-inline: 0.25rem;
+}
+
+.hero {
+  min-height: 15rem;
+  display: flex;
+  align-items: center;
+}
+
+.document {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--border) 80%, transparent);
+  background:
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 98%, var(--ff-primary) 2%), var(--surface));
+}
+
+.document::before {
+  position: absolute;
+  top: 0;
+  right: 8%;
+  left: 8%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ff-primary-bright) 32%, transparent), transparent);
+  content: "";
+}
+
+.section {
+  position: relative;
+  scroll-margin-top: 2rem;
+  padding-top: 1.8rem;
+  border-top: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+}
+
+.section:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.sectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  font-size: 1.16rem;
+  font-weight: 900;
+  letter-spacing: -0.025em;
+}
+
+.sectionTitle::before {
+  width: 0.34rem;
+  height: 1.35rem;
+  flex: 0 0 auto;
+  border-radius: 99px;
+  background: linear-gradient(var(--ff-primary-bright), var(--ff-primary));
+  content: "";
+}
+
+.body {
+  margin-top: 0.8rem;
+  color: var(--foreground-muted);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.footer::before {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 99px;
+  background: var(--ff-primary-bright);
+  content: "";
+}
+
+@media (max-width: 640px) {
+  .hero {
+    min-height: auto;
+  }
+
+  .section {
+    padding-top: 1.45rem;
+  }
+}

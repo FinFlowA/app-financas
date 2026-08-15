@@ -7,13 +7,11 @@ import {
   formInteger,
   formString,
 } from "@/lib/finance-action";
+import { CATEGORY_COLORS, CATEGORY_ICONS } from "./category-options";
 
 export type CategoriaActionState = { erro: string | null; sucesso?: string };
 
 const CATEGORY_TYPES = ["receita", "despesa"] as const;
-export const CATEGORY_COLORS = ["#16966E", "#4D76E8", "#F28A55", "#805AD5", "#EE6B63", "#56D39B", "#457B9D", "#6C7D77"];
-export const CATEGORY_ICONS = ["wallet", "restaurant", "home", "directions-car", "shopping-bag", "work", "favorite", "more-horiz"];
-
 function refreshCategories() {
   revalidatePath("/");
   revalidatePath("/categorias");
@@ -29,8 +27,8 @@ export async function criarCategoria(_: CategoriaActionState, formData: FormData
   const icon = formString(formData, "icon");
   if (!name || name.length > 80) return { erro: "Informe um nome de até 80 caracteres." };
   if (!CATEGORY_TYPES.includes(type)) return { erro: "Escolha receita ou despesa." };
-  if (!CATEGORY_COLORS.includes(color)) return { erro: "Escolha uma cor disponível." };
-  if (!CATEGORY_ICONS.includes(icon)) return { erro: "Escolha um ícone disponível." };
+  if (!CATEGORY_COLORS.includes(color as (typeof CATEGORY_COLORS)[number])) return { erro: "Escolha uma cor disponível." };
+  if (!CATEGORY_ICONS.includes(icon as (typeof CATEGORY_ICONS)[number])) return { erro: "Escolha um ícone disponível." };
 
   const result = await executeManualFinancialAction("create_category", { name, type, color, icon }, formString(formData, "request_id"));
   if (result.erro) return result;
@@ -44,14 +42,26 @@ export async function editarCategoria(_: CategoriaActionState, formData: FormDat
   const name = formString(formData, "name");
   const color = formString(formData, "color");
   const icon = formString(formData, "icon");
-  if (!Number.isInteger(categoryId) || categoryId <= 0 || !Number.isInteger(expectedVersion)) return { erro: "Categoria inválida." };
+  const originalName = formString(formData, "original_name");
+  const originalColor = formString(formData, "original_color");
+  const originalIcon = formString(formData, "original_icon");
+  if (!Number.isInteger(categoryId) || categoryId <= 0 || !Number.isInteger(expectedVersion) || expectedVersion <= 0) return { erro: "Categoria inválida." };
   if (!name || name.length > 80) return { erro: "Informe um nome de até 80 caracteres." };
-  if (!CATEGORY_COLORS.includes(color) || !CATEGORY_ICONS.includes(icon)) return { erro: "Cor ou ícone inválido." };
+  if (!CATEGORY_COLORS.includes(color as (typeof CATEGORY_COLORS)[number]) || !CATEGORY_ICONS.includes(icon as (typeof CATEGORY_ICONS)[number])) return { erro: "Cor ou ícone inválido." };
+
+  // O mesmo contrato do app mobile: envie somente campos efetivamente
+  // alterados. Além de evitar incrementos de versão desnecessários, isso
+  // impede que um valor legado não tocado invalide uma simples troca de nome.
+  const changes: Record<string, string> = {};
+  if (name !== originalName) changes.name = name;
+  if (color.toLowerCase() !== originalColor.toLowerCase()) changes.color = color;
+  if (icon !== originalIcon) changes.icon = icon;
+  if (Object.keys(changes).length === 0) return { erro: null, sucesso: "Nenhuma alteração para salvar." };
 
   const result = await executeOptimisticUpdate("update_category", {
     category_id: categoryId,
     expected_version: expectedVersion,
-    changes: { name, color, icon },
+    changes,
   }, formString(formData, "request_id"));
   if (result.erro) return result;
   refreshCategories();

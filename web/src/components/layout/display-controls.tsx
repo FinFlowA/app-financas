@@ -3,58 +3,62 @@
 import { useEffect, useSyncExternalStore } from "react";
 
 const THEME_KEY = "finflow_web_theme";
-const PRIVACY_KEY = "finflow_web_hide_values";
 
-export default function DisplayControls() {
-  const subscribe = (callback: () => void) => {
-    window.addEventListener("storage", callback);
-    window.addEventListener("finflow-display-change", callback);
-    return () => { window.removeEventListener("storage", callback); window.removeEventListener("finflow-display-change", callback); };
+function subscribeTheme(callback: () => void) {
+  window.addEventListener("storage", callback);
+  window.addEventListener("finflow-display-change", callback);
+  return () => {
+    window.removeEventListener("storage", callback);
+    window.removeEventListener("finflow-display-change", callback);
   };
-  const dark = useSyncExternalStore(subscribe, () => {
+}
+
+function useThemePreference() {
+  return useSyncExternalStore(subscribeTheme, () => {
     const stored = localStorage.getItem(THEME_KEY);
-    return stored ? stored === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-  }, () => false);
-  const hidden = useSyncExternalStore(subscribe, () => localStorage.getItem(PRIVACY_KEY) === "true", () => false);
+    return stored ? stored === "dark" : true;
+  }, () => true);
+}
+
+/** Aplica a preferência sem adicionar controles ao menu lateral. */
+export function ThemeInitializer() {
+  const dark = useThemePreference();
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
-    document.documentElement.classList.toggle("values-hidden", hidden);
-  }, [dark, hidden]);
+  }, [dark]);
+
+  return null;
+}
+
+/** Controle de aparência exibido somente dentro de Configurações. */
+export default function DisplayControls() {
+  const dark = useThemePreference();
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", dark);
+  }, [dark]);
 
   function toggleTheme() {
-    const next = !dark;
-    localStorage.setItem(THEME_KEY, next ? "dark" : "light");
-    window.dispatchEvent(new Event("finflow-display-change"));
-  }
-
-  function togglePrivacy() {
-    const next = !hidden;
-    localStorage.setItem(PRIVACY_KEY, String(next));
+    localStorage.setItem(THEME_KEY, dark ? "light" : "dark");
     window.dispatchEvent(new Event("finflow-display-change"));
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        onClick={togglePrivacy}
-        className="ff-focus rounded-full border border-border bg-surface-muted px-3 py-2 text-xs font-bold text-foreground"
-        aria-pressed={hidden}
-        aria-label={hidden ? "Mostrar valores" : "Ocultar valores"}
-        title={hidden ? "Mostrar valores" : "Ocultar valores"}
-      >
-        {hidden ? "◉ Mostrar" : "◌ Ocultar"}
-      </button>
+    <div className="ff-display-controls">
       <button
         type="button"
         onClick={toggleTheme}
-        className="ff-focus rounded-full border border-border bg-surface-muted px-3 py-2 text-xs font-bold text-foreground"
+        className="ff-display-control ff-focus"
         aria-pressed={dark}
-        aria-label={dark ? "Usar tema claro" : "Usar tema escuro"}
-        title={dark ? "Tema claro" : "Tema escuro"}
+        aria-label={dark ? "Ativar tema claro" : "Ativar tema escuro"}
       >
-        {dark ? "☀ Claro" : "☾ Escuro"}
+        {dark ? (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></svg>
+        ) : (
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20.4 15.5A8.4 8.4 0 0 1 8.5 3.6 8.5 8.5 0 1 0 20.4 15.5Z" /></svg>
+        )}
+        <span>{dark ? "Ativar tema claro" : "Ativar tema escuro"}</span>
       </button>
     </div>
   );

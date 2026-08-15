@@ -1,98 +1,109 @@
 <p align="center">
-  <img src="./assets/images/icon.png" alt="Logo do FinFlow" width="128">
+  <img src="./assets/images/icon-square-v2.png" alt="Logo do FinFlow" width="112">
 </p>
 
-<h1 align="center">FinFlow</h1>
+<h1 align="center">FinFlow 2.0</h1>
 
 <p align="center">
-  Organização financeira pessoal e compartilhada em uma experiência simples, segura e inteligente.
+  Controle financeiro pessoal e compartilhado no aplicativo e na web, usando a mesma conta e as mesmas regras financeiras.
 </p>
 
 <p align="center">
-  Um projeto mantido pela equipe <a href="https://github.com/FinFlowA">FinFlowA</a>.
+  Mantido pela equipe <a href="https://github.com/FinFlowA">FinFlowA</a>.
 </p>
 
-[![React Native](https://img.shields.io/badge/React_Native-0.81-61DAFB?logo=react&logoColor=white)](https://reactnative.dev/)
 [![Expo](https://img.shields.io/badge/Expo-SDK_54-000020?logo=expo&logoColor=white)](https://expo.dev/)
+[![React Native](https://img.shields.io/badge/React_Native-0.81-61DAFB?logo=react&logoColor=white)](https://reactnative.dev/)
+[![Next.js](https://img.shields.io/badge/Next.js-16-000000?logo=nextdotjs&logoColor=white)](https://nextjs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E?logo=supabase&logoColor=white)](https://supabase.com/)
 
-## Sobre o projeto
+## Visão geral
 
-O FinFlow reúne contas, receitas, despesas, transferências, objetivos financeiros e cartões de crédito em uma única experiência. O app permite acompanhar valores realizados e agendados, criar recorrências e compartilhar contas específicas com outra pessoa.
+O FinFlow reúne contas, receitas, despesas, transferências, objetivos, cartões de crédito, relatórios e assistência financeira em uma experiência única. O aplicativo Expo e o painel Next.js compartilham o mesmo Supabase, as mesmas categorias e os mesmos dados.
 
-O projeto é mantido de forma colaborativa pela equipe FinFlow. O histórico técnico completo está disponível em [Contributors](https://github.com/FinFlowA/app-financas/graphs/contributors).
+O histórico técnico permanece disponível em [commits](https://github.com/FinFlowA/app-financas/commits/main) e [contributors](https://github.com/FinFlowA/app-financas/graphs/contributors).
 
 ## Funcionalidades
 
-- Autenticação com Supabase Auth e proteção por biometria.
-- Contas financeiras com saldo inicial, arquivamento e compartilhamento.
-- Receitas, despesas e transferências entre contas.
-- Movimentações realizadas, pendentes, parceladas e recorrentes.
-- Recorrências semanais, mensais e anuais.
-- Confirmação da data real ao concluir uma movimentação.
-- Categorias personalizadas para receitas e despesas.
-- Objetivos financeiros e caixinhas.
-- Cartões de crédito, compras parceladas e acompanhamento de faturas.
-- Pagamento integral ou parcial da fatura.
-- Transferência do saldo restante para a próxima fatura, com juros opcionais.
-- Fluxo de caixa, relatórios e distribuição por categoria.
-- Conta compartilhada com acesso controlado por políticas RLS.
-- Assistente financeiro com comandos em linguagem natural.
-- Notificações de movimentações, objetivos, fechamento e vencimento de cartões.
-- Tema claro e escuro.
-- Cache local para melhorar a experiência sem conexão.
-- Atualizações OTA distribuídas pelo EAS Update.
+- Cadastro, confirmação de e-mail, login e recuperação de acesso.
+- Perfil obrigatório, aceite dos termos e tutorial inicial pulável.
+- Contas ativas e arquivadas, seleção independente e compartilhamento controlado.
+- Receitas, despesas e transferências únicas, parceladas ou recorrentes.
+- Recorrências semanais, mensais e anuais, preservando itens já concluídos.
+- Conclusão integral ou parcial com data e histórico das baixas.
+- Categorias de receita e despesa sincronizadas entre aplicativo e site.
+- Objetivos financeiros com guardar, resgatar, projeção e histórico.
+- Cartões, compras únicas, parceladas ou fixas, faturas e estornos.
+- Pagamento integral ou parcial de fatura, com saldo remanescente e juros opcionais.
+- Histórico com busca e filtros por período, status, tipo, conta e categoria.
+- Fluxo de caixa realizado e previsto, com seleção de múltiplas contas.
+- Relatórios por categoria; cada parcela de cartão aparece no mês da sua fatura.
+- Assistente restrito a finanças, com prévia e confirmação explícita antes de alterar dados.
+- Planos, checkout pelo backend, temas e notificações configuráveis.
+- Proteção biométrica no mobile, sessão SSR na web e atualização OTA pelo EAS Update.
 
-## Tecnologias
+## Regras financeiras importantes
 
-| Camada | Tecnologias |
-|---|---|
-| Aplicativo | React Native 0.81, React 19 e TypeScript |
-| Painel web | Next.js 16, React 19 e TypeScript |
-| Plataforma | Expo SDK 54 e Expo Router |
-| Backend | Supabase, PostgreSQL e Supabase Auth |
-| Segurança de dados | Row Level Security (RLS) |
-| Armazenamento local | AsyncStorage e Expo SQLite |
-| Inteligência artificial | Edge Function segura, OpenAI Responses API ou Groq API |
-| Recursos mobile | Biometria, notificações locais e EAS Update |
+- Uma transferência entre contas é uma única movimentação: debita a origem e credita o destino.
+- Guardar ou resgatar dinheiro de um objetivo é movimento interno e não vira receita ou despesa.
+- Movimentações concluídas usam `data_realizacao`; pendentes usam `data_vencimento`.
+- O pagamento bancário de uma fatura afeta o saldo da conta, mas não duplica a despesa nos relatórios por categoria.
+- Uma compra parcelada gera uma cobrança por parcela. A categoria recebe somente o valor da parcela correspondente a cada `mes_fatura`.
+- Séries concluídas não são reabertas quando ocorrências futuras são editadas ou excluídas.
+- Ações compostas devem passar pelas RPCs transacionais e idempotentes do Supabase.
 
 ## Arquitetura
 
-### Dados e compartilhamento
-
-Os dados são armazenados no Supabase. Cada registro é associado ao usuário responsável, e as políticas RLS devem garantir que uma pessoa somente acesse dados próprios ou contas explicitamente compartilhadas com ela.
-
-### Transferências
-
-Uma transferência é registrada como uma única movimentação vinculada às contas de origem e destino. O saldo da origem recebe o débito e o destino recebe o crédito, sem duplicar o agendamento no histórico.
-
-### Assistente financeiro
-
-O assistente converte a mensagem do usuário em uma proposta financeira estruturada:
+| Camada | Tecnologias |
+|---|---|
+| Aplicativo | Expo SDK 54, React Native 0.81, React 19 e Expo Router |
+| Painel web | Next.js 16 App Router, React 19 e `@supabase/ssr` |
+| Backend | Supabase Auth, PostgreSQL, RLS, RPCs e Edge Functions |
+| Persistência local | Expo SecureStore, SQLite e AsyncStorage limitado a preferências/cache |
+| IA | Edge Function `finance-ai`, OpenAI ou Groq configurado apenas no servidor |
+| Pagamentos | Mercado Pago por Edge Functions e webhook validado no backend |
+| Distribuição mobile | EAS Build e EAS Update |
 
 ```text
-Linguagem natural
-    → intenção estruturada
-    → validação dos campos
-    → prévia persistida e com expiração
-    → confirmação explícita do usuário
-    → RPC transacional e idempotente no Supabase
+Aplicativo Expo ─┐
+                 ├── Supabase Auth + RLS + RPCs ── PostgreSQL
+Painel Next.js ──┘                 │
+                                   ├── Edge Function da IA
+                                   └── Edge Functions de cobrança
 ```
 
-A IA não recebe chaves privilegiadas, não controla a confirmação e não escreve diretamente nas tabelas. O backend mantém o prompt de sistema, valida a resposta estruturada, aplica a cota do plano no servidor e executa apenas ações financeiras permitidas. Credenciais, identidade, parceria, assinatura e exclusão do usuário permanecem fora do alcance da IA.
+## Estrutura do repositório
 
-## Executando localmente
+```text
+app/                         telas e rotas do aplicativo Expo
+  (tabs)/                    Início, Histórico, Objetivos, Fluxo e Ajustes
+  chat-ia.tsx                assistente financeiro mobile
+assets/                      ícones, logo e imagens do aplicativo
+components/                  componentes React Native compartilhados
+lib/                         domínio financeiro e integrações mobile
+shared/                      contratos compartilhados, inclusive da IA
+supabase/
+  functions/                 Edge Functions
+  migrations/                schema, RLS e RPCs versionados
+web/
+  src/app/                   rotas, Server Components e Server Actions
+  src/components/            layout, autenticação, tutorial e UI
+  src/lib/                   domínio web e clientes Supabase SSR
+docs/                        setup, handoffs, políticas e auditorias
+scripts/                     testes e verificações de segurança
+```
+
+## Desenvolvimento local
 
 ### Requisitos
 
-- Node.js LTS
-- npm
-- Expo CLI por meio do `npx`
-- Projeto Supabase configurado
-- Conta Expo para builds e atualizações
+- Node.js LTS e npm.
+- Conta e projeto Supabase configurados.
+- Para o mobile: Android Studio/emulador, dispositivo com Expo Go ou development build.
+- Para publicar o app: acesso ao projeto EAS/Expo.
 
-### Instalação
+### Aplicativo
 
 ```bash
 git clone https://github.com/FinFlowA/app-financas.git
@@ -100,140 +111,176 @@ cd app-financas
 npm install
 ```
 
-Crie um arquivo `.env` na raiz:
+Copie `.env.example` para `.env.local` e preencha somente valores públicos:
 
 ```dotenv
 EXPO_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
+EXPO_PUBLIC_FINFLOW_LOCAL_DEMO=false
 ```
 
-As chaves privadas dos provedores de IA e de pagamento pertencem somente às
-Edge Functions do Supabase. Consulte
-[`docs/billing-setup.md`](./docs/billing-setup.md) para pagamentos e
-[`docs/ai-setup.md`](./docs/ai-setup.md) para o assistente financeiro. A
-implantação da IA exige as sete migrações `20260802000000` a `20260802000600`,
-na ordem documentada; a primeira garante a coluna `data_realizacao` antes do
-núcleo seguro.
-
-Depois execute:
+Execute:
 
 ```bash
 npx expo start
 ```
 
-O painel web completo fica em `web/` e utiliza o mesmo Supabase:
-
-```bash
-cd web
-npm install
-npm run dev -- --port 3100
-```
-
-Consulte [`web/README.md`](./web/README.md) para variáveis, redirects de
-autenticação, validações e requisitos de deploy.
-
-O estado detalhado da entrega web, as validações executadas e as pendências
-para a próxima pessoa estão em
-[`docs/HANDOFF_2026-08-15.md`](./docs/HANDOFF_2026-08-15.md).
-
-Comandos úteis:
+Atalhos úteis:
 
 ```bash
 npm run android
 npm run ios
 npm run web
-npm run lint
-npx tsc --noEmit
 ```
 
-## Segurança
+### Painel web
 
-- Nunca versione o arquivo `.env`.
-- Nunca use a chave `service_role` do Supabase no aplicativo.
-- A chave publicável/anon do Supabase pode ser utilizada no cliente somente com políticas RLS corretamente configuradas.
-- Variáveis com o prefixo `EXPO_PUBLIC_` são incorporadas ao bundle e podem ser extraídas do APK.
-- Chaves OpenAI/Groq ficam exclusivamente nos secrets da Edge Function `finance-ai`; nunca devem usar o prefixo `EXPO_PUBLIC_`.
-- A Edge Function escolhe um único provedor por solicitação e nunca faz fallback com dados do usuário sem configuração explícita.
-- Assinaturas são confirmadas no backend e por webhook. O retorno do navegador não concede plano ao usuário.
-- Revogue imediatamente qualquer chave que tenha sido publicada, enviada em conversas ou exposta em capturas de tela.
+```bash
+cd web
+npm install
+```
 
-## Builds e atualizações
+Copie `web/.env.local.example` para `web/.env.local`:
 
-O projeto usa dois canais principais:
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
+NEXT_PUBLIC_SITE_URL=http://localhost:3100
+```
 
-| Canal | Uso |
+Depois execute:
+
+```bash
+npm run dev -- --port 3100
+```
+
+Abra [http://localhost:3100](http://localhost:3100). Consulte também [web/README.md](./web/README.md).
+
+### Banco e Edge Functions
+
+As migrations de `supabase/migrations/` são a fonte versionada do banco. Aplique-as na ordem antes de liberar operações financeiras novas. Os guias específicos estão em:
+
+- [Configuração da IA](./docs/ai-setup.md)
+- [Configuração de pagamentos](./docs/billing-setup.md)
+- [Testes de segurança](./docs/security-testing.md)
+- [Modo offline](./docs/offline-mode-security.md)
+
+No Supabase Auth, cadastre os redirects do endereço final do site:
+
+```text
+https://seu-dominio/auth/callback?flow=signup
+https://seu-dominio/auth/callback?flow=recovery
+https://seu-dominio/auth/callback?flow=email-change
+```
+
+## Validação
+
+Aplicativo:
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run security:check
+npm run test:finance-ai
+npm run test:history-order
+npm run test:money-input
+npm run test:transaction-completion
+npm run test:offline-queue
+```
+
+Site:
+
+```bash
+cd web
+npm run lint
+npx tsc --noEmit --incremental false
+npm test
+npm run build
+npm audit --omit=dev
+```
+
+## Deploy do site
+
+O painel precisa de um runtime Next.js completo: usa cookies no servidor, Proxy/Middleware, Server Components, Server Actions e rotas dinâmicas. Portanto, não é compatível com hospedagem puramente estática como GitHub Pages.
+
+Opções verificadas nos documentos oficiais:
+
+| Provedor | Compatibilidade | Observação do plano gratuito |
+|---|---|---|
+| [Netlify](https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/) | App Router, SSR, Server Actions e Middleware com OpenNext | Melhor ponto de partida para o MVP; o Free usa uma franquia mensal de créditos |
+| [Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs) | Runtime nativo do Next.js | Hobby é destinado a projetos pessoais e não comerciais |
+| [Cloudflare Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/) | Next.js completo por OpenNext | Exige adaptação e teste cuidadoso do limite de CPU do Free |
+| [Render](https://render.com/docs/web-services) | Web Service Node.js | O serviço Free hiberna quando fica ocioso e não é recomendado pelo provedor para produção |
+
+Antes de publicar:
+
+1. Configure o diretório raiz como `web`.
+2. Use `npm run build` e `npm run start` quando o provedor solicitar comandos explícitos.
+3. Cadastre as três variáveis `NEXT_PUBLIC_*` mostradas acima.
+4. Atualize `NEXT_PUBLIC_SITE_URL` para HTTPS.
+5. Adicione os redirects do domínio no Supabase Auth.
+6. Valide login, confirmação de e-mail, recuperação de senha, Server Actions, checkout e IA.
+
+O plano gratuito deve ser revisado antes de uso comercial: limites, suspensão por uso e termos mudam com o tempo.
+
+## Builds e atualizações do aplicativo
+
+O projeto permanece na versão `2.0.0`. O perfil e o canal precisam corresponder ao APK instalado.
+
+| Perfil/canal | Uso |
 |---|---|
-| `preview` | APK de distribuição interna e testes |
-| `production` | Versão destinada aos usuários de produção |
+| `development` | development build |
+| `preview` | APK de distribuição interna |
+| `production` | versão destinada à loja/produção |
 
-Criar APK de testes:
+APK interno:
 
 ```bash
 npx eas-cli build --platform android --profile preview
 ```
 
-Publicar uma atualização OTA para o APK interno:
+Atualização OTA do mesmo APK:
 
 ```bash
-npx eas-cli update --branch preview --message "descrição da atualização"
+npx eas-cli update --channel preview --message "descrição objetiva da atualização"
 ```
 
-Publicar em produção:
+Produção:
 
 ```bash
-npx eas-cli update --branch production --message "descrição da atualização"
+npx eas-cli update --channel production --message "descrição objetiva da atualização"
 ```
 
-O canal da atualização deve ser o mesmo canal do build instalado. Um APK `preview` não recebe atualizações publicadas somente em `production`.
+Uma alteração nativa, de dependência nativa ou de `runtimeVersion` exige novo build. Mudanças JavaScript compatíveis com o runtime podem ser distribuídas por OTA.
 
-## Estrutura principal
+## Segurança
 
-```text
-app/
-  (tabs)/
-    index.tsx          painel e contas
-    transacoes.tsx     histórico e agendamentos
-    caixinhas.tsx      objetivos financeiros
-    cartoes.tsx        cartões, compras e faturas
-    relatorios.tsx     fluxo de caixa
-    configuracoes.tsx  perfil e preferências
-  chat-ia.tsx          assistente financeiro
-lib/
-  supabase.ts          cliente Supabase
-  notifications.ts     notificações locais
-  transacoes.ts        regras compartilhadas de movimentações
-docs/
-  supabase-migration.sql
-supabase/
-  migrations/           migrações versionadas do banco
-  functions/finance-ai/ Edge Function segura do assistente
-web/
-  src/app/              painel web completo em Next.js
-```
+- Nunca versione `.env`, tokens, senhas, `service_role`, chaves de IA ou secrets de webhook.
+- Variáveis `EXPO_PUBLIC_*` e `NEXT_PUBLIC_*` fazem parte do cliente e não são secretas.
+- Chaves OpenAI/Groq pertencem exclusivamente aos secrets da Edge Function `finance-ai`.
+- O navegador e o APK nunca recebem `service_role`.
+- RLS deve permanecer ativa em todas as tabelas financeiras.
+- Escritas críticas usam autenticação, autorização, controle de versão, idempotência e transação no servidor.
+- O assistente prepara ações, mas somente uma confirmação explícita permite executá-las.
+- Não publique dumps, relatórios ou PoCs com dados pessoais reais.
+- Revogue imediatamente qualquer credencial exposta em commit, conversa ou captura de tela.
 
-## Colaboração
+Consulte o [relatório de segurança atual](./docs/security/SECURITY_AUDIT_2026-08-15.md) e os [PoCs seguros](./docs/security/POC_2026-08-15.md).
 
-O FinFlow é um projeto colaborativo mantido pela organização [FinFlowA](https://github.com/FinFlowA). Planejamento, desenvolvimento, manutenção, documentação e evolução do produto são conduzidos de forma conjunta pela equipe.
+## Estado e continuidade
 
-Contribuições técnicas permanecem registradas naturalmente no histórico do Git, preservando a rastreabilidade do projeto sem dividir o produto por responsabilidades individuais.
+- [Handoff de 15/08/2026](./docs/HANDOFF_2026-08-15.md)
+- [Política de Privacidade](./docs/privacy-policy.md)
+- [Termos de Uso](./docs/terms-of-use.md)
 
-## Roadmap
+## Equipe
 
-- [ ] Implementar a nova identidade visual do FinFlow em todas as telas.
-- [ ] Revisar, testar e liberar gradualmente o assistente de IA.
-- [x] Mover a integração Groq para uma função segura no backend.
-- [ ] Integrar compras das lojas Google Play e Apple à fonte única de direitos.
-- [ ] Ampliar testes automatizados das regras financeiras.
-- [ ] Importar extratos bancários.
-- [x] Criar dashboard web com paridade das operações financeiras do app.
-- [ ] Exportar relatórios em PDF.
-- [ ] Evoluir o funcionamento offline.
+O FinFlow é desenvolvido em conjunto por **Gabriel Henrique** e **Luis Henrique Palacio**. A autoria técnica de cada contribuição permanece rastreável no [histórico de commits](https://github.com/FinFlowA/app-financas/commits/main) e na página de [contributors](https://github.com/FinFlowA/app-financas/graphs/contributors).
 
-## Links do projeto
+## Links
 
 - Código-fonte: [FinFlowA/app-financas](https://github.com/FinFlowA/app-financas)
-- Aplicativo no Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
+- Expo: [@app-financas/meu-app-financas](https://expo.dev/accounts/app-financas/projects/meu-app-financas)
 - Documentos legais: [FinFlowA/finflow-legal](https://github.com/FinFlowA/finflow-legal)
-- Histórico completo: [commits](https://github.com/FinFlowA/app-financas/commits/main) e [contributors](https://github.com/FinFlowA/app-financas/graphs/contributors)
 
 Contribuições, relatos de erro e sugestões são bem-vindos.

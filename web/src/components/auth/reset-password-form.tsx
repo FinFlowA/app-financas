@@ -7,10 +7,15 @@ import { PASSWORD_REQUIREMENTS_MESSAGE } from "@/lib/auth/constants";
 import { INITIAL_AUTH_STATE } from "@/lib/auth/state";
 import {
   FieldError,
+  FIELD_CLASS,
+  FORM_CLASS,
   FormFeedback,
+  HELPER_CLASS,
   INPUT_CLASS,
   LABEL_CLASS,
+  PRIMARY_BUTTON_CLASS,
 } from "@/components/auth/form-feedback";
+import styles from "./auth.module.css";
 
 export function ResetPasswordForm({ recoveryIsValid }: { recoveryIsValid: boolean }) {
   const [state, action, pending] = useActionState(
@@ -20,16 +25,16 @@ export function ResetPasswordForm({ recoveryIsValid }: { recoveryIsValid: boolea
 
   if (!recoveryIsValid) {
     return (
-      <div className="space-y-5">
+      <div className={FORM_CLASS}>
         <div
-          className="rounded-ff-sm border border-red/30 bg-red/10 px-4 py-3 text-sm font-medium leading-5 text-red"
+          className={`${styles.feedback} ${styles.feedbackError}`}
           role="alert"
         >
           Este link de recuperação é inválido, expirou ou já foi utilizado.
         </div>
         <Link
           href="/esqueci-senha"
-          className="block w-full rounded-ff-md bg-primary py-3 text-center text-sm font-bold text-white transition hover:bg-primary-dark"
+          className={PRIMARY_BUTTON_CLASS}
         >
           Solicitar novo link
         </Link>
@@ -38,10 +43,10 @@ export function ResetPasswordForm({ recoveryIsValid }: { recoveryIsValid: boolea
   }
 
   return (
-    <form action={action} className="space-y-5" noValidate>
+    <form action={action} className={FORM_CLASS} noValidate>
       <FormFeedback state={state} />
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="senha" className={LABEL_CLASS}>
           Nova senha
         </label>
@@ -53,16 +58,17 @@ export function ResetPasswordForm({ recoveryIsValid }: { recoveryIsValid: boolea
           minLength={8}
           maxLength={128}
           required
+          placeholder="Crie uma senha forte"
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.senha)}
         />
-        <p className="mt-1.5 text-xs leading-5 text-foreground-muted">
+        <p className={HELPER_CLASS}>
           {PASSWORD_REQUIREMENTS_MESSAGE}
         </p>
         <FieldError message={state.errors?.senha} />
       </div>
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="confirmarSenha" className={LABEL_CLASS}>
           Confirmar nova senha
         </label>
@@ -74,6 +80,7 @@ export function ResetPasswordForm({ recoveryIsValid }: { recoveryIsValid: boolea
           minLength={8}
           maxLength={128}
           required
+          placeholder="Repita sua nova senha"
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.confirmarSenha)}
         />
@@ -83,7 +90,8 @@ export function ResetPasswordForm({ recoveryIsValid }: { recoveryIsValid: boolea
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-ff-md bg-primary py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+        className={PRIMARY_BUTTON_CLASS}
+        aria-busy={pending}
       >
         {pending ? "Salvando..." : "Salvar nova senha"}
       </button>

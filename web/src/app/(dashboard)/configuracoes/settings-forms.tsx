@@ -1,7 +1,8 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import CurrencyInput from "@/components/ui/currency-input";
+import AccessibleConfirmationDialog from "@/components/ui/confirmation-dialog";
 import {
   acceptPartnerAction,
   closePendingPartnerAction,
@@ -14,9 +15,54 @@ import {
   updateProfileAction,
   type SettingsActionState,
 } from "./actions";
+import styles from "./settings.module.css";
 
-const INPUT = "mt-1.5 w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20";
+const INPUT = styles.input;
 const INITIAL_SETTINGS_STATE: SettingsActionState = { status: "idle", message: "" };
+
+type IconName = "alert" | "check" | "feedback" | "goal" | "partnership" | "profile" | "trash" | "wallet";
+
+function Icon({ name }: { name: IconName }) {
+  const paths: Record<IconName, React.ReactNode> = {
+    alert: <><circle cx="12" cy="12" r="9" /><path d="M12 7v6" /><path d="M12 17h.01" /></>,
+    check: <><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.3 2.3 4.8-5" /></>,
+    feedback: <><path d="M5 18.5 3.5 21v-5.2A8.5 8.5 0 1 1 7 19" /><path d="M8 9h8M8 13h5" /></>,
+    goal: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="m15 9 5-5M16 4h4v4" /></>,
+    partnership: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
+    profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
+    trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" /></>,
+    wallet: <><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H19v16H6.5A2.5 2.5 0 0 1 4 17.5z" /><path d="M4 7h15M15 11h6v5h-6a2.5 2.5 0 0 1 0-5Z" /></>,
+  };
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {paths[name]}
+    </svg>
+  );
+}
+
+function ConfirmationDialog({
+  title,
+  description,
+  confirmLabel,
+  pending,
+  onClose,
+}: {
+  title: string;
+  description: string;
+  confirmLabel: string;
+  pending: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <AccessibleConfirmationDialog
+      title={title}
+      description={description}
+      confirmLabel={confirmLabel}
+      pending={pending}
+      onClose={onClose}
+    />
+  );
+}
 
 export type PartnershipRow = {
   id: number;
@@ -45,9 +91,10 @@ function Feedback({ state }: { state: SettingsActionState }) {
   return (
     <p
       role={state.status === "error" ? "alert" : "status"}
-      className={`mt-3 rounded-ff-sm border px-3 py-2 text-sm font-semibold ${state.status === "error" ? "border-red/30 bg-red/10 text-red" : "border-primary/30 bg-primary-soft text-primary-dark"}`}
+      className={`${styles.feedback} ${state.status === "error" ? styles.feedbackError : ""}`}
     >
-      {state.message}
+      <Icon name={state.status === "error" ? "alert" : "check"} />
+      <span>{state.message}</span>
     </p>
   );
 }
@@ -55,12 +102,12 @@ function Feedback({ state }: { state: SettingsActionState }) {
 export function ProfileForm({ name }: { name: string }) {
   const [state, action, pending] = useActionState(updateProfileAction, INITIAL_SETTINGS_STATE);
   return (
-    <form action={action} className="mt-5">
+    <form action={action} className="mt-5 grid gap-4">
       <label className="block text-xs font-bold uppercase tracking-wide text-foreground-muted">
         Nome
         <input className={INPUT} name="name" defaultValue={name} minLength={2} maxLength={80} required autoComplete="name" />
       </label>
-      <button disabled={pending} className="ff-focus mt-4 rounded-ff-sm bg-primary px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+      <button disabled={pending} className={`ff-focus justify-self-start ${styles.primaryButton}`}>
         {pending ? "Salvando..." : "Salvar nome"}
       </button>
       <Feedback state={state} />
@@ -84,7 +131,7 @@ export function FeedbackForm() {
         Mensagem
         <textarea className={`${INPUT} min-h-32 resize-y`} name="message" minLength={10} maxLength={2000} required placeholder="Conte o que aconteceu ou o que podemos melhorar." />
       </label>
-      <button disabled={pending} className="ff-focus justify-self-start rounded-ff-sm bg-primary px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+      <button disabled={pending} className={`ff-focus justify-self-start ${styles.primaryButton}`}>
         {pending ? "Enviando..." : "Enviar feedback"}
       </button>
       <Feedback state={state} />
@@ -107,17 +154,21 @@ export function PartnershipPanel({
   const [acceptState, acceptAction, accepting] = useActionState(acceptPartnerAction, INITIAL_SETTINGS_STATE);
   const [closeState, closeAction, closing] = useActionState(closePendingPartnerAction, INITIAL_SETTINGS_STATE);
   const [dissolveState, dissolveAction, dissolving] = useActionState(dissolvePartnerAction, INITIAL_SETTINGS_STATE);
+  const [confirmDissolution, setConfirmDissolution] = useState(false);
   const active = partnerships.find((item) => item.status === "aceito");
   const pending = partnerships.filter((item) => item.status === "pendente");
 
   return (
-    <section className="ff-card p-5 sm:p-6">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-        <div>
-          <h2 className="text-lg font-extrabold text-foreground">Conta compartilhada</h2>
-          <p className="mt-1 text-sm text-foreground-muted">Vincule-se a uma pessoa cadastrada. O compartilhamento de cada conta ou objetivo continua opcional.</p>
+    <section className={`ff-card p-5 sm:p-6 ${styles.panel}`}>
+      <div className={styles.panelHeader}>
+        <div className={styles.headingGroup}>
+          <span className={styles.iconBox}><Icon name="partnership" /></span>
+          <div>
+            <h2 className="text-lg font-extrabold text-foreground">Conta compartilhada</h2>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-foreground-muted">Vincule-se a uma pessoa cadastrada. O compartilhamento de cada conta ou objetivo continua opcional.</p>
+          </div>
         </div>
-        <span className="rounded-full bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground-muted">1 parceria por vez</span>
+        <span className={styles.statusBadge}>1 parceria por vez</span>
       </div>
 
       {!active && pending.length === 0 && (
@@ -126,7 +177,7 @@ export function PartnershipPanel({
             E-mail do parceiro
             <input className={INPUT} type="email" name="email" required maxLength={254} placeholder="pessoa@exemplo.com" />
           </label>
-          <button disabled={inviting} className="ff-focus rounded-ff-sm bg-primary px-5 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+          <button disabled={inviting} className={`ff-focus ${styles.primaryButton}`}>
             {inviting ? "Enviando..." : "Enviar convite"}
           </button>
         </form>
@@ -134,7 +185,7 @@ export function PartnershipPanel({
       <Feedback state={inviteState} />
 
       {active && (
-        <div className="mt-5 rounded-ff-md border border-primary/30 bg-primary-soft p-4">
+        <div className={`mt-5 p-4 sm:p-5 ${styles.activePartnership}`}>
           <p className="text-xs font-bold uppercase tracking-wide text-primary-dark">Parceria ativa</p>
           <p className="mt-1 font-extrabold text-foreground">
             {partnerName ?? (active.solicitante_id === userId ? active.convidado_email : "Parceiro(a)")}
@@ -143,14 +194,22 @@ export function PartnershipPanel({
           <form action={dissolveAction} className="mt-4">
             <input type="hidden" name="partnership_id" value={active.id} />
             <button
+              type="button"
               disabled={dissolving}
-              onClick={(event) => {
-                if (!confirm("Desfazer a parceria? Contas e objetivos serão separados de forma atômica e cada pessoa verá suas decisões pendentes.")) event.preventDefault();
-              }}
-              className="ff-focus rounded-ff-sm border border-red/40 bg-surface px-4 py-2 text-sm font-bold text-red disabled:opacity-50"
+              onClick={() => setConfirmDissolution(true)}
+              className={`ff-focus ${styles.dangerButton}`}
             >
               {dissolving ? "Desfazendo..." : "Desfazer parceria"}
             </button>
+            {confirmDissolution && (
+              <ConfirmationDialog
+                title="Desfazer esta parceria?"
+                description="Contas e objetivos serão separados de forma segura. Cada pessoa verá as decisões pendentes e nenhum saldo será duplicado."
+                confirmLabel="Sim, desfazer parceria"
+                pending={dissolving}
+                onClose={() => setConfirmDissolution(false)}
+              />
+            )}
           </form>
           <Feedback state={dissolveState} />
         </div>
@@ -159,19 +218,19 @@ export function PartnershipPanel({
       {pending.map((item) => {
         const invited = item.convidado_email.toLocaleLowerCase("pt-BR") === userEmail.toLocaleLowerCase("pt-BR") && item.solicitante_id !== userId;
         return (
-          <article key={item.id} className="mt-5 rounded-ff-md border border-border bg-surface-muted p-4">
+          <article key={item.id} className={`mt-5 p-4 ${styles.decisionCard}`}>
             <p className="text-xs font-bold uppercase tracking-wide text-foreground-muted">{invited ? "Convite recebido" : "Convite enviado"}</p>
             <p className="mt-1 font-extrabold text-foreground">{item.convidado_email}</p>
             <div className="mt-4 flex flex-wrap gap-2">
               {invited && (
                 <form action={acceptAction}>
                   <input type="hidden" name="partnership_id" value={item.id} />
-                  <button disabled={accepting} className="ff-focus rounded-ff-sm bg-primary px-4 py-2 text-sm font-bold text-white disabled:opacity-50">Aceitar</button>
+                  <button disabled={accepting} className={`ff-focus ${styles.primaryButton}`}>Aceitar</button>
                 </form>
               )}
               <form action={closeAction}>
                 <input type="hidden" name="partnership_id" value={item.id} />
-                <button disabled={closing} className="ff-focus rounded-ff-sm border border-red/40 bg-surface px-4 py-2 text-sm font-bold text-red disabled:opacity-50">
+                <button disabled={closing} className={`ff-focus ${styles.dangerButton}`}>
                   {invited ? "Recusar" : "Cancelar convite"}
                 </button>
               </form>
@@ -188,14 +247,19 @@ export function PartnershipPanel({
 function AccountDecisionCard({ item }: { item: AccountDecision }) {
   const [state, action, pending] = useActionState(resolveAccountDecisionAction, INITIAL_SETTINGS_STATE);
   return (
-    <article className="rounded-ff-md border border-border bg-surface-muted p-4">
-      <p className="font-extrabold text-foreground">{item.nome}</p>
-      <p className="mt-1 text-sm text-foreground-muted">Saldo final: {Number(item.saldo_final).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+    <article className={`p-4 ${styles.decisionCard}`}>
+      <div className="flex items-start gap-3">
+        <span className={styles.iconBox}><Icon name="wallet" /></span>
+        <div className="min-w-0">
+          <p className="font-extrabold text-foreground">{item.nome}</p>
+          <p data-private-value="true" className="mt-1 text-sm font-bold text-foreground">{Number(item.saldo_final).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+        </div>
+      </div>
       <p className="mt-1 text-xs text-foreground-muted">{item.possui_lancamentos ? "Possui lançamentos: escolha manter ativa ou arquivar." : "Sem lançamentos pessoais."}</p>
       <form action={action} className="mt-4 flex flex-wrap gap-2">
         <input type="hidden" name="item_id" value={item.id} />
-        <button name="decision" value="keep" disabled={pending} className="ff-focus rounded-ff-sm bg-primary px-4 py-2 text-sm font-bold text-white">Manter ativa</button>
-        <button name="decision" value="archive" disabled={pending} className="ff-focus rounded-ff-sm border border-border bg-surface px-4 py-2 text-sm font-bold text-foreground-muted">Arquivar</button>
+        <button name="decision" value="keep" disabled={pending} className={`ff-focus ${styles.primaryButton}`}>Manter ativa</button>
+        <button name="decision" value="archive" disabled={pending} className={`ff-focus ${styles.secondaryButton}`}>Arquivar</button>
       </form>
       <Feedback state={state} />
     </article>
@@ -205,10 +269,15 @@ function AccountDecisionCard({ item }: { item: AccountDecision }) {
 function GoalDecisionCard({ item }: { item: GoalDecision }) {
   const [state, action, pending] = useActionState(resolveGoalDecisionAction, INITIAL_SETTINGS_STATE);
   return (
-    <article className="rounded-ff-md border border-border bg-surface-muted p-4">
-      <p className="font-extrabold text-foreground">{item.nome}</p>
-      <p className="mt-1 text-sm text-foreground-muted">Saldo total: {Number(item.saldo_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
-      <p className="mt-1 text-sm font-bold text-primary">Disponível para você: {Number(item.saldo_disponivel).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+    <article className={`p-4 ${styles.decisionCard}`}>
+      <div className="flex items-start gap-3">
+        <span className={styles.iconBox}><Icon name="goal" /></span>
+        <div className="min-w-0">
+          <p className="font-extrabold text-foreground">{item.nome}</p>
+          <p data-private-value="true" className="mt-1 text-sm text-foreground-muted">Saldo total: {Number(item.saldo_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+          <p data-private-value="true" className="mt-1 text-sm font-bold text-primary-dark">Disponível para você: {Number(item.saldo_disponivel).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+        </div>
+      </div>
       <form action={action} className="mt-4 grid gap-3">
         <input type="hidden" name="decision_id" value={item.id} />
         <label className="text-xs font-bold uppercase tracking-wide text-foreground-muted">
@@ -216,8 +285,8 @@ function GoalDecisionCard({ item }: { item: GoalDecision }) {
           <CurrencyInput name="balance" defaultValue={Number(item.saldo_disponivel)} />
         </label>
         <div className="flex flex-wrap gap-2">
-          <button name="decision" value="keep" disabled={pending} className="ff-focus rounded-ff-sm bg-primary px-4 py-2 text-sm font-bold text-white">Manter objetivo</button>
-          <button name="decision" value="discard" disabled={pending} className="ff-focus rounded-ff-sm border border-red/40 bg-surface px-4 py-2 text-sm font-bold text-red">Não manter</button>
+          <button name="decision" value="keep" disabled={pending} className={`ff-focus ${styles.primaryButton}`}>Manter objetivo</button>
+          <button name="decision" value="discard" disabled={pending} className={`ff-focus ${styles.dangerButton}`}>Não manter</button>
         </div>
       </form>
       <Feedback state={state} />
@@ -228,7 +297,7 @@ function GoalDecisionCard({ item }: { item: GoalDecision }) {
 export function DissolutionDecisions({ accounts, goals }: { accounts: AccountDecision[]; goals: GoalDecision[] }) {
   if (accounts.length === 0 && goals.length === 0) return null;
   return (
-    <section className="ff-card border-orange/40 p-5 sm:p-6">
+    <section className={`ff-card border-orange/40 p-5 sm:p-6 ${styles.panel}`}>
       <div className="rounded-ff-md bg-orange/10 p-4">
         <h2 className="text-lg font-extrabold text-foreground">Finalize a separação da parceria</h2>
         <p className="mt-1 text-sm leading-6 text-foreground-muted">As decisões abaixo são individuais. O banco limita atomicamente o saldo que pode permanecer em cada objetivo.</p>
@@ -241,6 +310,7 @@ export function DissolutionDecisions({ accounts, goals }: { accounts: AccountDec
 
 export function DeleteAccountForm() {
   const [state, action, pending] = useActionState(deleteAccountAction, INITIAL_SETTINGS_STATE);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   return (
     <form action={action} className="mt-5 max-w-xl">
@@ -270,16 +340,22 @@ export function DeleteAccountForm() {
         />
       </label>
       <button
+        type="button"
         disabled={pending}
-        onClick={(event) => {
-          if (!confirm("Excluir permanentemente sua conta FinFlow e todos os dados vinculados? Esta ação não pode ser desfeita.")) {
-            event.preventDefault();
-          }
-        }}
-        className="ff-focus mt-4 rounded-ff-sm border border-red/50 bg-red px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+        onClick={() => setConfirmDelete(true)}
+        className={`ff-focus mt-4 ${styles.dangerButton}`}
       >
         {pending ? "Validando e excluindo..." : "Excluir minha conta"}
       </button>
+      {confirmDelete && (
+        <ConfirmationDialog
+          title="Excluir sua conta permanentemente?"
+          description="Todos os dados vinculados serão removidos. Esta ação é definitiva e não poderá ser desfeita."
+          confirmLabel="Excluir conta definitivamente"
+          pending={pending}
+          onClose={() => setConfirmDelete(false)}
+        />
+      )}
       <Feedback state={state} />
     </form>
   );

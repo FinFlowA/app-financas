@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { LoginForm } from "@/components/auth/login-form";
 
-export const metadata: Metadata = { title: "Entrar | FinFlow" };
+export const metadata: Metadata = { title: "Entrar" };
 
 type LoginPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

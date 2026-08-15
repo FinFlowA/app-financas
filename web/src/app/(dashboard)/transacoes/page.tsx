@@ -3,7 +3,7 @@ import { collectPaymentSummaryRows } from "@/lib/payment-summaries";
 import { createClient } from "@/lib/supabase/server";
 import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
 import TransactionManager from "./transaction-manager";
-import type { QuickFilter, TransactionRow } from "./transaction-model";
+import type { QuickFilter, TransactionKind, TransactionRow } from "./transaction-model";
 
 type SearchParameters = Record<string, string | string[] | undefined>;
 
@@ -12,7 +12,16 @@ function first(value: string | string[] | undefined): string {
 }
 
 function quickFilter(value: string): QuickFilter {
-  return value === "overdue" || value === "today" || value === "next7" ? value : null;
+  return value === "attention" || value === "overdue" || value === "today" || value === "next7" ? value : null;
+}
+
+function positiveId(value: string): number | null {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function transactionKind(value: string): TransactionKind {
+  return value === "receita" || value === "transferencia" ? value : "despesa";
 }
 
 export default async function TransactionsPage({
@@ -28,6 +37,8 @@ export default async function TransactionsPage({
     : mesAtualEmSaoPaulo();
   const quick = quickFilter(first(parameters.quick));
   const openNew = ["1", "true", "yes"].includes(first(parameters.new).toLowerCase());
+  const initialKind = transactionKind(first(parameters.kind));
+  const initialFocusId = positiveId(first(parameters.focus));
   const supabase = await createClient();
 
   const [{ data: authData, error: authError }, accountsResult, categoriesResult, cardsResult] = await Promise.all([
@@ -103,6 +114,8 @@ export default async function TransactionsPage({
         initialMonth={month}
         initialQuick={quick}
         initialOpenNew={openNew}
+        initialKind={initialKind}
+        initialFocusId={initialFocusId}
         today={today}
         accounts={(accountsResult.data ?? []) as Conta[]}
         categories={(categoriesResult.data ?? []) as Categoria[]}

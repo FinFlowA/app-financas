@@ -1,12 +1,14 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import {
   cancelSubscriptionAction,
   startCheckoutAction,
   syncSubscriptionAction,
   type PlanActionState,
 } from "./actions";
+import styles from "./plans.module.css";
 
 const INITIAL_PLAN_STATE: PlanActionState = { status: "idle", message: "" };
 
@@ -92,6 +94,19 @@ const STATUS_LABELS: Record<string, string> = {
   refunded: "Reembolsada",
 };
 
+function PlanIcon({ name }: { name: "check" | "crown" | "shield" | "sparkle" | "sync" | "warning" }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      {name === "check" && <path d="m5 12 4 4L19 6" />}
+      {name === "crown" && <><path d="m3 7 4 4 5-7 5 7 4-4-2 11H5Z" /><path d="M5 21h14" /></>}
+      {name === "shield" && <><path d="M12 3 4.5 6v5.5c0 4.5 3 7.7 7.5 9.5 4.5-1.8 7.5-5 7.5-9.5V6Z" /><path d="m9 12 2 2 4-4" /></>}
+      {name === "sparkle" && <><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2Z" /><path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7Z" /></>}
+      {name === "sync" && <><path d="M20 7h-5V2" /><path d="M20 7a8 8 0 1 0 1 8" /></>}
+      {name === "warning" && <><path d="M10.3 4.5 2.8 18a2 2 0 0 0 1.7 3h15a2 2 0 0 0 1.7-3L13.7 4.5a2 2 0 0 0-3.4 0Z" /><path d="M12 9v4M12 17h.01" /></>}
+    </svg>
+  );
+}
+
 function brl(value: number) {
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
@@ -114,9 +129,7 @@ function Feedback({ state }: { state: PlanActionState }) {
   return (
     <p
       role={state.status === "error" ? "alert" : "status"}
-      className={`mt-3 rounded-ff-sm border px-3 py-2 text-sm font-semibold ${state.status === "error"
-        ? "border-red/30 bg-red/10 text-red"
-        : "border-primary/30 bg-primary-soft text-primary-dark"}`}
+      className={`${styles.feedback} ${state.status === "error" ? styles.feedbackError : ""}`}
     >
       {state.message}
     </p>
@@ -143,7 +156,7 @@ function CheckoutForm({
         <input type="hidden" name="request_id" value={requestId} />
         <button
           disabled={pending || Boolean(disabledReason)}
-          className="ff-focus w-full rounded-ff-sm bg-primary px-4 py-3 text-sm font-extrabold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50"
+          className={`ff-focus ${styles.checkoutButton}`}
         >
           {pending ? "Abrindo checkout seguro..." : continuing ? "Continuar checkout" : "Assinar este plano"}
         </button>
@@ -154,39 +167,56 @@ function CheckoutForm({
   );
 }
 
+function CancelDialog({ pending, onClose }: { pending: boolean; onClose: () => void }) {
+  return (
+    <ConfirmationDialog
+      title="Cancelar a renovação?"
+      description="O acesso pago permanece disponível até o fim do período já quitado. Nenhuma cobrança futura será iniciada."
+      confirmLabel="Confirmar cancelamento"
+      pending={pending}
+      onClose={onClose}
+    />
+  );
+}
+
 function SubscriptionControls({ subscription, billingEnabled }: { subscription: SubscriptionView | null; billingEnabled: boolean }) {
   const [syncState, syncAction, syncing] = useActionState(syncSubscriptionAction, INITIAL_PLAN_STATE);
   const [cancelState, cancelAction, cancelling] = useActionState(cancelSubscriptionAction, INITIAL_PLAN_STATE);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const canCancel = subscription != null
     && subscription.provider === "mercado_pago"
     && ["active", "grace_period", "past_due", "paused"].includes(subscription.status)
     && !subscription.cancel_at_period_end;
 
   return (
-    <section className="ff-card p-5 sm:p-6">
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-        <div>
-          <p className="text-xs font-bold uppercase tracking-wide text-foreground-muted">Status da cobrança</p>
-          <h2 className="mt-1 text-xl font-extrabold text-foreground">
-            {STATUS_LABELS[subscription?.status ?? "none"] ?? "Em conferência"}
-          </h2>
-          {subscription && (
-            <div className="mt-2 space-y-1 text-sm text-foreground-muted">
-              <p className="capitalize">Plano {subscription.plan}</p>
-              {date(subscription.access_until ?? subscription.current_period_end) && (
-                <p>Acesso previsto até {date(subscription.access_until ?? subscription.current_period_end)}.</p>
-              )}
-              {subscription.cancel_at_period_end && <p className="font-bold text-orange">A renovação já está cancelada.</p>}
-            </div>
-          )}
-          {!subscription && <p className="mt-2 text-sm text-foreground-muted">Nenhum pagamento ou renovação em andamento.</p>}
+    <section className={`ff-card p-5 sm:p-6 ${styles.statusPanel}`}>
+      <div className={`flex flex-col justify-between gap-5 lg:flex-row lg:items-center ${styles.statusContent}`}>
+        <div className="flex min-w-0 items-start gap-3">
+          <span className={styles.statusIcon}><PlanIcon name="shield" /></span>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[.12em] text-foreground-muted">Status da cobrança</p>
+            <h2 className="mt-1 text-xl font-black text-foreground">
+              {STATUS_LABELS[subscription?.status ?? "none"] ?? "Em conferência"}
+            </h2>
+            {subscription && (
+              <div className="mt-2 space-y-1 text-sm text-foreground-muted">
+                <p className="capitalize">Plano {subscription.plan}</p>
+                {date(subscription.access_until ?? subscription.current_period_end) && (
+                  <p>Acesso previsto até {date(subscription.access_until ?? subscription.current_period_end)}.</p>
+                )}
+                {subscription.cancel_at_period_end && <p className="font-bold text-orange">A renovação já está cancelada.</p>}
+              </div>
+            )}
+            {!subscription && <p className="mt-2 text-sm text-foreground-muted">Nenhum pagamento ou renovação em andamento.</p>}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <form action={syncAction}>
             <button
               disabled={syncing || !billingEnabled || (subscription != null && !subscription.can_sync)}
-              className="ff-focus rounded-ff-sm border border-border bg-surface-muted px-4 py-2.5 text-sm font-bold text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className={`ff-focus ${styles.secondaryButton}`}
             >
+              <PlanIcon name="sync" />
               {syncing ? "Atualizando..." : "Atualizar assinatura"}
             </button>
           </form>
@@ -194,16 +224,19 @@ function SubscriptionControls({ subscription, billingEnabled }: { subscription: 
             <form action={cancelAction}>
               <input type="hidden" name="confirmation" value="cancel_subscription" />
               <button
+                type="button"
                 disabled={cancelling}
-                onClick={(event) => {
-                  if (!confirm("Cancelar a renovação? O acesso pago permanece até o fim do período já quitado.")) {
-                    event.preventDefault();
-                  }
-                }}
-                className="ff-focus rounded-ff-sm border border-red/40 px-4 py-2.5 text-sm font-bold text-red disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={() => setConfirmCancel(true)}
+                className={`ff-focus ${styles.dangerButton}`}
               >
                 {cancelling ? "Cancelando..." : "Cancelar renovação"}
               </button>
+              {confirmCancel && (
+                <CancelDialog
+                  pending={cancelling}
+                  onClose={() => setConfirmCancel(false)}
+                />
+              )}
             </form>
           )}
         </div>
@@ -237,28 +270,29 @@ export default function PlansClient({
   return (
     <div className="space-y-6">
       {!limitsEnabled && (
-        <div className="rounded-ff-md border border-orange/30 bg-orange/10 px-4 py-3 text-sm leading-6 text-foreground">
-          <strong>Ambiente de desenvolvimento:</strong> os limites estão temporariamente liberados, sem promover sua conta e sem gerar cobrança.
+        <div className="flex items-start gap-3 rounded-ff-md border border-orange/30 bg-orange/10 px-4 py-3 text-sm leading-6 text-foreground">
+          <span className="mt-0.5 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-orange/10 text-orange [&>svg]:h-4 [&>svg]:w-4"><PlanIcon name="warning" /></span>
+          <p><strong>Ambiente de desenvolvimento:</strong> os limites estão temporariamente liberados, sem promover sua conta e sem gerar cobrança.</p>
         </div>
       )}
 
       <SubscriptionControls subscription={subscription} billingEnabled={billingEnabled} />
 
-      <div className="mx-auto flex max-w-sm rounded-ff-md border border-border bg-surface-muted p-1" aria-label="Periodicidade da assinatura">
+      <div className={styles.cycleSwitch} aria-label="Periodicidade da assinatura">
         {(["monthly", "annual"] as const).map((item) => (
           <button
             key={item}
             type="button"
             aria-pressed={cycle === item}
             onClick={() => setCycle(item)}
-            className={`ff-focus flex-1 rounded-ff-sm px-4 py-2.5 text-sm font-extrabold transition ${cycle === item ? "bg-surface text-foreground shadow-sm" : "text-foreground-muted"}`}
+            className={`ff-focus ${styles.cycleButton} ${cycle === item ? styles.cycleButtonActive : ""}`}
           >
             {item === "monthly" ? "Mensal" : "Anual · economize"}
           </button>
         ))}
       </div>
 
-      <div className="grid items-stretch gap-5 lg:grid-cols-3">
+      <div className={styles.planGrid}>
         {PLANS.map((plan) => {
           const isCurrent = plan.id === currentPlan;
           const product = plan.id === "free" ? null : productByPlan.get(plan.id);
@@ -272,18 +306,22 @@ export default function PlansClient({
           return (
             <article
               key={plan.id}
-              className={`relative flex flex-col rounded-ff-lg border bg-surface p-5 shadow-sm sm:p-6 ${isCurrent ? "border-primary ring-2 ring-primary/15" : plan.id === "premium" ? "border-orange/40" : "border-border"}`}
+              className={`${styles.planCard} ${isCurrent ? styles.planCurrent : ""} ${plan.id === "premium" ? styles.planPremium : ""}`}
             >
-              {plan.badge && <span className={`absolute right-4 top-4 rounded-full px-3 py-1 text-[11px] font-extrabold text-white ${plan.id === "premium" ? "bg-orange" : "bg-primary"}`}>{plan.badge}</span>}
-              {isCurrent && <span className="mb-3 self-start rounded-full bg-primary-soft px-3 py-1 text-[11px] font-extrabold text-primary-dark">Plano atual</span>}
-              <h2 className="text-2xl font-extrabold text-foreground">{plan.name}</h2>
+              <div className="mb-4 flex min-h-7 flex-wrap items-center justify-between gap-2">
+                {isCurrent ? <span className={styles.badge}><PlanIcon name="check" />Plano atual</span> : <span />}
+                {plan.badge && <span className={`${styles.badge} ${plan.id === "premium" ? styles.premiumBadge : ""}`}>
+                  <PlanIcon name={plan.id === "premium" ? "crown" : "sparkle"} />{plan.badge}
+                </span>}
+              </div>
+              <h2 className="text-2xl font-black tracking-tight text-foreground">{plan.name}</h2>
               <p className="mt-1 text-sm text-foreground-muted">{plan.description}</p>
-              <div className="mt-5 border-b border-border pb-5">
+              <div className={styles.priceBlock}>
                 {plan.id === "free" ? (
-                  <p className="text-3xl font-extrabold text-foreground">Grátis</p>
+                  <p className={styles.price}>Grátis</p>
                 ) : product ? (
                   <>
-                    <p className="text-3xl font-extrabold text-foreground">
+                    <p className={styles.price}>
                       {brl(monthlyEquivalent ?? 0)}<span className="text-sm font-semibold text-foreground-muted">/mês</span>
                     </p>
                     {cycle === "annual" && <p className="mt-1 text-xs text-foreground-muted">{brl(product.amount_brl)} cobrados por ano</p>}
@@ -292,18 +330,18 @@ export default function PlansClient({
                   <p className="text-sm font-bold text-red">Preço indisponível</p>
                 )}
               </div>
-              <ul className="mt-5 flex-1 space-y-3 text-sm text-foreground">
+              <ul className={styles.featureList}>
                 {plan.features.map((feature) => (
-                  <li key={feature} className="flex gap-2"><span aria-hidden="true" className="font-extrabold text-primary">✓</span><span>{feature}</span></li>
+                  <li key={feature} className={styles.featureItem}><span aria-hidden="true" className={styles.check}>✓</span><span>{feature}</span></li>
                 ))}
               </ul>
               {plan.id === "free" ? (
-                <p className="mt-5 rounded-ff-sm bg-surface-muted px-4 py-3 text-center text-sm font-bold text-foreground-muted">
+                <p className="mt-5 rounded-ff-sm border border-border bg-surface-muted/70 px-4 py-3 text-center text-sm font-bold text-foreground-muted">
                   {isCurrent ? "Seu plano atual" : "Disponível após o fim do acesso pago"}
                 </p>
               ) : product ? (
                 isCurrent ? (
-                  <p className="mt-5 rounded-ff-sm bg-primary-soft px-4 py-3 text-center text-sm font-bold text-primary-dark">Assinatura atual</p>
+                  <p className="mt-5 rounded-ff-sm border border-primary/20 bg-primary-soft px-4 py-3 text-center text-sm font-bold text-primary-dark">Assinatura atual</p>
                 ) : (
                   <CheckoutForm
                     key={product.code}

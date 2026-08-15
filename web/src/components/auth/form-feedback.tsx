@@ -1,15 +1,22 @@
 import type { AuthActionState } from "@/lib/auth/state";
+import styles from "./auth.module.css";
 
-export const INPUT_CLASS =
-  "w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-foreground outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20";
+export const INPUT_CLASS = styles.input;
 
-export const LABEL_CLASS =
-  "mb-1.5 block text-xs font-bold uppercase tracking-wide text-foreground-muted";
+export const LABEL_CLASS = styles.label;
+export const PRIMARY_BUTTON_CLASS = styles.buttonPrimary;
+export const SECONDARY_BUTTON_CLASS = styles.buttonSecondary;
+export const TEXT_LINK_CLASS = styles.textLink;
+export const FORM_CLASS = styles.form;
+export const FIELD_CLASS = styles.field;
+export const FIELD_HEADER_CLASS = styles.fieldHeader;
+export const HELPER_CLASS = styles.helper;
+export const FORM_PROMPT_CLASS = styles.formPrompt;
 
 export function FieldError({ message }: { message?: string }) {
   if (!message) return null;
   return (
-    <p className="mt-1.5 text-sm font-medium text-red" role="alert">
+    <p className={styles.fieldError} role="alert">
       {message}
     </p>
   );
@@ -20,10 +27,10 @@ export function FormFeedback({ state }: { state: AuthActionState }) {
   const success = state.status === "success";
   return (
     <div
-      className={`rounded-ff-sm border px-4 py-3 text-sm font-medium leading-5 ${
+      className={`${styles.feedback} ${
         success
-          ? "border-primary/30 bg-primary-soft text-primary-dark"
-          : "border-red/30 bg-red/10 text-red"
+          ? styles.feedbackSuccess
+          : styles.feedbackError
       }`}
       role={success ? "status" : "alert"}
       aria-live="polite"

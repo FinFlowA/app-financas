@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { useState, useTransition } from "react";
 import CurrencyInput from "@/components/ui/currency-input";
 import { formatarReais } from "@/lib/format";
@@ -11,10 +12,12 @@ import {
   criarCartao,
   editarCartao,
 } from "./actions";
+import styles from "./cartoes.module.css";
 
 export type CartaoResumo = Cartao & {
   limiteUsado: number;
   faturaAtual: number;
+  faturaAtualPaga: boolean;
   proximaFatura: number;
 };
 
@@ -26,7 +29,7 @@ function RequestId() {
 }
 
 function inputClass() {
-  return "w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-foreground outline-none focus:border-primary";
+  return styles.input;
 }
 
 function CartaoForm({
@@ -49,7 +52,7 @@ function CartaoForm({
         formData,
         cartao ? "Cartão atualizado." : "Cartão criado.",
       )}
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+      className={styles.formGrid}
     >
       <RequestId />
       {cartao && (
@@ -58,8 +61,8 @@ function CartaoForm({
           <input type="hidden" name="expected_version" value={cartao.version} />
         </>
       )}
-      <label className="sm:col-span-2">
-        <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Nome</span>
+      <label className={styles.formFull}>
+        <span className={styles.fieldLabel}>Nome</span>
         <input
           name="nome"
           required
@@ -70,28 +73,28 @@ function CartaoForm({
         />
       </label>
       <label>
-        <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Limite</span>
+        <span className={styles.fieldLabel}>Limite</span>
         <CurrencyInput name="limite" required defaultValue={cartao?.limite} />
         {cartao && (
-          <span data-private-value="true" className="mt-1 block text-xs text-foreground-muted">
+          <span data-private-value="true" className={styles.helperText}>
             Comprometido agora: {formatarReais(cartao.limiteUsado)}
           </span>
         )}
       </label>
       <div className="grid grid-cols-2 gap-3">
         <label>
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Fecha dia</span>
+          <span className={styles.fieldLabel}>Fecha dia</span>
           <input name="dia_fechamento" required type="number" min={1} max={31} defaultValue={cartao?.dia_fechamento ?? 3} className={inputClass()} />
         </label>
         <label>
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Vence dia</span>
+          <span className={styles.fieldLabel}>Vence dia</span>
           <input name="dia_vencimento" required type="number" min={1} max={31} defaultValue={cartao?.dia_vencimento ?? 10} className={inputClass()} />
         </label>
       </div>
-      <fieldset className="sm:col-span-2">
-        <legend className="mb-2 text-xs font-bold uppercase tracking-wide text-foreground-muted">Cor</legend>
+      <fieldset className={styles.formFull}>
+        <legend className={styles.fieldLabel}>Cor do cartão</legend>
         <input type="hidden" name="cor" value={cor} />
-        <div className="flex flex-wrap gap-2">
+        <div className={styles.colorList}>
           {CORES_CARTAO.map((opcao) => (
             <button
               type="button"
@@ -99,21 +102,19 @@ function CartaoForm({
               onClick={() => setCor(opcao)}
               aria-label={`Usar cor ${opcao}`}
               aria-pressed={cor === opcao}
-              className="h-8 w-8 rounded-full"
+              className={styles.colorButton}
               style={{
                 backgroundColor: opcao,
-                outline: cor === opcao ? "3px solid var(--color-foreground)" : "none",
-                outlineOffset: 2,
               }}
             />
           ))}
         </div>
       </fieldset>
-      <div className="flex gap-2 sm:col-span-2">
-        <button disabled={pending} className="rounded-ff-sm bg-primary px-4 py-2.5 text-sm font-bold text-white disabled:opacity-50">
+      <div className={styles.formActions}>
+        <button disabled={pending} className={styles.primaryButton}>
           {pending ? "Salvando..." : cartao ? "Salvar alterações" : "Criar cartão"}
         </button>
-        <button type="button" onClick={fechar} className="rounded-ff-sm px-4 py-2.5 text-sm font-semibold text-foreground-muted">Cancelar</button>
+        <button type="button" onClick={fechar} className={styles.ghostButton}>Cancelar</button>
       </div>
     </form>
   );
@@ -144,31 +145,32 @@ export default function CartoesManager({ cartoes }: { cartoes: CartaoResumo[] })
   }
 
   return (
-    <div className="max-w-5xl">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-primary">Crédito e faturas</p>
-          <h1 className="text-2xl font-extrabold text-foreground">Cartões</h1>
+    <div className={styles.page}>
+      <header className={styles.pageHeader}>
+        <div className={styles.headingGroup}>
+          <p className={styles.eyebrow}>Crédito e faturas</p>
+          <h1 className={styles.title}>Meus cartões</h1>
+          <p className={styles.subtitle}>Acompanhe limite, faturas e pagamentos em um só lugar.</p>
         </div>
         <button
           onClick={() => { setEditor("novo"); setErro(null); setAviso(null); }}
-          className="rounded-ff-md bg-primary px-4 py-2.5 text-sm font-bold text-white"
+          className={styles.primaryButton}
         >
-          + Novo cartão
+          <span aria-hidden>＋</span> Novo cartão
         </button>
-      </div>
+      </header>
 
       {(erro || aviso) && (
-        <div role="status" className={`mb-4 rounded-ff-md border px-4 py-3 text-sm font-semibold ${erro ? "border-red/40 bg-red/10 text-red" : "border-primary/40 bg-primary-soft text-primary-dark"}`}>
+        <div role="status" aria-live="polite" className={styles.notice} data-error={Boolean(erro)}>
           {erro || aviso}
         </div>
       )}
 
       {editor && (
-        <section key={editor === "novo" ? "novo" : editor.id} className="mb-6 rounded-ff-lg border border-primary/40 bg-surface p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-extrabold text-foreground">{editor === "novo" ? "Novo cartão" : `Editar ${editor.nome}`}</h2>
-            <button onClick={() => setEditor(null)} aria-label="Fechar" className="rounded-full bg-surface-muted px-3 py-1.5 text-foreground">×</button>
+        <section key={editor === "novo" ? "novo" : editor.id} className={styles.panel} aria-label={editor === "novo" ? "Criar cartão" : "Editar cartão"}>
+          <div className={styles.panelHeader}>
+            <h2>{editor === "novo" ? "Novo cartão" : `Editar ${editor.nome}`}</h2>
+            <button onClick={() => setEditor(null)} aria-label="Fechar edição" className={styles.closeButton}>×</button>
           </div>
           <CartaoForm
             cartao={editor === "novo" ? undefined : editor}
@@ -179,89 +181,91 @@ export default function CartoesManager({ cartoes }: { cartoes: CartaoResumo[] })
         </section>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <section aria-label="Cartões ativos" className={styles.cardsGrid}>
         {ativos.map((cartao) => {
           const percentual = Math.min(100, Math.max(0, cartao.limiteUsado / Math.max(Number(cartao.limite), 0.01) * 100));
+          const cardStyle = { "--card-accent": cartao.cor } as CSSProperties;
           return (
-            <article key={cartao.id} className="rounded-ff-lg border border-border bg-surface p-5">
-              <div className="mb-3 flex items-start justify-between gap-3">
-                <Link href={`/cartoes/${cartao.id}`} className="flex min-w-0 items-center gap-3 hover:text-primary">
-                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: cartao.cor }} />
-                  <span className="truncate font-extrabold text-foreground">{cartao.nome}</span>
+            <article key={cartao.id} className={styles.creditCard} style={cardStyle}>
+              <div className={styles.cardTop}>
+                <Link href={`/cartoes/${cartao.id}`} className={styles.cardIdentity}>
+                  <span className={styles.cardIcon} aria-hidden>
+                    <svg width="21" height="21" viewBox="0 0 24 24" fill="none"><rect x="2.5" y="5" width="19" height="14" rx="3" stroke="currentColor" strokeWidth="1.7"/><path d="M3 9h18M6.5 15h4" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round"/></svg>
+                  </span>
+                  <span className={styles.cardName}>{cartao.nome}</span>
                 </Link>
-                <button onClick={() => setEditor(cartao)} className="rounded-ff-sm bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground">Editar</button>
+                <button onClick={() => setEditor(cartao)} className={styles.secondaryButton}>Editar</button>
               </div>
-              <Link href={`/cartoes/${cartao.id}`} className="block">
-                <div className="mb-1 flex items-baseline justify-between">
-                  <span data-private-value="true" className="text-lg font-extrabold text-foreground">{formatarReais(cartao.limiteUsado)}</span>
-                  <span data-private-value="true" className="text-xs text-foreground-muted">de {formatarReais(Number(cartao.limite))}</span>
+              <Link href={`/cartoes/${cartao.id}`} className={styles.cardLink} aria-label={`Abrir faturas do cartão ${cartao.nome}`}>
+                <span className={styles.usageLabel}>Limite utilizado</span>
+                <div className={styles.invoiceHeadline}>
+                  <span data-private-value="true" className={styles.usageValue}>{formatarReais(cartao.limiteUsado)}</span>
+                  <span data-private-value="true" className={styles.usageLabel}>de {formatarReais(Number(cartao.limite))}</span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
-                  <div className="h-full rounded-full" style={{ width: `${percentual}%`, backgroundColor: percentual >= 80 ? "#EE6B63" : cartao.cor }} />
+                <div className={styles.usageTrack} aria-label={`${percentual.toFixed(0)}% do limite utilizado`}>
+                  <div className={styles.usageFill} style={{ width: `${percentual}%`, backgroundColor: percentual >= 80 ? "#EE6B63" : cartao.cor }} />
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                  <div className="rounded-ff-sm bg-surface-muted p-2">
-                    <span className="block text-foreground-muted">Fatura atual</span>
-                    <strong data-private-value="true" className="text-foreground">{formatarReais(cartao.faturaAtual)}</strong>
+                <div className={styles.metricGrid}>
+                  <div className={styles.metric}>
+                    <span className={styles.metricLabel}>Fatura atual {cartao.faturaAtualPaga && <em className={styles.invoicePaidBadge}>Paga</em>}</span>
+                    <strong data-private-value="true">{formatarReais(cartao.faturaAtual)}</strong>
                   </div>
-                  <div className="rounded-ff-sm bg-surface-muted p-2">
-                    <span className="block text-foreground-muted">Próxima fatura</span>
-                    <strong data-private-value="true" className="text-foreground">{formatarReais(cartao.proximaFatura)}</strong>
+                  <div className={styles.metric}>
+                    <span className={styles.metricLabel}>Próxima fatura</span>
+                    <strong data-private-value="true">{formatarReais(cartao.proximaFatura)}</strong>
                   </div>
                 </div>
-                <p className="mt-2 text-xs text-foreground-muted">Fecha dia {cartao.dia_fechamento} · Vence dia {cartao.dia_vencimento}</p>
+                <p className={styles.metaText}>Fecha dia {cartao.dia_fechamento} · Vence dia {cartao.dia_vencimento}</p>
               </Link>
-              <div className="mt-3 border-t border-border pt-3">
+              <div className={styles.cardActions}>
                 {confirmar?.id === cartao.id ? (
-                  <div className="rounded-ff-sm bg-surface-muted p-3 text-xs">
-                    <p className="mb-2 font-semibold text-foreground">
+                  <div className={styles.confirmBox} role="alertdialog" aria-label="Confirmar alteração do cartão">
+                    <p>
                       {confirmar.acao === "delete_card"
                         ? "Excluir? Se houver compras ou pagamentos, o cartão será arquivado e o histórico preservado."
                         : "Arquivar este cartão? Novas compras ficarão bloqueadas."}
                     </p>
-                    <div className="flex gap-3">
+                    <div className={styles.inlineActions}>
                       <form action={(formData) => executar(alterarEstadoCartao, formData, "Cartão atualizado.")}>
                         <RequestId />
                         <input type="hidden" name="card_id" value={cartao.id} />
                         <input type="hidden" name="operacao" value={confirmar.acao} />
-                        <button disabled={pending} className="font-bold text-red">Confirmar</button>
+                        <button disabled={pending} className={styles.dangerTextButton}>Confirmar</button>
                       </form>
-                      <button onClick={() => setConfirmar(null)} className="font-bold text-foreground-muted">Cancelar</button>
+                      <button onClick={() => setConfirmar(null)} className={styles.textButton}>Cancelar</button>
                     </div>
                   </div>
                 ) : (
-                  <div className="flex justify-end gap-3">
-                    <button onClick={() => setConfirmar({ id: cartao.id, acao: "archive_card" })} className="text-xs font-semibold text-foreground-muted">Arquivar</button>
-                    <button onClick={() => setConfirmar({ id: cartao.id, acao: "delete_card" })} className="text-xs font-semibold text-red">Excluir</button>
+                  <div className={styles.inlineActions}>
+                    <button onClick={() => setConfirmar({ id: cartao.id, acao: "archive_card" })} className={styles.textButton}>Arquivar</button>
+                    <button onClick={() => setConfirmar({ id: cartao.id, acao: "delete_card" })} className={styles.dangerTextButton}>Excluir</button>
                   </div>
                 )}
               </div>
             </article>
           );
         })}
-      </div>
-
-      {ativos.length === 0 && (
-        <div className="rounded-ff-lg border border-dashed border-border p-8 text-center text-sm text-foreground-muted">Nenhum cartão ativo.</div>
-      )}
+        {ativos.length === 0 && (
+          <div className={styles.emptyState}>Nenhum cartão ativo. Crie o primeiro para acompanhar suas faturas.</div>
+        )}
+      </section>
 
       {arquivados.length > 0 && (
-        <details className="mt-6 rounded-ff-lg border border-border bg-surface p-4">
-          <summary className="cursor-pointer font-bold text-foreground">Cartões arquivados ({arquivados.length})</summary>
-          <div className="mt-3 space-y-2">
+        <details className={styles.archivePanel}>
+          <summary>Cartões arquivados ({arquivados.length})</summary>
+          <div className={styles.archiveList}>
             {arquivados.map((cartao) => (
-              <div key={cartao.id} className="rounded-ff-sm bg-surface-muted px-3 py-2">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <Link href={`/cartoes/${cartao.id}`} className="font-semibold text-foreground hover:text-primary">{cartao.nome}</Link>
-                  <div className="flex items-center gap-3">
-                    <form action={(formData) => executar(alterarEstadoCartao, formData, "Cartão reativado.")}>
-                      <RequestId />
-                      <input type="hidden" name="card_id" value={cartao.id} />
-                      <input type="hidden" name="operacao" value="reactivate_card" />
-                      <button disabled={pending} className="text-xs font-bold text-primary">Reativar</button>
-                    </form>
-                  </div>
-                </div>
+              <div key={cartao.id} className={styles.archiveItem} style={{ "--card-accent": cartao.cor } as CSSProperties}>
+                <Link href={`/cartoes/${cartao.id}`} className={styles.archivedCardLink}>
+                  <span className={styles.archiveAccent} aria-hidden />
+                  {cartao.nome}
+                </Link>
+                <form action={(formData) => executar(alterarEstadoCartao, formData, "Cartão reativado.")}>
+                  <RequestId />
+                  <input type="hidden" name="card_id" value={cartao.id} />
+                  <input type="hidden" name="operacao" value="reactivate_card" />
+                  <button disabled={pending} className={styles.textButton}>Reativar</button>
+                </form>
               </div>
             ))}
           </div>

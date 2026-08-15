@@ -1,21 +1,28 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import FinancialIcon from "@/components/ui/financial-icon";
 import { formatarReais } from "@/lib/format";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
 import {
   calcularSaldosPorConta,
   dataEfetivaTransacao,
+  descricaoVisivel,
   isMovimentoObjetivo,
   isPagamentoFatura,
   resumirFluxoMensal,
   transacoesNoEscopo,
 } from "@/lib/transacoes";
 import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
+import styles from "./home-dashboard.module.css";
 
 type Props = {
   userId: string;
+  displayName: string;
+  greeting: string;
   month: string;
   today: string;
   accounts: Conta[];
@@ -24,11 +31,28 @@ type Props = {
   invoiceItems: FaturaItem[];
 };
 
-function monthTitle(month: string) {
+type IconName = "arrow-left-right" | "bell" | "calendar" | "category" | "chevron" | "income" | "plus" | "receipt" | "sparkles" | "wallet";
+
+function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
+  const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
+  if (name === "bell") return <svg {...common}><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>;
+  if (name === "calendar") return <svg {...common}><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M8 3v4M16 3v4M3 10h18"/></svg>;
+  if (name === "arrow-left-right") return <svg {...common}><path d="m7 7-4 4 4 4M3 11h14M17 3l4 4-4 4M21 7H7"/></svg>;
+  if (name === "income") return <svg {...common}><path d="M12 3v14M7 12l5 5 5-5M5 21h14"/></svg>;
+  if (name === "receipt") return <svg {...common}><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z"/><path d="M9 8h6M9 12h6"/></svg>;
+  if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
+  if (name === "category") return <svg {...common}><path d="M11 3a9 9 0 1 0 9 9h-9V3Z"/><path d="M15 3.8A9 9 0 0 1 20.2 9H15V3.8Z"/></svg>;
+  if (name === "sparkles") return <svg {...common}><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3ZM18.5 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3ZM5 13l.8 2.5 2.5.8-2.5.8L5 19.5l-.8-2.4-2.5-.8 2.5-.8L5 13Z"/></svg>;
+  if (name === "wallet") return <svg {...common}><path d="M4 6.5h14a2 2 0 0 1 2 2V19H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12"/><path d="M15 11h6v5h-6a2.5 2.5 0 0 1 0-5Z"/></svg>;
+  if (name === "chevron") return <svg {...common}><path d="m9 18 6-6-6-6"/></svg>;
+  return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
+}
+
+function monthTitle(month: string, compact = false) {
   const [year, number] = month.split("-").map(Number);
-  const label = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "America/Sao_Paulo" })
+  const label = new Intl.DateTimeFormat("pt-BR", { month: compact ? "short" : "long", year: "numeric", timeZone: "America/Sao_Paulo" })
     .format(new Date(Date.UTC(year, number - 1, 10)));
-  return label.charAt(0).toUpperCase() + label.slice(1);
+  return label.charAt(0).toUpperCase() + label.slice(1).replace(".", "");
 }
 
 function shiftMonth(month: string, delta: number) {
@@ -42,16 +66,39 @@ function endOfMonth(month: string) {
   return `${month}-${String(new Date(Date.UTC(year, number, 0)).getUTCDate()).padStart(2, "0")}`;
 }
 
-function SummaryValue({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "income" | "expense" | "neutral" }) {
-  return <div><p className="text-[11px] font-bold uppercase tracking-wide text-foreground-muted">{label}</p><p data-private-value="true" className={`mt-1 text-lg font-extrabold ${tone === "income" ? "text-primary" : tone === "expense" ? "text-red" : "text-foreground"}`}>{formatarReais(value)}</p></div>;
+function shortDate(iso: string) {
+  const date = new Date(`${iso}T12:00:00-03:00`);
+  return {
+    day: new Intl.DateTimeFormat("pt-BR", { day: "2-digit", timeZone: "America/Sao_Paulo" }).format(date),
+    month: new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "America/Sao_Paulo" }).format(date).replace(".", "").toUpperCase(),
+  };
 }
 
-export default function HomeDashboard({ userId, month, today, accounts, transactions, categories, invoiceItems }: Props) {
+function safeColor(value?: string | null) {
+  return value && /^(#[0-9a-f]{3,8}|rgb\([\d\s,.%]+\)|hsl\([\d\s,.%]+\))$/i.test(value) ? value : "#16966e";
+}
+
+function SummaryValue({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "income" | "expense" | "neutral" }) {
+  return <div className={styles.summaryValue}>
+    <p className={`${styles.summaryLabel} ${tone === "income" ? styles.incomeText : tone === "expense" ? styles.expenseText : ""}`}>{label}</p>
+    <p data-private-value="true" className={`${styles.summaryAmount} ${tone === "expense" ? styles.expenseText : ""}`}>{formatarReais(value)}</p>
+  </div>;
+}
+
+export default function HomeDashboard({ userId, displayName, greeting, month, today, accounts, transactions, categories, invoiceItems }: Props) {
+  const router = useRouter();
+  const [monthPending, startMonthTransition] = useTransition();
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.arquivado), [accounts]);
   const activeIds = useMemo(() => new Set(activeAccounts.map((account) => account.id)), [activeAccounts]);
   const [selectedIds, setSelectedIds] = useState<number[]>(() => activeAccounts.map((account) => account.id));
   const [draftIds, setDraftIds] = useState<number[]>(() => activeAccounts.map((account) => account.id));
   const [selectorOpen, setSelectorOpen] = useState(false);
+  const [monthMenuOpen, setMonthMenuOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => Number(month.slice(0, 4)));
+  const [notificationsSeen, setNotificationsSeen] = useState(false);
+  const accountSelectorRef = useRef<HTMLDivElement>(null);
+  const accountSelectorButtonRef = useRef<HTMLButtonElement>(null);
+  const accountSelectorPanelRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     try {
@@ -68,6 +115,56 @@ export default function HomeDashboard({ userId, month, today, accounts, transact
     } catch { /* Preferência inválida: mantém todas as contas. */ }
   }, [activeIds, userId]);
 
+  useEffect(() => {
+    if (!selectorOpen && !monthMenuOpen) return;
+    const closeMenus = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        const shouldRestoreAccountFocus = selectorOpen;
+        setSelectorOpen(false);
+        setMonthMenuOpen(false);
+        if (shouldRestoreAccountFocus) accountSelectorButtonRef.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", closeMenus);
+    return () => window.removeEventListener("keydown", closeMenus);
+  }, [monthMenuOpen, selectorOpen]);
+
+  useEffect(() => {
+    if (!selectorOpen) return;
+    const frame = window.requestAnimationFrame(() => accountSelectorPanelRef.current?.focus());
+    const closeOutside = (event: PointerEvent) => {
+      if (event.target instanceof Node && !accountSelectorRef.current?.contains(event.target)) {
+        setSelectorOpen(false);
+      }
+    };
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(accountSelectorPanelRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])',
+      ) ?? []);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (document.activeElement === accountSelectorPanelRef.current || !accountSelectorPanelRef.current?.contains(document.activeElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+      } else if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    window.addEventListener("keydown", trapFocus);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", closeOutside);
+      window.removeEventListener("keydown", trapFocus);
+    };
+  }, [selectorOpen]);
+
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const selectedAccounts = useMemo(() => activeAccounts.filter((account) => selectedSet.has(account.id)), [activeAccounts, selectedSet]);
   const scoped = useMemo(() => transacoesNoEscopo(transactions, selectedSet, selectedAccounts.length), [selectedAccounts.length, selectedSet, transactions]);
@@ -80,6 +177,8 @@ export default function HomeDashboard({ userId, month, today, accounts, transact
     let predictedBalance = selectedAccounts.reduce((sum, account) => sum + Number(account.saldo_inicial), 0);
     const byCategory = new Map<number | null, { realized: number; expected: number }>();
     const monthFinancialTransactions: Transacao[] = [];
+    let realizedIncome = 0;
+    let realizedExpense = 0;
 
     for (const transaction of scoped) {
       const value = Number(transaction.valor);
@@ -89,22 +188,19 @@ export default function HomeDashboard({ userId, month, today, accounts, transact
         predictedBalance += transaction.tipo === "receita" ? value : -value;
       }
       if (!effectiveDate.startsWith(month)) continue;
-      // Transferências internas já foram anuladas por transacoesNoEscopo.
-      // Quando cruzam a seleção, representam entrada/saída nesta visão.
       if (isMovimentoObjetivo(transaction.descricao)) continue;
       if (allActiveSelected && isPagamentoFatura(transaction.descricao)) continue;
       monthFinancialTransactions.push(transaction);
+      if (transaction.status === "paga") {
+        if (transaction.tipo === "receita") realizedIncome += value;
+        else realizedExpense += value;
+      }
       const aggregate = byCategory.get(transaction.categoria_id) ?? { realized: 0, expected: 0 };
       aggregate.expected += transaction.tipo === "despesa" ? value : 0;
       if (transaction.tipo === "despesa" && transaction.status === "paga") aggregate.realized += value;
       byCategory.set(transaction.categoria_id, aggregate);
     }
 
-    // Compras no cartão não possuem conta bancária vinculada. Elas entram
-    // apenas quando a Home representa todas as contas ativas; numa seleção
-    // parcial, o pagamento da fatura continua sendo a saída atribuível à conta.
-    // Na visão consolidada, o pagamento é ignorado acima e a compra é
-    // contabilizada uma única vez, na data em que ocorreu e em sua categoria.
     if (allActiveSelected) {
       for (const item of invoicePurchasesInMonth(invoiceItems, month)) {
         const value = Number(item.valor);
@@ -122,30 +218,67 @@ export default function HomeDashboard({ userId, month, today, accounts, transact
       expense: monthSummary.despesas,
       monthBalance: monthSummary.balancoRealizado,
       predictedBalance,
+      realizedIncome,
+      realizedExpense,
       byCategory,
       balances,
     };
   }, [activeAccounts, allActiveSelected, invoiceItems, month, scoped, selectedAccounts, transactions]);
 
+  const nextDate = useMemo(() => {
+    const date = new Date(`${today}T12:00:00-03:00`);
+    date.setDate(date.getDate() + 7);
+    return date.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  }, [today]);
+
   const alerts = useMemo(() => {
     const result = { overdue: 0, today: 0, next: 0 };
-    const nextDate = new Date(`${today}T12:00:00-03:00`);
-    nextDate.setDate(nextDate.getDate() + 7);
-    const nextIso = nextDate.toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
     for (const transaction of scoped) {
       if (transaction.status !== "pendente") continue;
       if (transaction.data_vencimento < today) result.overdue += 1;
       else if (transaction.data_vencimento === today) result.today += 1;
-      else if (transaction.data_vencimento <= nextIso) result.next += 1;
+      else if (transaction.data_vencimento <= nextDate) result.next += 1;
     }
     return result;
-  }, [scoped, today]);
+  }, [nextDate, scoped, today]);
+
+  const alertTotal = alerts.overdue + alerts.today + alerts.next;
+  const notificationSignature = `${today}:${alerts.overdue}:${alerts.today}:${alerts.next}`;
+
+  useEffect(() => {
+    const seen = localStorage.getItem(`finflow:web:home-notifications:${userId}`) === notificationSignature;
+    // Preferência externa carregada depois da hidratação.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setNotificationsSeen(seen);
+  }, [notificationSignature, userId]);
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
-  const categoryRows = [...calculations.byCategory.entries()]
+  const categoryRows = useMemo(() => [...calculations.byCategory.entries()]
     .filter(([, values]) => values.expected > 0)
     .sort((a, b) => b[1].expected - a[1].expected)
-    .slice(0, 5);
+    .slice(0, 5), [calculations.byCategory]);
+  const categoryTotal = categoryRows.reduce((sum, [, values]) => sum + values.expected, 0);
+  const donutBackground = useMemo(() => {
+    if (!categoryTotal) return "conic-gradient(var(--home-chart-empty) 0 100%)";
+    let cursor = 0;
+    const segments = categoryRows.map(([categoryId, values]) => {
+      const start = cursor;
+      cursor += (values.expected / categoryTotal) * 100;
+      const color = safeColor(categoryId ? categoriesById.get(categoryId)?.cor : "#81918c");
+      return `${color} ${start.toFixed(2)}% ${cursor.toFixed(2)}%`;
+    });
+    return `conic-gradient(${segments.join(",")})`;
+  }, [categoriesById, categoryRows, categoryTotal]);
+
+  const upcoming = useMemo(() => scoped
+    .filter((transaction) => transaction.status === "pendente" && transaction.data_vencimento >= today && transaction.data_vencimento <= nextDate)
+    .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento) || a.id - b.id)
+    .slice(0, 5), [nextDate, scoped, today]);
+
+  const expectedExpenseProgress = calculations.expense > 0 ? Math.min(100, Math.max(0, (calculations.realizedExpense / calculations.expense) * 100)) : 0;
+  const flowTotal = calculations.income + calculations.expense;
+  const incomeShare = flowTotal > 0 ? Math.max(0, Math.min(100, (calculations.income / flowTotal) * 100)) : 0;
+  const topCategory = categoryRows[0];
 
   function applySelection() {
     if (!draftIds.length) return;
@@ -154,31 +287,189 @@ export default function HomeDashboard({ userId, month, today, accounts, transact
     setSelectorOpen(false);
   }
 
-  return <div className="mx-auto max-w-6xl">
-    <section className="relative overflow-hidden rounded-ff-lg bg-gradient-to-br from-primary-dark via-primary to-mint p-5 text-white shadow-lg sm:p-7">
-      <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full border-[46px] border-white/8" /><div className="absolute -bottom-32 left-1/3 h-64 w-96 rounded-[50%] bg-white/8" />
-      <div className="relative flex flex-wrap items-start justify-between gap-4"><div><p className="text-sm font-bold text-white/75">Saldo geral das contas selecionadas</p><p data-private-value="true" className="mt-1 text-4xl font-black sm:text-5xl">{formatarReais(calculations.currentBalance)}</p><p data-private-value="true" className={`mt-2 text-sm font-bold ${calculations.predictedBalance < 0 ? "text-red-200" : "text-white/75"}`}>Saldo previsto no fim do mês: {formatarReais(calculations.predictedBalance)}</p></div>
-        <button type="button" onClick={() => { setDraftIds(selectedIds); setSelectorOpen((value) => !value); }} className="ff-focus rounded-full border border-white/30 bg-black/10 px-4 py-2 text-sm font-bold backdrop-blur">{selectedAccounts.length} {selectedAccounts.length === 1 ? "conta" : "contas"}</button></div>
-      {selectorOpen && <div className="relative mt-5 rounded-ff-md bg-surface p-4 text-foreground shadow-xl"><div className="flex items-center justify-between"><h2 className="font-extrabold">Contas desta visão</h2><Link href="/contas" className="text-xs font-bold text-primary">Gerenciar contas</Link></div><div className="mt-3 grid gap-2 sm:grid-cols-2">{activeAccounts.map((account) => <label key={account.id} className="flex items-center gap-3 rounded-ff-sm border border-border p-3"><input type="checkbox" checked={draftIds.includes(account.id)} onChange={() => setDraftIds((ids) => ids.includes(account.id) ? ids.filter((id) => id !== account.id) : [...ids, account.id])} /><span className="h-3 w-3 rounded-full" style={{ background: account.cor }} /><span className="font-semibold">{account.nome}</span></label>)}</div><button type="button" disabled={!draftIds.length} onClick={applySelection} className="mt-4 w-full rounded-ff-sm bg-primary px-4 py-2.5 font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Aplicar seleção</button></div>}
-    </section>
+  function navigateMonth(nextMonth: string) {
+    setMonthMenuOpen(false);
+    startMonthTransition(() => router.push(`/?month=${nextMonth}`));
+  }
 
-    <section className="relative z-10 -mt-2 grid grid-cols-2 gap-3 rounded-ff-lg border border-border bg-surface p-4 shadow-md sm:-mt-5 sm:grid-cols-4">
-      <Link href="/transacoes?new=1" className="ff-focus rounded-ff-md bg-primary-soft p-4 text-center font-extrabold text-primary-dark">↔<span className="mt-1 block text-xs">Transação</span></Link>
-      <Link href="/categorias" className="ff-focus rounded-ff-md bg-blue/10 p-4 text-center font-extrabold text-blue">◕<span className="mt-1 block text-xs">Categorias</span></Link>
-      <Link href="/cartoes" className="ff-focus rounded-ff-md bg-red/10 p-4 text-center font-extrabold text-red">▣<span className="mt-1 block text-xs">Cartões</span></Link>
-      <Link href="/assistente" className="ff-focus rounded-ff-md bg-purple/10 p-4 text-center font-extrabold text-purple">✦<span className="mt-1 block text-xs">IA</span></Link>
-    </section>
+  function markNotificationsSeen() {
+    localStorage.setItem(`finflow:web:home-notifications:${userId}`, notificationSignature);
+    setNotificationsSeen(true);
+  }
 
-    <div className="mt-6 grid gap-5 lg:grid-cols-[1.4fr_1fr]">
-      <div className="grid gap-5">
-        <section className="ff-card p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-extrabold">Visão do mês</h2><div className="flex items-center gap-2"><Link href={`/?month=${shiftMonth(month, -1)}`} aria-label="Mês anterior" className="ff-focus rounded-full border border-border px-3 py-1.5 font-bold">‹</Link><span className="min-w-32 text-center text-sm font-bold">{monthTitle(month)}</span><Link href={`/?month=${shiftMonth(month, 1)}`} aria-label="Próximo mês" className="ff-focus rounded-full border border-border px-3 py-1.5 font-bold">›</Link></div></div><div className="mt-5 grid grid-cols-3 gap-3"><SummaryValue label="Entradas" value={calculations.income} tone="income" /><SummaryValue label="Balanço atual" value={calculations.monthBalance} /><SummaryValue label="Saídas" value={calculations.expense} tone="expense" /></div></section>
-        <section className="ff-card p-5"><div className="flex items-center justify-between"><h2 className="font-extrabold">Gastos por categoria</h2><Link href="/relatorios" className="text-xs font-bold text-primary">Ver detalhes</Link></div><div className="mt-4 grid gap-4">{categoryRows.map(([categoryId, values]) => { const category = categoryId ? categoriesById.get(categoryId) : undefined; const maximum = Math.max(...categoryRows.map(([, row]) => row.expected), 1); return <div key={categoryId ?? "none"}><div className="flex justify-between gap-3 text-sm"><span className="font-semibold">{category?.nome ?? "Sem categoria"}</span><span data-private-value="true" className="font-bold">{formatarReais(values.realized)} <span className="font-normal text-foreground-muted">de {formatarReais(values.expected)}</span></span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-muted"><div className="h-full rounded-full" style={{ width: `${Math.max(3, (values.realized / maximum) * 100)}%`, background: category?.cor ?? "#6C7D77" }} /></div></div>; })}{!categoryRows.length && <p className="text-sm text-foreground-muted">Nenhuma despesa neste mês.</p>}</div></section>
+  return <div className={`${styles.root} ${monthPending ? styles.monthPending : ""}`} aria-busy={monthPending}>
+    <header className={styles.pageHeader}>
+      <div>
+        <p className={styles.eyebrow}>Seu painel financeiro</p>
+        <h1>{greeting}, <span>{displayName.split(/\s+/)[0]}</span></h1>
+      </div>
+      <div className={styles.headerControls}>
+        <div className={styles.monthNavigator}>
+          <button type="button" onClick={() => navigateMonth(shiftMonth(month, -1))} aria-label="Mês anterior">‹</button>
+          <button
+            type="button"
+            className={styles.monthPickerButton}
+            onClick={() => { setSelectorOpen(false); setPickerYear(Number(month.slice(0, 4))); setMonthMenuOpen((open) => !open); }}
+            aria-expanded={monthMenuOpen}
+            aria-controls="home-month-menu"
+          >
+            <Icon name="calendar" size={18} /> {monthTitle(month)}
+          </button>
+          <button type="button" onClick={() => navigateMonth(shiftMonth(month, 1))} aria-label="Próximo mês">›</button>
+          {monthMenuOpen && <div id="home-month-menu" className={styles.monthMenu}>
+            <div className={styles.yearNavigator}>
+              <button type="button" onClick={() => setPickerYear((year) => year - 1)} aria-label="Ano anterior">‹</button>
+              <strong>{pickerYear}</strong>
+              <button type="button" onClick={() => setPickerYear((year) => year + 1)} aria-label="Próximo ano">›</button>
+            </div>
+            <div className={styles.monthGrid}>
+              {Array.from({ length: 12 }, (_, index) => {
+                const value = `${pickerYear}-${String(index + 1).padStart(2, "0")}`;
+                return <button type="button" key={value} data-active={value === month || undefined} onClick={() => navigateMonth(value)}>{monthTitle(value, true)}</button>;
+              })}
+            </div>
+          </div>}
+        </div>
+        <Link href="/transacoes?quick=attention" onClick={markNotificationsSeen} className={styles.notificationButton} aria-label={`${alertTotal} avisos financeiros`}>
+          <Icon name="bell" />
+          {alertTotal > 0 && !notificationsSeen && <span className={styles.notificationBadge}>{alertTotal > 9 ? "9+" : alertTotal}</span>}
+        </Link>
+      </div>
+    </header>
+
+    <section className={styles.hero}>
+      <svg className={styles.heroWaves} viewBox="0 0 1200 280" preserveAspectRatio="none" aria-hidden="true">
+        <defs><linearGradient id="home-wave-a" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#55e0a4" stopOpacity=".58"/><stop offset="1" stopColor="#08745b" stopOpacity=".08"/></linearGradient><linearGradient id="home-wave-b" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#0bb887" stopOpacity=".42"/><stop offset="1" stopColor="#0b342d" stopOpacity="0"/></linearGradient></defs>
+        <path className={styles.heroWavePrimary} d="M-70 55C130 12 283-38 409 39c107 65 91 151 237 142 136-9 227-135 406-126 88 4 152 38 220 91v161H-70Z" fill="url(#home-wave-a)"/>
+        <path className={styles.heroWaveSecondary} d="M-30 125C165 85 258 15 405 96c113 62 177 147 333 104 137-38 227-124 484-71v178H-30Z" fill="url(#home-wave-b)"/>
+        <path className={styles.heroWaveLine} d="M34 44c207-38 339 6 425 81 93 82 202 109 341 45 114-53 211-96 383-51" fill="none" stroke="#75e8b7" strokeOpacity=".22"/>
+      </svg>
+      <div className={styles.heroBalance}>
+        <div className={styles.balanceLabelRow}>
+          <span>Saldo geral</span>
+        </div>
+        <p data-private-value="true" className={styles.balanceValue}>{formatarReais(calculations.currentBalance)}</p>
+        <div className={styles.heroMeta}>
+          <span data-private-value="true" className={calculations.monthBalance < 0 ? styles.negativeChip : styles.positiveChip}>
+            {calculations.monthBalance >= 0 ? "↗" : "↘"} {formatarReais(Math.abs(calculations.monthBalance))} realizado no mês
+          </span>
+          <div ref={accountSelectorRef} className={styles.accountSelectorWrap}>
+            <button ref={accountSelectorButtonRef} type="button" onClick={() => { setMonthMenuOpen(false); setDraftIds(selectedIds); setSelectorOpen((value) => !value); }} className={styles.accountSelectorButton} aria-haspopup="dialog" aria-expanded={selectorOpen} aria-controls="home-account-selector">
+              <Icon name="wallet" size={17} /> {selectedAccounts.length} {selectedAccounts.length === 1 ? "conta" : "contas"} <span aria-hidden="true">⌄</span>
+            </button>
+            {selectorOpen && <>
+              <button type="button" tabIndex={-1} className={styles.selectorBackdrop} onClick={() => setSelectorOpen(false)} aria-label="Fechar seleção de contas" />
+              <section ref={accountSelectorPanelRef} id="home-account-selector" role="dialog" tabIndex={-1} className={styles.selectorPanel} aria-label="Selecionar contas desta visão">
+                <div className={styles.selectorHeader}><div><p>Visão da página inicial</p><h2>Quais contas exibir?</h2></div><button type="button" onClick={() => { setSelectorOpen(false); accountSelectorButtonRef.current?.focus(); }} aria-label="Fechar seleção">×</button></div>
+                <p className={styles.selectorDescription}>Esta escolha altera apenas os indicadores da tela inicial.</p>
+                <div className={styles.selectorActions}><button type="button" onClick={() => setDraftIds(activeAccounts.map((account) => account.id))}>Selecionar todas</button><button type="button" onClick={() => setDraftIds([])}>Limpar</button></div>
+                <div className={styles.selectorList}>{activeAccounts.map((account) => <label key={account.id}>
+                  <input type="checkbox" checked={draftIds.includes(account.id)} onChange={() => setDraftIds((ids) => ids.includes(account.id) ? ids.filter((id) => id !== account.id) : [...ids, account.id])} />
+                  <span className={styles.accountDot} style={{ backgroundColor: safeColor(account.cor) }} />
+                  <span>{account.nome}</span>
+                  <strong data-private-value="true">{formatarReais(calculations.balances.get(account.id) ?? Number(account.saldo_inicial))}</strong>
+                </label>)}</div>
+                {!activeAccounts.length && <Link href="/contas" className={styles.emptySelector}>Crie sua primeira conta para começar</Link>}
+                <div className={styles.selectorFooter}><Link href="/contas">Gerenciar contas</Link><button type="button" disabled={!draftIds.length} onClick={applySelection}>Aplicar seleção</button></div>
+              </section>
+            </>}
+          </div>
+        </div>
       </div>
 
-      <div className="grid content-start gap-5">
-        <section className="ff-card p-5"><div className="flex items-center justify-between"><h2 className="font-extrabold">Avisos</h2><span className={`h-2.5 w-2.5 rounded-full ${alerts.overdue + alerts.today + alerts.next > 0 ? "bg-red" : "bg-primary"}`} /></div><div className="mt-4 grid gap-2"><Link href="/transacoes?quick=overdue" className="flex justify-between rounded-ff-sm bg-surface-muted p-3 text-sm"><span>Atrasados</span><strong className={alerts.overdue ? "text-red" : "text-foreground-muted"}>{alerts.overdue}</strong></Link><Link href="/transacoes?quick=today" className="flex justify-between rounded-ff-sm bg-surface-muted p-3 text-sm"><span>Vencendo hoje</span><strong>{alerts.today}</strong></Link><Link href="/transacoes?quick=next7" className="flex justify-between rounded-ff-sm bg-surface-muted p-3 text-sm"><span>Próximos 7 dias</span><strong>{alerts.next}</strong></Link></div></section>
-        <section className="ff-card p-5"><div className="flex items-center justify-between"><h2 className="font-extrabold">Contas selecionadas</h2><Link href="/contas" className="text-xs font-bold text-primary">Gerenciar</Link></div><div className="mt-4 grid gap-3">{selectedAccounts.map((account) => <div key={account.id} className="rounded-ff-md p-4 text-white" style={{ background: account.cor }}><p className="text-sm font-semibold text-white/85">{account.nome}</p><p data-private-value="true" className="mt-1 text-xl font-extrabold">{formatarReais(calculations.balances.get(account.id) ?? Number(account.saldo_inicial))}</p></div>)}{!selectedAccounts.length && <p className="text-sm text-foreground-muted">Selecione ao menos uma conta.</p>}</div></section>
+      <div className={styles.heroActions}>
+        <Link href="/transacoes?new=1&kind=transferencia" className={styles.actionLink}><span><Icon name="arrow-left-right" size={27}/></span><strong>Transferir</strong></Link>
+        <Link href="/transacoes?new=1&kind=despesa" className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></Link>
+        <Link href="/transacoes?new=1&kind=receita" className={styles.actionLink}><span><Icon name="plus" size={29}/></span><strong>Receber</strong></Link>
       </div>
+    </section>
+
+    <div className={styles.dashboardGrid}>
+      <div className={styles.primaryColumn}>
+        <section className={`${styles.panel} ${styles.monthPanel}`}>
+          <div className={styles.panelHeader}>
+            <div><p className={styles.sectionKicker}>Resumo financeiro</p><h2>Visão do mês</h2></div>
+            <span>{monthTitle(month)}</span>
+          </div>
+          <div className={styles.summaryGrid}>
+            <SummaryValue label="Entradas" value={calculations.income} tone="income" />
+            <SummaryValue label="Balanço atual" value={calculations.monthBalance} />
+            <SummaryValue label="Saídas" value={calculations.expense} tone="expense" />
+          </div>
+          <div className={styles.flowBar} aria-label={flowTotal > 0 ? `${incomeShare.toFixed(0)}% do fluxo é entrada` : "Ainda não há movimentações no mês"}>
+            {flowTotal > 0 ? <><span className={styles.flowIncome} style={{ width: `${incomeShare}%` }} /><span className={styles.flowExpense} style={{ width: `${100 - incomeShare}%` }} /></> : <span className={styles.flowEmpty} />}
+          </div>
+          <div className={styles.progressLegend}>
+            <span><i className={styles.realizedLegend}/><span data-private-value="true">Realizado: {formatarReais(calculations.monthBalance)}</span></span>
+            <span><i className={styles.expectedLegend}/><span data-private-value="true">Saldo previsto: {formatarReais(calculations.predictedBalance)}</span></span>
+            <strong>{expectedExpenseProgress.toFixed(0)}% das saídas previstas realizado</strong>
+          </div>
+          <div className={styles.accountsHeader}><h3>Contas desta visão</h3></div>
+          <div className={styles.accountsRail}>
+            {selectedAccounts.map((account) => <article key={account.id} className={styles.accountCard} style={{ "--account-color": safeColor(account.cor) } as CSSProperties}>
+              <span className={styles.accountIcon}><Icon name="wallet"/></span>
+              <span className={styles.accountName}>{account.nome}</span>
+              <small>{account.compartilhado ? "Conta compartilhada" : "Conta individual"}</small>
+              <strong data-private-value="true">{formatarReais(calculations.balances.get(account.id) ?? Number(account.saldo_inicial))}</strong>
+            </article>)}
+            {!selectedAccounts.length && <div className={styles.emptyState}><Icon name="wallet"/><p>Nenhuma conta selecionada.</p><button type="button" onClick={() => setSelectorOpen(true)}>Selecionar contas</button></div>}
+          </div>
+        </section>
+
+        <section className={`${styles.panel} ${styles.categoryPanel}`}>
+          <div className={styles.panelHeader}>
+            <div><p className={styles.sectionKicker}>Distribuição mensal</p><h2>Gastos por categoria</h2></div>
+            <Link href="/relatorios">Ver relatório <Icon name="chevron" size={15}/></Link>
+          </div>
+          {categoryRows.length ? <div className={styles.categoryContent}>
+            <div className={styles.donutWrap}>
+              <div className={styles.donut} style={{ background: donutBackground }}><span><small>Total</small><strong data-private-value="true">{formatarReais(categoryTotal)}</strong></span></div>
+            </div>
+            <div className={styles.categoryRows}>{categoryRows.map(([categoryId, values]) => {
+              const category = categoryId ? categoriesById.get(categoryId) : undefined;
+              const percentage = categoryTotal ? (values.expected / categoryTotal) * 100 : 0;
+              const color = safeColor(category?.cor ?? "#81918c");
+              return <div className={styles.categoryRow} key={categoryId ?? "none"}>
+                <span className={styles.categoryName}><i style={{ backgroundColor: color }}/>{category?.nome ?? "Sem categoria"}</span>
+                <span className={styles.categoryTrack}><i style={{ width: `${Math.max(3, percentage)}%`, backgroundColor: color }}/></span>
+                <strong data-private-value="true">{formatarReais(values.expected)}</strong>
+                <em>{percentage.toFixed(0)}%</em>
+              </div>;
+            })}</div>
+          </div> : <div className={styles.emptyChart}><Icon name="category" size={28}/><p>Nenhuma despesa registrada neste mês.</p><Link href="/transacoes?new=1&kind=despesa">Adicionar despesa</Link></div>}
+        </section>
+      </div>
+
+      <aside className={styles.secondaryColumn}>
+        <section className={`${styles.panel} ${styles.upcomingPanel}`}>
+          <div className={styles.panelHeader}>
+            <div><p className={styles.sectionKicker}>Agenda financeira</p><h2>Próximos 7 dias</h2></div>
+            <Link href="/transacoes?quick=next7">Ver todos</Link>
+          </div>
+          <div className={styles.upcomingList}>{upcoming.map((transaction) => {
+            const date = shortDate(transaction.data_vencimento);
+            const category = transaction.categoria_id ? categoriesById.get(transaction.categoria_id) : undefined;
+            return <Link href={`/transacoes?quick=next7&focus=${transaction.id}`} key={transaction.id} className={styles.upcomingItem}>
+              <span className={styles.dateTile}><strong>{date.day}</strong><small>{date.month}</small></span>
+              <span className={styles.upcomingIcon} style={{ "--item-color": safeColor(category?.cor ?? (transaction.tipo === "receita" ? "#56d39b" : "#ee6b63")) } as CSSProperties}>{category?.icone ? <FinancialIcon name={category.icone} /> : transaction.tipo === "receita" ? <Icon name="income"/> : <Icon name="receipt"/>}</span>
+              <span className={styles.upcomingInfo}><strong>{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small>{category?.nome ?? (transaction.tipo === "receita" ? "Receita" : "Despesa")}</small></span>
+              <strong data-private-value="true" className={transaction.tipo === "receita" ? styles.incomeText : styles.expenseText}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>
+            </Link>;
+          })}{!upcoming.length && <div className={styles.emptyUpcoming}><span>✓</span><div><strong>Nenhum compromisso próximo</strong><p>Seus próximos sete dias estão livres.</p></div></div>}</div>
+        </section>
+
+        <Link href={alerts.overdue ? "/transacoes?quick=overdue" : alerts.today ? "/transacoes?quick=today" : "/transacoes?quick=next7"} className={`${styles.panel} ${styles.alertCard}`}>
+          <span className={alerts.overdue ? styles.alertDanger : styles.alertOkay}><Icon name="bell"/></span>
+          <div><h2>{alerts.overdue ? `${alerts.overdue} ${alerts.overdue === 1 ? "lançamento atrasado" : "lançamentos atrasados"}` : alerts.today ? `${alerts.today} vencendo hoje` : "Agenda sob controle"}</h2><p>{alerts.overdue ? "Revise agora para manter seu planejamento atualizado." : alerts.today ? "Acompanhe os compromissos de hoje." : "Nenhum agendamento vencido nas contas selecionadas."}</p></div>
+          <Icon name="chevron"/>
+        </Link>
+
+        <section className={`${styles.panel} ${styles.insightCard}`}>
+          <div className={styles.insightTitle}><div><span><Icon name="sparkles"/></span><div><p className={styles.sectionKicker}>Leitura dos seus dados</p><h2>Insight financeiro</h2></div></div><small>IA</small></div>
+          {topCategory ? <p>O maior gasto previsto do mês é <strong>{topCategory[0] ? categoriesById.get(topCategory[0])?.nome ?? "Sem categoria" : "Sem categoria"}</strong>, com <span data-private-value="true">{formatarReais(topCategory[1].expected)}</span> ({categoryTotal ? ((topCategory[1].expected / categoryTotal) * 100).toFixed(0) : 0}% do total).</p> : <p>Registre suas movimentações para receber uma leitura mais completa da sua rotina financeira.</p>}
+          <Link href="/assistente?prompt=insight-financeiro">Pedir análise à IA <Icon name="chevron" size={16}/></Link>
+        </section>
+      </aside>
     </div>
   </div>;
 }

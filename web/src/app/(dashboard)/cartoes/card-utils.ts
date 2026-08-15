@@ -1,4 +1,4 @@
-import { mesAtualEmSaoPaulo } from "@/lib/date";
+import { invoiceIsClosed, todayInSaoPaulo } from "@/lib/invoice-status";
 
 export function adicionarMeses(mes: string, quantidade: number): string {
   const [ano, numeroMes] = mes.split("-").map(Number);
@@ -20,13 +20,7 @@ export function dataVencimento(mes: string, dia: number): string {
 }
 
 export function faturaEstaFechada(mes: string, diaFechamento: number, hoje = new Date()): boolean {
-  const atual = mesAtualEmSaoPaulo(hoje);
-  if (mes < atual) return true;
-  if (mes > atual) return false;
-  const diaAtual = Number(new Intl.DateTimeFormat("en-CA", {
-    timeZone: "America/Sao_Paulo", day: "2-digit",
-  }).format(hoje));
-  return diaAtual > diaFechamento;
+  return invoiceIsClosed(mes, diaFechamento, todayInSaoPaulo(hoje));
 }
 
 export function mesDaCompra(dataCompra: string, diaFechamento: number): string {

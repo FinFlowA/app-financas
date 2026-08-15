@@ -3,7 +3,9 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import { createClient } from "@/lib/supabase/client";
+import styles from "./assistente.module.css";
 
 type Message = { id: string; role: "user" | "assistant"; text: string };
 type Quota = { plan: string; limit: number; remaining: number; model_limit: number; model_remaining: number };
@@ -68,7 +70,34 @@ function safeError(body: Record<string, unknown>) {
   return "A IA financeira está indisponível agora. Nenhuma alteração foi realizada.";
 }
 
-export default function AssistantChat({ userId, hasAccess, plan }: { userId: string; hasAccess: boolean; plan: string }) {
+async function publicFunctionError(error: unknown): Promise<string | null> {
+  if (!error || typeof error !== "object" || !("context" in error)) return null;
+  const context = (error as { context?: unknown }).context;
+  if (!(context instanceof Response)) return null;
+  try {
+    const payload: unknown = await context.clone().json();
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+    const row = payload as Record<string, unknown>;
+    const code = typeof row.error === "string" ? row.error : "";
+    const message = typeof row.message === "string" ? row.message.trim() : "";
+    if (!/^(?:AI_[A-Z0-9_]+|UNAUTHORIZED|INVALID_REQUEST)$/.test(code)) return null;
+    return message.length > 0 && message.length <= 500 ? message : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function AssistantChat({
+  userId,
+  hasAccess,
+  plan,
+  initialPrompt,
+}: {
+  userId: string;
+  hasAccess: boolean;
+  plan: string;
+  initialPrompt: string | null;
+}) {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const conversationKey = `finflow:web:ai-conversation:${userId}`;
@@ -81,12 +110,19 @@ export default function AssistantChat({ userId, hasAccess, plan }: { userId: str
   const [quota, setQuota] = useState<Quota | null>(null);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const consumedInitialPrompt = useRef<string | null>(null);
 
   async function invoke(body: Record<string, unknown>): Promise<AiResponse> {
     const { data, error } = await supabase.functions.invoke("finance-ai", { body });
-    if (error || !validResponse(data)) throw new Error(safeError(body));
+    if (error) {
+      if (validResponse(data) && data.error) throw new Error(data.message || safeError(body));
+      throw new Error(await publicFunctionError(error) ?? safeError(body));
+    }
+    if (!validResponse(data)) throw new Error(safeError(body));
     if (data.error) throw new Error(data.message || "A solicitação foi recusada com segurança.");
     return data;
   }
@@ -144,13 +180,29 @@ export default function AssistantChat({ userId, hasAccess, plan }: { userId: str
         if (response.quota) setQuota(response.quota);
       })
       .catch(() => setNotice("Não foi possível carregar o histórico. Você ainda pode tentar uma nova consulta."))
-      .finally(() => { if (active) setBusy(false); });
+      .finally(() => {
+        if (!active) return;
+        setBusy(false);
+        setHistoryReady(true);
+      });
     return () => { active = false; };
     // A função invoke usa o cliente estável desta montagem.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationKey, hasAccess, pendingKey]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }); }, [messages, pendingAction]);
+
+  useEffect(() => {
+    if (!hasAccess || !historyReady || busy || pendingAction || !initialPrompt) return;
+    if (consumedInitialPrompt.current === initialPrompt) return;
+    consumedInitialPrompt.current = initialPrompt;
+    void send(undefined, initialPrompt);
+    // Remove o atalho depois de enfileirar a pergunta para que um reload não
+    // consuma outra consulta da franquia do usuário.
+    router.replace("/assistente", { scroll: false });
+    // `send` usa o estado atual da conversa carregado imediatamente antes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy, hasAccess, historyReady, initialPrompt, pendingAction, router]);
 
   async function send(event?: FormEvent, suggested?: string) {
     event?.preventDefault();
@@ -181,7 +233,7 @@ export default function AssistantChat({ userId, hasAccess, plan }: { userId: str
   }
 
   async function clearHistory() {
-    if (busy || !globalThis.confirm("Apagar todo o histórico desta conversa?")) return;
+    if (busy) return;
     setBusy(true); setNotice(null);
     try {
       if (pendingAction) await invoke({ mode: "cancel", actionId: pendingAction.id });
@@ -190,20 +242,113 @@ export default function AssistantChat({ userId, hasAccess, plan }: { userId: str
       persistPendingAction(null); setConversationId(null);
       try { localStorage.removeItem(conversationKey); } catch { /* armazenamento indisponível */ }
       setMessages([{ id: "welcome", role: "assistant", text: WELCOME }]);
+      setConfirmClear(false);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Não foi possível limpar agora."); }
     finally { setBusy(false); }
   }
 
-  if (!hasAccess) return <div className="mx-auto max-w-3xl"><section className="rounded-ff-lg bg-gradient-to-br from-primary-dark to-primary p-7 text-white"><p className="text-sm font-bold uppercase text-white/70">IA FinFlow</p><h1 className="mt-2 text-3xl font-black">Seu controle financeiro por conversa</h1><p className="mt-3 text-white/80">A IA operacional está disponível nos planos Smart e Premium. Seu plano atual é {plan}.</p><Link href="/planos" className="mt-5 inline-block rounded-ff-sm bg-white px-5 py-2.5 font-extrabold text-primary-dark">Conhecer planos</Link></section></div>;
+  if (!hasAccess) {
+    return (
+      <div className={styles.page}>
+        <section className={styles.locked}>
+          <div className={styles.lockedIcon} aria-hidden>
+            <svg width="27" height="27" viewBox="0 0 24 24" fill="none"><path d="m12 2 1.4 4.6L18 8l-4.6 1.4L12 14l-1.4-4.6L6 8l4.6-1.4L12 2Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="m18.5 14 .8 2.7 2.7.8-2.7.8-.8 2.7-.8-2.7-2.7-.8 2.7-.8.8-2.7Z" fill="currentColor"/></svg>
+          </div>
+          <p className={styles.eyebrow}>IA FinFlow</p>
+          <h1>Seu controle financeiro por conversa</h1>
+          <p className={styles.lockedDescription}>A IA operacional está disponível nos planos Smart e Premium. Seu plano atual é {plan}. Todas as ações financeiras exigem sua revisão e confirmação.</p>
+          <Link href="/planos" className={styles.lockedCta}>Conhecer planos</Link>
+        </section>
+      </div>
+    );
+  }
 
   const quotaText = quota ? `${Math.max(0, quota.remaining)}/${quota.limit < 0 ? "∞" : quota.limit} ações · ${Math.max(0, quota.model_remaining)}/${quota.model_limit} consultas` : "Conexão protegida";
-  return <div className="mx-auto flex min-h-[calc(100vh-120px)] max-w-4xl flex-col overflow-hidden rounded-ff-lg border border-border bg-surface">
-    <header className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-primary-dark to-primary p-5 text-white"><div><p className="text-xs font-bold uppercase text-white/65">Somente finanças</p><h1 className="text-2xl font-black">IA FinFlow</h1><p className="text-xs text-white/75">{quotaText}</p></div><button type="button" onClick={clearHistory} disabled={busy} className="rounded-full border border-white/30 px-4 py-2 text-xs font-bold disabled:opacity-50">Limpar conversa</button></header>
-    <div className="flex-1 space-y-4 overflow-y-auto p-4 sm:p-6">{messages.map((message) => <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[88%] rounded-ff-md px-4 py-3 text-sm leading-relaxed ${message.role === "user" ? "bg-primary text-white" : "border border-border bg-surface-muted text-foreground"}`}>{message.text}</div></div>)}
-      {messages.length <= 1 && <div className="grid gap-2 sm:grid-cols-2">{["Qual é meu saldo atual?", "Quais despesas tenho neste mês?", "Registrar uma despesa", "Criar um objetivo"].map((suggestion) => <button type="button" key={suggestion} onClick={() => void send(undefined, suggestion)} className="rounded-ff-sm border border-border p-3 text-left text-sm font-semibold text-foreground hover:border-primary">{suggestion}</button>)}</div>}
-      {pendingAction && <section className="rounded-ff-lg border-2 border-primary bg-primary-soft p-5 text-foreground"><p className="text-xs font-black uppercase text-primary">Aguardando sua confirmação</p><h2 className="mt-1 text-lg font-black">{pendingAction.preview.title}</h2><p className="mt-2 text-sm">{pendingAction.preview.summary}</p>{pendingAction.preview.consequences.length > 0 && <ul className="mt-3 list-disc space-y-1 pl-5 text-xs text-foreground-muted">{pendingAction.preview.consequences.map((item) => <li key={item}>{item}</li>)}</ul>}<p className="mt-4 rounded-ff-sm bg-orange/15 p-3 text-xs font-bold text-orange">A ação só será executada pelo botão Confirmar abaixo.</p><div className="mt-4 grid grid-cols-2 gap-3"><button type="button" onClick={cancel} disabled={busy} className="rounded-ff-sm border border-border px-4 py-3 font-bold">Cancelar</button><button type="button" onClick={confirmPending} disabled={busy} className="rounded-ff-sm bg-primary px-4 py-3 font-bold text-white">Confirmar</button></div></section>}
-      {busy && <p role="status" className="text-sm font-semibold text-foreground-muted">A IA está analisando com segurança...</p>}{notice && <p role="alert" className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">{notice}</p>}<div ref={bottomRef} />
+  return (
+    <div className={styles.page}>
+      <section className={styles.chatShell} aria-label="Conversa com a IA financeira">
+        <header className={styles.chatHeader}>
+          <div className={styles.assistantIdentity}>
+            <span className={styles.assistantIcon} aria-hidden>
+              <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="m12 2 1.4 4.6L18 8l-4.6 1.4L12 14l-1.4-4.6L6 8l4.6-1.4L12 2Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="m18.5 14 .8 2.7 2.7.8-2.7.8-.8 2.7-.8-2.7-2.7-.8 2.7-.8.8-2.7Z" fill="currentColor"/></svg>
+            </span>
+            <div className="min-w-0">
+              <p className={styles.eyebrow}>Somente finanças</p>
+              <h1 className={styles.chatTitle}>IA FinFlow</h1>
+              <p className={styles.quota}>{quotaText}</p>
+            </div>
+          </div>
+          <div className={styles.headerActions}>
+            <button type="button" onClick={() => setConfirmClear(true)} disabled={busy} className={styles.clearButton}>Limpar conversa</button>
+          </div>
+        </header>
+
+        {confirmClear && <ConfirmationDialog
+          title="Limpar esta conversa?"
+          description="Todo o histórico será apagado e qualquer ação pendente também será cancelada. Essa escolha não pode ser desfeita."
+          confirmLabel="Apagar histórico"
+          pending={busy}
+          onClose={() => setConfirmClear(false)}
+          onConfirm={() => void clearHistory()}
+        />}
+
+        <div className={styles.messages} aria-live="polite" aria-busy={busy}>
+          <div className={styles.messagesInner}>
+            {messages.map((message) => (
+              <div key={message.id} className={styles.messageRow} data-role={message.role}>
+                {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden>✦</span>}
+                <div className={styles.messageBubble}>{message.text}</div>
+              </div>
+            ))}
+            {messages.length <= 1 && (
+              <div className={styles.suggestions} aria-label="Sugestões de perguntas">
+                {["Qual é meu saldo atual?", "Quais despesas tenho neste mês?", "Registrar uma despesa", "Criar um objetivo"].map((suggestion) => (
+                  <button type="button" key={suggestion} onClick={() => void send(undefined, suggestion)} className={styles.suggestion}>{suggestion}</button>
+                ))}
+              </div>
+            )}
+            {pendingAction && (
+              <section className={styles.pendingCard} aria-labelledby="pending-action-title">
+                <p className={styles.pendingEyebrow}>Aguardando sua confirmação</p>
+                <h2 id="pending-action-title" className={styles.pendingTitle}>{pendingAction.preview.title}</h2>
+                <p className={styles.pendingSummary}>{pendingAction.preview.summary}</p>
+                {pendingAction.preview.consequences.length > 0 && (
+                  <ul className={styles.consequences}>{pendingAction.preview.consequences.map((item) => <li key={item}>{item}</li>)}</ul>
+                )}
+                <p className={styles.safeNotice}>A ação só será executada pelo botão Confirmar abaixo.</p>
+                <div className={styles.pendingActions}>
+                  <button type="button" onClick={cancel} disabled={busy} className={styles.cancelButton}>Cancelar</button>
+                  <button type="button" onClick={confirmPending} disabled={busy} className={styles.confirmButton}>Confirmar</button>
+                </div>
+              </section>
+            )}
+            {busy && <p role="status" className={styles.typing}>A IA está analisando com segurança</p>}
+            {notice && <p role="alert" className={styles.notice}>{notice}</p>}
+            <div ref={bottomRef} />
+          </div>
+        </div>
+
+        <form onSubmit={(event) => void send(event)} className={styles.composer}>
+          <div className={styles.composerRow}>
+            <textarea
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              disabled={busy || !!pendingAction}
+              maxLength={2000}
+              rows={2}
+              enterKeyHint="send"
+              aria-label="Mensagem para a IA financeira"
+              placeholder={pendingAction ? "Confirme ou cancele a proposta para continuar" : "Pergunte ou peça uma ação financeira"}
+              className={styles.textarea}
+            />
+            <button type="submit" disabled={busy || !!pendingAction || !input.trim()} className={styles.sendButton}>
+              <span>Enviar</span>
+              <svg aria-hidden width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="m5 12 14-7-4.5 14-3-5.5L5 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="m11.5 13.5 3.3-3.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+          <p className={styles.disclaimer}>Revise valores e datas. A IA não substitui orientação profissional.</p>
+        </form>
+      </section>
     </div>
-    <form onSubmit={(event) => void send(event)} className="border-t border-border bg-surface p-3 sm:p-4"><div className="flex gap-2"><textarea value={input} onChange={(event) => setInput(event.target.value)} disabled={busy || !!pendingAction} maxLength={2000} rows={2} placeholder={pendingAction ? "Confirme ou cancele a proposta para continuar" : "Pergunte ou peça uma ação financeira"} className="min-h-14 flex-1 resize-none rounded-ff-md border border-border bg-surface-muted px-4 py-3 text-sm outline-none focus:border-primary" /><button disabled={busy || !!pendingAction || !input.trim()} className="rounded-ff-md bg-primary px-5 font-extrabold text-white disabled:opacity-40">Enviar</button></div><p className="mt-2 text-center text-[10px] text-foreground-muted">Revise valores e datas. A IA não substitui orientação profissional.</p></form>
-  </div>;
+  );
 }

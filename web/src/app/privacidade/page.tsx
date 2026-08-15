@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import LegalShell, { LegalList, LegalSection } from "@/components/legal/legal-shell";
 
 export const metadata: Metadata = {
-  title: "Política de Privacidade | FinFlow",
+  title: "Política de Privacidade",
   description: "Como o FinFlow trata e protege dados pessoais.",
 };
 

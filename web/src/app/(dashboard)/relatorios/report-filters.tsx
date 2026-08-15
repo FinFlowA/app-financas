@@ -2,22 +2,110 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { nextReportAccountSelection } from "@/lib/report-scope";
+import styles from "./relatorios.module.css";
 
 type AccountOption = { id: number; name: string; color: string };
 
-export default function ReportFilters({ year, selected, accounts }: { year: number; selected: number[]; accounts: AccountOption[] }) {
+export default function ReportFilters({
+  year,
+  month,
+  selected,
+  accounts,
+}: {
+  year: number;
+  month: number;
+  selected: number[];
+  accounts: AccountOption[];
+}) {
   const router = useRouter();
-  const [draftYear, setDraftYear] = useState(year);
   const [draftAccounts, setDraftAccounts] = useState(selected);
   const currentYear = new Date().getFullYear();
-  function apply() {
-    if (!draftAccounts.length) return;
-    const params = new URLSearchParams({ year: String(draftYear), accounts: draftAccounts.join(",") });
-    router.push(`/relatorios?${params.toString()}`);
+  const minimumYear = currentYear - 10;
+  const maximumYear = currentYear + 10;
+
+  function urlFor(nextYear: number, accountIds: number[]) {
+    const params = new URLSearchParams({
+      year: String(nextYear),
+      month: String(month + 1),
+      accounts: accountIds.join(","),
+    });
+    return `/relatorios?${params.toString()}`;
   }
-  return <section className="ff-card mb-5 p-4"><div className="flex flex-wrap items-end gap-4">
-    <label className="text-xs font-bold uppercase text-foreground-muted">Ano<select value={draftYear} onChange={(event) => setDraftYear(Number(event.target.value))} className="mt-1 block rounded-ff-sm border border-border bg-surface-muted px-3 py-2 text-sm font-semibold text-foreground">{Array.from({ length: 11 }, (_, index) => currentYear - 5 + index).map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-    <fieldset className="min-w-0 flex-1"><legend className="mb-1 text-xs font-bold uppercase text-foreground-muted">Contas</legend><div className="flex flex-wrap gap-2">{accounts.map((account) => { const active = draftAccounts.includes(account.id); return <button type="button" key={account.id} onClick={() => setDraftAccounts((ids) => active ? ids.filter((id) => id !== account.id) : [...ids, account.id])} className={`ff-focus flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-bold ${active ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted"}`}><span className="h-2.5 w-2.5 rounded-full" style={{ background: account.color }} />{account.name}</button>; })}</div></fieldset>
-    <button type="button" onClick={apply} disabled={!draftAccounts.length} className="rounded-ff-sm bg-primary px-5 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">Aplicar</button>
-  </div>{!draftAccounts.length && <p className="mt-2 text-xs font-semibold text-red">Selecione ao menos uma conta para calcular o fluxo.</p>}</section>;
+
+  function toggleAccount(accountId: number) {
+    setDraftAccounts((ids) => nextReportAccountSelection(
+      ids,
+      accounts.map((account) => account.id),
+      accountId,
+    ));
+  }
+
+  const allDraftSelected = accounts.length > 0 && draftAccounts.length === accounts.length
+    && accounts.every((account) => draftAccounts.includes(account.id));
+  return (
+    <form action="/relatorios" method="get" className={styles.filters} aria-label="Filtros do fluxo de caixa">
+      <input type="hidden" name="year" value={year} />
+      <input type="hidden" name="month" value={month + 1} />
+      <input type="hidden" name="accounts" value={draftAccounts.join(",")} />
+      <div className={styles.filtersRow}>
+        <div className={styles.yearFilter}>
+          <span className={styles.filterLabel}>Ano</span>
+          <div className={styles.yearStepper} aria-label={`Ano analisado: ${year}`}>
+            <button
+              type="button"
+              aria-label="Ver ano anterior"
+              disabled={year <= minimumYear}
+              onClick={() => router.push(urlFor(year - 1, selected))}
+              className={styles.yearArrow}
+            >
+              <span aria-hidden>‹</span>
+            </button>
+            <strong aria-live="polite">{year}</strong>
+            <button
+              type="button"
+              aria-label="Ver próximo ano"
+              disabled={year >= maximumYear}
+              onClick={() => router.push(urlFor(year + 1, selected))}
+              className={styles.yearArrow}
+            >
+              <span aria-hidden>›</span>
+            </button>
+          </div>
+        </div>
+        <fieldset className={styles.accountsFilter}>
+          <legend className={styles.filterLegend}>Contas incluídas</legend>
+          <div className={styles.accountButtons}>
+            <button
+              type="button"
+              onClick={() => setDraftAccounts(accounts.map((account) => account.id))}
+              className={styles.accountButton}
+              data-active={allDraftSelected}
+              aria-pressed={allDraftSelected}
+            >
+              Todas as contas
+            </button>
+            {accounts.map((account) => {
+              const active = draftAccounts.includes(account.id);
+              return (
+                <button
+                  type="button"
+                  key={account.id}
+                  onClick={() => toggleAccount(account.id)}
+                  className={styles.accountButton}
+                  data-active={active}
+                  aria-pressed={active}
+                >
+                  <span className={styles.accountDot} style={{ background: account.color }} />
+                  {account.name}
+                </button>
+              );
+            })}
+          </div>
+        </fieldset>
+        <button type="submit" disabled={!draftAccounts.length} className={styles.applyButton}>Aplicar contas</button>
+      </div>
+      {!draftAccounts.length && <p className={styles.filterError}>Selecione ao menos uma conta para calcular o fluxo.</p>}
+    </form>
+  );
 }

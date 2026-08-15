@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 
-export const metadata: Metadata = { title: "Recuperar senha | FinFlow" };
+export const metadata: Metadata = { title: "Recuperar senha" };
 
 type ForgotPasswordPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

@@ -32,6 +32,11 @@ export function adicionarDiasISO(iso: string, quantidade: number): string {
   return data.toISOString().slice(0, 10);
 }
 
+/** Inclui vencidos, vencendo hoje e os próximos sete dias. */
+export function isAttentionDueDate(dueDate: string, today: string): boolean {
+  return dueDate <= adicionarDiasISO(today, 7);
+}
+
 export function compararISO(a: string | null | undefined, b: string | null | undefined): number {
   return (a ?? "").localeCompare(b ?? "");
 }

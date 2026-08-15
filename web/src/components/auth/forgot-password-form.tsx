@@ -6,10 +6,16 @@ import { requestPasswordResetAction } from "@/lib/auth/actions";
 import { INITIAL_AUTH_STATE } from "@/lib/auth/state";
 import {
   FieldError,
+  FIELD_CLASS,
+  FORM_CLASS,
   FormFeedback,
+  FORM_PROMPT_CLASS,
   INPUT_CLASS,
   LABEL_CLASS,
+  PRIMARY_BUTTON_CLASS,
+  TEXT_LINK_CLASS,
 } from "@/components/auth/form-feedback";
+import styles from "./auth.module.css";
 
 export function ForgotPasswordForm({ invalidLink = false }: { invalidLink?: boolean }) {
   const [state, action, pending] = useActionState(
@@ -18,10 +24,10 @@ export function ForgotPasswordForm({ invalidLink = false }: { invalidLink?: bool
   );
 
   return (
-    <form action={action} className="space-y-5" noValidate>
+    <form action={action} className={FORM_CLASS} noValidate>
       {invalidLink ? (
         <div
-          className="rounded-ff-sm border border-red/30 bg-red/10 px-4 py-3 text-sm font-medium leading-5 text-red"
+          className={`${styles.feedback} ${styles.feedbackError}`}
           role="alert"
         >
           O link é inválido ou expirou. Solicite uma nova recuperação.
@@ -29,7 +35,7 @@ export function ForgotPasswordForm({ invalidLink = false }: { invalidLink?: bool
       ) : null}
       <FormFeedback state={state} />
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="email" className={LABEL_CLASS}>
           E-mail da conta
         </label>
@@ -41,6 +47,8 @@ export function ForgotPasswordForm({ invalidLink = false }: { invalidLink?: bool
           inputMode="email"
           maxLength={254}
           required
+          placeholder="voce@exemplo.com"
+          spellCheck={false}
           defaultValue={state.values?.email}
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.email)}
@@ -51,14 +59,15 @@ export function ForgotPasswordForm({ invalidLink = false }: { invalidLink?: bool
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-ff-md bg-primary py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+        className={PRIMARY_BUTTON_CLASS}
+        aria-busy={pending}
       >
         {pending ? "Enviando..." : "Enviar link de recuperação"}
       </button>
 
-      <p className="text-center text-sm text-foreground-muted">
+      <p className={FORM_PROMPT_CLASS}>
         Lembrou a senha?{" "}
-        <Link href="/login" className="font-bold text-primary hover:underline">
+        <Link href="/login" className={TEXT_LINK_CLASS}>
           Voltar para o login
         </Link>
       </p>

@@ -1,14 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
+import { useTransition } from "react";
+import { signOutAction } from "./sign-out-action";
 
 export default function SignOutButton() {
-  const router = useRouter();
+  const [pending, startTransition] = useTransition();
 
-  async function sair() {
-    const supabase = createClient();
-    await supabase.auth.signOut();
+  function sair() {
     try {
       for (let index = sessionStorage.length - 1; index >= 0; index -= 1) {
         const key = sessionStorage.key(index);
@@ -19,18 +17,20 @@ export default function SignOutButton() {
         if (key?.startsWith("finflow:web:ai-conversation:")) localStorage.removeItem(key);
       }
     } catch {
-      // A sessão do servidor já foi encerrada; storage bloqueado não impede sair.
+      // Storage bloqueado não impede que a sessão seja encerrada no servidor.
     }
-    router.push("/login");
-    router.refresh();
+    startTransition(() => { void signOutAction(); });
   }
 
   return (
     <button
       onClick={sair}
-      className="w-full rounded-ff-sm border border-border py-2 text-sm font-semibold text-foreground-muted transition hover:bg-surface-muted"
+      disabled={pending}
+      aria-busy={pending}
+      className="ff-signout ff-focus"
     >
-      Sair
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M10 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h5M14 8l4 4-4 4M8 12h10" /></svg>
+      {pending ? "Saindo…" : "Sair da conta"}
     </button>
   );
 }

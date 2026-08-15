@@ -1,0 +1,353 @@
+.panel {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--border) 78%, transparent);
+  background:
+    radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--ff-primary) 8%, transparent), transparent 15rem),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 97%, var(--ff-primary) 3%), var(--surface));
+}
+
+.panel::before {
+  position: absolute;
+  top: 0;
+  right: 1.4rem;
+  left: 1.4rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ff-primary-bright) 34%, transparent), transparent);
+  content: "";
+}
+
+.panelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.headingGroup {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 0.8rem;
+}
+
+.iconBox {
+  display: grid;
+  width: 2.7rem;
+  height: 2.7rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 24%, var(--border));
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--ff-primary) 13%, var(--surface));
+  color: var(--ff-primary-dark);
+  box-shadow: inset 0 1px color-mix(in srgb, white 6%, transparent);
+}
+
+.iconBox svg {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.input {
+  width: 100%;
+  min-height: 3rem;
+  margin-top: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+  padding: 0.7rem 0.85rem;
+  color: var(--foreground);
+  outline: none;
+}
+
+.input:hover {
+  border-color: color-mix(in srgb, var(--ff-primary) 35%, var(--border));
+}
+
+.primaryButton,
+.secondaryButton,
+.dangerButton {
+  display: inline-flex;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border-radius: 0.8rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.primaryButton {
+  border: 1px solid color-mix(in srgb, var(--ff-primary-bright) 26%, var(--ff-primary));
+  background: linear-gradient(135deg, var(--ff-action-primary), var(--ff-action-primary-hover));
+  box-shadow: 0 12px 30px -18px color-mix(in srgb, var(--ff-primary-bright) 70%, transparent);
+  color: white;
+}
+
+.primaryButton:hover:not(:disabled) {
+  box-shadow: 0 16px 36px -18px color-mix(in srgb, var(--ff-primary-bright) 86%, transparent);
+  transform: translateY(-1px);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  color: var(--foreground);
+}
+
+.secondaryButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ff-primary) 42%, var(--border));
+  color: var(--ff-primary-dark);
+}
+
+.dangerButton {
+  border: 1px solid color-mix(in srgb, var(--ff-red) 45%, var(--border));
+  background: color-mix(in srgb, var(--ff-red) 9%, var(--surface));
+  color: var(--ff-red);
+}
+
+.dangerButton:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--ff-red) 15%, var(--surface));
+  transform: translateY(-1px);
+}
+
+.feedback {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  margin-top: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 28%, var(--border));
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--ff-primary) 10%, transparent);
+  padding: 0.75rem 0.85rem;
+  color: var(--ff-primary-dark);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.feedbackError {
+  border-color: color-mix(in srgb, var(--ff-red) 38%, var(--border));
+  background: color-mix(in srgb, var(--ff-red) 10%, transparent);
+  color: var(--ff-red);
+}
+
+.feedback svg {
+  width: 1rem;
+  height: 1rem;
+  flex: 0 0 auto;
+  margin-top: 0.05rem;
+}
+
+.statusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 75%, transparent);
+  padding: 0.4rem 0.7rem;
+  color: var(--foreground-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.statusBadge::before {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: var(--ff-primary-bright);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ff-primary) 12%, transparent);
+  content: "";
+}
+
+.activePartnership,
+.decisionCard,
+.notificationPermission,
+.preferenceItem {
+  border: 1px solid color-mix(in srgb, var(--border) 82%, transparent);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface-muted) 70%, transparent);
+  box-shadow: inset 0 1px color-mix(in srgb, white 3%, transparent);
+}
+
+.activePartnership {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--ff-primary) 32%, var(--border));
+  background:
+    radial-gradient(circle at 90% 10%, color-mix(in srgb, var(--ff-primary-bright) 12%, transparent), transparent 10rem),
+    color-mix(in srgb, var(--ff-primary) 10%, var(--surface));
+}
+
+.decisionCard {
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+.decisionCard:hover {
+  border-color: color-mix(in srgb, var(--ff-primary) 38%, var(--border));
+  box-shadow: 0 18px 38px -32px color-mix(in srgb, var(--ff-primary) 55%, transparent);
+  transform: translateY(-1px);
+}
+
+.permissionState {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+  padding: 0.45rem 0.75rem;
+  color: var(--foreground-muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.permissionState::before {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 99px;
+  background: currentColor;
+  content: "";
+}
+
+.permissionGranted {
+  background: color-mix(in srgb, var(--ff-primary) 12%, transparent);
+  color: var(--ff-primary-dark);
+}
+
+.preferenceGrid {
+  display: grid;
+  gap: 0.7rem;
+  margin-top: 1.25rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preferenceItem {
+  display: flex;
+  min-height: 5.4rem;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  transition: border-color 160ms ease, background-color 160ms ease, transform 160ms ease;
+}
+
+.preferenceItem:hover {
+  border-color: color-mix(in srgb, var(--ff-primary) 40%, var(--border));
+  background: color-mix(in srgb, var(--ff-primary) 7%, var(--surface-muted));
+  transform: translateY(-1px);
+}
+
+.preferenceItem:has(input:focus-visible) {
+  border-color: color-mix(in srgb, var(--ff-primary-bright) 62%, var(--border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--ff-primary) 16%, transparent);
+}
+
+.toggle {
+  position: relative;
+  width: 2.75rem;
+  height: 1.55rem;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--foreground-muted) 22%, var(--surface-muted));
+  transition: 160ms ease;
+}
+
+.toggle::after {
+  position: absolute;
+  top: 0.19rem;
+  left: 0.2rem;
+  width: 1.05rem;
+  height: 1.05rem;
+  border-radius: 99px;
+  background: #fff;
+  box-shadow: 0 2px 7px rgba(0, 0, 0, 0.28);
+  content: "";
+  transition: transform 160ms ease;
+}
+
+.toggleOn {
+  border-color: color-mix(in srgb, var(--ff-primary-bright) 50%, var(--ff-primary));
+  background: var(--ff-action-primary);
+}
+
+.toggleOn::after {
+  transform: translateX(1.19rem);
+}
+
+.modalBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 9, 12, 0.78);
+  backdrop-filter: blur(8px);
+}
+
+.modal {
+  width: min(100%, 31rem);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border-strong) 88%, transparent);
+  border-radius: 1.35rem;
+  background:
+    radial-gradient(circle at 80% 0%, color-mix(in srgb, var(--ff-primary) 11%, transparent), transparent 16rem),
+    var(--surface-raised);
+  padding: 1.35rem;
+  box-shadow: 0 32px 100px -28px rgba(0, 0, 0, 0.95);
+}
+
+.modalIcon {
+  display: grid;
+  width: 3rem;
+  height: 3rem;
+  place-items: center;
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--ff-red) 13%, transparent);
+  color: var(--ff-red);
+}
+
+.modalActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 1.3rem;
+}
+
+@media (max-width: 680px) {
+  .preferenceGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .panelHeader {
+    align-items: flex-start;
+  }
+
+  .statusBadge {
+    white-space: normal;
+  }
+
+  .modalActions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 420px) {
+  .headingGroup {
+    gap: 0.65rem;
+  }
+
+  .iconBox {
+    width: 2.45rem;
+    height: 2.45rem;
+  }
+
+  .preferenceItem {
+    padding: 0.85rem;
+  }
+}

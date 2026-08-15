@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import {
+  invoiceClosingDate,
+  invoiceIsClosed,
+  invoicePresentationStatus,
+} from "../invoice-status";
 import { isStrongPassword, normalizeBrazilPhone } from "../auth/validation";
 import { parseMoney, moneyIsPositive } from "../money";
 import { calcularSaldoProjetadoPorMes } from "../saldo-projetado";
 import { fetchAllRows } from "../supabase/pagination";
 import { historyFinancialTotals } from "../history-totals";
 import { collectPaymentSummaryRows } from "../payment-summaries";
+import { nextReportAccountSelection, parseReportAccountSelection } from "../report-scope";
+import { isAttentionDueDate } from "../date";
 import {
   filterInvoiceGroupItems,
   groupInvoiceItems,
@@ -88,7 +95,28 @@ describe("transferências e objetivos", () => {
   });
 });
 
+describe("filtro de contas do fluxo", () => {
+  it("valida IDs, remove duplicados e preserva somente contas disponíveis", () => {
+    expect(parseReportAccountSelection("2,999,2", [1, 2, 3])).toEqual([2]);
+    expect(parseReportAccountSelection(["1", "3"], [1, 2, 3])).toEqual([1, 3]);
+    expect(parseReportAccountSelection("", [1, 2, 3])).toEqual([1, 2, 3]);
+  });
+
+  it("ao sair de Todas seleciona somente a conta tocada, igual ao app", () => {
+    expect(nextReportAccountSelection([1, 2, 3], [1, 2, 3], 2)).toEqual([2]);
+    expect(nextReportAccountSelection([2], [1, 2, 3], 3)).toEqual([2, 3]);
+    expect(nextReportAccountSelection([2, 3], [1, 2, 3], 2)).toEqual([3]);
+  });
+});
+
 describe("datas realizadas e projeção", () => {
+  it("agrupa atrasados, hoje e os próximos sete dias no filtro de atenção", () => {
+    expect(isAttentionDueDate("2026-08-01", "2026-08-15")).toBe(true);
+    expect(isAttentionDueDate("2026-08-15", "2026-08-15")).toBe(true);
+    expect(isAttentionDueDate("2026-08-22", "2026-08-15")).toBe(true);
+    expect(isAttentionDueDate("2026-08-23", "2026-08-15")).toBe(false);
+  });
+
   it("usa data de realização para concluída e vencimento para pendente", () => {
     expect(dataEfetivaTransacao({ status: "paga", data_vencimento: "2026-01-01", data_realizacao: "2026-02-03" })).toBe("2026-02-03");
     expect(dataEfetivaTransacao({ status: "pendente", data_vencimento: "2026-03-04", data_realizacao: null })).toBe("2026-03-04");
@@ -184,14 +212,17 @@ describe("compras e faturas", () => {
     grupo_parcela_id: null,
   };
 
-  it("conta compras pela data da compra e ignora linhas técnicas de pagamento", () => {
+  it("conta cada parcela no mês da fatura e ignora linhas técnicas de pagamento", () => {
     const items = [
       baseItem,
       { ...baseItem, id: 2, descricao: "Pagamento parcial da fatura", valor: -100 },
       { ...baseItem, id: 3, descricao: "Saldo da fatura anterior (2026-01)", valor: 100 },
-      { ...baseItem, id: 4, descricao: "Curso", data_compra: "2026-03-01", mes_fatura: "2026-04" },
+      { ...baseItem, id: 4, descricao: "Curso (1/3)", data_compra: "2026-02-03", mes_fatura: "2026-03", parcela_atual: 1, total_parcelas: 3 },
+      { ...baseItem, id: 5, descricao: "Curso (2/3)", data_compra: "2026-02-03", mes_fatura: "2026-04", parcela_atual: 2, total_parcelas: 3 },
     ];
     expect(invoicePurchasesInMonth(items, "2026-02").map((item) => item.id)).toEqual([1]);
+    expect(invoicePurchasesInMonth(items, "2026-03").map((item) => item.id)).toEqual([4]);
+    expect(invoicePurchasesInMonth(items, "2026-04").map((item) => item.id)).toEqual([5]);
   });
 
   it("mantém o vencimento no mês e agrupa faturas de cartão arquivado", () => {
@@ -201,6 +232,47 @@ describe("compras e faturas", () => {
       { ...baseItem, id: 2, descricao: "Streaming", valor: 50, categoria_id: 11, pago: true },
     ], [{ ...card, ativo: false }]);
     expect(group).toMatchObject({ total: 300, paid: false, dueDate: "2026-02-28", cardActive: false });
+  });
+
+  it("deriva fatura zerada como paga somente depois do fechamento, sem criar débito", () => {
+    expect(invoiceClosingDate("2026-02", 31)).toBe("2026-02-28");
+    expect(invoiceIsClosed("2026-02", 28, "2026-02-28")).toBe(false);
+    expect(invoiceIsClosed("2026-02", 28, "2026-03-01")).toBe(true);
+    expect(invoicePresentationStatus({
+      invoiceMonth: "2026-02",
+      closingDay: 28,
+      itemCount: 0,
+      openTotal: 0,
+      allItemsPaid: false,
+      today: "2026-02-28",
+    })).toBe("zero");
+    expect(invoicePresentationStatus({
+      invoiceMonth: "2026-02",
+      closingDay: 28,
+      itemCount: 0,
+      openTotal: 0,
+      allItemsPaid: false,
+      today: "2026-03-01",
+    })).toBe("paid");
+  });
+
+  it("mantém saldo em aberto como fechado e itens quitados como pagos", () => {
+    expect(invoicePresentationStatus({
+      invoiceMonth: "2026-02",
+      closingDay: 20,
+      itemCount: 1,
+      openTotal: 120,
+      allItemsPaid: false,
+      today: "2026-02-21",
+    })).toBe("closed");
+    expect(invoicePresentationStatus({
+      invoiceMonth: "2026-02",
+      closingDay: 20,
+      itemCount: 1,
+      openTotal: 0,
+      allItemsPaid: true,
+      today: "2026-02-10",
+    })).toBe("paid");
   });
 
   it("só exibe a fatura na busca quando um item corresponde e recalcula o card", () => {

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatarReais } from "@/lib/format";
+import styles from "./relatorios.module.css";
 
 export type MesFluxo = {
   label: string;
@@ -22,9 +23,13 @@ function numeroLimpo(valor: number): number {
 export default function FluxoSaldoChart({
   meses,
   saldos,
+  selectedIndex,
+  onSelect,
 }: {
   meses: MesFluxo[];
   saldos: PontoSaldo[];
+  selectedIndex: number;
+  onSelect: (index: number) => void;
 }) {
   const [ativo, setAtivo] = useState<number | null>(null);
 
@@ -64,30 +69,36 @@ export default function FluxoSaldoChart({
     .join(" ");
 
   const ultimoSaldo = saldos.at(-1);
-  const mesAtivo = ativo !== null ? meses[ativo] : null;
-  const saldoAtivo = ativo !== null ? saldos[ativo] : null;
+  const detailIndex = ativo ?? selectedIndex;
+  const mesAtivo = meses[detailIndex];
+  const saldoAtivo = saldos[detailIndex];
 
   return (
-    <div className="rounded-ff-lg border border-border bg-surface p-5">
-      <div className="mb-4 flex flex-wrap items-center gap-4 text-xs font-semibold text-foreground-muted">
-        <span className="flex items-center gap-1.5">
+    <section className={styles.chartPanel}>
+      <div className={styles.chartHeader}>
+        <div>
+          <h2 className={styles.chartTitle}>Evolução mensal</h2>
+          <p className={styles.chartSubtitle}>Receitas, despesas e saldo acumulado no mesmo eixo.</p>
+        </div>
+        <div className={styles.legend} aria-label="Legenda do gráfico">
+        <span className={styles.legendItem}>
           <svg width="16" height="2"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--color-blue)" strokeWidth={2} /></svg>
           Saldo
         </span>
-        <span className="flex items-center gap-1.5">
+        <span className={styles.legendItem}>
           <svg width="16" height="2"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--color-blue)" strokeWidth={2} strokeDasharray="4 3" /></svg>
           Saldo projetado
         </span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-primary" /> Receitas</span>
-        <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-red" /> Despesas</span>
+        <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-primary)" }} /> Receitas</span>
+        <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-red)" }} /> Despesas</span>
+        </div>
       </div>
 
-      <div className="relative overflow-x-auto">
+      <div className={styles.chartScroll}>
         <svg
           viewBox={`0 0 ${largura} ${altura}`}
-          className="w-full"
-          style={{ minWidth: 720 }}
-          role="img"
+          className={styles.chartSvg}
+          role="group"
           aria-label="Receitas, despesas e saldo acumulado por mês, no mesmo eixo com 0 compartilhado"
         >
           {[0, 0.25, 0.5, 0.75, 1].map((fracao) => {
@@ -108,18 +119,31 @@ export default function FluxoSaldoChart({
           {meses.map((mes, indice) => {
             const centro = xCentro(indice);
             const grupoX = margemEsquerda + indice * larguraGrupo;
-            const destacado = ativo === indice;
+            const destacado = ativo === indice || selectedIndex === indice;
             return (
               <g
                 key={mes.label}
+                className={styles.chartMonthGroup}
                 onMouseEnter={() => setAtivo(indice)}
                 onMouseLeave={() => setAtivo((atual) => (atual === indice ? null : atual))}
-                onFocus={() => setAtivo(indice)}
+                onFocus={() => {
+                  setAtivo(indice);
+                  onSelect(indice);
+                }}
                 onBlur={() => setAtivo((atual) => (atual === indice ? null : atual))}
+                onClick={() => onSelect(indice)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter" && event.key !== " ") return;
+                  event.preventDefault();
+                  onSelect(indice);
+                }}
                 tabIndex={0}
-                style={{ cursor: "pointer", outline: "none" }}
+                role="button"
+                aria-pressed={selectedIndex === indice}
+                aria-label={`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
+                style={{ cursor: "pointer" }}
               >
-                <rect x={grupoX} y={margemTopo} width={larguraGrupo} height={areaAltura} fill="transparent" />
+                <rect className={styles.chartMonthHitArea} x={grupoX} y={margemTopo} width={larguraGrupo} height={areaAltura} fill="transparent" />
                 <title>
                   {`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
                 </title>
@@ -183,7 +207,7 @@ export default function FluxoSaldoChart({
               key={ponto.label}
               cx={xCentro(indice)}
               cy={y(ponto.saldo)}
-              r={ativo === indice ? 5 : 4}
+              r={ativo === indice || selectedIndex === indice ? 5 : 4}
               fill="var(--color-blue)"
               stroke="var(--color-surface)"
               strokeWidth={2}
@@ -203,19 +227,43 @@ export default function FluxoSaldoChart({
           )}
         </svg>
 
-        {mesAtivo && saldoAtivo && (
-          <div className="pointer-events-none absolute top-2 right-2 rounded-ff-sm border border-border bg-surface px-3 py-2 text-xs shadow-sm" role="status">
-            <p className="mb-1 font-bold text-foreground">{mesAtivo.label}</p>
-            <p style={{ color: "var(--color-blue)" }}>
-              <strong>{formatarReais(saldoAtivo.saldo)}</strong> saldo{saldoAtivo.projetado ? " (projetado)" : ""}
-            </p>
-            <p className="text-primary"><strong>{formatarReais(mesAtivo.receitas)}</strong> recebido</p>
-            <p className="text-red"><strong>{formatarReais(mesAtivo.despesas)}</strong> gasto</p>
-            {(mesAtivo.receitasPrevistas ?? 0) > 0 && <p className="text-primary/70"><strong>{formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong> a receber</p>}
-            {(mesAtivo.despesasPrevistas ?? 0) > 0 && <p className="text-red/70"><strong>{formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong> a pagar</p>}
-          </div>
-        )}
       </div>
-    </div>
+
+      {mesAtivo && saldoAtivo && (
+        <section className={styles.monthDetails} aria-live="polite" aria-label={`Resumo de ${mesAtivo.label}`}>
+          <div className={styles.monthDetailsHeader}>
+            <div>
+              <p className={styles.monthDetailsEyebrow}>Mês selecionado</p>
+              <h3>{mesAtivo.label}</h3>
+            </div>
+            <span className={styles.monthDetailsStatus} data-projected={saldoAtivo.projetado}>
+              {saldoAtivo.projetado ? "Projeção" : "Realizado"}
+            </span>
+          </div>
+          <div className={styles.monthDetailsGrid}>
+            <div className={styles.monthDetailItem} data-tone={saldoAtivo.saldo < 0 ? "negative" : "balance"}>
+              <span>{saldoAtivo.projetado ? "Saldo previsto no fim do mês" : "Saldo no fim do mês"}</span>
+              <strong>{formatarReais(saldoAtivo.saldo)}</strong>
+            </div>
+            <div className={styles.monthDetailItem} data-tone="positive">
+              <span>Receitas realizadas</span>
+              <strong>+ {formatarReais(mesAtivo.receitas)}</strong>
+            </div>
+            <div className={styles.monthDetailItem} data-tone="negative">
+              <span>Despesas realizadas</span>
+              <strong>- {formatarReais(mesAtivo.despesas)}</strong>
+            </div>
+            <div className={styles.monthDetailItem} data-tone="expected-positive">
+              <span>A receber</span>
+              <strong>+ {formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong>
+            </div>
+            <div className={styles.monthDetailItem} data-tone="expected-negative">
+              <span>A pagar</span>
+              <strong>- {formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong>
+            </div>
+          </div>
+        </section>
+      )}
+    </section>
   );
 }

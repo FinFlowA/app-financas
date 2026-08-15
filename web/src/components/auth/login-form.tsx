@@ -7,10 +7,17 @@ import { INITIAL_AUTH_STATE } from "@/lib/auth/state";
 import { ResendConfirmationForm } from "@/components/auth/resend-confirmation-form";
 import {
   FieldError,
+  FIELD_CLASS,
+  FIELD_HEADER_CLASS,
+  FORM_CLASS,
   FormFeedback,
+  FORM_PROMPT_CLASS,
   INPUT_CLASS,
   LABEL_CLASS,
+  PRIMARY_BUTTON_CLASS,
+  TEXT_LINK_CLASS,
 } from "@/components/auth/form-feedback";
+import styles from "./auth.module.css";
 
 type LoginFormProps = {
   initialFeedback?: { kind: "success" | "error"; message: string };
@@ -21,22 +28,23 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
 
   return (
     <div>
-      <form action={action} className="space-y-5" noValidate>
+      <form action={action} className={FORM_CLASS} noValidate>
       {initialFeedback ? (
         <div
-          className={`rounded-ff-sm border px-4 py-3 text-sm font-medium leading-5 ${
+          className={`${styles.feedback} ${
             initialFeedback.kind === "success"
-              ? "border-primary/30 bg-primary-soft text-primary-dark"
-              : "border-red/30 bg-red/10 text-red"
+              ? styles.feedbackSuccess
+              : styles.feedbackError
           }`}
           role={initialFeedback.kind === "success" ? "status" : "alert"}
+          aria-live="polite"
         >
           {initialFeedback.message}
         </div>
       ) : null}
       <FormFeedback state={state} />
 
-      <div>
+      <div className={FIELD_CLASS}>
         <label htmlFor="email" className={LABEL_CLASS}>
           E-mail
         </label>
@@ -47,6 +55,8 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
           autoComplete="email"
           inputMode="email"
           required
+          placeholder="voce@exemplo.com"
+          spellCheck={false}
           defaultValue={state.values?.email}
           aria-invalid={Boolean(state.errors?.email)}
           aria-describedby={state.errors?.email ? "email-error" : undefined}
@@ -57,12 +67,12 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
         </div>
       </div>
 
-      <div>
-        <div className="mb-1.5 flex items-center justify-between gap-4">
-          <label htmlFor="senha" className={LABEL_CLASS.replace("mb-1.5 ", "")}>
+      <div className={FIELD_CLASS}>
+        <div className={FIELD_HEADER_CLASS}>
+          <label htmlFor="senha" className={LABEL_CLASS}>
             Senha
           </label>
-          <Link href="/esqueci-senha" className="text-xs font-bold text-primary hover:underline">
+          <Link href="/esqueci-senha" className={TEXT_LINK_CLASS}>
             Esqueci minha senha
           </Link>
         </div>
@@ -72,6 +82,7 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
           type="password"
           autoComplete="current-password"
           required
+          placeholder="Digite sua senha"
           aria-invalid={Boolean(state.errors?.senha)}
           aria-describedby={state.errors?.senha ? "senha-error" : undefined}
           className={INPUT_CLASS}
@@ -84,14 +95,15 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
       <button
         type="submit"
         disabled={pending}
-        className="w-full rounded-ff-md bg-primary py-3 text-sm font-bold text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-60"
+        className={PRIMARY_BUTTON_CLASS}
+        aria-busy={pending}
       >
         {pending ? "Entrando..." : "Entrar"}
       </button>
 
-      <p className="text-center text-sm text-foreground-muted">
+      <p className={FORM_PROMPT_CLASS}>
         Ainda não tem uma conta?{" "}
-        <Link href="/cadastro" className="font-bold text-primary hover:underline">
+        <Link href="/cadastro" className={TEXT_LINK_CLASS}>
           Criar conta
         </Link>
       </p>

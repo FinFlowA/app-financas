@@ -89,6 +89,7 @@ import {
   salvarCriacaoFinanceira,
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
+import { invoicePresentationStatus } from "../../web/src/lib/invoice-status";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -389,9 +390,17 @@ export default function CartoesScreen() {
     const itensDaFaturaAtual = itens.filter(
       (item) => item.cartao_id === cartao.id && item.mes_fatura === mesAtual,
     );
+    const totalAtual = calcularTotalFatura(cartao.id, mesAtual);
+    const statusAtual = invoicePresentationStatus({
+      invoiceMonth: mesAtual,
+      closingDay: cartao.dia_fechamento,
+      itemCount: itensDaFaturaAtual.length,
+      openTotal: totalAtual,
+      allItemsPaid: itensDaFaturaAtual.length > 0 && itensDaFaturaAtual.every((item) => item.pago),
+    });
     const faturaAtualFoiPagaOuZerada =
       itensDaFaturaAtual.length === 0 ||
-      calcularTotalFatura(cartao.id, mesAtual) === 0 ||
+      totalAtual === 0 ||
       itensDaFaturaAtual.every((item) => item.pago);
     const mesExibido =
       faturaAtualFoiPagaOuZerada
@@ -402,6 +411,7 @@ export default function CartoesScreen() {
       mes: mesExibido,
       total: calcularTotalFatura(cartao.id, mesExibido),
       proxima: mesExibido !== mesAtual,
+      atualPaga: statusAtual === "paid",
       vencimento: formatarDiaMesVencimento(mesExibido, cartao.dia_vencimento),
     };
   };
@@ -892,6 +902,15 @@ export default function CartoesScreen() {
     : [];
 
   const totalFaturaAtiva = itensFatura.filter((i) => !i.pago).reduce((a, i) => a + Number(i.valor), 0);
+  const statusFaturaAtiva = cartaoAberto
+    ? invoicePresentationStatus({
+        invoiceMonth: mesFaturaAtivo,
+        closingDay: cartaoAberto.dia_fechamento,
+        itemCount: itensFatura.length,
+        openTotal: totalFaturaAtiva,
+        allItemsPaid: itensFatura.length > 0 && itensFatura.every((item) => item.pago),
+      })
+    : "open";
   const limiteUsado = cartaoAberto ? calcularLimiteUsado(cartaoAberto.id) : 0;
   const limiteDisponivel = cartaoAberto ? Math.max(0, cartaoAberto.limite - limiteUsado) : 0;
   const pctUsado = cartaoAberto && cartaoAberto.limite > 0
@@ -997,7 +1016,9 @@ export default function CartoesScreen() {
                   ) : (
                     <>
                       <Text style={estilos.cartaoFaturaLabel}>
-                        {faturaCard.proxima ? "Próxima fatura" : "Fatura atual"}
+                        {faturaCard.atualPaga
+                          ? "Fatura atual paga · próxima fatura"
+                          : faturaCard.proxima ? "Próxima fatura" : "Fatura atual"}
                       </Text>
                       <Text style={estilos.cartaoFatura}>{fmtReais(faturaCard.total)}</Text>
                       <View style={estilos.cartaoRodape}>
@@ -1073,6 +1094,13 @@ export default function CartoesScreen() {
                     <Text style={[estilos.faturaTotal, { color: totalFaturaAtiva > 0 ? FinFlowColors.red : Cores.primary }]}>
                       {fmtReais(totalFaturaAtiva)}
                     </Text>
+                    {(statusFaturaAtiva === "paid" || statusFaturaAtiva === "zero") && (
+                      <Text style={[estilos.faturaStatus, { color: statusFaturaAtiva === "paid" ? Cores.primary : Cores.secundario }]}>
+                        {statusFaturaAtiva === "paid"
+                          ? itensFatura.length === 0 ? "Fatura paga · fechou zerada" : "Fatura paga"
+                          : "Fatura zerada"}
+                      </Text>
+                    )}
                   </View>
                 </View>
                 <TouchableOpacity style={[estilos.modalClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalFaturaVisivel(false)} accessibilityLabel="Fechar fatura">
@@ -1153,9 +1181,9 @@ export default function CartoesScreen() {
               <ScrollView showsVerticalScrollIndicator={false} style={{ maxHeight: 280 }}>
                 {itensFatura.length === 0 ? (
                   <View style={estilos.faturaVazia}>
-                    <MaterialIcons name="receipt" size={32} color={Cores.borda} />
+                    <MaterialIcons name={statusFaturaAtiva === "paid" ? "check-circle" : "receipt"} size={32} color={statusFaturaAtiva === "paid" ? Cores.primary : Cores.borda} />
                     <Text style={[estilos.faturaVaziaText, { color: Cores.secundario }]}>
-                      Nenhuma compra nesta fatura
+                      {statusFaturaAtiva === "paid" ? "Fechou zerada e consta como paga" : "Nenhuma compra nesta fatura"}
                     </Text>
                   </View>
                 ) : (
@@ -2093,6 +2121,7 @@ const estilos = StyleSheet.create({
   },
   faturaCartaoNome: { fontSize: 15, fontWeight: "800", marginBottom: 5 },
   faturaTotal: { fontSize: 29, fontWeight: "900", letterSpacing: -0.45 },
+  faturaStatus: { fontSize: 10, fontWeight: "800", marginTop: 3 },
 
   limiteContainer: { borderRadius: 17, padding: 14, marginBottom: 17 },
   limiteRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },

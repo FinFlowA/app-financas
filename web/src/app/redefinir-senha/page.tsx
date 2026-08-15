@@ -5,7 +5,7 @@ import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 import { RECOVERY_COOKIE_NAME } from "@/lib/auth/constants";
 import { createClient } from "@/lib/supabase/server";
 
-export const metadata: Metadata = { title: "Nova senha | FinFlow" };
+export const metadata: Metadata = { title: "Nova senha" };
 
 export default async function ResetPasswordPage() {
   const cookieStore = await cookies();

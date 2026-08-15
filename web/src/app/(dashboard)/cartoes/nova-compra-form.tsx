@@ -6,6 +6,7 @@ import { hojeEmSaoPaulo } from "@/lib/date";
 import type { Categoria } from "@/lib/types";
 import { criarCompra } from "./actions";
 import { formatarMesAno, mesDaCompra } from "./card-utils";
+import styles from "./cartoes.module.css";
 
 function RequestId() {
   const [id] = useState(() => crypto.randomUUID());
@@ -13,7 +14,7 @@ function RequestId() {
 }
 
 function inputClass() {
-  return "w-full rounded-ff-sm border border-border bg-surface px-3 py-2.5 text-sm text-foreground outline-none focus:border-primary";
+  return styles.input;
 }
 
 export default function NovaCompraForm({
@@ -56,7 +57,7 @@ export default function NovaCompraForm({
       <button
         onClick={() => setAberto(true)}
         disabled={categoriasAtivas.length === 0}
-        className="rounded-ff-sm bg-primary px-3 py-2 text-xs font-bold text-white disabled:opacity-50"
+        className={styles.primaryButton}
       >
         + Nova compra
       </button>
@@ -64,43 +65,43 @@ export default function NovaCompraForm({
   }
 
   return (
-    <form action={enviar} className="rounded-ff-md border border-primary/30 bg-surface p-4">
+    <form action={enviar} className={styles.panel}>
       <RequestId />
       <input type="hidden" name="card_id" value={cartaoId} />
-      <div className="mb-4 flex items-center justify-between">
+      <div className={styles.panelHeader}>
         <div>
-          <h3 className="font-extrabold text-foreground">Adicionar compra</h3>
-          <p className="text-xs text-foreground-muted">
+          <h2>Adicionar compra</h2>
+          <p className={styles.helperText}>
             {mesPrevisto ? `Com a data informada, entra em ${mesPrevisto}.` : "Informe a data para calcular a primeira fatura."}
           </p>
         </div>
-        <button type="button" onClick={() => { setAberto(false); setErro(null); }} aria-label="Fechar" className="text-lg text-foreground-muted">×</button>
+        <button type="button" onClick={() => { setAberto(false); setErro(null); }} aria-label="Fechar" className={styles.closeButton}>×</button>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label className="sm:col-span-2">
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Descrição</span>
+      <div className={styles.formGrid}>
+        <label className={styles.formFull}>
+          <span className={styles.fieldLabel}>Descrição</span>
           <input name="description" required maxLength={100} placeholder="Ex.: Supermercado" className={inputClass()} />
         </label>
         <label>
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">
+          <span className={styles.fieldLabel}>
             {frequencia === "parcelada" && modoValor === "parcela" ? "Valor de cada parcela" : frequencia === "mensal" ? "Valor mensal" : "Valor total"}
           </span>
           <CurrencyInput name="value" required className="bg-surface" />
         </label>
         <label>
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Data da compra</span>
+          <span className={styles.fieldLabel}>Data da compra</span>
           <input type="date" name="purchase_date" required value={dataCompra} onChange={(event) => setDataCompra(event.target.value)} className={inputClass()} />
         </label>
         <label>
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Categoria</span>
+          <span className={styles.fieldLabel}>Categoria</span>
           <select name="category_id" required defaultValue="" className={inputClass()}>
             <option value="" disabled>Selecione</option>
             {categoriasAtivas.map((categoria) => <option key={categoria.id} value={categoria.id}>{categoria.nome}</option>)}
           </select>
         </label>
         <label>
-          <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Tipo</span>
+          <span className={styles.fieldLabel}>Tipo</span>
           <select
             name="frequency"
             value={frequencia}
@@ -116,11 +117,11 @@ export default function NovaCompraForm({
         {frequencia === "parcelada" && (
           <>
             <label>
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Parcelas</span>
+              <span className={styles.fieldLabel}>Parcelas</span>
               <input name="installments" type="number" min={2} max={48} defaultValue={2} required className={inputClass()} />
             </label>
             <label>
-              <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Valor informado</span>
+              <span className={styles.fieldLabel}>Valor informado</span>
               <select name="value_mode" value={modoValor} onChange={(event) => setModoValor(event.target.value as typeof modoValor)} className={inputClass()}>
                 <option value="total">Total da compra</option>
                 <option value="parcela">Valor de cada parcela</option>
@@ -131,25 +132,25 @@ export default function NovaCompraForm({
 
         {frequencia === "mensal" && (
           <label>
-            <span className="mb-1 block text-xs font-bold uppercase tracking-wide text-foreground-muted">Cobranças mensais</span>
+            <span className={styles.fieldLabel}>Cobranças mensais</span>
             <input name="recurrence_count" type="number" min={2} max={60} defaultValue={12} required className={inputClass()} />
           </label>
         )}
       </div>
 
       {frequencia === "parcelada" && (
-        <p className="mt-3 text-xs text-foreground-muted">O total é distribuído em centavos entre as parcelas; todas as cobranças são criadas atomicamente.</p>
+        <p className={styles.helperText}>O total é distribuído em centavos entre as parcelas; todas as cobranças são criadas atomicamente.</p>
       )}
       {frequencia === "mensal" && (
-        <p className="mt-3 text-xs text-foreground-muted">Compras fixas reservam limite apenas no mês corrente e podem ser encerradas nas cobranças futuras.</p>
+        <p className={styles.helperText}>Compras fixas reservam limite apenas no mês corrente e podem ser encerradas nas cobranças futuras.</p>
       )}
-      {erro && <p role="alert" className="mt-3 text-xs font-semibold text-red">{erro}</p>}
+      {erro && <p role="alert" className={styles.errorText}>{erro}</p>}
 
-      <div className="mt-4 flex gap-2">
-        <button disabled={pending} className="rounded-ff-sm bg-primary px-4 py-2 text-xs font-bold text-white disabled:opacity-60">
+      <div className={styles.formActions}>
+        <button disabled={pending} className={styles.primaryButton}>
           {pending ? "Salvando..." : "Adicionar compra"}
         </button>
-        <button type="button" onClick={() => { setAberto(false); setErro(null); }} className="rounded-ff-sm px-3 py-2 text-xs font-semibold text-foreground-muted">Cancelar</button>
+        <button type="button" onClick={() => { setAberto(false); setErro(null); }} className={styles.ghostButton}>Cancelar</button>
       </div>
     </form>
   );

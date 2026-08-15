@@ -1,0 +1,314 @@
+.statusPanel {
+  position: relative;
+  overflow: hidden;
+  border-color: color-mix(in srgb, var(--ff-primary) 22%, var(--border));
+  background:
+    radial-gradient(circle at 88% 5%, color-mix(in srgb, var(--ff-primary-bright) 13%, transparent), transparent 16rem),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 96%, var(--ff-primary) 4%), var(--surface));
+}
+
+.statusPanel::after {
+  position: absolute;
+  right: -3rem;
+  bottom: -5.2rem;
+  width: 15rem;
+  height: 9rem;
+  border: 1px solid color-mix(in srgb, var(--ff-primary-bright) 18%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2rem color-mix(in srgb, var(--ff-primary) 3%, transparent);
+  content: "";
+  pointer-events: none;
+  transform: rotate(-12deg);
+}
+
+.statusContent {
+  position: relative;
+  z-index: 1;
+}
+
+.statusIcon {
+  display: grid;
+  width: 2.8rem;
+  height: 2.8rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 30%, var(--border));
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--ff-primary) 14%, var(--surface));
+  color: var(--ff-primary-dark);
+}
+
+.statusIcon svg {
+  width: 1.3rem;
+  height: 1.3rem;
+}
+
+.warningIcon {
+  border-color: color-mix(in srgb, var(--ff-red) 35%, var(--border));
+  background: color-mix(in srgb, var(--ff-red) 12%, var(--surface));
+  color: var(--ff-red);
+}
+
+.cycleSwitch {
+  display: grid;
+  width: min(100%, 26rem);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.3rem;
+  margin-inline: auto;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--surface-muted) 76%, transparent);
+  padding: 0.3rem;
+}
+
+.cycleButton {
+  min-height: 2.8rem;
+  border: 1px solid transparent;
+  border-radius: 0.72rem;
+  color: var(--foreground-muted);
+  font-size: 0.83rem;
+  font-weight: 850;
+}
+
+.cycleButtonActive {
+  border-color: color-mix(in srgb, var(--ff-primary) 24%, var(--border));
+  background: var(--surface-raised);
+  box-shadow: 0 8px 24px -18px rgb(var(--shadow-color) / 0.75);
+  color: var(--foreground);
+}
+
+.planGrid {
+  display: grid;
+  align-items: stretch;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.planCard {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 1.25rem;
+  background:
+    linear-gradient(150deg, color-mix(in srgb, var(--surface-raised) 97%, var(--ff-primary) 3%), var(--surface));
+  padding: 1.35rem;
+  box-shadow: 0 22px 58px -48px rgb(var(--shadow-color) / 0.68);
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
+}
+
+.planCard::before {
+  position: absolute;
+  top: 0;
+  right: 1.25rem;
+  left: 1.25rem;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ff-primary-bright) 28%, transparent), transparent);
+  content: "";
+}
+
+.planCard:hover {
+  border-color: color-mix(in srgb, var(--ff-primary) 42%, var(--border));
+  box-shadow: 0 26px 62px -42px color-mix(in srgb, var(--ff-primary) 40%, transparent);
+  transform: translateY(-3px);
+}
+
+.planCurrent {
+  border-color: color-mix(in srgb, var(--ff-primary-bright) 54%, var(--border));
+  box-shadow: 0 22px 60px -42px color-mix(in srgb, var(--ff-primary) 55%, transparent);
+}
+
+.planPremium {
+  border-color: color-mix(in srgb, var(--ff-orange) 38%, var(--border));
+  background:
+    radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--ff-orange) 10%, transparent), transparent 13rem),
+    linear-gradient(150deg, color-mix(in srgb, var(--surface-raised) 96%, var(--ff-orange) 4%), var(--surface));
+}
+
+.badge {
+  display: inline-flex;
+  width: fit-content;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 30%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ff-primary) 13%, transparent);
+  padding: 0.35rem 0.65rem;
+  color: var(--ff-primary-dark);
+  font-size: 0.66rem;
+  font-weight: 850;
+}
+
+.badge svg {
+  width: 0.82rem;
+  height: 0.82rem;
+}
+
+.premiumBadge {
+  border-color: color-mix(in srgb, var(--ff-orange) 38%, transparent);
+  background: color-mix(in srgb, var(--ff-orange) 13%, transparent);
+  color: var(--ff-orange);
+}
+
+.priceBlock {
+  margin-top: 1.25rem;
+  padding-bottom: 1.2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.price {
+  font-size: clamp(1.7rem, 2.2vw, 2.35rem);
+  font-weight: 900;
+  letter-spacing: -0.055em;
+  line-height: 1;
+}
+
+.featureList {
+  display: grid;
+  flex: 1;
+  gap: 0.75rem;
+  margin-top: 1.2rem;
+  color: var(--foreground);
+  font-size: 0.82rem;
+}
+
+.featureItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  line-height: 1.45;
+}
+
+.check {
+  display: grid;
+  width: 1.22rem;
+  height: 1.22rem;
+  flex: 0 0 auto;
+  place-items: center;
+  margin-top: 0.02rem;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--ff-primary) 13%, transparent);
+  color: var(--ff-primary-dark);
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+.checkoutButton,
+.secondaryButton,
+.dangerButton {
+  display: inline-flex;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  border-radius: 0.8rem;
+  padding: 0.65rem 1rem;
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.secondaryButton svg,
+.dangerButton svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.checkoutButton {
+  width: 100%;
+  border: 1px solid color-mix(in srgb, var(--ff-primary-bright) 28%, var(--ff-primary));
+  background: linear-gradient(135deg, var(--ff-action-primary), var(--ff-action-primary-hover));
+  box-shadow: 0 14px 32px -20px color-mix(in srgb, var(--ff-primary-bright) 86%, transparent);
+  color: white;
+}
+
+.checkoutButton:hover:not(:disabled) {
+  box-shadow: 0 16px 36px -18px color-mix(in srgb, var(--ff-primary-bright) 92%, transparent);
+  transform: translateY(-1px);
+}
+
+.secondaryButton {
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  color: var(--foreground);
+}
+
+.secondaryButton:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ff-primary) 44%, var(--border));
+  color: var(--ff-primary-dark);
+}
+
+.dangerButton {
+  border: 1px solid color-mix(in srgb, var(--ff-red) 42%, var(--border));
+  background: color-mix(in srgb, var(--ff-red) 8%, transparent);
+  color: var(--ff-red);
+}
+
+.feedback {
+  margin-top: 0.7rem;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 28%, var(--border));
+  border-radius: 0.75rem;
+  background: color-mix(in srgb, var(--ff-primary) 10%, transparent);
+  padding: 0.7rem 0.8rem;
+  color: var(--ff-primary-dark);
+  font-size: 0.75rem;
+  font-weight: 750;
+}
+
+.feedbackError {
+  border-color: color-mix(in srgb, var(--ff-red) 35%, var(--border));
+  background: color-mix(in srgb, var(--ff-red) 9%, transparent);
+  color: var(--ff-red);
+}
+
+.modalBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(0, 9, 12, 0.8);
+  backdrop-filter: blur(8px);
+}
+
+.modal {
+  width: min(100%, 30rem);
+  border: 1px solid var(--border-strong);
+  border-radius: 1.3rem;
+  background: var(--surface-raised);
+  padding: 1.35rem;
+  box-shadow: 0 34px 100px -28px rgba(0, 0, 0, 0.95);
+}
+
+.modalActions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 1.25rem;
+}
+
+@media (max-width: 1120px) {
+  .planGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .planCard:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 680px) {
+  .planGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .planCard:last-child {
+    grid-column: auto;
+  }
+
+  .modalActions {
+    grid-template-columns: 1fr;
+  }
+}

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import LegalShell, { LegalList, LegalSection } from "@/components/legal/legal-shell";
 
 export const metadata: Metadata = {
-  title: "Termos de Uso | FinFlow",
+  title: "Termos de Uso",
   description: "Termos aplicáveis ao uso do FinFlow.",
 };
 

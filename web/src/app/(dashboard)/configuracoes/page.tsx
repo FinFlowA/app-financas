@@ -22,7 +22,7 @@ import {
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
-  title: "Configurações | FinFlow",
+  title: "Configurações",
   description: "Perfil, preferências, parceria, avisos e privacidade da conta FinFlow.",
 };
 
@@ -93,7 +93,6 @@ export default async function SettingsPage() {
   const [
     partnershipResult,
     notificationsResult,
-    entitlementResult,
     accountDecisionsResult,
     goalDecisionsResult,
     summaryResult,
@@ -107,7 +106,6 @@ export default async function SettingsPage() {
       .eq("destinatario_id", user.id)
       .order("criada_em", { ascending: false })
       .limit(30),
-    supabase.rpc("get_my_entitlement"),
     supabase.rpc("get_minhas_decisoes_conta_dissolucao"),
     supabase.rpc("get_minhas_decisoes_caixinha"),
     supabase.rpc("get_meu_resumo_dissolucao"),
@@ -133,11 +131,6 @@ export default async function SettingsPage() {
   const notifications = (notificationsResult.data ?? []) as SystemNotification[];
   const accountDecisions = (accountDecisionsResult.data ?? []) as AccountDecision[];
   const goalDecisions = (goalDecisionsResult.data ?? []) as GoalDecision[];
-  const entitlementRaw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
-  const entitlement = entitlementRaw && typeof entitlementRaw === "object"
-    ? entitlementRaw as Record<string, unknown>
-    : {};
-  const plan = ["smart", "premium"].includes(String(entitlement.plan)) ? String(entitlement.plan) : "free";
   const summaryRaw = Array.isArray(summaryResult.data) ? summaryResult.data[0] : summaryResult.data;
   const summary = summaryRaw && typeof summaryRaw === "object"
     ? summaryRaw as DissolutionSummary
@@ -145,16 +138,11 @@ export default async function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <section className="overflow-hidden rounded-ff-lg bg-header p-6 text-white shadow-sm sm:p-8">
-        <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
-          <div>
-            <p className="text-sm font-bold text-white/75">Sua conta FinFlow</p>
-            <h1 className="mt-1 text-3xl font-extrabold">Configurações</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-white/80">Perfil, preferências, parceria, privacidade e assinatura em um só lugar.</p>
-          </div>
-          <Link href="/planos" className="ff-focus self-start rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm font-extrabold capitalize text-white backdrop-blur hover:bg-white/20">
-            Plano {plan}
-          </Link>
+      <section className="ff-page-hero px-5 py-5 sm:px-7 sm:py-6">
+        <div>
+          <p className="text-xs font-extrabold uppercase tracking-[.14em] text-white/70">Sua conta FinFlow</p>
+          <h1 className="mt-1 text-3xl font-black tracking-tight">Configurações</h1>
+          <p className="mt-1 max-w-2xl text-sm leading-5 text-white/80">Perfil, aparência, notificações, parceria e privacidade.</p>
         </div>
       </section>
 
@@ -189,7 +177,7 @@ export default async function SettingsPage() {
       <DissolutionDecisions accounts={accountDecisions} goals={goalDecisions} />
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
-        <section className="ff-card p-5 sm:p-6">
+        <section className="ff-card p-5 sm:p-6" data-interactive="true">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-foreground">Perfil</h2>
@@ -200,7 +188,7 @@ export default async function SettingsPage() {
           <ProfileForm name={name} />
         </section>
 
-        <section className="ff-card p-5 sm:p-6">
+        <section className="ff-card p-5 sm:p-6" data-interactive="true">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-foreground">Dados de acesso</h2>
@@ -215,7 +203,7 @@ export default async function SettingsPage() {
             <div className="rounded-ff-sm bg-surface-muted p-3"><dt className="text-xs font-bold uppercase text-foreground-muted">Telefone</dt><dd className="mt-1 font-bold text-foreground">{formatPhone(phone)}</dd></div>
             <div className="rounded-ff-sm bg-surface-muted p-3"><dt className="text-xs font-bold uppercase text-foreground-muted">Nascimento</dt><dd className="mt-1 font-bold text-foreground">{dateOnly(birthDate)}</dd></div>
           </dl>
-          <p className="mt-4 text-xs leading-5 text-foreground-muted">E-mail, telefone e senha exigem um fluxo de segurança com reautenticação. Nunca são alterados por um formulário comum.</p>
+          <p className="mt-4 text-xs leading-5 text-foreground-muted">E-mail e senha exigem reautenticação. O telefone é opcional e não é usado como verificação de identidade.</p>
           <Link href="/seguranca" className="ff-focus mt-4 inline-flex rounded-ff-sm border border-border bg-surface-muted px-4 py-2.5 text-sm font-bold text-foreground hover:border-primary">
             Abrir área de segurança →
           </Link>

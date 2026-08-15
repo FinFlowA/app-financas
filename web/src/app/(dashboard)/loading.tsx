@@ -1,20 +1,47 @@
+import styles from "../app-states.module.css";
+
 export default function DashboardLoading() {
   return (
-    <div className="max-w-4xl animate-pulse">
-      <div className="h-4 w-28 rounded bg-surface-muted" />
-      <div className="mt-2 h-10 w-56 rounded bg-surface-muted" />
-
-      <div className="mt-5 h-24 rounded-ff-lg border border-border bg-surface p-5">
-        <div className="flex gap-8">
-          <div className="h-10 w-32 rounded bg-surface-muted" />
-          <div className="h-10 w-32 rounded bg-surface-muted" />
-        </div>
+    <div className={styles.loadingPage} role="status" aria-live="polite" aria-busy="true">
+      <span className={styles.srOnly}>Carregando seu painel financeiro...</span>
+      <div className={styles.loadingHeading} aria-hidden="true">
+        <span className={`${styles.skeleton} ${styles.headingLine}`} />
+        <span className={`${styles.skeleton} ${styles.headingAction}`} />
       </div>
 
-      <div className="mt-8 h-6 w-24 rounded bg-surface-muted" />
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="h-20 rounded-ff-md bg-surface-muted" />
-        <div className="h-20 rounded-ff-md bg-surface-muted" />
+      <section className={styles.loadingHero} aria-hidden="true">
+        <div>
+          <span className={`${styles.skeleton} ${styles.heroLabel}`} />
+          <span className={`${styles.skeleton} ${styles.heroValue}`} />
+          <span className={`${styles.skeleton} ${styles.heroBadge}`} />
+        </div>
+        <div className={styles.heroActions}>
+          {[0, 1, 2, 3].map((item) => <span key={item} className={`${styles.skeleton} ${styles.heroAction}`} />)}
+        </div>
+      </section>
+
+      <div className={styles.loadingColumns} aria-hidden="true">
+        <div className={styles.loadingMain}>
+          <section className={styles.loadingCard}>
+            <span className={`${styles.skeleton} ${styles.cardTitle}`} />
+            <div className={styles.statsRow}>
+              {[0, 1, 2].map((item) => <span key={item} className={`${styles.skeleton} ${styles.stat}`} />)}
+            </div>
+            <span className={`${styles.skeleton} ${styles.progress}`} />
+          </section>
+          <section className={styles.loadingCard}>
+            <span className={`${styles.skeleton} ${styles.cardTitle}`} />
+            <div className={styles.accountRow}>
+              {[0, 1, 2].map((item) => <span key={item} className={`${styles.skeleton} ${styles.account}`} />)}
+            </div>
+          </section>
+        </div>
+        <aside className={styles.loadingCard}>
+          <span className={`${styles.skeleton} ${styles.cardTitle}`} />
+          <div className={styles.listSkeleton}>
+            {[0, 1, 2, 3].map((item) => <span key={item} className={`${styles.skeleton} ${styles.listLine}`} />)}
+          </div>
+        </aside>
       </div>
     </div>
   );
