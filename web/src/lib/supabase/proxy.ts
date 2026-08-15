@@ -1,7 +1,20 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const PUBLIC_ROUTES = ["/login"];
+const PUBLIC_ROUTES = new Set([
+  "/login",
+  "/cadastro",
+  "/esqueci-senha",
+  "/redefinir-senha",
+  "/auth/callback",
+  "/termos",
+  "/privacidade",
+  "/manifest.webmanifest",
+  "/icon",
+  "/sw.js",
+]);
+
+const AUTH_ENTRY_ROUTES = new Set(["/login", "/cadastro", "/esqueci-senha"]);
 
 /** Renova a sessão do Supabase a cada navegação e protege as rotas
  * autenticadas. Chamado pelo proxy.ts na raiz do projeto. */
@@ -28,7 +41,8 @@ export async function updateSession(request: NextRequest) {
   );
 
   const { data: { user } } = await supabase.auth.getUser();
-  const isPublicRoute = PUBLIC_ROUTES.some((rota) => request.nextUrl.pathname.startsWith(rota));
+  const pathname = request.nextUrl.pathname;
+  const isPublicRoute = PUBLIC_ROUTES.has(pathname);
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone();
@@ -36,7 +50,7 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (user && isPublicRoute) {
+  if (user && AUTH_ENTRY_ROUTES.has(pathname)) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     return NextResponse.redirect(url);

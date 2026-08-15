@@ -6,6 +6,7 @@ export interface Conta {
   saldo_inicial: number;
   arquivado: boolean;
   compartilhado: boolean;
+  version: number;
 }
 
 export interface Categoria {
@@ -14,8 +15,10 @@ export interface Categoria {
   nome: string;
   cor: string;
   icone: string;
-  tipo: "receita" | "despesa";
-  ativa: boolean;
+  tipo: "receita" | "despesa" | "ambos";
+  ativa: number | boolean;
+  bloqueado_plano?: boolean;
+  version: number;
 }
 
 export interface Caixinha {
@@ -29,6 +32,7 @@ export interface Caixinha {
   compartilhado: boolean;
   data_prazo: string | null;
   arquivado: boolean;
+  version: number;
 }
 
 export interface Cartao {
@@ -40,6 +44,7 @@ export interface Cartao {
   dia_vencimento: number;
   dia_fechamento: number;
   ativo: boolean;
+  version: number;
 }
 
 export interface FaturaItem {
@@ -54,6 +59,7 @@ export interface FaturaItem {
   total_parcelas: number;
   categoria_id: number | null;
   pago: boolean;
+  grupo_parcela_id: number | null;
 }
 
 export interface Transacao {
@@ -67,4 +73,25 @@ export interface Transacao {
   data_vencimento: string;
   data_realizacao: string | null;
   status: "pendente" | "paga";
+  version: number;
+  transacao_pai_id: number | null;
+}
+
+export interface Parceria {
+  id: number;
+  solicitante_id: string | null;
+  convidado_id: string | null;
+  convidado_email: string;
+  status: "pendente" | "aceito" | string | null;
+}
+
+export interface NotificacaoSistema {
+  id: number;
+  tipo: string;
+  titulo: string;
+  mensagem: string;
+  referencia_id: number;
+  dados: Record<string, unknown> | null;
+  criada_em: string;
+  lida_em: string | null;
 }

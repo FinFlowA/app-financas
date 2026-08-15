@@ -10,6 +10,13 @@ const MENSAGENS: Record<string, string> = {
   OFFLINE_UNSUPPORTED_ACTION: "Essa operação não é suportada.",
   OFFLINE_IDEMPOTENCY_CONFLICT: "O pedido foi alterado durante o processamento. Tente novamente.",
   OFFLINE_RATE_LIMITED: "Muitas operações em pouco tempo. Aguarde um pouco e tente de novo.",
+  OFFLINE_VERSION_CONFLICT: "Este item foi alterado em outro dispositivo. Atualize a página e tente novamente.",
+  AI_PARTNERSHIP_NOT_FOUND: "Você precisa ter uma parceria aceita para compartilhar este item.",
+  FINFLOW_RESOURCE_ARCHIVED: "Reative o item antes de compartilhá-lo.",
+  AI_ACCOUNT_HAS_TRANSACTIONS: "Esta conta possui lançamentos e será preservada no histórico.",
+  AI_CATEGORY_HAS_REFERENCES: "Esta categoria possui lançamentos e será arquivada para preservar o histórico.",
+  AI_GOAL_HAS_PENDING_SCHEDULES: "Este objetivo possui agendamentos pendentes e não pode ser excluído agora.",
+  AI_CARD_HAS_ITEMS: "Este cartão possui compras e será arquivado para preservar o histórico.",
   AI_ACCOUNT_NOT_FOUND: "Não encontrei essa conta ou ela não está disponível para esta ação.",
   AI_ACCOUNT_ARCHIVED: "A conta está arquivada. Reative-a antes de movimentá-la.",
   AI_GOAL_NOT_FOUND: "Não encontrei esse objetivo ou ele não está disponível para esta ação.",
@@ -25,6 +32,12 @@ const MENSAGENS: Record<string, string> = {
   AI_PAYMENT_ABOVE_INVOICE: "O pagamento não pode ultrapassar o saldo atual da fatura.",
   AI_TOTAL_PAYMENT_MISMATCH: "O valor integral precisa ser igual ao saldo atual da fatura.",
   AI_INVALID_INVOICE_MONTH: "O mês da fatura é inválido.",
+  AI_ACTION_STATE_CHANGED: "Os dados mudaram desde que a tela foi aberta. Atualize e revise a operação.",
+  AI_TRANSACTION_ALREADY_PAID: "Este lançamento já foi concluído.",
+  AI_TRANSACTION_NOT_PAID: "Este lançamento ainda está pendente.",
+  AI_INVALID_REALIZED_VALUE: "O valor realizado não atende às regras deste lançamento.",
+  AI_SAME_ACCOUNT: "Escolha contas diferentes para realizar a transferência.",
+  AI_PARTIAL_PAYMENT_MISMATCH: "Para pagamento parcial, informe um valor menor que o saldo da fatura.",
 };
 
 export function traduzirErro(codigo: string): string {

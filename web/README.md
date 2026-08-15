@@ -1,36 +1,116 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinFlow Web
 
-## Getting Started
+Painel web oficial do FinFlow, conectado ao mesmo Supabase do aplicativo
+mobile. A interface usa Next.js 16, React 19, TypeScript e `@supabase/ssr`.
 
-First, run the development server:
+## Funcionalidades
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Cadastro, confirmação de e-mail, login e recuperação de senha.
+- Tutorial inicial e regularização de cadastro/termos obrigatórios.
+- Início com seleção independente de contas, saldos, visão mensal e alertas.
+- Contas e categorias: criar, editar, arquivar, reativar e excluir com segurança.
+- Histórico completo com busca, mês, status, tipos, contas e categorias.
+- Receitas, despesas e transferências únicas, parceladas ou recorrentes.
+- Conclusão integral ou parcial, histórico de baixas, reabertura e séries.
+- Objetivos: criar, editar, guardar, resgatar, recorrências, projeções e histórico.
+- Cartões, compras, parcelas, faturas, pagamentos parciais, juros e estornos.
+- Fluxo de caixa consolidado por ano e por múltiplas contas.
+- Assistente financeiro com prévia e confirmação explícita antes de cada ação.
+- Perfil, segurança, tema, privacidade de valores, notificações e conta conjunta.
+- Planos e checkout pelo backend seguro do Mercado Pago.
+- Termos de Uso e Política de Privacidade.
+- PWA instalável, aviso de conexão e alertas financeiros locais enquanto o
+  site está aberto. Dados financeiros privados não são armazenados no cache
+  público do service worker nem nas preferências de notificação.
+
+Recursos nativos sem equivalente literal no navegador, como biometria do
+dispositivo e proteção da tela de aplicativos recentes, são substituídos por
+reauthenticação por senha, sessão em cookie seguro, CSP e controle para ocultar
+valores.
+
+## Desenvolvimento local
+
+Crie `web/.env.local` a partir de `.env.local.example`:
+
+```dotenv
+NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
+NEXT_PUBLIC_SITE_URL=http://localhost:3100
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Não use `service_role` nem chaves de IA/pagamentos no site. Esses segredos
+pertencem exclusivamente às Edge Functions.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cd web
+npm install
+npm run dev -- --port 3100
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Abra [http://localhost:3100](http://localhost:3100).
 
-## Learn More
+## Validação
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+npm run lint
+npx tsc --noEmit --incremental false
+npm test
+npm run build
+npm audit --omit=dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Backend necessário
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Antes de liberar operações financeiras, aplique todas as migrations do
+diretório `../supabase/migrations`. A migration `20260815000100` cria
+`execute_manual_financial_action`; a `20260815000200` protege o
+compartilhamento de contas/objetivos e precisa existir no banco antes de essa
+função ser disponibilizada no site. Elas reutilizam as regras transacionais do
+FinFlow e impedem que o navegador altere saldos ou séries diretamente.
 
-## Deploy on Vercel
+No Supabase Auth, cadastre os endereços de redirecionamento do domínio final:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```text
+https://seu-dominio/auth/callback?flow=signup
+https://seu-dominio/auth/callback?flow=recovery
+https://seu-dominio/auth/callback?flow=email-change
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Também configure `NEXT_PUBLIC_SITE_URL` no provedor de hospedagem. Checkout,
+assinaturas e IA dependem das Edge Functions e secrets documentados em
+`../docs/billing-setup.md` e `../docs/ai-setup.md`.
+
+Os alertas locais dependem de o site estar aberto, online e autorizado pelo
+navegador. Alertas com o navegador fechado exigem uma integração Web Push/VAPID
+que ainda não faz parte deste repositório.
+
+## Segurança
+
+- Sessão SSR renovada por proxy e cookies do Supabase.
+- Todas as páginas financeiras exigem usuário autenticado.
+- Escritas compostas usam RPCs atômicas, idempotentes e protegidas por RLS.
+- Ações sensíveis revalidam usuário, propriedade, versão e estado financeiro.
+- URLs externas de checkout são limitadas aos domínios oficiais permitidos.
+- O assistente não recebe credenciais e nunca executa uma ação sem confirmação.
+- O service worker não grava HTML autenticado nem respostas financeiras.
+- Cabeçalhos CSP, anti-frame, referrer e permissions policy são definidos no
+  `next.config.ts`.
+
+## Estrutura
+
+```text
+src/app/(dashboard)/
+  assistente/      IA financeira
+  cartoes/         cartões, compras e faturas
+  categorias/      categorias
+  configuracoes/   perfil, parceria e preferências
+  contas/          contas ativas e arquivadas
+  objetivos/       caixinhas e movimentos
+  planos/          assinatura
+  relatorios/      fluxo de caixa
+  seguranca/       dados de acesso
+  transacoes/      histórico e lançamentos
+src/components/    autenticação, layout, onboarding e componentes comuns
+src/lib/           domínio financeiro, auth e clientes Supabase
+public/sw.js        shell PWA sem cache de dados privados
+```

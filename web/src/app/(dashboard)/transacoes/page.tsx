@@ -1,70 +1,117 @@
+import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
+import { collectPaymentSummaryRows } from "@/lib/payment-summaries";
 import { createClient } from "@/lib/supabase/server";
-import { formatarData, formatarReais } from "@/lib/format";
-import type { Categoria, Conta, Transacao } from "@/lib/types";
+import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
+import TransactionManager from "./transaction-manager";
+import type { QuickFilter, TransactionRow } from "./transaction-model";
 
-export default async function TransacoesPage() {
+type SearchParameters = Record<string, string | string[] | undefined>;
+
+function first(value: string | string[] | undefined): string {
+  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+}
+
+function quickFilter(value: string): QuickFilter {
+  return value === "overdue" || value === "today" || value === "next7" ? value : null;
+}
+
+export default async function TransactionsPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParameters>;
+}) {
+  const parameters = await searchParams;
+  const today = hojeEmSaoPaulo();
+  const requestedMonth = first(parameters.month);
+  const month = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedMonth)
+    ? requestedMonth
+    : mesAtualEmSaoPaulo();
+  const quick = quickFilter(first(parameters.quick));
+  const openNew = ["1", "true", "yes"].includes(first(parameters.new).toLowerCase());
   const supabase = await createClient();
 
-  const [{ data: transacoesData }, { data: contasData }, { data: categoriasData }] = await Promise.all([
+  const [{ data: authData, error: authError }, accountsResult, categoriesResult, cardsResult] = await Promise.all([
+    supabase.auth.getUser(),
     supabase
-      .from("transacoes")
-      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status")
-      .order("data_vencimento", { ascending: false })
-      .limit(100),
-    supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado"),
-    supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa"),
+      .from("contas")
+      .select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version")
+      .order("arquivado")
+      .order("nome"),
+    supabase
+      .from("categorias")
+      .select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version")
+      .order("nome"),
+    supabase
+      .from("cartoes")
+      .select("id, user_id, nome, cor, limite, dia_vencimento, dia_fechamento, ativo, version")
+      .order("nome"),
   ]);
+  if (authError || !authData.user) throw new Error("Sessão inválida.");
+  if (accountsResult.error || categoriesResult.error || cardsResult.error) throw new Error("Não foi possível carregar contas, categorias e cartões agora.");
 
-  const transacoes = (transacoesData ?? []) as Transacao[];
-  const contasPorId = new Map(((contasData ?? []) as Conta[]).map((conta) => [conta.id, conta]));
-  const categoriasPorId = new Map(((categoriasData ?? []) as Categoria[]).map((categoria) => [categoria.id, categoria]));
+  // O Histórico precisa atravessar meses nos filtros rápidos. Buscamos em
+  // páginas para não perder itens no limite padrão de linhas do PostgREST.
+  const transactions: TransactionRow[] = [];
+  const pageSize = 1_000;
+  for (let start = 0; ; start += pageSize) {
+    const result = await supabase
+      .from("transacoes")
+      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+      .order("id", { ascending: false })
+      .range(start, start + pageSize - 1);
+    if (result.error) throw new Error("Não foi possível carregar o Histórico agora.");
+    const rows = (result.data ?? []) as TransactionRow[];
+    transactions.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+
+  // O Histórico de faturas também pode ultrapassar o limite padrão do
+  // PostgREST. Mantemos a paginação no servidor e deixamos a RLS restringir
+  // tanto cartões quanto itens ao usuário autenticado.
+  const invoiceItems: FaturaItem[] = [];
+  for (let start = 0; ; start += pageSize) {
+    const result = await supabase
+      .from("fatura_itens")
+      .select("id, cartao_id, user_id, descricao, valor, data_compra, mes_fatura, parcela_atual, total_parcelas, categoria_id, pago, grupo_parcela_id")
+      .order("id", { ascending: false })
+      .range(start, start + pageSize - 1);
+    if (result.error) throw new Error("Não foi possível carregar as faturas no Histórico agora.");
+    const rows = (result.data ?? []) as FaturaItem[];
+    invoiceItems.push(...rows);
+    if (rows.length < pageSize) break;
+  }
+
+  const rootTransactions = transactions.filter((transaction) => transaction.transacao_pai_id === null);
+  const summaryChunks: number[][] = [];
+  for (let index = 0; index < rootTransactions.length; index += 500) {
+    summaryChunks.push(rootTransactions.slice(index, index + 500).map((transaction) => transaction.id));
+  }
+  const summaryResults = await Promise.all(summaryChunks.map((ids) =>
+    supabase.rpc("list_transaction_payment_summaries", { p_transaction_ids: ids })
+  ));
+  let paymentSummaries: unknown[];
+  try {
+    paymentSummaries = collectPaymentSummaryRows(summaryResults);
+  } catch {
+    throw new Error("Não foi possível carregar os resumos de pagamentos do Histórico agora.");
+  }
 
   return (
-    <div className="max-w-3xl">
-      <h1 className="mb-6 text-2xl font-extrabold text-foreground">Histórico</h1>
-
-      <div className="flex flex-col gap-2">
-        {transacoes.map((transacao) => {
-          const conta = contasPorId.get(transacao.conta_id);
-          const categoria = transacao.categoria_id ? categoriasPorId.get(transacao.categoria_id) : undefined;
-          const isReceita = transacao.tipo === "receita";
-
-          return (
-            <div
-              key={transacao.id}
-              className="flex items-center justify-between rounded-ff-md border border-border bg-surface px-4 py-3"
-            >
-              <div className="min-w-0">
-                <p className="truncate font-semibold text-foreground">{transacao.descricao}</p>
-                <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-foreground-muted">
-                  <span>{formatarData(transacao.data_vencimento)}</span>
-                  {conta && (
-                    <span className="font-semibold" style={{ color: conta.cor }}>
-                      {conta.nome}
-                    </span>
-                  )}
-                  {categoria && (
-                    <span className="font-semibold" style={{ color: categoria.cor }}>
-                      {categoria.nome}
-                    </span>
-                  )}
-                  <span className={transacao.status === "paga" ? "text-primary" : "text-orange"}>
-                    {transacao.status === "paga" ? "Concluído" : "Pendente"}
-                  </span>
-                </div>
-              </div>
-              <p className={`shrink-0 pl-3 font-bold ${isReceita ? "text-primary" : "text-red"}`}>
-                {isReceita ? "+ " : "- "}
-                {formatarReais(Number(transacao.valor))}
-              </p>
-            </div>
-          );
-        })}
-
-        {transacoes.length === 0 && (
-          <p className="text-sm text-foreground-muted">Nenhum lançamento encontrado.</p>
-        )}
-      </div>
+    <div className="mx-auto max-w-7xl">
+      <TransactionManager
+        userId={authData.user.id}
+        initialMonth={month}
+        initialQuick={quick}
+        initialOpenNew={openNew}
+        today={today}
+        accounts={(accountsResult.data ?? []) as Conta[]}
+        categories={(categoriesResult.data ?? []) as Categoria[]}
+        cards={(cardsResult.data ?? []) as Cartao[]}
+        invoiceItems={invoiceItems}
+        transactions={rootTransactions}
+        financialEvents={transactions}
+        paymentSummaryRows={paymentSummaries}
+      />
     </div>
   );
 }

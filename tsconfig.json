@@ -15,6 +15,7 @@
     "expo-env.d.ts"
   ],
   "exclude": [
-    "supabase/functions"
+    "supabase/functions",
+    "web"
   ]
 }

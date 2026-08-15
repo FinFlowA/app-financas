@@ -49,6 +49,7 @@ O projeto é mantido de forma colaborativa pela equipe FinFlow. O histórico té
 | Camada | Tecnologias |
 |---|---|
 | Aplicativo | React Native 0.81, React 19 e TypeScript |
+| Painel web | Next.js 16, React 19 e TypeScript |
 | Plataforma | Expo SDK 54 e Expo Router |
 | Backend | Supabase, PostgreSQL e Supabase Auth |
 | Segurança de dados | Row Level Security (RLS) |
@@ -119,6 +120,21 @@ Depois execute:
 ```bash
 npx expo start
 ```
+
+O painel web completo fica em `web/` e utiliza o mesmo Supabase:
+
+```bash
+cd web
+npm install
+npm run dev -- --port 3100
+```
+
+Consulte [`web/README.md`](./web/README.md) para variáveis, redirects de
+autenticação, validações e requisitos de deploy.
+
+O estado detalhado da entrega web, as validações executadas e as pendências
+para a próxima pessoa estão em
+[`docs/HANDOFF_2026-08-15.md`](./docs/HANDOFF_2026-08-15.md).
 
 Comandos úteis:
 
@@ -191,6 +207,8 @@ docs/
 supabase/
   migrations/           migrações versionadas do banco
   functions/finance-ai/ Edge Function segura do assistente
+web/
+  src/app/              painel web completo em Next.js
 ```
 
 ## Colaboração
@@ -207,7 +225,7 @@ Contribuições técnicas permanecem registradas naturalmente no histórico do G
 - [ ] Integrar compras das lojas Google Play e Apple à fonte única de direitos.
 - [ ] Ampliar testes automatizados das regras financeiras.
 - [ ] Importar extratos bancários.
-- [ ] Criar dashboard web complementar.
+- [x] Criar dashboard web com paridade das operações financeiras do app.
 - [ ] Exportar relatórios em PDF.
 - [ ] Evoluir o funcionamento offline.
 

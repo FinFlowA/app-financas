@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { formatarReais } from "@/lib/format";
 
-export type MesFluxo = { label: string; receitas: number; despesas: number };
+export type MesFluxo = {
+  label: string;
+  receitas: number;
+  despesas: number;
+  receitasPrevistas?: number;
+  despesasPrevistas?: number;
+};
 export type PontoSaldo = { label: string; saldo: number; projetado: boolean };
 
 function numeroLimpo(valor: number): number {
@@ -22,7 +28,10 @@ export default function FluxoSaldoChart({
 }) {
   const [ativo, setAtivo] = useState<number | null>(null);
 
-  const maiorBarra = Math.max(1, ...meses.map((m) => Math.max(m.receitas, m.despesas)));
+  const maiorBarra = Math.max(1, ...meses.map((m) => Math.max(
+    m.receitas + (m.receitasPrevistas ?? 0),
+    m.despesas + (m.despesasPrevistas ?? 0),
+  )));
   const saldoValores = saldos.map((p) => p.saldo);
   const maxValor = Math.max(maiorBarra, ...saldoValores, 0);
   const minValor = Math.min(...saldoValores, 0);
@@ -112,8 +121,17 @@ export default function FluxoSaldoChart({
               >
                 <rect x={grupoX} y={margemTopo} width={larguraGrupo} height={areaAltura} fill="transparent" />
                 <title>
-                  {`${mes.label}: recebido ${formatarReais(mes.receitas)}, gasto ${formatarReais(mes.despesas)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
+                  {`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
                 </title>
+                <rect
+                  x={centro - larguraBarra - 1}
+                  y={y(mes.receitas + (mes.receitasPrevistas ?? 0))}
+                  width={larguraBarra}
+                  height={Math.max(0, y(0) - y(mes.receitas + (mes.receitasPrevistas ?? 0)))}
+                  rx={3}
+                  fill="var(--color-primary)"
+                  opacity={destacado || ativo === null ? 0.3 : 0.15}
+                />
                 <rect
                   x={centro - larguraBarra - 1}
                   y={y(mes.receitas)}
@@ -122,6 +140,15 @@ export default function FluxoSaldoChart({
                   rx={3}
                   fill="var(--color-primary)"
                   opacity={destacado || ativo === null ? 1 : 0.4}
+                />
+                <rect
+                  x={centro + 1}
+                  y={y(mes.despesas + (mes.despesasPrevistas ?? 0))}
+                  width={larguraBarra}
+                  height={Math.max(0, y(0) - y(mes.despesas + (mes.despesasPrevistas ?? 0)))}
+                  rx={3}
+                  fill="var(--color-red)"
+                  opacity={destacado || ativo === null ? 0.3 : 0.15}
                 />
                 <rect
                   x={centro + 1}
@@ -184,6 +211,8 @@ export default function FluxoSaldoChart({
             </p>
             <p className="text-primary"><strong>{formatarReais(mesAtivo.receitas)}</strong> recebido</p>
             <p className="text-red"><strong>{formatarReais(mesAtivo.despesas)}</strong> gasto</p>
+            {(mesAtivo.receitasPrevistas ?? 0) > 0 && <p className="text-primary/70"><strong>{formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong> a receber</p>}
+            {(mesAtivo.despesasPrevistas ?? 0) > 0 && <p className="text-red/70"><strong>{formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong> a pagar</p>}
           </div>
         )}
       </div>
