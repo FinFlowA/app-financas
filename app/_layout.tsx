@@ -44,6 +44,7 @@ import {
   exibirEventoObrigatorioLocal,
   limparNotificacoesAoSair,
   pedirPermissaoNotificacoes,
+  registrarNavegacaoPorNotificacao,
 } from "../lib/notifications";
 import {
   type TipoPlano,
@@ -510,6 +511,16 @@ export default function RootLayout() {
       eventoApp.remove();
     };
   }, [sincronizarPendenciasOffline]);
+
+  // Leva o usuário para a tela correspondente ao tocar em uma notificação,
+  // inclusive quando o app estava fechado (cold start).
+  useEffect(() => registrarNavegacaoPorNotificacao((rota) => {
+    if (rota === "atrasados") router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+    else if (rota === "hoje") router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
+    else if (rota === "cartoes") router.push("/(tabs)/cartoes" as any);
+    else if (rota === "objetivos") router.push("/(tabs)/caixinhas" as any);
+    else router.push("/(tabs)" as any);
+  }), [router]);
 
   // Protege saldos e movimentações na visualização de aplicativos recentes.
   // No Android, FLAG_SECURE também bloqueia capturas enquanto houver sessão;

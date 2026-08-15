@@ -24,7 +24,7 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
-import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
+import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import {
   dispositivoSemConexao,
@@ -2522,26 +2522,32 @@ export default function Dashboard() {
         onRequestClose={() => setModalVencidosVisivel(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 4, borderTopColor: "#E76F51" }]}>
-            <View style={{ alignItems: "center", marginBottom: 15 }}>
-              <View style={{ width: 60, height: 60, borderRadius: 30, backgroundColor: "#E76F5122", alignItems: "center", justifyContent: "center", marginBottom: 10 }}>
-                <MaterialIcons name="warning" size={32} color="#E76F51" />
-              </View>
-              <Text style={{ color: isDark ? "#FFF" : "#1A1A1A", fontSize: 18, fontWeight: "bold" }}>
-                Lançamentos Vencidos
-              </Text>
+          <View style={[styles.accountScopePanel, FinFlowShadow, { backgroundColor: novoTema.surface, borderColor: novoTema.border, alignItems: "center", padding: 24, maxHeight: undefined }]}>
+            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: "#EE6B6322", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+              <MaterialIcons name="warning-amber" size={28} color={FinFlowColors.red} />
             </View>
-            <Text style={{ color: isDark ? "#AAA" : "#555", textAlign: "center", fontSize: 15, marginBottom: 20, lineHeight: 22 }}>
+            <Text style={{ color: novoTema.text, fontSize: 18, fontWeight: "900", marginBottom: 8, textAlign: "center" }}>
+              Lançamentos vencidos
+            </Text>
+            <Text style={{ color: novoTema.textMuted, textAlign: "center", fontSize: 14, lineHeight: 21, marginBottom: 22 }}>
               Você tem{" "}
-              <Text style={{ color: "#E76F51", fontWeight: "bold" }}>{qtdVencidas}</Text>{" "}
-              lançamento{qtdVencidas > 1 ? "s" : ""} vencido{qtdVencidas > 1 ? "s" : ""} sem resolver.{"\n\n"}
-              Acesse o <Text style={{ fontWeight: "bold", color: isDark ? "#FFF" : "#1A1A1A" }}>Histórico</Text> para regularizá-los.
+              <Text style={{ color: FinFlowColors.red, fontWeight: "800" }}>{qtdVencidas}</Text>{" "}
+              lançamento{qtdVencidas > 1 ? "s" : ""} vencido{qtdVencidas > 1 ? "s" : ""} sem resolver.
             </Text>
             <TouchableOpacity
-              style={{ backgroundColor: "#E76F51", paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+              style={{ width: "100%", minHeight: 50, backgroundColor: novoTema.primary, borderRadius: FinFlowRadius.medium, alignItems: "center", justifyContent: "center", marginBottom: 10 }}
+              onPress={() => {
+                setModalVencidosVisivel(false);
+                router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+              }}
+            >
+              <Text style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}>Ver no Histórico</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={{ width: "100%", minHeight: 46, alignItems: "center", justifyContent: "center" }}
               onPress={() => setModalVencidosVisivel(false)}
             >
-              <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Entendido</Text>
+              <Text style={{ color: novoTema.textMuted, fontWeight: "700", fontSize: 14 }}>Ver depois</Text>
             </TouchableOpacity>
           </View>
         </View>

@@ -6,7 +6,9 @@ import {
   Animated,
   Alert,
   DeviceEventEmitter,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -68,6 +70,7 @@ interface Categoria {
 interface Conta {
   id: number;
   nome: string;
+  cor: string;
   saldo_inicial: number;
   arquivado?: boolean;
 }
@@ -285,7 +288,7 @@ export default function TransacoesScreen() {
     try {
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
-        supabase.from("contas").select("id, nome, saldo_inicial, arquivado"),
+        supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
         supabase.from("transacoes").select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id"),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
@@ -2068,8 +2071,8 @@ export default function TransacoesScreen() {
                   )}
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data agendada</Text><Text style={{ color: Cores.textoPrincipal }}>{(resumoPagamento.scheduledDate ?? t.data_vencimento).split("-").reverse().join("/")}</Text></View>
                   {t.data_realizacao && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Data realizada</Text><Text style={{ color: Cores.textoPrincipal }}>{t.data_realizacao.split("-").reverse().join("/")}</Text></View>}
-                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Conta</Text><Text style={{ color: Cores.textoPrincipal }}>{conta?.nome ?? "Não informada"}</Text></View>
-                  {destino && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Destino</Text><Text style={{ color: Cores.textoPrincipal }}>{destino.nome}</Text></View>}
+                  <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Conta</Text><Text style={{ color: conta?.cor ?? Cores.textoPrincipal, fontWeight: "700" }}>{conta?.nome ?? "Não informada"}</Text></View>
+                  {destino && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Destino</Text><Text style={{ color: destino.cor ?? Cores.textoPrincipal, fontWeight: "700" }}>{destino.nome}</Text></View>}
                   {categoria && <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Categoria</Text><Text style={{ color: categoria.cor, fontWeight: "700" }}>{categoria.nome}</Text></View>}
                   <View style={styles.detalheLinha}><Text style={{ color: Cores.textoSecundario }}>Tipo</Text><Text style={{ color: Cores.textoPrincipal }}>{transferencia ? "Transferência" : t.tipo === "receita" ? "Receita" : "Despesa"}</Text></View>
                 </View>
@@ -2300,7 +2303,8 @@ export default function TransacoesScreen() {
 
       {transacaoConfirmar && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoConfirmar(null)}>
-          <View style={styles.modalOverlay}>
+          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+            <ScrollView contentContainerStyle={{ width: "100%", alignItems: "center" }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
             <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Confirmar realização</Text>
               <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 20, marginBottom: 16 }}>
@@ -2400,7 +2404,8 @@ export default function TransacoesScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+            </ScrollView>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 

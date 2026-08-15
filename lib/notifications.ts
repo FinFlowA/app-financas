@@ -7,6 +7,9 @@ const NOTIFICATION_SCHEDULE_VERSION = "2026-08-08-v5";
 const ANDROID_NOTIFICATION_CHANNEL_ID = "finflow-private-v2";
 const LOCAL_DEMO = process.env.EXPO_PUBLIC_FINFLOW_LOCAL_DEMO === "true";
 
+/** Tela para a qual o toque em cada tipo de notificação deve levar o usuário. */
+export type RotaNotificacao = "atrasados" | "hoje" | "cartoes" | "objetivos" | "inicio";
+
 export type PreferenciasNotificacoes = {
   transacoesVencidas: boolean;
   transacoesDoDia: boolean;
@@ -159,7 +162,7 @@ export async function exibirEventoObrigatorioLocal(
         body: mensagem,
         sound: "default",
         badge: 0,
-        data: { origem: "finflow_sistema", eventoId },
+        data: { origem: "finflow_sistema", eventoId, rota: "inicio" satisfies RotaNotificacao },
       },
       trigger: Platform.OS === "android"
         ? { type: "timeInterval", seconds: 1, repeats: false, channelId: ANDROID_NOTIFICATION_CHANNEL_ID } as any
@@ -336,10 +339,9 @@ async function executarAgendamentoNotificacoesDoApp(
     const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
 
     const channelId = Platform.OS === "android" ? ANDROID_NOTIFICATION_CHANNEL_ID : undefined;
-    const notifBase = (extra?: object) => ({
+    const notifBase = (rota: RotaNotificacao) => ({
       badge: 0,
-      data: { origem: "finflow_opcional" },
-      ...extra,
+      data: { origem: "finflow_opcional", rota },
     });
     const gatilhoIntervalo = (seconds: number) => ({
       type: "timeInterval",
@@ -381,7 +383,7 @@ async function executarAgendamentoNotificacoesDoApp(
             const pct = Math.round((cartao.limite_usado / cartao.limite) * 100);
             const identificador = await agendarSeSessaoAtiva({
               content: {
-                ...notifBase(),
+                ...notifBase("cartoes"),
                 title: `⚠️ Cartão ${cartao.nome} — ${pct}% do limite usado`,
                 body: `Disponível: R$ ${(cartao.limite - cartao.limite_usado).toFixed(2)} de R$ ${cartao.limite.toFixed(2)}`,
               },
@@ -414,14 +416,14 @@ async function executarAgendamentoNotificacoesDoApp(
       const receitasVencidas = vencidas.filter((t) => t.tipo === "receita").length;
       if (despesasVencidas > 0) {
         const identificador = await agendarSeSessaoAtiva({
-          content: { ...notifBase(), title: "🔴 FinFlow — Despesas Vencidas", body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!` },
+          content: { ...notifBase("atrasados"), title: "🔴 FinFlow — Despesas Vencidas", body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!` },
           trigger: gatilhoIntervalo(4),
         });
         if (identificador) identificadoresVencidos.push(identificador);
       }
       if (receitasVencidas > 0) {
         const identificador = await agendarSeSessaoAtiva({
-          content: { ...notifBase(), title: "🟡 FinFlow — Receitas Vencidas", body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!` },
+          content: { ...notifBase("atrasados"), title: "🟡 FinFlow — Receitas Vencidas", body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!` },
           trigger: gatilhoIntervalo(5),
         });
         if (identificador) identificadoresVencidos.push(identificador);
@@ -461,7 +463,7 @@ async function executarAgendamentoNotificacoesDoApp(
       if (hora8 > agora) {
         const seg8 = Math.floor((hora8.getTime() - agora.getTime()) / 1000);
         await agendarSeSessaoAtiva({
-          content: { ...notifBase(), title: "📅 FinFlow — Vencimento Hoje", body: corpo },
+          content: { ...notifBase("hoje"), title: "📅 FinFlow — Vencimento Hoje", body: corpo },
           trigger: gatilhoIntervalo(seg8),
         });
       }
@@ -471,7 +473,7 @@ async function executarAgendamentoNotificacoesDoApp(
       if (hora19 > agora) {
         const seg19 = Math.floor((hora19.getTime() - agora.getTime()) / 1000);
         await agendarSeSessaoAtiva({
-          content: { ...notifBase(), title: "⏰ FinFlow — Lembrete de Hoje", body: corpo },
+          content: { ...notifBase("hoje"), title: "⏰ FinFlow — Lembrete de Hoje", body: corpo },
           trigger: gatilhoIntervalo(seg19),
         });
       }
@@ -496,7 +498,7 @@ async function executarAgendamentoNotificacoesDoApp(
           const falta = Number(caixa.meta_valor) - Number(caixa.saldo_atual);
           await agendarSeSessaoAtiva({
             content: {
-              ...notifBase(),
+              ...notifBase("objetivos"),
               title: titulo,
               body: `"${caixa.nome}" — faltam R$ ${falta.toFixed(2)} para atingir a meta.`,
             },
@@ -536,7 +538,7 @@ async function executarAgendamentoNotificacoesDoApp(
               const segundos = Math.floor((evento.data.getTime() - agora.getTime()) / 1000);
               if (segundos > 0) {
                 await agendarSeSessaoAtiva({
-                  content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
+                  content: { ...notifBase("cartoes"), title: ev.titulo, body: ev.corpo },
                   trigger: gatilhoIntervalo(segundos),
                 });
               }
@@ -564,7 +566,7 @@ async function executarAgendamentoNotificacoesDoApp(
             const segundos = Math.floor((eventoFechamento.data.getTime() - agora.getTime()) / 1000);
             if (segundos > 0) {
               await agendarSeSessaoAtiva({
-                content: { ...notifBase(), title: ev.titulo, body: ev.corpo },
+                content: { ...notifBase("cartoes"), title: ev.titulo, body: ev.corpo },
                 trigger: gatilhoIntervalo(segundos),
               });
             }
@@ -613,4 +615,44 @@ export function agendarNotificacoesDoApp(
   const atual = filaAgendamentoNotificacoes.then(executar, executar);
   filaAgendamentoNotificacoes = atual.catch(() => undefined);
   return atual;
+}
+
+/**
+ * Registra o destino de navegação para toques em notificações do FinFlow,
+ * inclusive quando o app é aberto a partir de uma notificação com o app
+ * fechado (cold start). Retorna uma função de limpeza para remover o
+ * listener; em web, modo local ou quando o módulo nativo não existe, a
+ * função retornada não faz nada.
+ */
+export function registrarNavegacaoPorNotificacao(
+  aoTocarNotificacao: (rota: RotaNotificacao) => void,
+): () => void {
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return () => {};
+
+  const tratarResposta = (resposta: any) => {
+    const rota = resposta?.notification?.request?.content?.data?.rota;
+    if (typeof rota === "string") aoTocarNotificacao(rota as RotaNotificacao);
+  };
+
+  let cancelado = false;
+  Notif.getLastNotificationResponseAsync?.()
+    .then((resposta: any) => {
+      if (!cancelado && resposta) tratarResposta(resposta);
+    })
+    .catch(() => {})
+    .finally(() => {
+      // Evita reprocessar o mesmo toque em um novo mount deste listener
+      // (ex.: troca de sessão) enquanto o app segue aberto.
+      Notif.clearLastNotificationResponseAsync?.().catch(() => {});
+    });
+
+  const assinatura = Notif.addNotificationResponseReceivedListener(tratarResposta);
+  return () => {
+    cancelado = true;
+    try {
+      assinatura?.remove?.();
+    } catch {
+      // Best-effort: a tela já está sendo desmontada.
+    }
+  };
 }
