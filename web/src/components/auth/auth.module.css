@@ -547,6 +547,50 @@
   border-color: rgba(238, 107, 99, 0.7);
 }
 
+.passwordField {
+  position: relative;
+}
+
+.passwordInput {
+  padding-right: 54px;
+}
+
+.passwordToggle {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  color: #91a8a1;
+  background: transparent;
+  transform: translateY(-50%);
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease;
+}
+
+.passwordToggle:hover {
+  border-color: rgba(113, 195, 170, 0.24);
+  color: #b9e8da;
+  background: rgba(37, 215, 160, 0.08);
+}
+
+.passwordToggle:focus-visible {
+  outline: 3px solid rgba(49, 220, 166, 0.27);
+  outline-offset: 2px;
+}
+
+.passwordToggle svg {
+  width: 21px;
+  height: 21px;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
 .helper {
   margin-top: 7px;
   color: #819791;

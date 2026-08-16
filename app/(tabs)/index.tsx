@@ -27,6 +27,7 @@ import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
+import { randomUuidCompat } from "../../lib/optional-native-modules";
 import {
   dispositivoSemConexao,
   mensagemFalhaEdicaoOffline,
@@ -274,6 +275,10 @@ export default function Dashboard() {
   const [nomeEditCat, setNomeEditCat] = useState("");
   const [corEditCat, setCorEditCat] = useState(PALETA_CORES[0]);
   const [iconeEditCat, setIconeEditCat] = useState("label");
+  const [loadingEdicaoCat, setLoadingEdicaoCat] = useState(false);
+  const [categoriaOperandoId, setCategoriaOperandoId] = useState<number | null>(null);
+  const edicaoCategoriaEmAndamento = useRef(false);
+  const categoriaEmOperacao = useRef<number | null>(null);
 
   const [modalContaVisivel, setModalContaVisivel] = useState(false);
   const [nomeConta, setNomeConta] = useState("");
@@ -833,6 +838,90 @@ export default function Dashboard() {
   );
 
   // --- Ações de Categoria ---
+  const versaoCategoriaValida = (version: unknown): version is number =>
+    typeof version === "number" && Number.isSafeInteger(version) && version > 0;
+
+  const aplicarCategoriaAtualizadaNoEditor = (categoria: Categoria) => {
+    setCategorias((atuais) => atuais
+      .map((item) => item.id === categoria.id ? categoria : item)
+      .sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })));
+    setCatEditando(categoria);
+    setNomeEditCat(categoria.nome);
+    setCorEditCat(PALETA_CORES.includes(categoria.cor) ? categoria.cor : PALETA_CORES[0]);
+    setIconeEditCat(categoria.icone);
+  };
+
+  const recarregarCategoriaParaEdicao = async (categoryId: number): Promise<Categoria | null> => {
+    const { data, error } = await supabase
+      .from("categorias")
+      .select("id, nome, cor, icone, tipo, ativa, version")
+      .eq("id", categoryId)
+      .eq("user_id", session.user.id)
+      .maybeSingle();
+
+    if (error || !data) {
+      await carregarDados();
+      return null;
+    }
+    const categoria = data as Categoria;
+    if (categoria.ativa === 0) {
+      setCatEditando(null);
+      await carregarDados();
+      return categoria;
+    }
+    aplicarCategoriaAtualizadaNoEditor(categoria);
+    return categoria;
+  };
+
+  const mensagemErroOperacaoCategoria = (erro: unknown): string => {
+    const texto = erro instanceof Error ? erro.message : String(erro ?? "");
+    if (/AI_CATEGORY_NOT_ACTIVE|AI_CATEGORY_NOT_ARCHIVED/u.test(texto)) {
+      return "O estado desta categoria mudou em outro dispositivo. Atualize os dados e tente novamente.";
+    }
+    if (/AI_CATEGORY_NOT_FOUND/u.test(texto)) {
+      return "Esta categoria não existe mais. A lista será atualizada.";
+    }
+    if (/AI_CATEGORY_LIMIT|AI_PLAN_LIMIT/u.test(texto)) {
+      return "O limite de categorias do seu plano foi atingido.";
+    }
+    if (/network|fetch|timeout|connection|offline/i.test(texto)) {
+      return "Sem conexão para confirmar esta operação. Nada foi alterado; tente novamente quando a internet voltar.";
+    }
+    return "O servidor não confirmou a operação. Nada foi alterado; atualize os dados e tente novamente.";
+  };
+
+  const executarOperacaoCategoriaSegura = async (
+    actionType: "archive_category" | "delete_category" | "reactivate_category",
+    categoria: Categoria,
+  ) => {
+    if (IS_LOCAL_DEMO) {
+      const consulta = actionType === "delete_category"
+        ? supabase.from("categorias").delete().eq("id", categoria.id).eq("user_id", session.user.id)
+        : supabase.from("categorias").update({ ativa: actionType === "reactivate_category" ? 1 : 0 })
+          .eq("id", categoria.id).eq("user_id", session.user.id);
+      const { error } = await consulta;
+      if (error) throw error;
+      return;
+    }
+
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || userData.user?.id !== session.user.id) throw new Error("OFFLINE_AUTH_MISMATCH");
+    const { data, error } = await supabase.rpc("execute_manual_financial_action", {
+      p_action_type: actionType,
+      p_payload: { category_id: categoria.id },
+      p_idempotency_key: randomUuidCompat(),
+      p_expected_user_id: session.user.id,
+      p_client_created_at: new Date().toISOString(),
+    });
+    if (error) throw error;
+    if (!data || typeof data !== "object" || (data as { ok?: boolean }).ok !== true) {
+      const errorCode = data && typeof data === "object" && "error_code" in data
+        ? String((data as { error_code?: unknown }).error_code ?? "")
+        : "";
+      throw new Error(errorCode || "CATEGORY_OPERATION_NOT_CONFIRMED");
+    }
+  };
+
   const salvarCategoria = async () => {
     if (nomeCategoria.trim() === "") return Alert.alert("Aviso", "Escreve um nome.");
     // Verificar limite do plano para categorias
@@ -881,6 +970,13 @@ export default function Dashboard() {
   };
 
   const abrirEditarCategoria = (cat: Categoria) => {
+    if (cat.ativa === 0) {
+      Alert.alert(
+        "Categoria arquivada",
+        "Reative esta categoria antes de editá-la. Assim o servidor consegue validar a alteração com segurança.",
+      );
+      return;
+    }
     setCatEditando(cat);
     setNomeEditCat(cat.nome);
     setCorEditCat(PALETA_CORES.includes(cat.cor) ? cat.cor : PALETA_CORES[0]);
@@ -888,7 +984,7 @@ export default function Dashboard() {
   };
 
   const salvarEdicaoCategoria = async () => {
-    if (!catEditando || nomeEditCat.trim() === "") return;
+    if (!catEditando || nomeEditCat.trim() === "" || edicaoCategoriaEmAndamento.current) return;
     if (!IS_LOCAL_DEMO) {
       const changes: Record<string, unknown> = {};
       if (nomeEditCat.trim() !== catEditando.nome) changes.name = nomeEditCat.trim();
@@ -898,14 +994,51 @@ export default function Dashboard() {
         setCatEditando(null);
         return;
       }
+      if (!versaoCategoriaValida(catEditando.version)) {
+        setLoadingEdicaoCat(true);
+        const categoriaAtualizada = await recarregarCategoriaParaEdicao(catEditando.id);
+        setLoadingEdicaoCat(false);
+        if (!categoriaAtualizada || !versaoCategoriaValida(categoriaAtualizada.version)) {
+          setCatEditando(null);
+          return Alert.alert(
+            "Atualização necessária",
+            "Não foi possível obter a versão segura desta categoria. Fechamos a edição sem alterar nada; atualize a lista e tente novamente.",
+          );
+        }
+        if (categoriaAtualizada.ativa === 0) {
+          return Alert.alert("Categoria arquivada", "Esta categoria foi arquivada. Reative-a antes de editar.");
+        }
+        return Alert.alert(
+          "Dados atualizados",
+          "A categoria vinha de dados antigos. Recarregamos a versão atual; revise os campos e toque em Salvar novamente.",
+        );
+      }
+      edicaoCategoriaEmAndamento.current = true;
+      setLoadingEdicaoCat(true);
       try {
         const resultado = await salvarEdicaoFinanceira(
           "update_category",
           catEditando.id,
-          Number(catEditando.version),
+          catEditando.version,
           changes,
         );
         if (resultado.state === "rejected") {
+          if (resultado.errorCode === "OFFLINE_VERSION_CONFLICT") {
+            const categoriaAtualizada = await recarregarCategoriaParaEdicao(catEditando.id);
+            if (!categoriaAtualizada || categoriaAtualizada.ativa === 0) {
+              setCatEditando(null);
+              return Alert.alert("Categoria atualizada", "O estado desta categoria mudou. A lista foi recarregada sem sobrescrever dados.");
+            }
+            return Alert.alert(
+              "Categoria atualizada em outro dispositivo",
+              "Recarregamos os dados mais recentes. Revise a edição e toque em Salvar novamente.",
+            );
+          }
+          if (/AI_CATEGORY_NOT_ACTIVE|AI_CATEGORY_NOT_FOUND/u.test(resultado.errorCode)) {
+            setCatEditando(null);
+            await carregarDados();
+            return Alert.alert("Categoria indisponível", "Esta categoria foi arquivada ou excluída. Nada foi sobrescrito.");
+          }
           return Alert.alert("Não foi possível salvar", mensagemFalhaEdicaoOffline(resultado.errorCode));
         }
         if (resultado.state === "uncertain") {
@@ -917,17 +1050,28 @@ export default function Dashboard() {
         return;
       } catch {
         return Alert.alert("Não foi possível salvar", "A edição não pôde ser protegida neste dispositivo. Tente novamente.");
+      } finally {
+        edicaoCategoriaEmAndamento.current = false;
+        setLoadingEdicaoCat(false);
       }
     }
-    const { error } = await supabase.from("categorias").update({
-      nome: nomeEditCat, cor: corEditCat, icone: iconeEditCat,
-    }).eq("id", catEditando.id);
-    if (error) return Alert.alert("Erro", "Falha ao atualizar categoria.");
-    setCatEditando(null);
-    carregarDados();
+    edicaoCategoriaEmAndamento.current = true;
+    setLoadingEdicaoCat(true);
+    try {
+      const { error } = await supabase.from("categorias").update({
+        nome: nomeEditCat, cor: corEditCat, icone: iconeEditCat,
+      }).eq("id", catEditando.id);
+      if (error) return Alert.alert("Erro", "Falha ao atualizar categoria.");
+      setCatEditando(null);
+      await carregarDados();
+    } finally {
+      edicaoCategoriaEmAndamento.current = false;
+      setLoadingEdicaoCat(false);
+    }
   };
 
   const arquivarCategoria = async (cat: Categoria) => {
+    if (categoriaEmOperacao.current !== null) return;
     const novaAtiva = cat.ativa !== 0 ? 0 : 1;
     const acao = novaAtiva === 0 ? "arquivar" : "reativar";
     Alert.alert("Confirmar", `Deseja ${acao} a categoria "${cat.nome}"?`, [
@@ -935,14 +1079,30 @@ export default function Dashboard() {
       {
         text: acao.charAt(0).toUpperCase() + acao.slice(1),
         onPress: async () => {
-          await supabase.from("categorias").update({ ativa: novaAtiva }).eq("id", cat.id);
-          carregarDados();
+          if (categoriaEmOperacao.current !== null) return;
+          categoriaEmOperacao.current = cat.id;
+          setCategoriaOperandoId(cat.id);
+          try {
+            await executarOperacaoCategoriaSegura(
+              novaAtiva === 0 ? "archive_category" : "reactivate_category",
+              cat,
+            );
+            if (catEditando?.id === cat.id) setCatEditando(null);
+            await carregarDados();
+          } catch (error) {
+            await carregarDados();
+            Alert.alert("Não foi possível concluir", mensagemErroOperacaoCategoria(error));
+          } finally {
+            categoriaEmOperacao.current = null;
+            setCategoriaOperandoId(null);
+          }
         },
       },
     ]);
   };
 
   const deletarCategoria = async (cat: Categoria) => {
+    if (categoriaEmOperacao.current !== null) return;
     const [referenciasTransacoes, referenciasCartao] = await Promise.all([
       supabase.from("transacoes").select("id", { count: "exact", head: true }).eq("categoria_id", cat.id),
       supabase.from("fatura_itens").select("id", { count: "exact", head: true }).eq("categoria_id", cat.id),
@@ -963,10 +1123,20 @@ export default function Dashboard() {
           {
             text: "Arquivar",
             onPress: async () => {
-              const { error } = await supabase.from("categorias").update({ ativa: 0 }).eq("id", cat.id);
-              if (error) return Alert.alert("Erro", "Não foi possível arquivar a categoria.");
-              if (catEditando?.id === cat.id) setCatEditando(null);
-              carregarDados();
+              if (categoriaEmOperacao.current !== null) return;
+              categoriaEmOperacao.current = cat.id;
+              setCategoriaOperandoId(cat.id);
+              try {
+                await executarOperacaoCategoriaSegura("delete_category", cat);
+                if (catEditando?.id === cat.id) setCatEditando(null);
+                await carregarDados();
+              } catch (error) {
+                await carregarDados();
+                Alert.alert("Não foi possível concluir", mensagemErroOperacaoCategoria(error));
+              } finally {
+                categoriaEmOperacao.current = null;
+                setCategoriaOperandoId(null);
+              }
             },
           },
         ]
@@ -978,10 +1148,20 @@ export default function Dashboard() {
           text: "Apagar",
           style: "destructive",
           onPress: async () => {
-            const { error } = await supabase.from("categorias").delete().eq("id", cat.id);
-            if (error) return Alert.alert("Erro", "Não foi possível apagar a categoria.");
-            if (catEditando?.id === cat.id) setCatEditando(null);
-            carregarDados();
+            if (categoriaEmOperacao.current !== null) return;
+            categoriaEmOperacao.current = cat.id;
+            setCategoriaOperandoId(cat.id);
+            try {
+              await executarOperacaoCategoriaSegura("delete_category", cat);
+              if (catEditando?.id === cat.id) setCatEditando(null);
+              await carregarDados();
+            } catch (error) {
+              await carregarDados();
+              Alert.alert("Não foi possível concluir", mensagemErroOperacaoCategoria(error));
+            } finally {
+              categoriaEmOperacao.current = null;
+              setCategoriaOperandoId(null);
+            }
           },
         },
       ]);
@@ -2329,7 +2509,7 @@ export default function Dashboard() {
 
             {catEditando ? (
               // Tela de edição de categoria específica
-              <ScrollView>
+              <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
                 <Text style={[styles.colorLabel, { color: Cores.textoSecundario, marginBottom: 5 }]}>Editando: {catEditando.nome}</Text>
                 <TextInput
                   style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
@@ -2361,8 +2541,8 @@ export default function Dashboard() {
                   ))}
                 </View>
                 <View style={styles.modalButtons}>
-                  <Button title="Voltar" color="#999" onPress={() => setCatEditando(null)} />
-                  <Button title="Salvar" color="#2A9D8F" onPress={salvarEdicaoCategoria} />
+                  <Button title="Voltar" color="#999" onPress={() => setCatEditando(null)} disabled={loadingEdicaoCat} />
+                  <Button title={loadingEdicaoCat ? "Salvando..." : "Salvar"} color="#2A9D8F" onPress={salvarEdicaoCategoria} disabled={loadingEdicaoCat} />
                 </View>
               </ScrollView>
             ) : (
@@ -2389,13 +2569,18 @@ export default function Dashboard() {
                           )}
                         </View>
                         <View style={{ flexDirection: "row", gap: 8 }}>
-                          <TouchableOpacity onPress={() => abrirEditarCategoria(cat)} style={styles.iconeBotao}>
+                          <TouchableOpacity
+                            onPress={() => abrirEditarCategoria(cat)}
+                            style={[styles.iconeBotao, (cat.ativa === 0 || categoriaOperandoId === cat.id) && { opacity: 0.35 }]}
+                            disabled={cat.ativa === 0 || categoriaOperandoId !== null}
+                            accessibilityLabel={cat.ativa === 0 ? `${cat.nome} está arquivada` : `Editar ${cat.nome}`}
+                          >
                             <MaterialIcons name="edit" size={18} color="#457B9D" />
                           </TouchableOpacity>
-                          <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={styles.iconeBotao}>
+                          <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null}>
                             <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
                           </TouchableOpacity>
-                          <TouchableOpacity onPress={() => deletarCategoria(cat)} style={styles.iconeBotao} accessibilityLabel={`Excluir ${cat.nome}`}>
+                          <TouchableOpacity onPress={() => deletarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null} accessibilityLabel={`Excluir ${cat.nome}`}>
                             <MaterialIcons name="delete-outline" size={18} color="#E76F51" />
                           </TouchableOpacity>
                         </View>

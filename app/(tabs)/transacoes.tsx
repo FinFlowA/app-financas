@@ -24,9 +24,9 @@ import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/u
 import { compararHistoricoPorData, dataVencimentoFaturaHistorico } from "../../lib/history-order";
 import {
   fallbackTransactionPaymentSummary,
+  getTransactionPaymentCardDisplay,
   normalizeTransactionPaymentHistory,
   normalizeTransactionPaymentSummaries,
-  shouldShowTransactionPaymentBreakdown,
   type TransactionPaymentHistory,
   type TransactionPaymentSummary,
 } from "../../lib/transaction-payments";
@@ -149,6 +149,21 @@ const HEADER_COLLAPSE_DISTANCE = HEADER_EXPANDED_HEIGHT - HEADER_COMPACT_HEIGHT;
 
 const chaveDataLocal = (data: Date) =>
   `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+
+const dataLocalDaChave = (valor: string): Date | null => {
+  const partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valor);
+  if (!partes) return null;
+  const ano = Number(partes[1]);
+  const mes = Number(partes[2]);
+  const dia = Number(partes[3]);
+  const data = new Date(ano, mes - 1, dia);
+  if (
+    data.getFullYear() !== ano
+    || data.getMonth() !== mes - 1
+    || data.getDate() !== dia
+  ) return null;
+  return data;
+};
 
 const formatarDataCurta = (data: Date) =>
   `${String(data.getDate()).padStart(2, "0")}/${String(data.getMonth() + 1).padStart(2, "0")}`;
@@ -1519,6 +1534,15 @@ export default function TransacoesScreen() {
     0,
     Math.round((valorDevidoConclusao - valorDaEntradaMoeda(valorRealizado)) * 100) / 100,
   );
+  const atualizarDataRealizacao = (novaData: Date) => {
+    setMostrarDataRealizacao(false);
+    setDataRealizacao(novaData);
+    if (transacaoConfirmar && chaveDataLocal(novaData) <= transacaoConfirmar.data_vencimento) {
+      setAjusteTipo("nenhum");
+      setAjusteValor("");
+      setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacaoConfirmar.valor) * 100))));
+    }
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -1891,7 +1915,7 @@ export default function TransacoesScreen() {
               const textoStatus = pagamentoParcial
                 ? isVencida ? "Parcial vencida" : "Pagamento parcial"
                 : isVencida ? "Vencida" : t.tipo === "receita" ? "A receber" : "A pagar";
-              const mostrarResumoPagamento = shouldShowTransactionPaymentBreakdown(resumoPagamento);
+              const valoresCardPagamento = getTransactionPaymentCardDisplay(resumoPagamento);
 
               return (
                 <React.Fragment key={item.chave}>
@@ -1940,15 +1964,12 @@ export default function TransacoesScreen() {
                   {/* Coluna direita: valor + ações */}
                   <View style={styles.transacaoAcoes}>
                     <Text style={[styles.valorText, { color: isPendente ? corValor : Cores.textoSecundario, textDecorationLine: isPendente ? "none" : "line-through", textDecorationColor: Cores.textoSecundario }]} numberOfLines={1} adjustsFontSizeToFit>
-                      {prefixoValor} {fmtReais(resumoPagamento.totalValue)}
+                      {prefixoValor} {fmtReais(valoresCardPagamento.primaryValue)}
                     </Text>
-                    {mostrarResumoPagamento && (
+                    {valoresCardPagamento.realizedValue !== null && (
                       <View style={styles.paymentCardBreakdown}>
                         <Text style={[styles.paymentCardLine, { color: Cores.textoSecundario }]} numberOfLines={1}>
-                          Realizado: {fmtReais(resumoPagamento.paidTotal)}
-                        </Text>
-                        <Text style={[styles.paymentCardLine, { color: resumoPagamento.remainingValue > 0 ? corStatus : Cores.textoSecundario }]} numberOfLines={1}>
-                          Restante: {fmtReais(resumoPagamento.remainingValue)}
+                          Realizado: {fmtReais(valoresCardPagamento.realizedValue)}
                         </Text>
                       </View>
                     )}
@@ -2303,23 +2324,73 @@ export default function TransacoesScreen() {
 
       {transacaoConfirmar && (
         <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoConfirmar(null)}>
-          <KeyboardAvoidingView style={styles.modalOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-            <ScrollView contentContainerStyle={{ width: "100%", alignItems: "center" }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-            <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+          <SafeAreaView style={styles.realizationModalOverlay} edges={["top", "right", "bottom", "left"]}>
+            <KeyboardAvoidingView
+              style={styles.realizationModalKeyboard}
+              behavior={Platform.OS === "ios" ? "padding" : "height"}
+            >
+              <ScrollView
+                style={styles.realizationModalScroll}
+                contentContainerStyle={styles.realizationModalScrollContent}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                showsVerticalScrollIndicator={false}
+              >
+              <View style={[styles.modalContent, styles.realizationModalContent, { backgroundColor: Cores.cardFundo }]}>
               <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Confirmar realização</Text>
               <Text style={{ color: Cores.textoSecundario, textAlign: "center", lineHeight: 20, marginBottom: 16 }}>
                 Agendado para {transacaoConfirmar.data_vencimento.split("-").reverse().join("/")}. Confirme a data em que a movimentação realmente aconteceu.
               </Text>
-              <TouchableOpacity
-                style={[styles.editInput, { backgroundColor: Cores.blocoData, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}
-                onPress={() => setMostrarDataRealizacao(true)}
-              >
-                <MaterialIcons name="event-available" size={20} color="#2A9D8F" style={{ marginRight: 10 }} />
-                <Text style={{ color: Cores.textoPrincipal, fontWeight: "600" }}>
-                  {String(dataRealizacao.getDate()).padStart(2, "0")}/{String(dataRealizacao.getMonth() + 1).padStart(2, "0")}/{dataRealizacao.getFullYear()}
-                </Text>
-              </TouchableOpacity>
-              {mostrarDataRealizacao && (
+              {Platform.OS === "web" ? (
+                <View
+                  style={[
+                    styles.editInput,
+                    styles.webDateField,
+                    { backgroundColor: Cores.blocoData, borderColor: Cores.borda },
+                  ]}
+                >
+                  <MaterialIcons name="event-available" size={20} color="#2A9D8F" style={{ marginRight: 10 }} />
+                  {React.createElement("input", {
+                    type: "date",
+                    value: chaveDataLocal(dataRealizacao),
+                    "aria-label": "Data de realizacao",
+                    onChange: (evento: React.ChangeEvent<HTMLInputElement>) => {
+                      const novaData = dataLocalDaChave(evento.currentTarget.value);
+                      if (novaData) atualizarDataRealizacao(novaData);
+                    },
+                    onClick: (evento: React.MouseEvent<HTMLInputElement>) => {
+                      evento.currentTarget.showPicker?.();
+                    },
+                    style: {
+                      flex: 1,
+                      minWidth: 0,
+                      minHeight: 28,
+                      border: "none",
+                      outline: "none",
+                      background: "transparent",
+                      color: Cores.textoPrincipal,
+                      fontFamily: "inherit",
+                      fontSize: 14,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      colorScheme: isDark ? "dark" : "light",
+                    },
+                  })}
+                </View>
+              ) : (
+                <TouchableOpacity
+                  accessibilityRole="button"
+                  accessibilityLabel="Escolher data de realizacao"
+                  style={[styles.editInput, { backgroundColor: Cores.blocoData, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}
+                  onPress={() => setMostrarDataRealizacao(true)}
+                >
+                  <MaterialIcons name="event-available" size={20} color="#2A9D8F" style={{ marginRight: 10 }} />
+                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "600" }}>
+                    {String(dataRealizacao.getDate()).padStart(2, "0")}/{String(dataRealizacao.getMonth() + 1).padStart(2, "0")}/{dataRealizacao.getFullYear()}
+                  </Text>
+                </TouchableOpacity>
+              )}
+              {Platform.OS !== "web" && mostrarDataRealizacao && (
                 <DateTimePicker
                   value={dataRealizacao}
                   mode="date"
@@ -2327,12 +2398,7 @@ export default function TransacoesScreen() {
                   onChange={(_e, d) => {
                     setMostrarDataRealizacao(false);
                     if (!d) return;
-                    setDataRealizacao(d);
-                    if (chaveDataLocal(d) <= transacaoConfirmar.data_vencimento) {
-                      setAjusteTipo("nenhum");
-                      setAjusteValor("");
-                      setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacaoConfirmar.valor) * 100))));
-                    }
+                    atualizarDataRealizacao(d);
                   }}
                 />
               )}
@@ -2403,9 +2469,10 @@ export default function TransacoesScreen() {
                   <Text style={{ color: "#FFF", fontWeight: "bold" }}>{salvandoRealizacao ? "Salvando..." : "Confirmar"}</Text>
                 </TouchableOpacity>
               </View>
-            </View>
-            </ScrollView>
-          </KeyboardAvoidingView>
+              </View>
+              </ScrollView>
+            </KeyboardAvoidingView>
+          </SafeAreaView>
         </Modal>
       )}
 
@@ -2990,8 +3057,21 @@ const styles = StyleSheet.create({
   footerValorDespesa: { fontSize: 13, fontWeight: "700", color: "#E76F51" },
 
   editInput: { padding: 14, borderRadius: 10, borderWidth: 1, marginBottom: 14, fontSize: 15 },
+  webDateField: { flexDirection: "row", alignItems: "center" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(2, 12, 15, 0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
   modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
+  realizationModalOverlay: { flex: 1, backgroundColor: "rgba(2, 12, 15, 0.78)" },
+  realizationModalKeyboard: { flex: 1, width: "100%" },
+  realizationModalScroll: { flex: 1, width: "100%" },
+  realizationModalScrollContent: {
+    flexGrow: 1,
+    width: "100%",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+  },
+  realizationModalContent: { paddingHorizontal: 20, paddingVertical: 20 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   wrapContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 25, justifyContent: "center" },
   filterPill: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20, flexDirection: "row", alignItems: "center" },

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { signInAction } from "@/lib/auth/actions";
 import { INITIAL_AUTH_STATE } from "@/lib/auth/state";
 import { ResendConfirmationForm } from "@/components/auth/resend-confirmation-form";
@@ -25,6 +25,7 @@ type LoginFormProps = {
 
 export function LoginForm({ initialFeedback }: LoginFormProps) {
   const [state, action, pending] = useActionState(signInAction, INITIAL_AUTH_STATE);
+  const [passwordVisible, setPasswordVisible] = useState(false);
 
   return (
     <div>
@@ -76,17 +77,38 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
             Esqueci minha senha
           </Link>
         </div>
-        <input
-          id="senha"
-          name="senha"
-          type="password"
-          autoComplete="current-password"
-          required
-          placeholder="Digite sua senha"
-          aria-invalid={Boolean(state.errors?.senha)}
-          aria-describedby={state.errors?.senha ? "senha-error" : undefined}
-          className={INPUT_CLASS}
-        />
+        <div className={styles.passwordField}>
+          <input
+            id="senha"
+            name="senha"
+            type={passwordVisible ? "text" : "password"}
+            autoComplete="current-password"
+            required
+            placeholder="Digite sua senha"
+            aria-invalid={Boolean(state.errors?.senha)}
+            aria-describedby={state.errors?.senha ? "senha-error" : undefined}
+            className={`${INPUT_CLASS} ${styles.passwordInput}`}
+          />
+          <button
+            type="button"
+            className={styles.passwordToggle}
+            onClick={() => setPasswordVisible((visible) => !visible)}
+            aria-label={passwordVisible ? "Ocultar senha" : "Mostrar senha"}
+            aria-pressed={passwordVisible}
+            title={passwordVisible ? "Ocultar senha" : "Mostrar senha"}
+          >
+            {passwordVisible ? (
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <path d="M3 3l18 18M10.6 10.7a2 2 0 002.7 2.7M9.9 4.3A10.6 10.6 0 0112 4c5.5 0 9 5.2 9 5.2a14.8 14.8 0 01-2.3 2.8M6.2 6.2C4.2 7.6 3 9.2 3 9.2S6.5 14.4 12 14.4c.7 0 1.4-.1 2-.3" />
+              </svg>
+            ) : (
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none">
+                <path d="M3 12s3.5-5.2 9-5.2 9 5.2 9 5.2-3.5 5.2-9 5.2S3 12 3 12z" />
+                <circle cx="12" cy="12" r="2.6" />
+              </svg>
+            )}
+          </button>
+        </div>
         <div id="senha-error">
           <FieldError message={state.errors?.senha} />
         </div>

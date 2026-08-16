@@ -306,6 +306,7 @@ export function publicErrorMessage(code: string): string {
     AI_DAILY_LIMIT_REACHED: "Você atingiu o limite diário de ações da IA. A cota renova à meia-noite, no horário de Brasília.",
     AI_RATE_LIMITED: "Muitas mensagens foram enviadas em pouco tempo. Aguarde alguns segundos e tente novamente.",
     AI_PROVIDER_RATE_LIMITED: "O provedor da IA está temporariamente no limite. Aguarde um pouco e tente novamente.",
+    AI_PROVIDER_REQUEST_TOO_LARGE: "Esta consulta reuniu informações demais para o limite atual da IA. Informe uma conta, período ou item específico e tente novamente.",
     AI_PROVIDER_FAILED: "Não consegui consultar a IA agora. Nenhuma ação financeira foi realizada.",
     AI_TEMPORARILY_PAUSED: "A IA financeira foi pausada temporariamente para proteger a disponibilidade e os custos do serviço. Tente novamente mais tarde.",
     AI_SENSITIVE_DATA_REJECTED: "Por segurança, não envie senhas, PINs, códigos bancários, chaves, tokens, CPF ou número completo de cartão. Remova esses dados e tente novamente.",

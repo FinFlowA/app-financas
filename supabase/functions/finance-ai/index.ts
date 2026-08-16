@@ -392,6 +392,7 @@ async function handleClear(admin: AdminClient, userId: string, requestedId?: unk
 function errorStatus(code: string): number {
   if (code === "UNAUTHORIZED") return 401;
   if (code === "METHOD_NOT_ALLOWED") return 405;
+  if (code === "AI_PROVIDER_REQUEST_TOO_LARGE") return 413;
   if (code === "AI_TEMPORARILY_PAUSED") return 503;
   if (["AI_RATE_LIMITED", "AI_DAILY_MESSAGE_LIMIT", "AI_DAILY_SAFETY_LIMIT", "AI_DAILY_QUOTA_EXCEEDED", "AI_DAILY_LIMIT_REACHED", "AI_PROVIDER_RATE_LIMITED", "AI_PROPOSAL_RATE_LIMITED"].includes(code)) return 429;
   if (["AI_NOT_AVAILABLE", "AI_PLAN_REQUIRED", "AI_ANALYTICS_PLAN_REQUIRED", "AI_PLAN_RESOURCE_LIMIT"].includes(code)) return 403;

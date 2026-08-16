@@ -896,7 +896,7 @@ export default function CaixinhasScreen() {
                     accessibilityLabel={`Previsão até ${formatarDataPrazo(caixa.data_prazo)}: ${formatarReais(previsaoAtePrazo)}${previsaoAbaixoDaMeta ? ", abaixo da meta" : ""}`}
                   >
                     <MaterialIcons name="trending-up" size={13} color={previsaoAbaixoDaMeta ? "#E76F51" : caixa.cor} />
-                    <Text style={[styles.forecastText, { color: Cores.textoSecundario }]} numberOfLines={1}>
+                    <Text style={[styles.forecastText, { color: Cores.textoSecundario }]}>
                       Previsto até {formatarDataPrazo(caixa.data_prazo)}:{" "}
                       <Text style={{ color: corPrevisao, fontWeight: "800" }}>{formatarReais(previsaoAtePrazo)}</Text>
                       {previsaoAbaixoDaMeta && <Text style={{ color: corPrevisao }}> · abaixo da meta</Text>}
@@ -1586,8 +1586,17 @@ const styles = StyleSheet.create({
   targetValue: { fontSize: 14, fontWeight: "500" },
   progressBarBackground: { height: 10, borderRadius: 5, overflow: "hidden" },
   progressBarFill: { height: "100%", borderRadius: 5 },
-  forecastRow: { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", gap: 5, marginTop: 9, paddingHorizontal: 9, paddingVertical: 5, borderRadius: 9 },
-  forecastText: { fontSize: 11, fontWeight: "700", flexShrink: 1 },
+  forecastRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 5,
+    marginTop: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 7,
+    borderRadius: 9,
+  },
+  forecastText: { flex: 1, minWidth: 0, fontSize: 11, lineHeight: 16, fontWeight: "700" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(2, 12, 15, 0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
   modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },

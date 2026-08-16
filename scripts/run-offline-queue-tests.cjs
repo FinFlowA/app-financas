@@ -486,6 +486,21 @@ async function run() {
   assert.doesNotMatch(updateSources, /salvarEdicaoFinanceira\("(?:delete|complete|reopen|pay|reverse)_/,
     "Mutações com efeitos destrutivos ou de saldo não podem entrar na fila de edição genérica.");
 
+  const homeSource = fs.readFileSync(
+    path.join(root, "app", "(tabs)", "index.tsx"),
+    "utf8",
+  );
+  assert.doesNotMatch(homeSource, /Number\(catEditando\.version\)/,
+    "A edição de categoria não pode transformar uma versão ausente em NaN.");
+  assert.match(homeSource, /versaoCategoriaValida\(catEditando\.version\)/,
+    "A edição deve validar a versão antes de entrar na fila otimista.");
+  assert.match(homeSource, /select\("id, nome, cor, icone, tipo, ativa, version"\)/,
+    "Categorias legadas devem ser recarregadas com a versão atual antes da edição.");
+  assert.match(homeSource, /<ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">/,
+    "O teclado não pode consumir o toque no botão Salvar da categoria.");
+  assert.match(homeSource, /execute_manual_financial_action/,
+    "Arquivar, reativar e excluir categorias devem passar pelo executor idempotente.");
+
   const migration = fs.readFileSync(
     path.join(root, "supabase", "migrations", "20260808000100_secure_offline_action_receipts.sql"),
     "utf8",

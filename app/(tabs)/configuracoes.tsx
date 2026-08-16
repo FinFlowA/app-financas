@@ -448,7 +448,7 @@ export default function ConfiguracoesScreen() {
       onConfirm: async () => {
         setModalConfirmarAcao(null);
         await limparNotificacoesAoSair(meuId);
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: "local" });
       },
     });
   };

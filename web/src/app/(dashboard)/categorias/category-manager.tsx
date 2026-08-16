@@ -73,11 +73,10 @@ function NewCategory() {
 }
 
 function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDiscard: () => void }) {
-  const initialColor = CATEGORY_COLORS.find((value) => value.toLowerCase() === category.cor?.toLowerCase())
-    ?? CATEGORY_COLORS[0];
-  const initialIcon = CATEGORY_ICONS.includes(category.icone as (typeof CATEGORY_ICONS)[number])
-    ? category.icone
-    : CATEGORY_ICONS[0];
+  // Preserve valores legados até que a pessoa escolha explicitamente uma
+  // opção nova. Isso evita alterar o visual ao editar somente o nome.
+  const initialColor = category.cor || CATEGORY_COLORS[0];
+  const initialIcon = category.icone || CATEGORY_ICONS[0];
   const [color, setColor] = useState<string>(initialColor);
   const [icon, setIcon] = useState<string>(initialIcon);
   const [editState, editAction, editing] = useActionState(editarCategoria, INITIAL);
@@ -85,7 +84,6 @@ function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDisc
   return <form action={editAction} className="mt-4 grid gap-3 rounded-2xl bg-surface-muted/50 p-4">
     <RequestId state={editState} />
     <input type="hidden" name="category_id" value={category.id} />
-    <input type="hidden" name="expected_version" value={category.version ?? 1} />
     <input type="hidden" name="original_name" value={category.nome} />
     <input type="hidden" name="original_color" value={category.cor} />
     <input type="hidden" name="original_icon" value={category.icone} />
@@ -93,7 +91,7 @@ function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDisc
     <ChoiceFields color={color} icon={icon} setColor={setColor} setIcon={setIcon} />
     <div className="grid gap-2 sm:grid-cols-2">
       <button type="button" disabled={editing} onClick={onDiscard} className="ff-focus rounded-full border border-border px-4 py-2.5 text-sm font-bold text-foreground-muted transition hover:bg-surface disabled:opacity-50">Descartar alterações</button>
-      <button disabled={editing} className="ff-focus rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-50">{editing ? "Salvando..." : "Salvar alterações"}</button>
+      <button type="submit" disabled={editing} className="ff-focus rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-50">{editing ? "Salvando..." : "Salvar alterações"}</button>
     </div>
     <Message state={editState} />
   </form>;
@@ -109,8 +107,10 @@ function CategoryCard({ category }: { category: Categoria }) {
     <div aria-hidden="true" className="absolute -right-10 -top-12 h-32 w-32 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.16]" style={{ backgroundColor: category.cor }} />
     <div className="relative flex items-start gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 text-white shadow-lg" style={{ backgroundColor: category.cor }}><FinancialIcon name={category.icone} size={22} /></span><div className="min-w-0 flex-1"><h2 className="truncate font-extrabold text-foreground">{category.nome}</h2><p className={`mt-1 text-[10px] font-extrabold uppercase tracking-wide ${category.tipo === "receita" ? "text-primary" : "text-red"}`}>{category.tipo === "ambos" ? "Receita e despesa (legado)" : category.tipo} · {active ? "Ativa" : "Arquivada"}</p></div></div>
     <div className="relative mt-4 border-t border-border/70 pt-4">
-      <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((value) => !value)} className="ff-focus flex w-full items-center justify-between rounded-lg py-1 text-left font-bold text-primary"><span>Editar categoria</span><span aria-hidden="true" className={`transition ${editOpen ? "rotate-180" : ""}`}>⌄</span></button>
-      {editOpen && <CategoryEditForm category={category} onDiscard={() => setEditOpen(false)} />}
+      {active ? <>
+        <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((value) => !value)} className="ff-focus flex w-full items-center justify-between rounded-lg py-1 text-left font-bold text-primary"><span>Editar categoria</span><span aria-hidden="true" className={`transition ${editOpen ? "rotate-180" : ""}`}>⌄</span></button>
+        {editOpen && <CategoryEditForm category={category} onDiscard={() => setEditOpen(false)} />}
+      </> : <p className="text-xs font-semibold text-foreground-muted">Reative a categoria para editá-la.</p>}
     </div>
     <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} />
       {active ? <button name="operation" value="archive_category" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button> : <button name="operation" value="reactivate_category" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button>}

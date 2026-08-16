@@ -2,7 +2,9 @@ import {
   aggregateScopeArgument,
   calculateFinancialSnapshot,
   financialSnapshotFromAggregate,
+  MAX_PROVIDER_CONTEXT_CHARS,
   redactSensitiveText,
+  selectRelevantRows,
   serializeContextWithinBudget,
   type FinancialRow,
 } from "./context.ts";
@@ -368,4 +370,56 @@ Deno.test("reduz contexto grande sem cortar JSON nem perder agregados", () => {
   assert(parsed.context_budget.truncated === true, "a redução não foi sinalizada");
   assert(parsed.dataset_complete.transactions === false, "a lista reduzida ainda consta como completa");
   assert(Array.isArray(parsed.relevant_transactions), "o JSON reduzido ficou estruturalmente inválido");
+
+  const providerEncoded = serializeContextWithinBudget(large);
+  assert(providerEncoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "o contexto padrão excedeu o teto da Groq");
+  const providerParsed = JSON.parse(providerEncoded);
+  assert(providerParsed.month_summary.current_account_balance === 1_234, "o teto menor perdeu o saldo agregado");
+  assert(providerParsed.context_budget.truncated === true, "o teto menor precisa sinalizar truncamento");
+});
+
+Deno.test("preserva recurso citado, inclusive arquivado, fora do baseline ao reduzir contexto", () => {
+  const rows = Array.from({ length: 40 }, (_, index) => ({
+    id: index + 1,
+    nome: index === 39 ? "Recurso alvo distante" : `Recurso ${String(index + 1).padStart(2, "0")}`,
+    ativa: true,
+  }));
+  const selectedAccounts = selectRelevantRows(rows, () => true, 30, 40, ["alvo"], "Conta alvo");
+  const selectedCategories = selectRelevantRows(rows, () => true, 30, 40, ["alvo"], "Categoria alvo");
+  const rowsWithArchivedTarget = [
+    ...rows,
+    { id: 41, nome: "Categoria arquivada alvo", ativa: false },
+  ];
+  const selectedWithArchived = selectRelevantRows(
+    rowsWithArchivedTarget,
+    (row) => row.ativa === true,
+    30,
+    40,
+    ["arquivada"],
+    "Reative a categoria arquivada alvo",
+  );
+
+  assert(selectedAccounts[0]?.id === 40, "a conta citada precisa anteceder o baseline");
+  assert(selectedCategories[0]?.id === 40, "a categoria citada precisa anteceder o baseline");
+  assert(selectedWithArchived[0]?.id === 41, "a categoria arquivada citada precisa entrar para reactivate_category");
+
+  const encoded = serializeContextWithinBudget({
+    current_date: "2026-08-16",
+    focus_month: "2026-08",
+    dataset_complete: {},
+    month_summary: { current_account_balance: 100 },
+    monthly_cash_flow: [],
+    accounts: selectedAccounts.map((row) => ({ id: row.id, name: row.nome, padding: "a".repeat(120) })),
+    categories: selectedWithArchived.map((row) => ({ id: row.id, name: row.nome, active: row.ativa, padding: "c".repeat(120) })),
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+  });
+  const parsed = JSON.parse(encoded);
+
+  assert(parsed.accounts.some((row: FinancialRow) => row.id === 40), "a conta citada foi podada");
+  assert(parsed.categories.some((row: FinancialRow) => row.id === 41 && row.active === false), "a categoria arquivada citada foi podada");
 });

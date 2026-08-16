@@ -209,3 +209,23 @@ export const normalizeTransactionPaymentHistory = (
 
 export const shouldShowTransactionPaymentBreakdown = (summary: TransactionPaymentSummary): boolean =>
   summary.paymentCount > 1 || (summary.paymentCount > 0 && summary.remainingValue > 0);
+
+export interface TransactionPaymentCardDisplay {
+  primaryValue: number;
+  realizedValue: number | null;
+}
+
+/**
+ * Mantem o card orientado ao que ainda exige acao do usuario: enquanto houver
+ * saldo pendente, ele e o valor principal. O total ja realizado aparece apenas
+ * como informacao secundaria. Lancamentos integralmente concluidos continuam
+ * exibindo o total movimentado, pois nao possuem mais saldo em aberto.
+ */
+export const getTransactionPaymentCardDisplay = (
+  summary: TransactionPaymentSummary,
+): TransactionPaymentCardDisplay => ({
+  primaryValue: summary.isFullyPaid ? summary.totalValue : summary.remainingValue,
+  realizedValue: summary.paymentCount > 0 && summary.remainingValue > 0
+    ? summary.paidTotal
+    : null,
+});

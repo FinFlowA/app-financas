@@ -7,6 +7,8 @@ password_requirements = "lower_upper_letters_digits_symbols"
 [auth.sessions]
 inactivity_timeout = "30m"
 timebox = "24h"
+# FinFlow e multiplataforma: entrar no site nao pode invalidar a sessao do app.
+single_per_user = false
 
 [auth.email]
 double_confirm_changes = true

@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 
 export async function signOutAction(): Promise<never> {
   const supabase = await createClient();
-  await supabase.auth.signOut();
+  // O logout normal deve encerrar apenas a sessao web atual. O escopo padrao
+  // do Supabase e global e revogaria tambem a sessao mantida pelo app mobile.
+  await supabase.auth.signOut({ scope: "local" });
   redirect("/login");
 }

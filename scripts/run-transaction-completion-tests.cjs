@@ -94,9 +94,14 @@ includes(screen, 'erroAtomico?.code === "PGRST202"', "Tela nao falha fechada qua
 includes(screen, 'erroReabertura?.code === "PGRST202"', "Tela nao falha fechada quando a RPC de reabertura esta ausente.");
 includes(screen, "resultadoAtomico.remaining_value", "Toast nao usa o saldo restante devolvido pelo servidor.");
 includes(screen, "Este lançamento antigo está sem categoria", "Conclusao de legado sem categoria nao orienta a edicao.");
+includes(screen, "<SafeAreaView style={styles.realizationModalOverlay}", "Modal de realizacao nao respeita a area segura do aparelho.");
+includes(screen, "contentContainerStyle={styles.realizationModalScrollContent}", "Modal de realizacao nao oferece rolagem centralizada em telas pequenas.");
+matches(screen, /realizationModalScrollContent:\s*\{[\s\S]*?flexGrow:\s*1[\s\S]*?justifyContent:\s*"center"/, "Conteudo do modal de realizacao pode ficar fora da tela com o teclado aberto.");
+matches(screen, /Platform\.OS === "web"[\s\S]*?React\.createElement\("input", \{[\s\S]*?type: "date"/, "Web nao oferece um seletor de data HTML acessivel no modal de realizacao.");
+matches(screen, /Platform\.OS !== "web" && mostrarDataRealizacao[\s\S]*?<DateTimePicker/, "Seletor nativo de data nao foi preservado no Android e iOS.");
 matches(
   screen,
-  /chaveDataLocal\(d\) <= transacaoConfirmar\.data_vencimento[\s\S]*setAjusteTipo\("nenhum"\)[\s\S]*setAjusteValor\(""\)/,
+  /chaveDataLocal\(novaData\) <= transacaoConfirmar\.data_vencimento[\s\S]*setAjusteTipo\("nenhum"\)[\s\S]*setAjusteValor\(""\)/,
   "Alterar a data para antes do vencimento nao limpa o ajuste antigo.",
 );
 
@@ -237,6 +242,9 @@ includes(homeScreen, "status, transacao_pai_id\")", "Consulta da Home nao seleci
 matches(homeScreen, /const lancsMes = transacoes\.filter\(\(t\) =>[\s\S]*t\.transacao_pai_id == null[\s\S]*startsWith\(mesStr\)[\s\S]*\)\.length;/, "Pre-check visual da franquia ainda conta pagamentos tecnicos.");
 includes(paymentHelpers, "paymentSequence: positiveId(item.payment_sequence) ?? 0", "Cliente nao normaliza a sequencia logica do pagamento.");
 includes(paymentHelpers, "b.paymentSequence - a.paymentSequence", "Detalhe nao ordena pagamentos pela sequencia logica decrescente.");
+includes(paymentHelpers, "summary.isFullyPaid ? summary.totalValue : summary.remainingValue", "Card nao prioriza o saldo pendente como valor principal.");
+matches(screen, /fmtReais\(valoresCardPagamento\.primaryValue\)[\s\S]*?Realizado: \{fmtReais\(valoresCardPagamento\.realizedValue\)\}/, "Card parcial nao exibe saldo pendente em destaque e realizado abaixo.");
+expect(!screen.includes("Restante: {fmtReais(resumoPagamento.remainingValue)}"), "Card parcial ainda repete o saldo restante na linha secundaria.");
 
 const statusStart = screen.indexOf("const aplicarStatus = async");
 const statusEnd = screen.indexOf("const alternarStatus = async", statusStart);

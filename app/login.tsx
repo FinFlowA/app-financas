@@ -208,7 +208,7 @@ export default function LoginScreen() {
       const nascimento = data.user?.user_metadata?.data_nascimento;
       const idade = nascimento ? idadeEmAnos(nascimento) : null;
       if (idade !== null && idade < 18) {
-        await supabase.auth.signOut();
+        await supabase.auth.signOut({ scope: "local" });
         setLoading(false);
         setModalErro({
           titulo: "Acesso não permitido",

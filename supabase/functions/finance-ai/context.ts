@@ -16,7 +16,10 @@ const ACCOUNT_LIMIT = 500;
 const CATEGORY_LIMIT = 500;
 const GOAL_LIMIT = 500;
 const CARD_LIMIT = 200;
-const MAX_PROVIDER_CONTEXT_CHARS = 27_000;
+// Mantém os agregados e os recursos mais relevantes dentro do teto de 8K TPM
+// da Groq. Quando necessário, os sinalizadores dataset_complete orientam a IA a
+// pedir um filtro em vez de inventar uma conclusão abrangente.
+export const MAX_PROVIDER_CONTEXT_CHARS = 4_000;
 const ACCOUNT_TRANSFER_DESTINATION = /\s*\[Destino:(\d+)\]\s*$/;
 const GOAL_TRANSFER = /\[Objetivo:(\d+):(guardar|resgatar)\]\s*$/;
 const SERIES_METADATA = /\[Serie:([A-Za-z0-9_-]+)\]/;
@@ -277,7 +280,7 @@ function selectedYears(request: string, currentYear: number): Set<number> {
   return years;
 }
 
-function selectRelevantRows(
+export function selectRelevantRows(
   rows: FinancialRow[],
   isActive: (row: FinancialRow) => boolean,
   baselineLimit: number,
@@ -286,10 +289,18 @@ function selectRelevantRows(
   request: string,
 ): FinancialRow[] {
   const selected = new Map<number, FinancialRow>();
-  rows.filter(isActive).slice(0, baselineLimit).forEach((row) => selected.set(number(row.id), row));
+  const activeRows = rows.filter(isActive);
+  // Correspondências explícitas entram primeiro: o serializador reduz arrays
+  // pelo fim, portanto o recurso citado continua presente mesmo no teto reduzido.
+  // A busca percorre também arquivados para viabilizar as intents reactivate_*;
+  // somente o baseline automático permanece restrito aos recursos ativos.
   for (const row of rows) {
     if (selected.size >= maximum) break;
     if (matchesRequest(row, tokens, request)) selected.set(number(row.id), row);
+  }
+  for (const row of activeRows.slice(0, baselineLimit)) {
+    if (selected.size >= maximum) break;
+    selected.set(number(row.id), row);
   }
   return [...selected.values()];
 }

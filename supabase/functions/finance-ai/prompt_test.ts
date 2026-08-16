@@ -1,4 +1,5 @@
-import { buildSystemPrompt } from "./prompt.ts";
+import { DIRECT_ACTIONS } from "./contracts.ts";
+import { buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -283,4 +284,35 @@ Deno.test("contexto financeiro inválido falha fechado", () => {
     rejected = error instanceof Error && error.message === "AI_CONTEXT_INVALID";
   }
   assert(rejected, "Contexto malformado não deve ser enviado ao provedor.");
+});
+
+Deno.test("prompt compacto continua documentando as 32 ações financeiras", () => {
+  const prompt = buildSystemPrompt({
+    financialContext: "{}",
+    conversationState: {},
+    analyticsAllowed: true,
+  });
+
+  assert(DIRECT_ACTIONS.length === 32, "o contrato esperado possui 32 ações");
+  for (const action of DIRECT_ACTIONS) {
+    assert(prompt.includes(action), `o prompt compacto perdeu a ação ${action}`);
+  }
+});
+
+Deno.test("estado conversacional enviado ao modelo tem limite independente", () => {
+  const conversationState = Object.fromEntries(
+    Array.from({ length: 50 }, (_, index) => [`field_${index}`, "x".repeat(500)]),
+  );
+  const prompt = buildSystemPrompt({
+    financialContext: "{}",
+    conversationState,
+    analyticsAllowed: false,
+  });
+  const envelope = prompt.match(/<CONVERSATION_STATE_UNTRUSTED_JSON>\n([^\n]+)\n<\/CONVERSATION_STATE_UNTRUSTED_JSON>/)?.[1];
+
+  assert(Boolean(envelope), "o envelope do estado precisa existir");
+  assert(
+    new TextEncoder().encode(envelope).byteLength <= MAX_PROMPT_CONVERSATION_STATE_BYTES,
+    "o estado legado não pode recriar uma requisição acima do limite",
+  );
 });

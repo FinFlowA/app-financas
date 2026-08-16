@@ -42,28 +42,23 @@ export type ModelTokenBudget = {
   maxOutputTokens: number;
 };
 
-// O modelo Groq recomendado tem janela de 131.072 tokens. Estes dois caps,
-// somados ao schema, ao envelope e ao teto de saída, mantêm até a pior
-// entrada UTF-8 aceita abaixo dessa janela.
-export const MODEL_MAX_SYSTEM_PROMPT_CHARS = 38_000;
-export const MODEL_MAX_HISTORY_CHARS = 2_500;
-export const MODEL_MAX_OUTPUT_TOKENS = 1_000;
-// Um token BPE pode representar somente um byte. Portanto, bytes/1 é o teto
-// conservador para texto arbitrário; bytes/3 subestimaria emoji, byte-fallback e
-// outras entradas adversariais. O envelope abaixo cobre tokens especiais.
-const TOKEN_ESTIMATE_BYTES_PER_TOKEN = 1;
+// O rollout atual usa o limite de 8 mil tokens/minuto da Groq. O request precisa
+// caber inteiro nesse teto (entrada + teto de saída), mesmo na primeira chamada.
+export const GROQ_COMPATIBLE_TPM_LIMIT = 8_000;
+export const MODEL_MAX_SYSTEM_PROMPT_CHARS = 15_000;
+export const MODEL_MAX_HISTORY_CHARS = 600;
+export const MODEL_MAX_OUTPUT_TOKENS = 512;
+export const MODEL_PROVIDER_SAFETY_TOKENS = 512;
+// Medida conservadora para o prompt pt-BR/JSON do FinFlow, validada contra a
+// contagem retornada pelo GPT-OSS. Entradas UTF-8 atípicas continuam protegidas
+// pela medição em bytes e pelo teto verificado antes de qualquer fetch.
+const TOKEN_ESTIMATE_BYTES_PER_TOKEN = 3;
 const TOKEN_ESTIMATE_MARGIN = 256;
-const MODEL_INPUT_ENVELOPE_BYTES = 4_096;
+const MODEL_INPUT_ENVELOPE_BYTES = 768;
 const MODEL_SCHEMA_BYTES = new TextEncoder().encode(JSON.stringify(MODEL_OUTPUT_FORMAT)).byteLength;
-// Cada unidade UTF-16 válida ocupa no máximo três bytes em UTF-8 (pares
-// substitutos ocupam quatro bytes para duas unidades). O schema e o envelope
-// têm orçamento próprio. Esse teto cobre qualquer entrada aceita pelos caps.
-export const MODEL_MAX_RESERVED_INPUT_TOKENS = Math.ceil((
-  MODEL_MAX_SYSTEM_PROMPT_CHARS * 3
-  + MODEL_MAX_HISTORY_CHARS * 3
-  + MODEL_SCHEMA_BYTES
-  + MODEL_INPUT_ENVELOPE_BYTES
-) / TOKEN_ESTIMATE_BYTES_PER_TOKEN) + TOKEN_ESTIMATE_MARGIN;
+export const MODEL_MAX_RESERVED_INPUT_TOKENS = GROQ_COMPATIBLE_TPM_LIMIT
+  - MODEL_MAX_OUTPUT_TOKENS
+  - MODEL_PROVIDER_SAFETY_TOKENS;
 
 function optionalSecret(name: string): string {
   return (Deno.env.get(name) ?? "").trim();
@@ -113,6 +108,32 @@ function safeJsonParse(text: string): unknown {
   return JSON.parse(trimmed);
 }
 
+export type ProviderHttpFailure = {
+  code: string;
+  category: "request_too_large" | "rate_limited" | "authentication" | "invalid_request" | "upstream_unavailable" | "unexpected";
+};
+
+export function classifyProviderHttpFailure(status: number): ProviderHttpFailure {
+  if (status === 413) return { code: "AI_PROVIDER_REQUEST_TOO_LARGE", category: "request_too_large" };
+  if (status === 429) return { code: "AI_PROVIDER_RATE_LIMITED", category: "rate_limited" };
+  if (status === 401 || status === 403) return { code: "AI_PROVIDER_FAILED", category: "authentication" };
+  if (status >= 400 && status < 500) return { code: "AI_PROVIDER_FAILED", category: "invalid_request" };
+  if (status >= 500) return { code: "AI_PROVIDER_FAILED", category: "upstream_unavailable" };
+  return { code: "AI_PROVIDER_FAILED", category: "unexpected" };
+}
+
+function throwProviderHttpFailure(provider: ProviderName, status: number): never {
+  const failure = classifyProviderHttpFailure(status);
+  // Não registre corpo, headers, prompt nem resposta do provedor: eles podem
+  // conter dados financeiros ou detalhes da credencial. Status/categoria bastam.
+  console.error("finance-ai provider failure", JSON.stringify({
+    provider,
+    status,
+    category: failure.category,
+  }));
+  throw new Error(failure.code);
+}
+
 function tokenCount(value: unknown): number {
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : 0;
@@ -150,9 +171,9 @@ async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
 function compactMessages(messages: ConversationMessage[]): ConversationMessage[] {
   const selected: ConversationMessage[] = [];
   let used = 0;
-  for (let index = messages.length - 1; index >= 0 && selected.length < 8; index -= 1) {
+  for (let index = messages.length - 1; index >= 0 && selected.length < 4; index -= 1) {
     const source = messages[index];
-    const maximum = selected.length === 0 && source.role === "user" ? 1_500 : 800;
+    const maximum = selected.length === 0 && source.role === "user" ? 500 : 300;
     const content = source.content.trim().slice(-maximum);
     if (!content) continue;
     if (used + content.length > MODEL_MAX_HISTORY_CHARS && selected.length > 0) break;
@@ -187,6 +208,9 @@ export function estimateModelTokenBudget(
       Math.ceil(inputBytes / TOKEN_ESTIMATE_BYTES_PER_TOKEN) + TOKEN_ESTIMATE_MARGIN,
     ),
   );
+  if (estimatedInputTokens > MODEL_MAX_RESERVED_INPUT_TOKENS) {
+    throw new Error("AI_CONTEXT_TOO_LARGE");
+  }
   return { estimatedInputTokens, maxOutputTokens: MODEL_MAX_OUTPUT_TOKENS };
 }
 
@@ -221,11 +245,7 @@ async function callOpenAi(
     }),
   });
 
-  if (response.status === 429) throw new Error("AI_PROVIDER_RATE_LIMITED");
-  if (!response.ok) {
-    console.error("finance-ai provider", config.name, response.status);
-    throw new Error("AI_PROVIDER_FAILED");
-  }
+  if (!response.ok) throwProviderHttpFailure(config.name, response.status);
   const body = await response.json() as Record<string, unknown>;
   const content = extractOpenAiText(body);
   if (!content) throw new Error("AI_PROVIDER_FAILED");
@@ -257,8 +277,9 @@ async function callGroq(
       model: config.model,
       messages: [{ role: "system", content: systemPrompt }, ...messages],
       temperature: 0.1,
-      max_tokens: MODEL_MAX_OUTPUT_TOKENS,
+      max_completion_tokens: MODEL_MAX_OUTPUT_TOKENS,
       reasoning_effort: reasoningEffort,
+      include_reasoning: false,
       response_format: {
         type: "json_schema",
         json_schema: {
@@ -270,11 +291,7 @@ async function callGroq(
     }),
   });
 
-  if (response.status === 429) throw new Error("AI_PROVIDER_RATE_LIMITED");
-  if (!response.ok) {
-    console.error("finance-ai provider", config.name, response.status);
-    throw new Error("AI_PROVIDER_FAILED");
-  }
+  if (!response.ok) throwProviderHttpFailure(config.name, response.status);
   const body = await response.json() as {
     choices?: { message?: { content?: string } }[];
     usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -292,7 +309,7 @@ export async function requestModel(
   messages: ConversationMessage[],
   safetyIdentifier?: string,
 ): Promise<{ output: ModelOutput; provider: ProviderName; model: string; usage: ModelUsage }> {
-  if (!systemPrompt || systemPrompt.length > MODEL_MAX_SYSTEM_PROMPT_CHARS) throw new Error("AI_CONTEXT_TOO_LARGE");
+  estimateModelTokenBudget(systemPrompt, messages);
   const config = providerConfig();
   const compactedMessages = compactMessages(messages);
   try {
