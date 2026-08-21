@@ -126,7 +126,10 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { temErro: boolea
   state = { temErro: false };
   static getDerivedStateFromError() { return { temErro: true }; }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error("Erro não tratado no FinFlow:", error, info.componentStack);
+    // Stack e componentStack completos só em desenvolvimento; em produção
+    // eles podem revelar estrutura interna a quem tiver acesso a logs locais.
+    if (__DEV__) console.error("Erro não tratado no FinFlow:", error, info.componentStack);
+    else console.error("Erro não tratado no FinFlow");
   }
   render() {
     if (this.state.temErro) {
@@ -405,7 +408,13 @@ export default function RootLayout() {
       }
     } catch {}
 
-    // Fluxo implícito (legado): tokens no fragmento #
+    // Fluxo implícito (legado): tokens no fragmento #.
+    // TRANSITÓRIO — desde que o cliente passou a usar flowType: "pkce", todo
+    // link novo enviado pelo Supabase carrega "code", não mais o fragmento.
+    // Este ramo só existe para não invalidar e-mails de recuperação/confirmação
+    // já enviados antes do deploy desta mudança. Remover após alguns dias sem
+    // uso (nenhum link legado deve mais chegar depois da janela de validade
+    // do Supabase, tipicamente 1h para recovery e 24h para confirmação).
     const fragment = url.split("#")[1];
     if (!fragment) return;
     const params = Object.fromEntries(new URLSearchParams(fragment));

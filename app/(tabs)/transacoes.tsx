@@ -374,7 +374,7 @@ export default function TransacoesScreen() {
         setFaturaGrupos(Array.from(grupos.values()));
       }
     } catch (error) {
-      console.error(error);
+      if (__DEV__) console.error(error);
     }
   }, [session?.user?.id]);
 
@@ -1113,7 +1113,7 @@ export default function TransacoesScreen() {
         showToast("Marcado como pendente", "info");
       }
     } catch (error) {
-      console.error("Falha ao alterar status da transação:", error);
+      if (__DEV__) console.error("Falha ao alterar status da transação:", error);
       Alert.alert("Erro", "Não foi possível atualizar o lançamento sem risco de inconsistência. Tente novamente.");
     } finally {
       salvandoRealizacaoRef.current = false;

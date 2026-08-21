@@ -8,7 +8,9 @@ import {
   Alert,
   Animated,
   DeviceEventEmitter,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Switch,
@@ -107,6 +109,13 @@ export default function ConfiguracoesScreen() {
     titulo: string; mensagem: string; labelConfirm: string; cor?: string;
     onConfirm: () => void;
   } | null>(null);
+
+  // Exclusão de conta: exige senha atual verificada no servidor logo antes da
+  // chamada que apaga tudo — biometria sozinha só prova algo ao dispositivo,
+  // não ao backend.
+  const [modalSenhaExclusaoVisivel, setModalSenhaExclusaoVisivel] = useState(false);
+  const [senhaExclusao, setSenhaExclusao] = useState("");
+  const [verificandoExclusao, setVerificandoExclusao] = useState(false);
 
   const [modalInfo, setModalInfo] = useState<{ titulo: string; mensagem: string; cor?: string } | null>(null);
 
@@ -488,55 +497,60 @@ export default function ConfiguracoesScreen() {
             });
             return;
           }
-        } else {
-          // Sem biometria, confirmar por alerta adicional
-          Alert.alert(
-            "Confirmação Final",
-            "Confirme que deseja apagar permanentemente todos os seus dados.",
-            [
-              { text: "Cancelar", style: "cancel" },
-              { text: "Confirmar exclusão", style: "destructive", onPress: apagarContaCompleta },
-            ]
-          );
-          return;
         }
 
-        await apagarContaCompleta();
+        // Biometria (quando existe) só prova identidade ao aparelho. A senha
+        // abaixo é verificada no servidor e é o que autoriza de fato a RPC de
+        // exclusão — sem ela, um token roubado não conseguiria apagar a conta.
+        setSenhaExclusao("");
+        setModalSenhaExclusaoVisivel(true);
       },
     });
   };
 
-  const apagarContaCompleta = async () => {
-    if (!meuId) return;
-    try {
-      // Sequencial para garantir integridade (foreign keys)
-      await supabase.from("transacoes").delete().eq("user_id", meuId);
-      await supabase.from("caixinhas").delete().eq("user_id", meuId);
-      await supabase.from("contas").delete().eq("user_id", meuId);
-      await supabase.from("categorias").delete().eq("user_id", meuId);
-      await supabase.from("parcerias").delete().or(`solicitante_id.eq.${meuId},convidado_id.eq.${meuId}`);
-      // Cartões e itens de fatura
-      await supabase.from("fatura_itens").delete().eq("user_id", meuId);
-      await supabase.from("cartoes").delete().eq("user_id", meuId);
-      // Histórico de IA e feedback
-      await supabase.from("chat_historico").delete().eq("user_id", meuId);
-      await supabase.from("feedbacks").delete().eq("user_id", meuId);
-
-      const { error: erroDeletar } = await supabase.rpc("delete_user");
-      if (erroDeletar) {
-        setModalInfo({ titulo: "Erro", mensagem: "Não foi possível remover o login. Tente novamente ou contate o suporte.", cor: "#FF4444" });
-        return;
-      }
-
-      await Promise.allSettled([
-        limparNotificacoesAoSair(meuId),
-        limparFilaFinanceiraDoUsuario(meuId),
-      ]);
-      await supabase.auth.signOut();
-      setModalInfo({ titulo: "Conta apagada", mensagem: "Sua conta e todos os dados foram removidos com sucesso.", cor: "#2A9D8F" });
-    } catch {
-      setModalInfo({ titulo: "Erro", mensagem: "Não foi possível apagar todos os dados. Tente novamente.", cor: "#FF4444" });
+  const confirmarSenhaEApagarConta = async () => {
+    if (!meuId || !meuEmail) return;
+    if (!senhaExclusao) {
+      Alert.alert("Senha necessária", "Digite sua senha atual para confirmar a exclusão.");
+      return;
     }
+
+    setVerificandoExclusao(true);
+    const { error: erroSenha } = await supabase.auth.signInWithPassword({
+      email: meuEmail,
+      password: senhaExclusao,
+    });
+    setSenhaExclusao("");
+
+    if (erroSenha) {
+      setVerificandoExclusao(false);
+      const muitasTentativas = (erroSenha as any)?.code === "over_request_rate_limit";
+      Alert.alert(
+        muitasTentativas ? "Muitas tentativas" : "Senha incorreta",
+        muitasTentativas
+          ? "Aguarde alguns minutos antes de tentar novamente."
+          : "A senha atual não confere. Nenhum dado foi removido.",
+      );
+      return;
+    }
+
+    // A RPC delete_user() apaga tudo em uma única transação no servidor e
+    // exige, ela mesma, uma autenticação de senha recente (o login acima) —
+    // não confiamos apenas na verificação que acabamos de fazer no cliente.
+    const { error: erroDeletar } = await supabase.rpc("delete_user");
+    setVerificandoExclusao(false);
+    if (erroDeletar) {
+      setModalInfo({ titulo: "Erro", mensagem: "Não foi possível remover sua conta agora. Tente novamente ou contate o suporte.", cor: "#FF4444" });
+      return;
+    }
+
+    setModalSenhaExclusaoVisivel(false);
+    await Promise.allSettled([
+      limparNotificacoesAoSair(meuId),
+      limparFilaFinanceiraDoUsuario(meuId),
+    ]);
+    await supabase.auth.signOut();
+    setModalInfo({ titulo: "Conta apagada", mensagem: "Sua conta e todos os dados foram removidos com sucesso.", cor: "#2A9D8F" });
   };
 
   const enviarFeedback = async () => {
@@ -1220,6 +1234,55 @@ export default function ConfiguracoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
+        </Modal>
+      )}
+
+      {/* MODAL SENHA PARA EXCLUSÃO DE CONTA */}
+      {modalSenhaExclusaoVisivel && (
+        <Modal
+          animationType="fade"
+          transparent
+          visible
+          onRequestClose={() => { if (!verificandoExclusao) setModalSenhaExclusaoVisivel(false); }}
+        >
+          <KeyboardAvoidingView
+            style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}
+            behavior={Platform.OS === "ios" ? "padding" : "height"}
+          >
+            <View style={{ width: "100%", backgroundColor: Cores.card, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: "#FF4444" }}>
+              <Text style={{ color: Cores.texto, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>
+                Confirme sua senha
+              </Text>
+              <Text style={{ color: Cores.secundario, fontSize: 14, textAlign: "center", marginBottom: 20, lineHeight: 20 }}>
+                Por segurança, digite sua senha atual para apagar permanentemente sua conta e todos os seus dados.
+              </Text>
+              <TextInput
+                style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto, marginBottom: 20 }]}
+                placeholder="Senha atual"
+                placeholderTextColor={Cores.secundario}
+                secureTextEntry
+                autoFocus
+                editable={!verificandoExclusao}
+                value={senhaExclusao}
+                onChangeText={setSenhaExclusao}
+                onSubmitEditing={confirmarSenhaEApagarConta}
+              />
+              <TouchableOpacity
+                style={{ backgroundColor: "#FF4444", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 10, opacity: verificandoExclusao ? 0.6 : 1 }}
+                onPress={confirmarSenhaEApagarConta}
+                disabled={verificandoExclusao}
+              >
+                {verificandoExclusao ? <ActivityIndicator color="#FFF" /> : <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Apagar minha conta</Text>}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={{ backgroundColor: Cores.pillFundo, paddingVertical: 14, borderRadius: 10, alignItems: "center", opacity: verificandoExclusao ? 0.6 : 1 }}
+                onPress={() => setModalSenhaExclusaoVisivel(false)}
+                disabled={verificandoExclusao}
+              >
+                <Text style={{ color: Cores.secundario, fontWeight: "bold" }}>Cancelar</Text>
+              </TouchableOpacity>
+            </View>
+          </KeyboardAvoidingView>
         </Modal>
       )}
 

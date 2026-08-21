@@ -1624,11 +1624,13 @@ export default function Dashboard() {
     }
     setLoadingTrans(false);
     if (error) {
-      console.error("Falha ao salvar transação", {
-        code: error.code,
-        status: respostaInsercao.status,
-        details: error.details,
-      });
+      if (__DEV__) {
+        console.error("Falha ao salvar transação", {
+          code: error.code,
+          status: respostaInsercao.status,
+          details: error.details,
+        });
+      }
       return Alert.alert(
         "Não foi possível salvar",
         "Nenhum lançamento foi criado. Confira sua conexão e tente novamente.",

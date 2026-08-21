@@ -106,6 +106,12 @@ function createConfiguredClient(): SupabaseClient {
       autoRefreshToken: true,
       persistSession: true,
       detectSessionInUrl: false,
+      // PKCE: o link de e-mail carrega um "code" de uso único, e trocá-lo por
+      // sessão exige o code_verifier salvo só neste dispositivo. Um app que
+      // registre o mesmo esquema customizado e intercepte o link não consegue
+      // completar a troca sozinho — ao contrário do fluxo implícito antigo,
+      // que entregava access/refresh token direto na URL interceptável.
+      flowType: "pkce",
     },
   });
 }

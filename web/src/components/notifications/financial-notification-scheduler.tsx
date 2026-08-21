@@ -168,8 +168,13 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
         if (alreadyShown || !await sessionStillBelongsToUser(expectedGeneration)) continue;
 
         try {
-          await registration.showNotification(event.title.slice(0, 80), {
-            body: event.body.slice(0, 240),
+          // Texto genérico por padrão: título/corpo específicos (nome do
+          // cartão, valores, percentual do limite) podem ficar visíveis na
+          // tela bloqueada, fora do controle do FinFlow. O detalhe completo
+          // continua disponível ao abrir o app autenticado — a rota de
+          // navegação (event.route) e a deduplicação (event.key) não mudam.
+          await registration.showNotification("FinFlow", {
+            body: "Você tem uma atualização financeira. Abra o app para ver os detalhes.",
             icon: "/icon.png",
             badge: "/icon.png",
             tag: `${LOCAL_NOTIFICATION_TAG_PREFIX}${event.key}`,

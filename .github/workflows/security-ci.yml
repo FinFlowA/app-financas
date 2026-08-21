@@ -1,0 +1,81 @@
+name: Security CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Padrão de menor privilégio: cada job só recebe o que precisar.
+permissions:
+  contents: read
+
+jobs:
+  secret-scan:
+    name: Varredura de segredos (histórico completo)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  mobile:
+    name: App mobile — lint, tipos, testes e segredos
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run security:check
+      - run: npm run test:finance-ai
+      - run: npm run test:finance-ai-context
+      - run: npm run test:finance-ai-state-guard
+      - run: npm run test:history-order
+      - run: npm run test:money-input
+      - run: npm run test:password
+      - run: npm run test:transaction-completion
+      - run: npm run test:plan-trigger
+      - run: npm run test:offline-queue
+      - run: npm run test:native-compat
+      - run: npm run test:release-notes-modal
+      - run: npm run test:edge-security
+      - name: npm audit (informativo — não bloqueia o merge)
+        run: npm audit --audit-level=high || true
+
+  web:
+    name: Site — lint, testes e build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
+      - name: npm audit (informativo — não bloqueia o merge)
+        run: npm audit --audit-level=high || true

@@ -20,11 +20,11 @@ import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context"
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import {
-  descricaoTransferenciaObjetivo,
   getMovimentoObjetivo,
   type OperacaoObjetivo,
 } from "../../lib/transacoes";
 import { fmtReais } from "../../lib/utils";
+import { randomUuidCompat } from "../../lib/optional-native-modules";
 import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import { useAppTheme } from "../_layout";
@@ -295,7 +295,9 @@ export default function CaixinhasScreen() {
         })));
       }
     } catch (error) {
-      console.error(error);
+      // Detalhe completo só em desenvolvimento: em produção, logs locais/ADB
+      // não devem receber nomes de tabela, colunas ou identificadores.
+      if (__DEV__) console.error(error);
     }
   }, [session?.user?.id]);
 
@@ -597,38 +599,34 @@ export default function CaixinhasScreen() {
     else if (acao) abrirMovimento(caixa, acao);
   };
 
-  const executarMovimento = async (valorNum: number, novoSaldo: number) => {
-    if (!caixaSelecionada) return;
+  const executarMovimento = async (valorNum: number) => {
+    if (!caixaSelecionada || !contaMovimentoId) return;
     setLoadingMovimento(true);
 
-    const descricao = descricaoTransferenciaObjetivo(
-      "",
-      caixaSelecionada.nome,
-      caixaSelecionada.id,
-      tipoMovimento,
-    );
-
-    // Atômico: primeiro insere a transação, só depois atualiza saldo
-    const { error: errorTrans } = await supabase.from("transacoes").insert([{
-      tipo: tipoMovimento === "guardar" ? "despesa" : "receita",
-      valor: valorNum, descricao,
-      data_vencimento: new Date().toISOString().split("T")[0],
-      data_realizacao: new Date().toISOString().split("T")[0],
-      conta_id: contaMovimentoId, categoria_id: null,
-      status: "paga", user_id: session.user.id,
-    }]);
-    if (errorTrans) {
-      setLoadingMovimento(false);
-      return Alert.alert("Erro", "Não foi possível registrar a movimentação.");
-    }
-
-    const { error: errorCaixinha } = await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixaSelecionada.id);
-    if (errorCaixinha) {
-      setLoadingMovimento(false);
-      return Alert.alert("Erro", "Transação registrada mas saldo da caixinha não foi atualizado. Contacte o suporte.");
-    }
+    // RPC atômica: grava a transação e ajusta o saldo do objetivo na mesma
+    // transação do banco. Substitui o antigo par de chamadas separadas, que
+    // podia deixar transação e saldo divergentes se a segunda falhasse.
+    const { data, error } = await supabase.rpc("execute_offline_financial_action", {
+      p_action_type: "move_goal",
+      p_payload: {
+        operation: tipoMovimento,
+        goal_id: caixaSelecionada.id,
+        account_id: contaMovimentoId,
+        value: valorNum,
+        description: "Movimentação de objetivo",
+        realization_date: new Date().toISOString().split("T")[0],
+      },
+      p_idempotency_key: randomUuidCompat(),
+      p_expected_user_id: session.user.id,
+      p_client_created_at: new Date().toISOString(),
+    });
 
     setLoadingMovimento(false);
+    const falhouSilenciosamente = Boolean(data) && typeof data === "object" && (data as any).ok === false;
+    if (error || falhouSilenciosamente) {
+      return Alert.alert("Erro", "Não foi possível registrar a movimentação. Nenhuma alteração foi feita.");
+    }
+
     setModalMovimentoVisivel(false); setCaixaSelecionada(null); setContaMovimentoId(null);
     carregarDados();
     showToast(tipoMovimento === "guardar" ? "Valor guardado ✓" : "Resgate realizado ✓", "success");
@@ -640,10 +638,7 @@ export default function CaixinhasScreen() {
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
     if (!contaMovimentoId) return Alert.alert("Aviso", "Seleciona uma conta para continuar.");
 
-    let novoSaldoCaixinha = Number(caixaSelecionada.saldo_atual);
-
     if (tipoMovimento === "guardar") {
-      novoSaldoCaixinha += valorNum;
       const conta = contas.find((c) => c.id === contaMovimentoId);
       const { data: transacoesConta } = await supabase.from("transacoes").select("tipo, valor, status").eq("conta_id", contaMovimentoId).eq("status", "paga");
       const rec = (transacoesConta ?? []).filter((t) => t.tipo === "receita").reduce((acc, t) => acc + Number(t.valor), 0);
@@ -653,15 +648,14 @@ export default function CaixinhasScreen() {
       if (valorNum > saldoReal) {
         return Alert.alert("Saldo insuficiente", `Você não tem saldo suficiente nesta conta (${fmtReais(saldoReal)}). Deseja continuar mesmo assim?`, [
           { text: "Cancelar", style: "cancel" },
-          { text: "Sim, continuar", style: "destructive", onPress: () => executarMovimento(valorNum, novoSaldoCaixinha) },
+          { text: "Sim, continuar", style: "destructive", onPress: () => executarMovimento(valorNum) },
         ]);
       }
-    } else {
-      if (valorNum > novoSaldoCaixinha) return Alert.alert("Aviso", "Não podes resgatar mais do que tens guardado!");
-      novoSaldoCaixinha -= valorNum;
+    } else if (valorNum > Number(caixaSelecionada.saldo_atual)) {
+      return Alert.alert("Aviso", "Não podes resgatar mais do que tens guardado!");
     }
 
-    executarMovimento(valorNum, novoSaldoCaixinha);
+    executarMovimento(valorNum);
   };
 
   const movimentosFiltrados = historicoMovimentos.filter((m) => {

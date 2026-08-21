@@ -56,6 +56,16 @@ export function mapMercadoPagoStatus(status: string) {
   return "pending";
 }
 
+const WEBHOOK_FRESHNESS_WINDOW_MS = 5 * 60 * 1000;
+
+/** Mercado Pago envia "ts" em segundos Unix; aceita milissegundos também sem
+ * depender de adivinhar o formato de um payload específico. */
+function parseEpochMillis(raw: string): number | null {
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  return value > 1e12 ? value : value * 1000;
+}
+
 export async function verifyMercadoPagoSignature(req: Request, dataId: string) {
   const secret = serverSecret("MERCADO_PAGO_WEBHOOK_SECRET");
   const signature = req.headers.get("x-signature") ?? "";
@@ -65,6 +75,14 @@ export async function verifyMercadoPagoSignature(req: Request, dataId: string) {
     return [key, value];
   }));
   if (!parts.ts || !parts.v1 || !requestId || !dataId) return false;
+
+  // Uma assinatura capturada não pode ser reproduzida indefinidamente: o
+  // manifesto inclui "ts", mas nada antes checava sua idade contra o relógio.
+  const tsMillis = parseEpochMillis(parts.ts);
+  if (tsMillis === null || Math.abs(Date.now() - tsMillis) > WEBHOOK_FRESHNESS_WINDOW_MS) {
+    return false;
+  }
+
   const manifest = `id:${dataId.toLowerCase()};request-id:${requestId};ts:${parts.ts};`;
   const key = await crypto.subtle.importKey(
     "raw",

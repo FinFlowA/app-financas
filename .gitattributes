@@ -1,0 +1,13 @@
+# Normaliza fim de linha para LF em código-fonte e SQL, independente do
+# core.autocrlf de cada máquina. Sem isso, um checkout Windows converte
+# arquivos commitados em LF para CRLF, e scripts que buscam substring literal
+# com "\n" (vários test:* e o próprio scripts/security-check.cjs) falham com
+# falso positivo — já aconteceu nesta sessão em pelo menos 5 arquivos.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
