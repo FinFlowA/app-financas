@@ -7,15 +7,19 @@ import {
 import { getAppOrigin } from "@/lib/auth/origin";
 import { createClient } from "@/lib/supabase/server";
 
-type AuthFlow = "signup" | "recovery" | "email-change";
+type AuthFlow = "signup" | "recovery" | "email-change" | "oauth";
 
 function safeFlow(value: string | null): AuthFlow | null {
-  return value === "signup" || value === "recovery" || value === "email-change" ? value : null;
+  return value === "signup" || value === "recovery" || value === "email-change" || value === "oauth"
+    ? value
+    : null;
 }
 
 function errorRedirect(origin: string, flow: AuthFlow | null): NextResponse {
   const url = new URL(flow === "recovery" ? "/esqueci-senha" : "/login", origin);
-  url.searchParams.set(flow === "recovery" ? "link_invalido" : "erro_confirmacao", "1");
+  const param =
+    flow === "recovery" ? "link_invalido" : flow === "oauth" ? "erro_oauth" : "erro_confirmacao";
+  url.searchParams.set(param, "1");
   return NextResponse.redirect(url);
 }
 
@@ -27,13 +31,14 @@ export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   if (!code && !tokenHash) return errorRedirect(origin, flow);
+  if (flow === "oauth" && !code) return errorRedirect(origin, flow);
 
   const supabase = await createClient();
   const result = code
     ? await supabase.auth.exchangeCodeForSession(code)
     : await supabase.auth.verifyOtp({
         token_hash: tokenHash!,
-        type: flow === "email-change" ? "email_change" : flow,
+        type: flow === "email-change" ? "email_change" : (flow as "signup" | "recovery"),
       });
 
   if (result.error) return errorRedirect(origin, flow);

@@ -1,19 +1,35 @@
 import Image from "next/image";
 import Link from "next/link";
+import { Plus_Jakarta_Sans, Sora } from "next/font/google";
 import type { ReactNode } from "react";
+import { AuthSplash } from "./auth-splash";
+import { ParallaxStage } from "./parallax-stage";
 import styles from "./auth.module.css";
+
+const sora = Sora({
+  subsets: ["latin"],
+  weight: ["400", "600", "700", "800"],
+  variable: "--font-auth-display",
+});
+
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  variable: "--font-auth-body",
+});
 
 type AuthShellProps = {
   title: string;
   description: string;
   children: ReactNode;
+  showSplash?: boolean;
 };
 
-export function AuthShell({ title, description, children }: AuthShellProps) {
+export function AuthShell({ title, description, children, showSplash = false }: AuthShellProps) {
   return (
-    <main className={styles.page}>
-      <div className={styles.ambient} aria-hidden="true" />
-      <section className={styles.stage} aria-labelledby="auth-page-title">
+    <main className={`${styles.page} ${sora.variable} ${plusJakartaSans.variable}`}>
+      {showSplash ? <AuthSplash /> : null}
+      <ParallaxStage className={showSplash ? `${styles.stage} ${styles.stageEnter}` : styles.stage}>
         <aside className={styles.brandPanel} aria-label="FinFlow">
           <div className={styles.brandLockup}>
             <span className={styles.logoSurface}>
@@ -27,11 +43,10 @@ export function AuthShell({ title, description, children }: AuthShellProps) {
                 loading="eager"
                 fetchPriority="high"
                 quality={100}
-                sizes="50px"
+                sizes="46px"
               />
             </span>
             <span className={styles.brandName}>FinFlow</span>
-            <span className={styles.brandVersion}>2.0</span>
           </div>
 
           <div className={styles.brandContent}>
@@ -43,62 +58,40 @@ export function AuthShell({ title, description, children }: AuthShellProps) {
               Planeje, acompanhe e decida com clareza. Seus dados ficam sincronizados
               entre o site e o aplicativo FinFlow.
             </p>
+          </div>
 
-            <ul className={styles.featureList} aria-label="Benefícios do FinFlow">
-              <li className={styles.featureItem}>
-                <span className={styles.featureIcon} aria-hidden="true">↗</span>
+          <ul className={styles.featureList} aria-label="Benefícios do FinFlow">
+            <li className={styles.featureItem}>
+              <span className={styles.featureIcon} aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M7 17 17 7" />
+                  <path d="M9 7h8v8" />
+                </svg>
+              </span>
+              <span>
                 <span className={styles.featureLabel}>Visão completa</span>
-              </li>
-              <li className={styles.featureItem}>
-                <span className={styles.featureIcon} aria-hidden="true">◎</span>
+                <span className={styles.featureDescription}>Entradas, saídas e saldo em um só painel.</span>
+              </span>
+            </li>
+            <li className={styles.featureItem}>
+              <span className={styles.featureIcon} aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="8" />
+                  <circle cx="12" cy="12" r="2.6" />
+                </svg>
+              </span>
+              <span>
                 <span className={styles.featureLabel}>Metas no controle</span>
-              </li>
-              <li className={styles.featureItem}>
-                <span className={styles.featureIcon} aria-hidden="true">✓</span>
-                <span className={styles.featureLabel}>Acesso protegido</span>
-              </li>
-            </ul>
-
-            <div className={styles.preview} aria-hidden="true">
-              <div className={styles.previewTop}>
-                <div>
-                  <span className={styles.previewLabel}>Evolução financeira</span>
-                  <strong className={styles.previewValue}>+18,4%</strong>
-                </div>
-                <span className={styles.previewBadge}>Últimos 6 meses</span>
-              </div>
-              <svg className={styles.chart} viewBox="0 0 520 90" preserveAspectRatio="none">
-                <defs>
-                  <linearGradient id="auth-chart-gradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0" stopColor="#31d7a1" stopOpacity="0.28" />
-                    <stop offset="1" stopColor="#31d7a1" stopOpacity="0" />
-                  </linearGradient>
-                </defs>
-                <path
-                  className={styles.chartArea}
-                  d="M0,75 C52,68 72,73 111,59 C155,43 177,53 221,44 C270,34 294,44 338,27 C378,12 414,31 452,17 C475,9 497,11 520,4 L520,90 L0,90 Z"
-                />
-                <path
-                  className={styles.chartLine}
-                  d="M0,75 C52,68 72,73 111,59 C155,43 177,53 221,44 C270,34 294,44 338,27 C378,12 414,31 452,17 C475,9 497,11 520,4"
-                />
-                <circle className={styles.chartDot} cx="520" cy="4" r="5" />
-              </svg>
-            </div>
-          </div>
-
-          <div className={styles.brandFooter}>
-            <span className={styles.brandFooterIcon} aria-hidden="true">⌾</span>
-            <span>Conexão protegida e nenhuma movimentação sem sua confirmação.</span>
-          </div>
+                <span className={styles.featureDescription}>Acompanhe cada objetivo no seu ritmo.</span>
+              </span>
+            </li>
+          </ul>
         </aside>
+
+        <div className={styles.columnDivider} aria-hidden="true" />
 
         <section className={styles.formSide}>
           <div className={styles.formColumn}>
-            <div className={styles.securePill}>
-              <span className={styles.secureDot} aria-hidden="true" />
-              Ambiente seguro FinFlow
-            </div>
             <div className={styles.formCard}>
               <header className={styles.formHeader}>
                 <p className={styles.formEyebrow}>Sua conta FinFlow</p>
@@ -114,7 +107,7 @@ export function AuthShell({ title, description, children }: AuthShellProps) {
             </footer>
           </div>
         </section>
-      </section>
+      </ParallaxStage>
     </main>
   );
 }

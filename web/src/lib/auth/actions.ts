@@ -88,6 +88,23 @@ export async function signInAction(
   return { status: "error", message: safeUnexpectedMessage(), values: { email } };
 }
 
+export type OAuthProvider = "google" | "apple";
+
+export async function signInWithOAuthAction(provider: OAuthProvider): Promise<void> {
+  const origin = await getAppOrigin();
+  const supabase = await createClient();
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider,
+    options: { redirectTo: callbackUrl(origin, "oauth") },
+  });
+
+  if (error || !data.url) {
+    redirect("/login?erro_oauth=1");
+  }
+
+  redirect(data.url);
+}
+
 export async function signUpAction(
   _previousState: AuthActionState,
   formData: FormData,

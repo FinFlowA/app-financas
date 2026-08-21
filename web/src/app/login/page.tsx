@@ -18,12 +18,18 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             kind: "error" as const,
             message: "O link de confirmação é inválido ou expirou. Tente entrar para reenviar.",
           }
-        : undefined;
+        : params.erro_oauth === "1"
+          ? {
+              kind: "error" as const,
+              message: "Não foi possível entrar com Google agora. Tente novamente ou use seu e-mail e senha.",
+            }
+          : undefined;
 
   return (
     <AuthShell
       title="Bem-vindo de volta"
       description="Entre com a mesma conta que você usa no aplicativo FinFlow."
+      showSplash
     >
       <LoginForm initialFeedback={initialFeedback} />
     </AuthShell>

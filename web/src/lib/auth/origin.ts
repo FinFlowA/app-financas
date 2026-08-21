@@ -32,7 +32,7 @@ export async function getAppOrigin(): Promise<string> {
   return "http://localhost:3100";
 }
 
-export function callbackUrl(origin: string, flow: "signup" | "recovery"): string {
+export function callbackUrl(origin: string, flow: "signup" | "recovery" | "oauth"): string {
   const url = new URL("/auth/callback", origin);
   url.searchParams.set("flow", flow);
   return url.toString();
