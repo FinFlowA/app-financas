@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    ".netlify/**",
+    "coverage/**",
     "out/**",
     "build/**",
     "next-env.d.ts",

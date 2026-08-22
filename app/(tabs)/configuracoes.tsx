@@ -73,6 +73,32 @@ function formatarDataItemOffline(createdAt: string): string {
   });
 }
 
+function mensagemSeguraErroExclusao(error: unknown): string {
+  const candidate = error && typeof error === "object"
+    ? error as { code?: unknown; message?: unknown; details?: unknown }
+    : {};
+  const marker = [candidate.code, candidate.message, candidate.details]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+
+  if (marker.includes("AUTH_STEP_UP_REQUIRED")) {
+    return "Sua confirmação de identidade expirou. Digite a senha novamente e repita a exclusão.";
+  }
+  if (marker.includes("ACCOUNT_PARTNERSHIP_PENDING")) {
+    return "Encerre a parceria ou o convite pendente antes de excluir sua conta.";
+  }
+  if (marker.includes("ACCOUNT_DISSOLUTION_PENDING")) {
+    return "Conclua as decisões da separação que aparecem no app antes de excluir sua conta.";
+  }
+  if (marker.includes("ACCOUNT_SUBSCRIPTION_ACTIVE")) {
+    return "Cancele a assinatura e aguarde a confirmação de que não existe pagamento pendente antes de excluir sua conta.";
+  }
+  if (candidate.code === "23503" || marker.includes("foreign key")) {
+    return "Ainda existem vínculos financeiros ligados à conta. Encerre a parceria ou as pendências informadas em Ajustes e tente novamente.";
+  }
+  return "Não foi possível remover sua conta agora. Nenhum dado foi apagado. Tente novamente ou contate o suporte.";
+}
+
 export default function ConfiguracoesScreen() {
   const { isDark, toggleTheme, isBiometricEnabled, toggleBiometric, session, showToast, notificacoesAtivas, toggleNotificacoes, plano, limitsEnabled } = useAppTheme();
   const router = useRouter();
@@ -509,48 +535,103 @@ export default function ConfiguracoesScreen() {
   };
 
   const confirmarSenhaEApagarConta = async () => {
-    if (!meuId || !meuEmail) return;
+    if (!meuId || !meuEmail) {
+      setModalInfo({
+        titulo: "Sessão inválida",
+        mensagem: "Entre novamente antes de solicitar a exclusão da conta. Nenhum dado foi removido.",
+        cor: "#FF4444",
+      });
+      return;
+    }
     if (!senhaExclusao) {
       Alert.alert("Senha necessária", "Digite sua senha atual para confirmar a exclusão.");
       return;
     }
 
     setVerificandoExclusao(true);
-    const { error: erroSenha } = await supabase.auth.signInWithPassword({
-      email: meuEmail,
-      password: senhaExclusao,
-    });
-    setSenhaExclusao("");
+    try {
+      const { error: erroSenha } = await supabase.auth.signInWithPassword({
+        email: meuEmail,
+        password: senhaExclusao,
+      });
+      setSenhaExclusao("");
 
-    if (erroSenha) {
+      if (erroSenha) {
+        const muitasTentativas = erroSenha.code === "over_request_rate_limit";
+        Alert.alert(
+          muitasTentativas ? "Muitas tentativas" : "Senha incorreta",
+          muitasTentativas
+            ? "Aguarde alguns minutos antes de tentar novamente."
+            : "A senha atual não confere. Nenhum dado foi removido.",
+        );
+        return;
+      }
+
+      const [parceriasAbertas, assinaturasAbertas, decisoesConta, decisoesCaixinha] = await Promise.all([
+        supabase.from("parcerias").select("id").in("status", ["pendente", "aceito"]).limit(1),
+        supabase.from("subscriptions").select("id").in("status", ["pending", "active", "past_due", "grace_period", "paused"]).limit(1),
+        supabase.rpc("get_minhas_decisoes_conta_dissolucao"),
+        supabase.rpc("get_minhas_decisoes_caixinha"),
+      ]);
+      if (parceriasAbertas.error || assinaturasAbertas.error || decisoesConta.error || decisoesCaixinha.error) {
+        setModalInfo({
+          titulo: "Não foi possível validar",
+          mensagem: "Não conseguimos verificar todas as pendências da conta. Nenhum dado foi removido.",
+          cor: "#FF4444",
+        });
+        return;
+      }
+      if ((parceriasAbertas.data?.length ?? 0) > 0) {
+        setModalInfo({
+          titulo: "Parceria pendente",
+          mensagem: "Encerre a parceria ou o convite pendente antes de excluir sua conta.",
+          cor: "#E76F51",
+        });
+        return;
+      }
+      if ((decisoesConta.data?.length ?? 0) > 0 || (decisoesCaixinha.data?.length ?? 0) > 0) {
+        setModalInfo({
+          titulo: "Separação pendente",
+          mensagem: "Conclua as decisões da separação que aparecem no app antes de excluir sua conta.",
+          cor: "#E76F51",
+        });
+        return;
+      }
+      if ((assinaturasAbertas.data?.length ?? 0) > 0) {
+        setModalInfo({
+          titulo: "Assinatura ativa",
+          mensagem: "Cancele a assinatura e aguarde a confirmação de que não existe pagamento pendente antes de excluir sua conta.",
+          cor: "#E76F51",
+        });
+        return;
+      }
+
+      // A RPC delete_user() apaga tudo em uma única transação no servidor e
+      // exige, ela mesma, uma autenticação de senha recente (o login acima) —
+      // não confiamos apenas na verificação que acabamos de fazer no cliente.
+      const { error: erroDeletar } = await supabase.rpc("delete_user");
+      if (erroDeletar) {
+        setModalInfo({ titulo: "Não foi possível excluir", mensagem: mensagemSeguraErroExclusao(erroDeletar), cor: "#FF4444" });
+        return;
+      }
+
+      setModalSenhaExclusaoVisivel(false);
+      await Promise.allSettled([
+        limparNotificacoesAoSair(meuId),
+        limparFilaFinanceiraDoUsuario(meuId),
+      ]);
+      await supabase.auth.signOut();
+      setModalInfo({ titulo: "Conta apagada", mensagem: "Sua conta e todos os dados foram removidos com sucesso.", cor: "#2A9D8F" });
+    } catch (error) {
+      if (__DEV__) console.error("Falha de rede ao excluir a conta", error);
+      setModalInfo({
+        titulo: "Não foi possível excluir",
+        mensagem: "A conexão foi interrompida. Confira se a conta ainda aparece antes de tentar novamente.",
+        cor: "#FF4444",
+      });
+    } finally {
       setVerificandoExclusao(false);
-      const muitasTentativas = (erroSenha as any)?.code === "over_request_rate_limit";
-      Alert.alert(
-        muitasTentativas ? "Muitas tentativas" : "Senha incorreta",
-        muitasTentativas
-          ? "Aguarde alguns minutos antes de tentar novamente."
-          : "A senha atual não confere. Nenhum dado foi removido.",
-      );
-      return;
     }
-
-    // A RPC delete_user() apaga tudo em uma única transação no servidor e
-    // exige, ela mesma, uma autenticação de senha recente (o login acima) —
-    // não confiamos apenas na verificação que acabamos de fazer no cliente.
-    const { error: erroDeletar } = await supabase.rpc("delete_user");
-    setVerificandoExclusao(false);
-    if (erroDeletar) {
-      setModalInfo({ titulo: "Erro", mensagem: "Não foi possível remover sua conta agora. Tente novamente ou contate o suporte.", cor: "#FF4444" });
-      return;
-    }
-
-    setModalSenhaExclusaoVisivel(false);
-    await Promise.allSettled([
-      limparNotificacoesAoSair(meuId),
-      limparFilaFinanceiraDoUsuario(meuId),
-    ]);
-    await supabase.auth.signOut();
-    setModalInfo({ titulo: "Conta apagada", mensagem: "Sua conta e todos os dados foram removidos com sucesso.", cor: "#2A9D8F" });
   };
 
   const enviarFeedback = async () => {

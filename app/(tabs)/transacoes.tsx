@@ -261,6 +261,7 @@ export default function TransacoesScreen() {
   const salvandoRealizacaoRef = useRef(false);
   const conclusaoRequestIdsRef = useRef(new Map<string, string>());
   const reaberturaRequestIdsRef = useRef(new Map<string, string>());
+  const exclusaoObjetivoRequestIdsRef = useRef(new Map<string, string>());
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -555,6 +556,54 @@ export default function TransacoesScreen() {
       });
       return;
     }
+
+    if (!IS_LOCAL_DEMO && isMovimentoObjetivo(transacao.descricao)) {
+      if (!session?.user?.id) {
+        Alert.alert("Sessão inválida", "Entre novamente antes de excluir este lançamento.");
+        return;
+      }
+      const assinaturaExclusao = [
+        transacao.id,
+        transacao.status,
+        Number(transacao.valor).toFixed(2),
+        transacao.data_realizacao ?? "",
+        transacao.descricao,
+      ].join(":");
+      let requestId = exclusaoObjetivoRequestIdsRef.current.get(assinaturaExclusao);
+      if (!requestId) {
+        requestId = randomUuidCompat();
+        exclusaoObjetivoRequestIdsRef.current.set(assinaturaExclusao, requestId);
+      }
+      const { data: resultadoExclusao, error: erroExclusao } = await supabase.rpc(
+        "execute_manual_financial_action",
+        {
+          p_action_type: "delete_transaction",
+          p_payload: { transaction_id: transacao.id, series_scope: "one" },
+          p_idempotency_key: requestId,
+          p_expected_user_id: session.user.id,
+          p_client_created_at: new Date().toISOString(),
+        },
+      );
+      if (erroExclusao?.code === "PGRST202") {
+        Alert.alert(
+          "Atualização necessária",
+          "A exclusão segura ainda não está disponível no servidor. Nada foi alterado.",
+        );
+        return;
+      }
+      if (erroExclusao) {
+        Alert.alert("Erro", "Não foi possível excluir o lançamento sem risco de inconsistência.");
+        return;
+      }
+      if (!resultadoExclusao || typeof resultadoExclusao !== "object" || resultadoExclusao.ok !== true) {
+        Alert.alert("Erro", "O servidor não confirmou a exclusão. Nada foi alterado.");
+        return;
+      }
+      exclusaoObjetivoRequestIdsRef.current.delete(assinaturaExclusao);
+      await carregarDados();
+      return;
+    }
+
     const { error } = await supabase.from("transacoes").delete().eq("id", transacao.id);
     if (error) { Alert.alert("Erro", "Não foi possível apagar a transação."); return; }
 
@@ -963,14 +1012,45 @@ export default function TransacoesScreen() {
           }
           reaberturaRequestIdsRef.current.delete(assinaturaReabertura);
         } else {
-          const { data: reaberta, error: erroReabrir } = await supabase
-            .from("transacoes")
-            .update({ status: "pendente", data_realizacao: null })
-            .eq("id", transacao.id)
-            .select("id")
-            .maybeSingle();
-          if (erroReabrir) throw erroReabrir;
-          if (!reaberta) throw new Error("O lançamento não pôde ser reaberto.");
+          if (!session?.user?.id) throw new Error("Sessão inválida.");
+          const assinaturaReabertura = [
+            "manual",
+            transacao.id,
+            transacao.status,
+            Number(transacao.valor).toFixed(2),
+            transacao.data_realizacao ?? "",
+            transacao.descricao,
+          ].join(":");
+          let requestId = reaberturaRequestIdsRef.current.get(assinaturaReabertura);
+          if (!requestId) {
+            requestId = randomUuidCompat();
+            reaberturaRequestIdsRef.current.set(assinaturaReabertura, requestId);
+          }
+          const { data: resultadoReabertura, error: erroReabertura } = await supabase.rpc(
+            "execute_manual_financial_action",
+            {
+              p_action_type: "reopen_transaction",
+              p_payload: { transaction_id: transacao.id },
+              p_idempotency_key: requestId,
+              p_expected_user_id: session.user.id,
+              p_client_created_at: new Date().toISOString(),
+            },
+          );
+          if (erroReabertura?.code === "PGRST202") {
+            Alert.alert(
+              "Atualização necessária",
+              "A reabertura segura ainda não está disponível no servidor. Nada foi alterado.",
+            );
+            return;
+          }
+          if (erroReabertura) throw erroReabertura;
+          if (!resultadoReabertura || typeof resultadoReabertura !== "object" || resultadoReabertura.ok !== true) {
+            const codigo = resultadoReabertura && typeof resultadoReabertura === "object" && "error_code" in resultadoReabertura
+              ? String(resultadoReabertura.error_code ?? "")
+              : "";
+            throw new Error(codigo || "A reabertura atômica não devolveu um recibo válido.");
+          }
+          reaberturaRequestIdsRef.current.delete(assinaturaReabertura);
         }
       } else {
         if (!data) throw new Error("A data de realização é obrigatória.");
@@ -1014,8 +1094,6 @@ export default function TransacoesScreen() {
         }
 
         const valorEfetivo = Math.round(valorInformado * 100) / 100;
-        let conclusaoAtomicaExecutada = false;
-
         if (permiteParcial) {
           const ajusteServidor = !ajusteAplicavel || ajusteTipo === "nenhum" || ajuste <= 0
             ? "none"
@@ -1063,36 +1141,52 @@ export default function TransacoesScreen() {
             throw new Error("A confirmação atômica devolveu um saldo restante inválido.");
           }
           saldoRestanteConfirmado = Math.round(restanteServidor * 100) / 100;
-          conclusaoAtomicaExecutada = true;
           conclusaoRequestIdsRef.current.delete(assinaturaConclusao);
         } else {
-          const { data: concluida, error: erroConcluir } = await supabase.from("transacoes").update({
-            status: "paga",
-            data_realizacao: dataFormatada,
-            valor: valorEfetivo,
-          }).eq("id", transacao.id).select("id").maybeSingle();
-          if (erroConcluir) throw erroConcluir;
-          if (!concluida) throw new Error("O lançamento não pôde ser concluído.");
-        }
-
-        const { movimento, caixinha } = conclusaoAtomicaExecutada
-          ? { movimento: null, caixinha: null }
-          : await buscarObjetivoDoMovimento(transacao.descricao);
-        if (!conclusaoAtomicaExecutada && movimento && caixinha) {
-          const saldoAtual = Number(caixinha.saldo_atual);
-          const novoSaldo = movimento.operacao === "guardar"
-            ? saldoAtual + valorEfetivo
-            : Math.max(0, saldoAtual - valorEfetivo);
-          const { error: erroObjetivo } = await supabase.from("caixinhas").update({ saldo_atual: novoSaldo }).eq("id", caixinha.id);
-          if (erroObjetivo) {
-            await supabase.from("transacoes").update({
-              status: transacao.status,
-              data_realizacao: transacao.data_realizacao ?? null,
-              valor: transacao.valor,
-              descricao: transacao.descricao,
-            }).eq("id", transacao.id);
-            throw erroObjetivo;
+          if (!session?.user?.id) throw new Error("Sessão inválida.");
+          const valorIntegral = Math.round(Number(transacao.valor) * 100) / 100;
+          const assinaturaConclusao = [
+            "manual",
+            transacao.id,
+            valorIntegral.toFixed(2),
+            dataFormatada,
+            transacao.descricao,
+          ].join(":");
+          let requestId = conclusaoRequestIdsRef.current.get(assinaturaConclusao);
+          if (!requestId) {
+            requestId = randomUuidCompat();
+            conclusaoRequestIdsRef.current.set(assinaturaConclusao, requestId);
           }
+          const { data: resultadoAtomico, error: erroAtomico } = await supabase.rpc(
+            "execute_manual_financial_action",
+            {
+              p_action_type: "complete_transaction",
+              p_payload: {
+                transaction_id: transacao.id,
+                expected_value: valorIntegral,
+                realized_value: valorIntegral,
+                realization_date: dataFormatada,
+              },
+              p_idempotency_key: requestId,
+              p_expected_user_id: session.user.id,
+              p_client_created_at: new Date().toISOString(),
+            },
+          );
+          if (erroAtomico?.code === "PGRST202") {
+            Alert.alert(
+              "Atualização necessária",
+              "A confirmação segura ainda não está disponível no servidor. Nada foi alterado.",
+            );
+            return;
+          }
+          if (erroAtomico) throw erroAtomico;
+          if (!resultadoAtomico || typeof resultadoAtomico !== "object" || resultadoAtomico.ok !== true) {
+            const codigo = resultadoAtomico && typeof resultadoAtomico === "object" && "error_code" in resultadoAtomico
+              ? String(resultadoAtomico.error_code ?? "")
+              : "";
+            throw new Error(codigo || "A confirmação atômica não devolveu um recibo válido.");
+          }
+          conclusaoRequestIdsRef.current.delete(assinaturaConclusao);
         }
       }
 

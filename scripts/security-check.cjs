@@ -9,7 +9,18 @@ const root = path.resolve(__dirname, "..");
 const sourceRoots = ["app", "components", "constants", "docs", "hooks", "lib", "scripts", "supabase", "web"];
 const rootFiles = ["app.json", "package.json", ".env.example", "eas.json", "metro.config.js"];
 const allowedExtensions = new Set([".ts", ".tsx", ".js", ".cjs", ".mjs", ".json", ".sql", ".toml", ".md", ".html"]);
-const ignoredNames = new Set(["node_modules", ".git", ".expo", ".next", ".codex-tmp-local-demo"]);
+// Artefatos de build/deploy contêm código de terceiros minificado. Eles são
+// auditados pelo npm/gitleaks no pipeline, mas não devem ser tratados como
+// código-fonte do FinFlow por este scanner estático.
+const ignoredNames = new Set([
+  "node_modules",
+  ".git",
+  ".expo",
+  ".next",
+  ".netlify",
+  "coverage",
+  ".codex-tmp-local-demo",
+]);
 const ignoredPrefixes = ["dist", ".codex-work"];
 
 const findings = [];

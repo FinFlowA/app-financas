@@ -317,6 +317,7 @@ export default function Dashboard() {
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
+  const conclusaoMovimentoObjetivoRequestIdsRef = useRef(new Map<string, string>());
   const corTipoTransacao = tipoTransacao === "despesa"
     ? "#E76F51"
     : tipoTransacao === "receita"
@@ -1572,12 +1573,16 @@ export default function Dashboard() {
         if (caixinhaDestinoId) {
           const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
           if (!caixa) return Alert.alert("Aviso", "Objetivo não encontrado.");
+          // A primeira ocorrência que o usuário informou como realizada nasce
+          // pendente e é concluída logo após pela RPC atômica. Assim jamais há
+          // uma transação paga sem o ajuste correspondente do objetivo.
+          const statusPersistido = statusFinal === "paga" ? "pendente" : statusFinal;
           novasTransacoes.push({
             tipo: "despesa",
             valor: valorFinal,
             data_vencimento: dataFormatadaSql,
-            data_realizacao: statusFinal === "paga" ? dataFormatadaSql : null,
-            status: statusFinal,
+            data_realizacao: null,
+            status: statusPersistido,
             descricao: comIdentificadorDaSerie(
               descricaoTransferenciaObjetivo(descFinal, caixa.nome, caixa.id, "guardar"),
             ),
@@ -1596,30 +1601,70 @@ export default function Dashboard() {
     }
 
     setLoadingTrans(true);
-    let respostaInsercao = await supabase.from("transacoes").insert(novasTransacoes);
-    const erroTransitorio =
-      respostaInsercao.error &&
+    const respostaInsercao = await supabase
+      .from("transacoes")
+      .insert(novasTransacoes)
+      .select("id, status, valor, data_vencimento, descricao");
+    const { data: transacoesCriadas, error } = respostaInsercao;
+    // Nunca repita automaticamente este INSERT em lote: uma falha de rede pode
+    // acontecer depois do commit e antes da resposta chegar ao aparelho. Nesse
+    // caso, reenviar o mesmo lote criaria uma segunda série. A tela recarrega os
+    // dados e orienta a conferência do Histórico antes de uma nova tentativa.
+    const resultadoDaInsercaoEhInconclusivo = Boolean(
+      error &&
       (
-        respostaInsercao.status === 401 ||
+        respostaInsercao.status === 0 ||
         respostaInsercao.status === 408 ||
         respostaInsercao.status === 429 ||
         respostaInsercao.status >= 500 ||
-        respostaInsercao.error.code === "PGRST301"
-      );
-
-    // O servidor rejeita o lote inteiro nesses casos. Renovar a sessão e
-    // repetir uma vez evita que uma indisponibilidade breve chegue ao usuário.
-    if (erroTransitorio) {
-      await supabase.auth.refreshSession();
-      respostaInsercao = await supabase.from("transacoes").insert(novasTransacoes);
-    }
-    const { error } = respostaInsercao;
+        error.code === "PGRST000"
+      )
+    );
+    const sessaoFoiRejeitada = Boolean(
+      error &&
+      (respostaInsercao.status === 401 || error.code === "PGRST301")
+    );
+    let avisoConclusaoObjetivo: string | null = null;
     if (!error && caixinhaDestinoId && statusBd === "paga") {
-      // Atualiza saldo do objetivo para transações já pagas
-      const caixa = caixinhas.find(c => c.id === caixinhaDestinoId);
-      if (caixa) {
-        const totalPago = novasTransacoes.filter(t => t.status === "paga").reduce((acc, t) => acc + t.valor, 0);
-        await supabase.from("caixinhas").update({ saldo_atual: Number(caixa.saldo_atual) + totalPago }).eq("id", caixa.id);
+      const primeiraCriada = Array.isArray(transacoesCriadas)
+        ? [...transacoesCriadas].sort((a, b) =>
+            String(a.data_vencimento).localeCompare(String(b.data_vencimento)) || Number(a.id) - Number(b.id)
+          )[0]
+        : null;
+      if (!primeiraCriada?.id || !session?.user?.id) {
+        avisoConclusaoObjetivo = "Os agendamentos foram criados como pendentes, mas a primeira movimentação não pôde ser confirmada agora.";
+      } else {
+        const assinatura = [
+          primeiraCriada.id,
+          Number(primeiraCriada.valor).toFixed(2),
+          primeiraCriada.data_vencimento,
+          primeiraCriada.descricao,
+        ].join(":");
+        let requestId = conclusaoMovimentoObjetivoRequestIdsRef.current.get(assinatura);
+        if (!requestId) {
+          requestId = randomUuidCompat();
+          conclusaoMovimentoObjetivoRequestIdsRef.current.set(assinatura, requestId);
+        }
+        const { data: resultadoConclusao, error: erroConclusao } = await supabase.rpc(
+          "execute_manual_financial_action",
+          {
+            p_action_type: "complete_transaction",
+            p_payload: {
+              transaction_id: primeiraCriada.id,
+              expected_value: Number(primeiraCriada.valor),
+              realized_value: Number(primeiraCriada.valor),
+              realization_date: primeiraCriada.data_vencimento,
+            },
+            p_idempotency_key: requestId,
+            p_expected_user_id: session.user.id,
+            p_client_created_at: new Date().toISOString(),
+          },
+        );
+        if (erroConclusao || !resultadoConclusao || typeof resultadoConclusao !== "object" || resultadoConclusao.ok !== true) {
+          avisoConclusaoObjetivo = "Os agendamentos foram criados como pendentes, mas a primeira movimentação não pôde ser confirmada agora.";
+        } else {
+          conclusaoMovimentoObjetivoRequestIdsRef.current.delete(assinatura);
+        }
       }
     }
     setLoadingTrans(false);
@@ -1630,6 +1675,19 @@ export default function Dashboard() {
           status: respostaInsercao.status,
           details: error.details,
         });
+      }
+      void carregarDados();
+      if (resultadoDaInsercaoEhInconclusivo) {
+        return Alert.alert(
+          "Não foi possível confirmar",
+          "A conexão foi interrompida durante o salvamento. Confira o Histórico antes de tentar novamente para não duplicar os agendamentos.",
+        );
+      }
+      if (sessaoFoiRejeitada) {
+        return Alert.alert(
+          "Sessão expirada",
+          "Entre novamente antes de criar os agendamentos. Nenhum reenvio automático foi feito.",
+        );
       }
       return Alert.alert(
         "Não foi possível salvar",
@@ -1642,6 +1700,9 @@ export default function Dashboard() {
     setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
     setModalTransVisivel(false);
     carregarDados();
+    if (avisoConclusaoObjetivo) {
+      Alert.alert("Agendamentos criados", avisoConclusaoObjetivo);
+    }
   };
 
   const nomeUsuario = session?.user?.user_metadata?.nome_usuario || session?.user?.email?.split("@")[0] || "Usuário";

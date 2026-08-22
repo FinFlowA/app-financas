@@ -182,10 +182,20 @@ npm run lint
 npx tsc --noEmit
 npm run security:check
 npm run test:finance-ai
+npm run test:finance-ai-context
+npm run test:finance-ai-state-guard
 npm run test:history-order
 npm run test:money-input
+npm run test:password
 npm run test:transaction-completion
+npm run test:plan-trigger
+npm run test:account-deletion
 npm run test:offline-queue
+npm run test:native-compat
+npm run test:release-notes-modal
+npm run test:edge-security
+npm run test:local-demo
+npm audit --omit=dev
 ```
 
 Site:
@@ -198,6 +208,39 @@ npm test
 npm run build
 npm audit --omit=dev
 ```
+
+### Atualização local em validação — 22/08/2026
+
+Esta atualização descreve o estado da árvore de trabalho local. Ela **não
+representa publicação** no GitHub, Expo/EAS, Netlify ou Supabase:
+
+- concluir, reabrir e excluir transferências para objetivos passou a usar as
+  ações financeiras transacionais do backend, inclusive em ocorrências
+  parceladas ou recorrentes;
+- guardar e resgatar em objetivo compartilhado usa `move_goal`, preservando
+  autorização, lançamento e saldo do objetivo na mesma operação;
+- a exclusão de conta foi consolidada em `delete_user()`, com reautenticação
+  recente, ordenação dos vínculos financeiros e tratamento dos ledgers de
+  conclusão, reabertura e pagamento de fatura;
+- app, site e RPC bloqueiam a exclusão enquanto houver parceria/convite,
+  decisão de separação ou assinatura pendente, para preservar o financeiro da
+  outra pessoa e impedir cancelamentos incompletos;
+- recibos de uma transação que pertence a outro usuário são preservados quando
+  apenas a conta do ator da operação é excluída;
+- o fluxo PKCE mobile aguarda a preparação da recuperação de senha antes de
+  abrir a tela correspondente e evita processar duas vezes o mesmo link;
+- `.gitattributes` fixa LF para código e migrations, eliminando a divergência
+  de fim de linha observada no Windows;
+- o CI de segurança inclui explicitamente `test:account-deletion` e
+  `test:local-demo`, além das demais verificações listadas acima.
+
+A auditoria npm de 22/08/2026 encontrou zero vulnerabilidades nas dependências
+de produção do site. No projeto Expo, ela ainda reporta oito ocorrências altas
+da mesma cadeia transitiva de build (`Metro` → `image-size`). O aviso trata de
+negação de serviço ao processar imagens especialmente criadas durante o build;
+o npm só oferece correção automática por uma atualização principal do Expo.
+Essa atualização não foi forçada nesta rodada porque exige migração e novo
+binário, e não deve ser misturada com as correções funcionais sem teste nativo.
 
 ## Deploy do site
 
@@ -265,7 +308,7 @@ Uma alteração nativa, de dependência nativa ou de `runtimeVersion` exige novo
 - Não publique dumps, relatórios ou PoCs com dados pessoais reais.
 - Revogue imediatamente qualquer credencial exposta em commit, conversa ou captura de tela.
 
-Consulte o [relatório de segurança atual](./docs/security/SECURITY_AUDIT_2026-08-15.md) e os [PoCs seguros](./docs/security/POC_2026-08-15.md).
+Consulte o [relatório de segurança atual](./docs/security/SECURITY_AUDIT_2026-08-17.md) e os [PoCs seguros](./docs/security/POC_2026-08-17.md).
 
 ## Estado e continuidade
 

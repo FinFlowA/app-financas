@@ -1,6 +1,7 @@
 import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { collectPaymentSummaryRows } from "@/lib/payment-summaries";
 import { createClient } from "@/lib/supabase/server";
+import { shouldReturnHomeAfterCreation } from "@/lib/transaction-entry";
 import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
 import TransactionManager from "./transaction-manager";
 import type { QuickFilter, TransactionKind, TransactionRow } from "./transaction-model";
@@ -39,6 +40,7 @@ export default async function TransactionsPage({
   const openNew = ["1", "true", "yes"].includes(first(parameters.new).toLowerCase());
   const initialKind = transactionKind(first(parameters.kind));
   const initialFocusId = positiveId(first(parameters.focus));
+  const returnHomeAfterCreate = shouldReturnHomeAfterCreation(first(parameters.source));
   const supabase = await createClient();
 
   const [{ data: authData, error: authError }, accountsResult, categoriesResult, cardsResult] = await Promise.all([
@@ -116,6 +118,7 @@ export default async function TransactionsPage({
         initialOpenNew={openNew}
         initialKind={initialKind}
         initialFocusId={initialFocusId}
+        returnHomeAfterCreate={returnHomeAfterCreate}
         today={today}
         accounts={(accountsResult.data ?? []) as Conta[]}
         categories={(categoriesResult.data ?? []) as Categoria[]}

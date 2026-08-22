@@ -376,6 +376,7 @@ export default function RootLayout() {
 
   // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
+  const authLinkProcessadoRef = useRef<string | null>(null);
   const iniciarFluxoRecuperacaoSenha = useCallback(async (userId?: string) => {
     if (!userId) return;
     await AsyncStorage.setItem(
@@ -387,6 +388,8 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!url) return;
+    if (authLinkProcessadoRef.current === url) return;
+    authLinkProcessadoRef.current = url;
 
     // Fluxo PKCE (Supabase moderno): code= nos query params
     try {
@@ -394,16 +397,23 @@ export default function RootLayout() {
       const code = parsed.searchParams.get("code");
       if (code) {
         supabase.auth.exchangeCodeForSession(code)
-          .then(({ data, error }) => {
+          .then(async ({ data, error }) => {
             if (error) {
-              console.log("Erro ao trocar código:", error);
+              if (__DEV__) console.error("Erro ao trocar código de autenticação", error);
               return;
             }
-            if (url.includes("email-confirmed") && data.user?.email_confirmed_at) {
+            // O link já pode ter levado o Expo Router à tela antes da troca
+            // PKCE terminar. Grave primeiro o marcador vinculado ao usuário e
+            // só então navegue, evitando que a tela considere o link inválido.
+            if (url.includes("reset-password")) {
+              await iniciarFluxoRecuperacaoSenha(data.user?.id);
+            } else if (url.includes("email-confirmed") && data.user?.email_confirmed_at) {
               router.replace("/email-confirmed" as any);
             }
           })
-          .catch((e) => console.log("Erro ao trocar código:", e));
+          .catch((error) => {
+            if (__DEV__) console.error("Erro ao concluir autenticação por link", error);
+          });
         return;
       }
     } catch {}

@@ -241,10 +241,6 @@ export default function FluxoSaldoChart({
             </span>
           </div>
           <div className={styles.monthDetailsGrid}>
-            <div className={styles.monthDetailItem} data-tone={saldoAtivo.saldo < 0 ? "negative" : "balance"}>
-              <span>{saldoAtivo.projetado ? "Saldo previsto no fim do mês" : "Saldo no fim do mês"}</span>
-              <strong>{formatarReais(saldoAtivo.saldo)}</strong>
-            </div>
             <div className={styles.monthDetailItem} data-tone="positive">
               <span>Receitas realizadas</span>
               <strong>+ {formatarReais(mesAtivo.receitas)}</strong>

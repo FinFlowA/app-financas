@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { createPortal } from "react-dom";
 import CurrencyInput from "@/components/ui/currency-input";
 import FinancialIcon from "@/components/ui/financial-icon";
 import { hojeEmSaoPaulo } from "@/lib/date";
@@ -40,6 +41,97 @@ type Painel =
 
 type Acao = (formData: FormData) => Promise<{ erro: string | null }>;
 type Executar = (acao: Acao, formData: FormData, sucesso: string) => void;
+
+const subscribeToNothing = () => () => undefined;
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
+
+function ObjectiveActionModal({
+  title,
+  pending,
+  onClose,
+  children,
+}: {
+  title: string;
+  pending: boolean;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const canUseDOM = useSyncExternalStore(subscribeToNothing, getClientSnapshot, getServerSnapshot);
+  const panelRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (!canUseDOM) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const firstFocusable = panelRef.current?.querySelector<HTMLElement>(
+      "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+    );
+    firstFocusable?.focus();
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !pending) {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab" || !panelRef.current) return;
+      const focusable = Array.from(panelRef.current.querySelectorAll<HTMLElement>(
+        "button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex='-1'])",
+      ));
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [canUseDOM, onClose, pending]);
+
+  if (!canUseDOM) return null;
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-[#001b18]/78 p-3 backdrop-blur-sm sm:p-6"
+      role="presentation"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !pending) onClose();
+      }}
+    >
+      <section
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="objective-action-title"
+        className="my-auto max-h-[calc(100dvh-1.5rem)] w-full max-w-3xl overflow-y-auto rounded-[24px] border border-primary/25 bg-surface p-4 shadow-[0_28px_90px_rgba(0,0,0,0.42)] sm:max-h-[calc(100dvh-3rem)] sm:p-6"
+      >
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <h2 id="objective-action-title" className="text-lg font-extrabold text-foreground">{title}</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={pending}
+            aria-label="Fechar"
+            className="ff-focus grid h-9 w-9 shrink-0 place-items-center rounded-full bg-surface-muted text-lg font-bold text-foreground-muted transition hover:bg-primary-soft hover:text-primary disabled:opacity-50"
+          >
+            ×
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>,
+    document.body,
+  );
+}
 
 function RequestId({ name = "request_id" }: { name?: string }) {
   const [id] = useState(() => crypto.randomUUID());
@@ -345,6 +437,12 @@ export default function ObjetivosManager({
     });
   }
 
+  function abrirPainel(proximo: Exclude<Painel, null>) {
+    setErro(null);
+    setAviso(null);
+    setPainel(proximo);
+  }
+
   const painelTitulo = painel?.tipo === "novo"
     ? "Novo objetivo"
     : painel?.tipo === "editar"
@@ -367,7 +465,7 @@ export default function ObjetivosManager({
           </div>
           <button
             type="button"
-            onClick={() => { setPainel({ tipo: "novo" }); setErro(null); setAviso(null); }}
+            onClick={() => abrirPainel({ tipo: "novo" })}
             className="ff-focus self-start rounded-full bg-white px-5 py-3 text-sm font-extrabold text-[#075348] shadow-xl transition hover:-translate-y-0.5 hover:bg-mint"
           >
             + Novo objetivo
@@ -391,7 +489,7 @@ export default function ObjetivosManager({
         </div>
       )}
 
-      {painel && (
+      {painel && painel.tipo === "historico" && (
         <section
           key={`${painel.tipo}-${"objetivo" in painel ? painel.objetivo.id : "novo"}`}
           className="mb-6 overflow-hidden rounded-[22px] border border-primary/25 bg-surface p-5 shadow-[0_22px_60px_rgba(0,0,0,0.14)] sm:p-6"
@@ -400,6 +498,34 @@ export default function ObjetivosManager({
             <h2 className="text-lg font-extrabold text-foreground">{painelTitulo}</h2>
             <button type="button" onClick={() => setPainel(null)} aria-label="Fechar" className="ff-focus grid h-9 w-9 place-items-center rounded-full bg-surface-muted text-lg font-bold text-foreground-muted transition hover:bg-primary-soft hover:text-primary">×</button>
           </div>
+          <div className="space-y-2">
+            {painel.objetivo.movimentos.map((item) => (
+              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-ff-sm bg-surface-muted px-3 py-3">
+                <div>
+                  <p className="font-semibold text-foreground">{item.descricao}</p>
+                  <p className="text-xs text-foreground-muted">
+                    {formatarData(item.data)} · {item.status === "paga" ? "Realizado" : "Pendente"}
+                  </p>
+                </div>
+                <p data-private-value="true" className={`font-extrabold ${item.operacao === "guardar" ? "text-primary" : "text-orange"}`}>
+                  {item.operacao === "guardar" ? "+" : "−"}{formatarReais(item.valor)}
+                </p>
+              </div>
+            ))}
+            {painel.objetivo.movimentos.length === 0 && (
+              <p className="text-sm text-foreground-muted">Ainda não há movimentações neste objetivo.</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {painel && painel.tipo !== "historico" && (
+        <ObjectiveActionModal title={painelTitulo} pending={pending} onClose={() => setPainel(null)}>
+          {erro && (
+            <p role="alert" className="mb-4 rounded-ff-sm border border-red/40 bg-red/10 px-4 py-3 text-sm font-semibold text-red">
+              {erro}
+            </p>
+          )}
           {painel.tipo === "novo" && (
             <FormularioObjetivo pending={pending} executar={executar} fechar={() => setPainel(null)} partnerName={partnerName} />
           )}
@@ -415,27 +541,7 @@ export default function ObjetivosManager({
               executar={executar}
             />
           )}
-          {painel.tipo === "historico" && (
-            <div className="space-y-2">
-              {painel.objetivo.movimentos.map((item) => (
-                <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-ff-sm bg-surface-muted px-3 py-3">
-                  <div>
-                    <p className="font-semibold text-foreground">{item.descricao}</p>
-                    <p className="text-xs text-foreground-muted">
-                      {formatarData(item.data)} · {item.status === "paga" ? "Realizado" : "Pendente"}
-                    </p>
-                  </div>
-                  <p data-private-value="true" className={`font-extrabold ${item.operacao === "guardar" ? "text-primary" : "text-orange"}`}>
-                    {item.operacao === "guardar" ? "+" : "−"}{formatarReais(item.valor)}
-                  </p>
-                </div>
-              ))}
-              {painel.objetivo.movimentos.length === 0 && (
-                <p className="text-sm text-foreground-muted">Ainda não há movimentações neste objetivo.</p>
-              )}
-            </div>
-          )}
-        </section>
+        </ObjectiveActionModal>
       )}
 
       <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Seus objetivos</h2><span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-bold text-foreground-muted">{ativos.length} {ativos.length === 1 ? "ativo" : "ativos"}</span></div>
@@ -459,7 +565,7 @@ export default function ObjetivosManager({
                   </div>
                 </div>
                 {proprio ? (
-                  <button type="button" onClick={() => setPainel({ tipo: "editar", objetivo })} className="ff-focus relative rounded-full bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground transition hover:bg-primary-soft hover:text-primary">
+                  <button type="button" onClick={() => abrirPainel({ tipo: "editar", objetivo })} className="ff-focus relative rounded-full bg-surface-muted px-3 py-1.5 text-xs font-bold text-foreground transition hover:bg-primary-soft hover:text-primary">
                     Editar
                   </button>
                 ) : (
@@ -489,13 +595,13 @@ export default function ObjetivosManager({
                 <span data-private-value="true">Fim do ano: {formatarReais(objetivo.previstoFimAno)}</span>
               </div>
               <div role="group" aria-label={`Ações do objetivo ${objetivo.nome}`} className="relative mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                <button type="button" aria-haspopup="dialog" onClick={() => setPainel({ tipo: "movimentar", objetivo, operacao: "guardar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_8px_20px_rgba(22,150,110,0.2)] transition hover:-translate-y-0.5 hover:bg-primary-dark hover:shadow-[0_12px_24px_rgba(22,150,110,0.26)]">
+                <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "movimentar", objetivo, operacao: "guardar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_8px_20px_rgba(22,150,110,0.2)] transition hover:-translate-y-0.5 hover:bg-primary-dark hover:shadow-[0_12px_24px_rgba(22,150,110,0.26)]">
                   <GoalActionIcon action="save" /> Guardar
                 </button>
-                <button type="button" aria-haspopup="dialog" onClick={() => setPainel({ tipo: "movimentar", objetivo, operacao: "resgatar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange/35 bg-orange/10 px-3 py-2.5 text-xs font-extrabold text-orange transition hover:-translate-y-0.5 hover:border-orange/55 hover:bg-orange/15">
+                <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "movimentar", objetivo, operacao: "resgatar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange/35 bg-orange/10 px-3 py-2.5 text-xs font-extrabold text-orange transition hover:-translate-y-0.5 hover:border-orange/55 hover:bg-orange/15">
                   <GoalActionIcon action="withdraw" /> Resgatar
                 </button>
-                <button type="button" aria-haspopup="dialog" onClick={() => setPainel({ tipo: "historico", objetivo })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs font-extrabold text-foreground transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary-soft hover:text-primary">
+                <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "historico", objetivo })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs font-extrabold text-foreground transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary-soft hover:text-primary">
                   <GoalActionIcon action="history" /> Histórico
                 </button>
               </div>

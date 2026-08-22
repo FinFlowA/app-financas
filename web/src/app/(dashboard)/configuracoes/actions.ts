@@ -18,6 +18,32 @@ function fail(message: string): SettingsActionState {
   return { status: "error", message };
 }
 
+function accountDeletionFailure(error: unknown): SettingsActionState {
+  const candidate = error && typeof error === "object"
+    ? error as { code?: unknown; message?: unknown; details?: unknown }
+    : {};
+  const marker = [candidate.code, candidate.message, candidate.details]
+    .filter((value): value is string => typeof value === "string")
+    .join(" ");
+
+  if (marker.includes("AUTH_STEP_UP_REQUIRED")) {
+    return fail("Sua confirmação de identidade expirou. Informe a senha novamente e repita a exclusão.");
+  }
+  if (marker.includes("ACCOUNT_PARTNERSHIP_PENDING")) {
+    return fail("Encerre a parceria ou os convites pendentes antes de excluir sua conta.");
+  }
+  if (marker.includes("ACCOUNT_DISSOLUTION_PENDING")) {
+    return fail("Conclua as decisões da separação antes de excluir sua conta.");
+  }
+  if (marker.includes("ACCOUNT_SUBSCRIPTION_ACTIVE")) {
+    return fail("Cancele a assinatura e confirme que não há pagamento pendente antes de excluir sua conta.");
+  }
+  if (candidate.code === "23503" || marker.includes("foreign key")) {
+    return fail("Ainda existem vínculos financeiros ligados à conta. Encerre a parceria ou as pendências indicadas nesta página e tente novamente.");
+  }
+  return fail("A exclusão segura não está disponível agora. Nenhum dado foi removido.");
+}
+
 function text(formData: FormData, key: string, maximum = 500): string {
   const value = formData.get(key);
   return typeof value === "string" ? value.trim().slice(0, maximum) : "";
@@ -355,7 +381,7 @@ export async function deleteAccountAction(
   // nunca tenta apagar tabelas individualmente nem escreve em auth.users.
   const { error } = await auth.supabase.rpc("delete_user");
   if (error) {
-    return fail("A exclusão segura não está disponível agora. Nenhum dado foi removido.");
+    return accountDeletionFailure(error);
   }
 
   await auth.supabase.auth.signOut({ scope: "local" });

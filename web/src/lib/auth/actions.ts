@@ -7,6 +7,11 @@ import {
   RECOVERY_COOKIE_NAME,
 } from "@/lib/auth/constants";
 import { callbackUrl, getAppOrigin } from "@/lib/auth/origin";
+import {
+  isAuthRateLimitError,
+  logSafeAuthFailure,
+  safeSignupErrorMessage,
+} from "@/lib/auth/safe-errors";
 import type { AuthActionState } from "@/lib/auth/state";
 import {
   ageFromIsoDate,
@@ -18,7 +23,7 @@ import {
 import { createClient } from "@/lib/supabase/server";
 
 function isRateLimitError(error: { status?: number; code?: string }): boolean {
-  return error.status === 429 || error.code === "over_request_rate_limit";
+  return isAuthRateLimitError(error);
 }
 
 function safeUnexpectedMessage(): string {
@@ -91,18 +96,21 @@ export async function signInAction(
 export type OAuthProvider = "google" | "apple";
 
 export async function signInWithOAuthAction(provider: OAuthProvider): Promise<void> {
-  const origin = await getAppOrigin();
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signInWithOAuth({
-    provider,
-    options: { redirectTo: callbackUrl(origin, "oauth") },
-  });
-
-  if (error || !data.url) {
-    redirect("/login?erro_oauth=1");
+  let destination: string | null = null;
+  try {
+    const origin = await getAppOrigin();
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: callbackUrl(origin, "oauth") },
+    });
+    if (!error && data.url) destination = data.url;
+  } catch {
+    // A interface recebe uma mensagem genérica; detalhes de configuração do
+    // provedor não são expostos ao navegador nem registrados com PII.
   }
 
-  redirect(data.url);
+  redirect(destination ?? "/login?erro_oauth=1");
 }
 
 export async function signUpAction(
@@ -143,21 +151,8 @@ export async function signUpAction(
     });
 
     if (error) {
-      if (isRateLimitError(error)) {
-        return {
-          status: "error",
-          message: "Muitas tentativas seguidas. Aguarde alguns minutos e tente novamente.",
-          values,
-        };
-      }
-      if (error.code === "user_already_exists") {
-        return {
-          status: "error",
-          message: "Já existe uma conta com este e-mail. Tente entrar ou recuperar a senha.",
-          values,
-        };
-      }
-      return { status: "error", message: safeUnexpectedMessage(), values };
+      logSafeAuthFailure("signup", error);
+      return { status: "error", message: safeSignupErrorMessage(error), values };
     }
 
     if (!data.user || data.user.identities?.length === 0) {
@@ -170,6 +165,7 @@ export async function signUpAction(
 
     hasSession = Boolean(data.session);
   } catch {
+    logSafeAuthFailure("signup", {});
     return { status: "error", message: safeUnexpectedMessage(), values };
   }
 
@@ -237,12 +233,14 @@ export async function resendConfirmationAction(
     });
 
     if (error && isRateLimitError(error)) {
+      logSafeAuthFailure("resend-confirmation", error);
       return {
         status: "error",
         message: "Aguarde alguns minutos antes de solicitar outro e-mail.",
         values: { email },
       };
     }
+    if (error) logSafeAuthFailure("resend-confirmation", error);
     if (error && error.status && error.status >= 500) {
       return { status: "error", message: safeUnexpectedMessage(), values: { email } };
     }

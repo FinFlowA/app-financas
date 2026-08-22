@@ -178,6 +178,30 @@ textarea {
   transition: border-color 160ms ease, box-shadow 160ms ease, background-color 160ms ease;
 }
 
+select {
+  border-color: var(--border);
+  background-color: var(--surface-muted);
+  color: var(--foreground);
+}
+
+select:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ff-primary) 42%, var(--border));
+}
+
+select option {
+  background-color: var(--surface-raised);
+  color: var(--foreground);
+}
+
+select option:checked {
+  background-color: var(--ff-action-primary);
+  color: var(--ff-on-action);
+}
+
+select option:disabled {
+  color: var(--foreground-muted);
+}
+
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
@@ -207,7 +231,7 @@ textarea::placeholder {
   background-clip: padding-box;
 }
 
-.ff-focus:focus-visible,
+.ff-focus:not(input):not(select):not(textarea):focus-visible,
 a:focus-visible,
 button:focus-visible,
 summary:focus-visible {

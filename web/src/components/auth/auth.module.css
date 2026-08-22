@@ -833,7 +833,7 @@
 }
 
 .stageEnter {
-  animation: authEnter 0.7s cubic-bezier(0.22, 0.61, 0.36, 1) 1.6s both;
+  animation: authEnter 0.42s cubic-bezier(0.22, 0.61, 0.36, 1) both;
 }
 
 @keyframes authEnter {

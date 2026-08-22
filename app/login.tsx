@@ -46,6 +46,27 @@ interface AuthFieldProps extends TextInputProps {
   success?: boolean;
 }
 
+function mensagemSeguraErroCadastro(error: unknown): string {
+  const candidate = error && typeof error === "object"
+    ? error as { code?: unknown; status?: unknown }
+    : {};
+  if (candidate.status === 429
+    || candidate.code === "over_request_rate_limit"
+    || candidate.code === "over_email_send_rate_limit") {
+    return "Muitas tentativas seguidas. Aguarde alguns minutos e tente novamente.";
+  }
+  if (candidate.code === "user_already_exists" || candidate.code === "email_exists") {
+    return "Já existe uma conta com este e-mail. Faça login ou recupere sua senha.";
+  }
+  if (candidate.code === "email_address_invalid") {
+    return "O serviço recusou esse endereço de e-mail. Confira o endereço e tente novamente.";
+  }
+  if (candidate.code === "weak_password") {
+    return PASSWORD_REQUIREMENTS_MESSAGE;
+  }
+  return "Não foi possível concluir o cadastro agora. Verifique sua conexão e tente novamente.";
+}
+
 function AuthField({
   label,
   icon,
@@ -275,46 +296,61 @@ export default function LoginScreen() {
 
     const emailNormalizado = email.trim().toLowerCase();
     setLoading(true);
-    const { data, error } = await supabase.auth.signUp({
-      email: emailNormalizado,
-      password: password,
-      options: {
-        emailRedirectTo: "meuappfinancas://email-confirmed",
-        data: {
-          nome_usuario: nome,
-          ...(telefoneE164 ? { telefone: telefoneE164 } : {}),
-          data_nascimento: nascimentoISO,
-          termos_aceitos_em: new Date().toISOString(),
-          termos_versao: LEGAL_DOCUMENT_VERSION,
-          tutorial_pendente: true,
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: emailNormalizado,
+        password,
+        options: {
+          emailRedirectTo: "meuappfinancas://email-confirmed",
+          data: {
+            nome_usuario: nome,
+            ...(telefoneE164 ? { telefone: telefoneE164 } : {}),
+            data_nascimento: nascimentoISO,
+            termos_aceitos_em: new Date().toISOString(),
+            termos_versao: LEGAL_DOCUMENT_VERSION,
+            tutorial_pendente: true,
+          },
         },
-      },
-    });
-
-    if (error) {
-      Alert.alert("Erro ao criar conta", error.message);
-    } else if (!data.user || (data.user.identities?.length ?? 0) === 0) {
-      Alert.alert(
-        "E-mail já cadastrado",
-        "Este e-mail já está em uso. Faça login ou recupere sua senha.",
-      );
-    } else {
-      await AsyncStorage.setItem(PENDING_EMAIL_CONFIRMATION_KEY, emailNormalizado);
-      setEmailPendenteConfirmacao(emailNormalizado);
-      setModalErro({
-        titulo: "Confirme seu e-mail",
-        mensagem: `Sua conta foi criada, ${nome}!\n\nEnviamos um link para ${emailNormalizado}. Abra o e-mail e confirme a conta antes de entrar. Se não encontrar, verifique a caixa de spam.`,
-        cor: "#2A9D8F",
       });
-      setIsLogin(true);
-      setPassword("");
-      setConfirmPassword("");
-      setNome("");
-      setTelefone("");
-      setDataNascimento("");
-      setAceitouTermos(false);
+
+      if (error) {
+        setModalErro({
+          titulo: "Não foi possível criar a conta",
+          mensagem: mensagemSeguraErroCadastro(error),
+          cor: FinFlowColors.red,
+        });
+      } else if (!data.user || (data.user.identities?.length ?? 0) === 0) {
+        setModalErro({
+          titulo: "E-mail já cadastrado",
+          mensagem: "Este e-mail já está em uso. Faça login ou recupere sua senha.",
+          cor: FinFlowColors.orange,
+        });
+      } else {
+        await AsyncStorage.setItem(PENDING_EMAIL_CONFIRMATION_KEY, emailNormalizado);
+        setEmailPendenteConfirmacao(emailNormalizado);
+        setModalErro({
+          titulo: "Confirme seu e-mail",
+          mensagem: `Sua conta foi criada, ${nome}!\n\nEnviamos um link para ${emailNormalizado}. Abra o e-mail e confirme a conta antes de entrar. Se não encontrar, verifique a caixa de spam.`,
+          cor: FinFlowColors.primary,
+        });
+        setIsLogin(true);
+        setPassword("");
+        setConfirmPassword("");
+        setNome("");
+        setTelefone("");
+        setDataNascimento("");
+        setAceitouTermos(false);
+      }
+    } catch (error) {
+      if (__DEV__) console.error("Falha de rede no cadastro", error);
+      setModalErro({
+        titulo: "Não foi possível criar a conta",
+        mensagem: mensagemSeguraErroCadastro(error),
+        cor: FinFlowColors.red,
+      });
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   async function recuperarSenha() {

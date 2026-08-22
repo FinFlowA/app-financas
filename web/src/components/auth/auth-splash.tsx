@@ -4,15 +4,7 @@ import Image from "next/image";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import styles from "./auth.module.css";
 
-const STEPS = [26, 52, 71, 88, 100] as const;
-const STEP_LABELS: Record<number, string> = {
-  8: "Iniciando",
-  26: "Iniciando",
-  52: "Sincronizando dados",
-  71: "Sincronizando dados",
-  88: "Preparando seu acesso",
-  100: "Tudo pronto",
-};
+const SPLASH_SESSION_KEY = "finflow-auth-splash-v1";
 
 type SplashState = "loading" | "fading" | "off";
 
@@ -30,8 +22,8 @@ function getReducedMotionServerSnapshot() {
   return false;
 }
 
-/** Splash de entrada decorativo (sem relação com carregamento real). Pula
- * direto para o conteúdo sob prefers-reduced-motion. */
+/** Vinheta curta de marca, exibida no máximo uma vez por aba. Não simula uma
+ * sincronização inexistente e não mantém o formulário bloqueado a cada visita. */
 export function AuthSplash() {
   const prefersReducedMotion = useSyncExternalStore(
     subscribeReducedMotion,
@@ -39,19 +31,43 @@ export function AuthSplash() {
     getReducedMotionServerSnapshot,
   );
   const [state, setState] = useState<SplashState>("loading");
-  const [progress, setProgress] = useState(8);
+  const [progress, setProgress] = useState(24);
 
   useEffect(() => {
-    if (prefersReducedMotion) return;
+    const stage = document.querySelector<HTMLElement>("[data-auth-stage]");
+    const releaseStage = () => stage?.removeAttribute("inert");
+    let alreadyShown = false;
+    try {
+      alreadyShown = sessionStorage.getItem(SPLASH_SESSION_KEY) === "1";
+    } catch {
+      // Navegadores que bloqueiam o armazenamento continuam normalmente.
+    }
+    if (prefersReducedMotion || alreadyShown) {
+      releaseStage();
+      const skipTimer = setTimeout(() => setState("off"), 0);
+      return () => clearTimeout(skipTimer);
+    }
 
-    const timers: ReturnType<typeof setTimeout>[] = [];
-    STEPS.forEach((value, index) => {
-      timers.push(setTimeout(() => setProgress(value), 220 + index * 300));
-    });
-    timers.push(setTimeout(() => setState("fading"), 1780));
-    timers.push(setTimeout(() => setState("off"), 2280));
+    try {
+      sessionStorage.setItem(SPLASH_SESSION_KEY, "1");
+    } catch {
+      // A vinheta não depende de armazenamento para funcionar.
+    }
+    stage?.setAttribute("inert", "");
 
-    return () => timers.forEach(clearTimeout);
+    const timers = [
+      setTimeout(() => setProgress(100), 220),
+      setTimeout(() => setState("fading"), 430),
+      setTimeout(() => {
+        setState("off");
+        releaseStage();
+      }, 700),
+    ];
+
+    return () => {
+      timers.forEach(clearTimeout);
+      releaseStage();
+    };
   }, [prefersReducedMotion]);
 
   if (state === "off" || prefersReducedMotion) return null;
@@ -60,7 +76,9 @@ export function AuthSplash() {
     <div
       className={styles.splash}
       style={{ opacity: state === "fading" ? 0 : 1 }}
-      aria-hidden="true"
+      role="status"
+      aria-live="polite"
+      aria-label="Abrindo o FinFlow"
     >
       <div className={styles.splashMark}>
         <span className={styles.splashHalo} />
@@ -81,7 +99,7 @@ export function AuthSplash() {
 
       <div className={styles.splashTexts}>
         <span className={styles.splashBrand}>FinFlow</span>
-        <span className={styles.splashLabel}>{STEP_LABELS[progress] ?? "Carregando"}</span>
+        <span className={styles.splashLabel}>Seu dinheiro em um só fluxo</span>
       </div>
 
       <div className={styles.splashTrack}>

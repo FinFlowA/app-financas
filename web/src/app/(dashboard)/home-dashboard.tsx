@@ -6,7 +6,9 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import FinancialIcon from "@/components/ui/financial-icon";
 import { formatarReais } from "@/lib/format";
+import { listUpcomingTransactions } from "@/lib/home-agenda";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
+import { homeTransactionCreationHref } from "@/lib/transaction-entry";
 import {
   calcularSaldosPorConta,
   dataEfetivaTransacao,
@@ -95,7 +97,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   const [selectorOpen, setSelectorOpen] = useState(false);
   const [monthMenuOpen, setMonthMenuOpen] = useState(false);
   const [pickerYear, setPickerYear] = useState(() => Number(month.slice(0, 4)));
-  const [notificationsSeen, setNotificationsSeen] = useState(false);
   const accountSelectorRef = useRef<HTMLDivElement>(null);
   const accountSelectorButtonRef = useRef<HTMLButtonElement>(null);
   const accountSelectorPanelRef = useRef<HTMLElement>(null);
@@ -242,16 +243,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     return result;
   }, [nextDate, scoped, today]);
 
-  const alertTotal = alerts.overdue + alerts.today + alerts.next;
-  const notificationSignature = `${today}:${alerts.overdue}:${alerts.today}:${alerts.next}`;
-
-  useEffect(() => {
-    const seen = localStorage.getItem(`finflow:web:home-notifications:${userId}`) === notificationSignature;
-    // Preferência externa carregada depois da hidratação.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setNotificationsSeen(seen);
-  }, [notificationSignature, userId]);
-
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const categoryRows = useMemo(() => [...calculations.byCategory.entries()]
     .filter(([, values]) => values.expected > 0)
@@ -270,10 +261,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     return `conic-gradient(${segments.join(",")})`;
   }, [categoriesById, categoryRows, categoryTotal]);
 
-  const upcoming = useMemo(() => scoped
-    .filter((transaction) => transaction.status === "pendente" && transaction.data_vencimento >= today && transaction.data_vencimento <= nextDate)
-    .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento) || a.id - b.id)
-    .slice(0, 5), [nextDate, scoped, today]);
+  const upcoming = useMemo(() => listUpcomingTransactions(scoped, today, nextDate), [nextDate, scoped, today]);
 
   const expectedExpenseProgress = calculations.expense > 0 ? Math.min(100, Math.max(0, (calculations.realizedExpense / calculations.expense) * 100)) : 0;
   const flowTotal = calculations.income + calculations.expense;
@@ -290,11 +278,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   function navigateMonth(nextMonth: string) {
     setMonthMenuOpen(false);
     startMonthTransition(() => router.push(`/?month=${nextMonth}`));
-  }
-
-  function markNotificationsSeen() {
-    localStorage.setItem(`finflow:web:home-notifications:${userId}`, notificationSignature);
-    setNotificationsSeen(true);
   }
 
   return <div className={`${styles.root} ${monthPending ? styles.monthPending : ""}`} aria-busy={monthPending}>
@@ -330,10 +313,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
             </div>
           </div>}
         </div>
-        <Link href="/transacoes?quick=attention" onClick={markNotificationsSeen} className={styles.notificationButton} aria-label={`${alertTotal} avisos financeiros`}>
-          <Icon name="bell" />
-          {alertTotal > 0 && !notificationsSeen && <span className={styles.notificationBadge}>{alertTotal > 9 ? "9+" : alertTotal}</span>}
-        </Link>
       </div>
     </header>
 
@@ -378,9 +357,9 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       </div>
 
       <div className={styles.heroActions}>
-        <Link href="/transacoes?new=1&kind=transferencia" className={styles.actionLink}><span><Icon name="arrow-left-right" size={27}/></span><strong>Transferir</strong></Link>
-        <Link href="/transacoes?new=1&kind=despesa" className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></Link>
-        <Link href="/transacoes?new=1&kind=receita" className={styles.actionLink}><span><Icon name="plus" size={29}/></span><strong>Receber</strong></Link>
+        <Link href={homeTransactionCreationHref("transferencia")} className={styles.actionLink}><span><Icon name="arrow-left-right" size={27}/></span><strong>Transferir</strong></Link>
+        <Link href={homeTransactionCreationHref("despesa")} className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></Link>
+        <Link href={homeTransactionCreationHref("receita")} className={styles.actionLink}><span><Icon name="plus" size={29}/></span><strong>Receber</strong></Link>
       </div>
     </section>
 
@@ -436,7 +415,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
                 <em>{percentage.toFixed(0)}%</em>
               </div>;
             })}</div>
-          </div> : <div className={styles.emptyChart}><Icon name="category" size={28}/><p>Nenhuma despesa registrada neste mês.</p><Link href="/transacoes?new=1&kind=despesa">Adicionar despesa</Link></div>}
+          </div> : <div className={styles.emptyChart}><Icon name="category" size={28}/><p>Nenhuma despesa registrada neste mês.</p><Link href={homeTransactionCreationHref("despesa")}>Adicionar despesa</Link></div>}
         </section>
       </div>
 

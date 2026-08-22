@@ -52,6 +52,7 @@ type Props = {
   initialOpenNew: boolean;
   initialKind: TransactionKind;
   initialFocusId: number | null;
+  returnHomeAfterCreate: boolean;
   today: string;
   accounts: Conta[];
   categories: Categoria[];
@@ -442,7 +443,7 @@ function InvoiceCard({ invoice, today }: { invoice: InvoiceHistoryGroup; today: 
   </article>;
 }
 
-export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, today, accounts, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows }: Props) {
+export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows }: Props) {
   const router = useRouter();
   const [month, setMonth] = useState(initialMonth);
   const [period, setPeriod] = useState<PeriodFilter>(initialQuick ?? "all");
@@ -608,6 +609,15 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   }
   function closeDetails() { detailRequest.current += 1; setDetail(null); setDetailHistory(null); setDetailError(null); setDetailLoading(false); }
   function changed(message: string) { setNewOpen(false); setEditing(null); setCompleting(null); setDeleting(null); setReopening(null); closeDetails(); setFlash(message); router.refresh(); }
+  function created(message: string) {
+    setNewOpen(false);
+    if (returnHomeAfterCreate) {
+      router.replace("/");
+      return;
+    }
+    setFlash(message);
+    router.refresh();
+  }
 
   const openDetails = useCallback(async (transaction: TransactionRow) => {
     const requestNumber = detailRequest.current + 1;
@@ -690,7 +700,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     {filtered.length === 0 && <section className="ff-card grid min-h-48 place-content-center p-6 text-center"><p className="text-3xl">⌕</p><h2 className="mt-2 font-extrabold">Nenhum lançamento encontrado</h2><p className="mt-1 text-sm text-foreground-muted">Ajuste o período, a busca ou os filtros.</p></section>}
     {limit < filtered.length && <button type="button" onClick={() => setLimit((value) => value + PAGE_SIZE)} className="mx-auto mt-5 block rounded-full border border-primary px-5 py-2.5 text-sm font-extrabold text-primary">Mostrar mais {Math.min(PAGE_SIZE, filtered.length - limit)}</button>}
 
-    {newOpen && <NewTransactionDialog accounts={accounts} categories={categories} today={today} initialKind={initialKind} onClose={() => setNewOpen(false)} onChanged={changed} />}
+    {newOpen && <NewTransactionDialog accounts={accounts} categories={categories} today={today} initialKind={initialKind} onClose={() => setNewOpen(false)} onChanged={created} />}
     {editing && <EditTransactionDialog transaction={editing} summary={summaryFor(editing)} accounts={accounts} categories={categories} userId={userId} onClose={() => setEditing(null)} onChanged={changed} />}
     {completing && <CompleteTransactionDialog transaction={completing} today={today} onClose={() => setCompleting(null)} onChanged={changed} />}
     {deleting && <DeleteTransactionDialog transaction={deleting} summary={summaryFor(deleting)} onClose={() => setDeleting(null)} onChanged={changed} />}
@@ -714,7 +724,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
           {detailLoading && <p className="mt-3 text-sm text-foreground-muted">Carregando pagamentos...</p>}{detailError && <p role="alert" className="mt-3 text-sm font-semibold text-red">{detailError}</p>}{detailHistory && detailHistory.payments.length > 0 && <div className="mt-3 space-y-2">{detailHistory.payments.map((payment) => <div key={payment.paymentId} className={`flex items-center justify-between gap-3 rounded-ff-sm border border-border px-3 py-2 text-sm ${payment.active ? "" : "opacity-55"}`}><div><p className="font-bold">{payment.active ? `Pagamento ${payment.paymentSequence}` : `Pagamento ${payment.paymentSequence} reaberto`}</p><p className="text-xs text-foreground-muted">{formatarData(payment.realizationDate)}{payment.adjustmentType !== "none" ? ` · ${payment.adjustmentType === "interest" ? "juros" : "desconto"} ${formatarReais(payment.adjustmentValue)}` : ""}</p></div><strong data-private-value="true" className={payment.active ? "text-primary" : "line-through"}>{formatarReais(payment.value)}</strong></div>)}</div>}
         </div>
         <Feedback state={operationFeedback} />
-        {!isPagamentoFatura(detail.descricao) ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue">Editar</button>{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { setOperationFeedback(null); setReopening(detail); }} className="rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
+        {!isPagamentoFatura(detail.descricao) ? <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue">Editar</button>{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(); setReopening(selected); }} className="rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
         <div className="flex justify-end"><button type="button" onClick={closeDetails} className="rounded-ff-sm border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Fechar</button></div>
       </div>
     </Modal>}

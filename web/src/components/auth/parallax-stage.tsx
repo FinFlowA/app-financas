@@ -38,7 +38,7 @@ export function ParallaxStage({ className, children }: ParallaxStageProps) {
   }, []);
 
   return (
-    <section ref={ref} className={className} aria-labelledby="auth-page-title">
+    <section ref={ref} data-auth-stage className={className} aria-labelledby="auth-page-title">
       {children}
     </section>
   );

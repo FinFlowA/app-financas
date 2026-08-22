@@ -31,6 +31,14 @@ const partnershipDissolution = fs.readFileSync(
 const screen = fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8");
 const homeScreen = fs.readFileSync(path.join(root, "app", "(tabs)", "index.tsx"), "utf8");
 const paymentHelpers = fs.readFileSync(path.join(root, "lib", "transaction-payments.ts"), "utf8");
+const webTransactionManager = fs.readFileSync(
+  path.join(root, "web", "src", "app", "(dashboard)", "transacoes", "transaction-manager.tsx"),
+  "utf8",
+);
+const webGoalsManager = fs.readFileSync(
+  path.join(root, "web", "src", "app", "(dashboard)", "objetivos", "objetivos-manager.tsx"),
+  "utf8",
+);
 
 const failures = [];
 const expect = (condition, message) => {
@@ -252,6 +260,67 @@ const statusBlock = statusStart >= 0 && statusEnd > statusStart ? screen.slice(s
 expect(statusBlock.length > 0, "Nao foi possivel localizar aplicarStatus.");
 expect(!statusBlock.includes('from("transacoes").insert'), "Aplicar status ainda cria saldo parcial manualmente.");
 expect(!statusBlock.includes("saldoRestanteCriadoId"), "Rollback manual inseguro ainda existe.");
+includes(statusBlock, 'p_action_type: "complete_transaction"', "Movimento interno nao usa o executor manual atomico para concluir.");
+includes(statusBlock, 'p_action_type: "reopen_transaction"', "Movimento interno nao usa o executor manual atomico para reabrir.");
+expect(!statusBlock.includes('from("caixinhas").update({ saldo_atual:'), "Conclusao ainda altera saldo do objetivo por REST.");
+expect(!statusBlock.includes('from("transacoes").update({\n            status: "paga"'), "Movimento interno ainda e concluido por UPDATE REST.");
+expect(!statusBlock.includes('.update({ status: "pendente", data_realizacao: null })'), "Movimento interno ainda e reaberto por UPDATE REST.");
+
+const deleteOneStart = screen.indexOf("const executarDeleteUma = async");
+const deleteOneEnd = screen.indexOf("const deletarFuturas = async", deleteOneStart);
+const deleteOneBlock = deleteOneStart >= 0 && deleteOneEnd > deleteOneStart
+  ? screen.slice(deleteOneStart, deleteOneEnd)
+  : "";
+expect(deleteOneBlock.length > 0, "Nao foi possivel localizar executarDeleteUma.");
+matches(
+  deleteOneBlock,
+  /!IS_LOCAL_DEMO && isMovimentoObjetivo\(transacao\.descricao\)[\s\S]*p_action_type: "delete_transaction"[\s\S]*series_scope: "one"/,
+  "Exclusao individual de movimento do objetivo nao usa o executor atomico.",
+);
+expect(
+  deleteOneBlock.indexOf('p_action_type: "delete_transaction"') < deleteOneBlock.indexOf('from("transacoes").delete()'),
+  "Exclusao REST acontece antes da rota atomica de objetivos.",
+);
+matches(
+  aiCore,
+  /if action_name='delete_transaction'[\s\S]*if scope_value='one'[\s\S]*transaction_row\.status='paga' and transaction_row\.categoria_id is null[\s\S]*ai_adjust_goal_from_description[\s\S]*delete from public\.transacoes where id=transaction_id/,
+  "Backend nao garante exclusao e reversao do objetivo na mesma transacao.",
+);
+
+includes(homeScreen, 'p_action_type: "complete_transaction"', "Home nao conclui a primeira movimentacao do objetivo pela RPC atomica.");
+expect(!homeScreen.includes('from("caixinhas").update({ saldo_atual:'), "Home ainda altera o saldo do objetivo diretamente.");
+matches(
+  homeScreen,
+  /const statusPersistido = statusFinal === "paga" \? "pendente" : statusFinal;[\s\S]*p_action_type: "complete_transaction"/,
+  "Home precisa persistir a primeira parcela como pendente antes da conclusao atomica.",
+);
+expect(
+  (homeScreen.match(/\.insert\(novasTransacoes\)/g) || []).length === 1,
+  "Home nao pode repetir cegamente o INSERT da serie apos uma resposta transitoria.",
+);
+includes(
+  homeScreen,
+  "Confira o Histórico antes de tentar novamente para não duplicar os agendamentos.",
+  "Falha inconclusiva precisa orientar a conferencia antes de um novo envio.",
+);
+matches(
+  homeScreen,
+  /const respostaInsercao = await supabase[\s\S]*const \{ data: transacoesCriadas, error \} = respostaInsercao;/,
+  "Criacao manual da serie deve fazer uma unica tentativa de insercao.",
+);
+
+includes(webGoalsManager, "createPortal(", "Acoes de objetivo do site nao usam portal.");
+includes(webGoalsManager, 'painel.tipo !== "historico"', "Modal de acao alterou indevidamente o historico do objetivo.");
+matches(
+  webGoalsManager,
+  /role="dialog"[\s\S]*aria-modal="true"[\s\S]*max-h-\[calc\(100dvh-/,
+  "Modal de objetivo nao esta centralizado, acessivel e responsivo.",
+);
+matches(
+  webTransactionManager,
+  /const selected = detail; setOperationFeedback\(null\); closeDetails\(\); setReopening\(selected\);/,
+  "Historico nao fecha os detalhes antes de abrir a confirmacao de estorno.",
+);
 
 if (failures.length > 0) {
   for (const failure of failures) console.error(`FAIL: ${failure}`);

@@ -227,6 +227,101 @@ alteração (mesmo estado que a auditoria de 15/08 já validara):
   `ai_adjust_goal_balance`) continuam `SECURITY DEFINER` com
   `search_path = ''` e revogação de `anon`.
 
+## Atualização complementar local — 22/08/2026
+
+Esta seção complementa, sem reescrever, as conclusões históricas de
+17/08/2026. O estado abaixo corresponde à árvore de trabalho local em
+22/08/2026 e **não comprova deploy** no Supabase, Expo/EAS, Netlify ou GitHub.
+A migração nova precisa ser aplicada no ambiente correto e o cliente precisa
+ser publicado antes de estes controles serem considerados ativos em produção.
+
+### Atomicidade das transferências para objetivos
+
+Os fluxos que estavam registrados como pendentes no ALTO-04 foram migrados
+para as ações financeiras transacionais já protegidas pelo backend:
+
+- `app/(tabs)/caixinhas.tsx` usa `execute_offline_financial_action` com
+  `move_goal` para guardar e resgatar, inclusive por parceiro autorizado;
+- `app/(tabs)/index.tsx` usa `move_goal` ao criar a movimentação e
+  `complete_transaction` ao concluir uma ocorrência inicialmente pendente;
+- `app/(tabs)/transacoes.tsx` usa `complete_transaction`,
+  `reopen_transaction` e `delete_transaction` ao concluir, reabrir ou excluir
+  transferências relacionadas a objetivos.
+
+Assim, lançamento, saldo do objetivo, idempotência e autorização deixam de
+depender de atualizações independentes no cliente. Isso cobre também a
+conclusão de transferências parceladas ou recorrentes para objetivos. O modo
+de demonstração local permanece isolado e não grava no banco remoto.
+
+### Exclusão atômica da conta e preservação dos ledgers
+
+A migration local
+`20260822000100_fix_atomic_account_deletion.sql` substitui a implementação de
+`delete_user()` mantendo o step-up de senha antes de qualquer alteração. A
+função bloqueia os registros relevantes e executa, em uma única transação, a
+remoção ordenada dos filhos e das raízes financeiras antes de excluir a
+identidade em `auth.users`.
+
+O fluxo trata explicitamente os ledgers privados de conclusão, reabertura e
+pagamento de fatura. Recibos vinculados a transações do usuário excluído são
+removidos antes das transações; quando o usuário excluído foi somente o ator
+de uma operação em transação pertencente ao parceiro, o evento financeiro é
+preservado e a referência ao ator passa a `NULL` por `ON DELETE SET NULL`.
+Isso evita tanto bloqueio por chave estrangeira quanto perda do histórico
+financeiro de outro usuário.
+
+O app mobile deixou de tentar exclusões parciais tabela por tabela. App e site
+reautenticam a senha e delegam a operação completa à RPC. Mensagens devolvidas
+ao usuário não expõem detalhes internos do banco.
+
+Antes dos locks destrutivos, a própria RPC também recusa a exclusão quando há
+parceria ou convite aberto, decisão de dissolução ainda pendente ou assinatura
+em estado operacional. App e site repetem essas verificações para orientar o
+usuário, mas a garantia não depende do cliente: uma chamada direta ou uma
+versão antiga continua falhando de forma segura no servidor.
+
+### PKCE e recuperação de acesso
+
+Além do `flowType: "pkce"` já registrado no ALTO-02, o processamento mobile
+agora aguarda a preparação do estado de recuperação antes de navegar para a
+tela de nova senha e impede o processamento duplicado do mesmo link. O ramo
+legado de compatibilidade continua sendo uma pendência separada até a adoção
+de App Links/Universal Links.
+
+### Reprodutibilidade e CI
+
+Foi adicionado `.gitattributes` para normalizar código e migrations em LF,
+resolvendo localmente a divergência de fim de linha registrada na seção
+"Achado não catalogado" e na pendência 8. O workflow
+`.github/workflows/security-ci.yml` inclui agora, de forma explícita:
+
+- `npm run test:account-deletion`, que verifica o contrato destrutivo, a
+  exigência de step-up, a ordem dos ledgers e a preservação entre usuários;
+- `npm run test:local-demo`, que confirma que o cenário de demonstração não
+  sincroniza alterações financeiras reais.
+
+Esses itens supersedem **na árvore local** as pendências 1 e 8 registradas em
+17/08/2026. As demais pendências daquela lista continuam válidas até haver
+evidência específica de correção e implantação.
+
+### Auditoria atual das dependências
+
+Em 22/08/2026, `npm audit --omit=dev` retornou zero vulnerabilidades para o
+site. Na raiz Expo, o npm agrupou oito ocorrências de severidade alta na cadeia
+transitiva de ferramentas de build `Metro` → `image-size`, por negação de
+serviço ao analisar imagens malformadas. A dependência vulnerável não integra o
+runtime financeiro entregue ao usuário, mas deve ser tratada na próxima
+migração de SDK. A correção automática sugerida exige Expo 57 (mudança
+principal), portanto `npm audit fix --force` não foi executado nesta rodada:
+essa atualização requer compatibilidade nativa, novo APK/AAB e regressão em
+dispositivo real.
+
+### Limite desta atualização
+
+Nenhum segredo foi documentado ou incluído no código. Nenhuma migration foi
+aplicada e nenhum build, OTA, site ou commit foi publicado como parte desta
+atualização documental.
+
 ## Critério de encerramento
 
 Mantido o mesmo da auditoria de 15/08: alteração versionada, verificação

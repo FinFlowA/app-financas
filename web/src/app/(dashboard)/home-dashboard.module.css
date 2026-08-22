@@ -79,16 +79,12 @@
   gap: .75rem;
 }
 
-.monthNavigator,
-.notificationButton {
+.monthNavigator {
   height: 3rem;
   border: 1px solid var(--home-line);
   border-radius: .9rem;
   background: var(--home-card);
   box-shadow: 0 8px 28px rgb(0 0 0 / 5%);
-}
-
-.monthNavigator {
   position: relative;
   display: flex;
   align-items: center;
@@ -164,38 +160,6 @@
 .monthGrid button { padding: .58rem .3rem; border-radius: .58rem; color: var(--foreground-muted); font-size: .72rem; font-weight: 750; text-transform: capitalize; }
 .monthGrid button:hover { background: var(--surface-muted); color: var(--foreground); }
 .monthGrid button[data-active="true"] { background: var(--ff-primary); color: #fff; }
-
-.notificationButton {
-  position: relative;
-  display: grid;
-  width: 3rem;
-  place-items: center;
-  color: var(--foreground);
-  transition: transform .18s ease, border-color .18s ease, background .18s ease;
-}
-
-.notificationButton:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--ff-primary) 55%, var(--home-line));
-  background: var(--home-card-strong);
-}
-
-.notificationBadge {
-  position: absolute;
-  top: -.35rem;
-  right: -.35rem;
-  display: grid;
-  min-width: 1.35rem;
-  height: 1.35rem;
-  padding: 0 .28rem;
-  place-items: center;
-  border: 2px solid var(--background);
-  border-radius: 999px;
-  background: var(--ff-mint);
-  color: #063b2e;
-  font-size: .66rem;
-  font-weight: 900;
-}
 
 .hero {
   position: relative;
@@ -712,13 +676,11 @@
   .eyebrow { display: none; }
   .pageHeader h1 { font-size: 1.38rem; }
   .headerControls { gap: .45rem; }
-  .monthNavigator,
-  .notificationButton { height: 2.6rem; }
+  .monthNavigator { height: 2.6rem; }
   .monthNavigator { padding: .15rem; }
   .monthNavigator > button { min-width: 1.8rem; height: 2.25rem; }
   .monthNavigator .monthPickerButton { min-width: 7.4rem; font-size: .72rem; }
   .monthMenu { position: fixed; top: 5rem; right: 1rem; left: 1rem; width: auto; }
-  .notificationButton { width: 2.6rem; }
   .hero { min-height: auto; padding: 1.25rem 1rem 1rem; border-radius: 1.05rem; }
   .balanceValue { font-size: clamp(2rem, 12vw, 3.15rem); }
   .heroMeta { align-items: stretch; }

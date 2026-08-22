@@ -18,6 +18,7 @@
     "test:password": "node scripts/run-password-tests.cjs",
     "test:transaction-completion": "node scripts/run-transaction-completion-tests.cjs",
     "test:plan-trigger": "node scripts/run-plan-trigger-guard-tests.cjs",
+    "test:account-deletion": "node scripts/run-account-deletion-contract-tests.cjs",
     "test:offline-queue": "node scripts/run-offline-queue-tests.cjs",
     "test:native-compat": "node scripts/run-native-compat-tests.cjs",
     "test:release-notes-modal": "node scripts/run-release-notes-modal-tests.cjs",
