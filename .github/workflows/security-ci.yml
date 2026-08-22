@@ -23,9 +23,31 @@ jobs:
       # A Action oficial exige licenca em repositorios de organizacoes.
       # O CLI continua open source e preserva a varredura de todo o historico.
       - name: gitleaks (CLI open source)
-        uses: docker://ghcr.io/gitleaks/gitleaks:v8.28.0
-        with:
-          args: git /github/workspace --redact --verbose
+        shell: bash
+        run: |
+          set +e
+          scan_output="$(
+            docker run --rm \
+              -e GIT_CONFIG_COUNT=1 \
+              -e GIT_CONFIG_KEY_0=safe.directory \
+              -e GIT_CONFIG_VALUE_0=/repo \
+              -v "$GITHUB_WORKSPACE:/repo" \
+              ghcr.io/gitleaks/gitleaks:v8.28.0@sha256:cdbb7c955abce02001a9f6c9f602fb195b7fadc1e812065883f695d1eeaba854 \
+              git /repo --redact --verbose 2>&1
+          )"
+          scan_status=$?
+          set -e
+
+          printf '%s\n' "$scan_output"
+
+          if [ "$scan_status" -ne 0 ]; then
+            exit "$scan_status"
+          fi
+
+          if ! grep -Eq '[1-9][0-9]* commits scanned' <<< "$scan_output"; then
+            echo '::error::O Gitleaks terminou sem comprovar a varredura do historico.'
+            exit 1
+          fi
 
   mobile:
     name: App mobile — lint, tipos, testes e segredos
