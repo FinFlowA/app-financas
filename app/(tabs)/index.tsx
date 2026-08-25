@@ -5,6 +5,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  AppState,
   DeviceEventEmitter,
   KeyboardAvoidingView,
   Modal,
@@ -228,6 +229,7 @@ export default function Dashboard() {
     limitsEnabled,
   );
   const alertaVencidoMostrado = useRef(false);
+  const ultimaRequisicaoDadosRef = useRef(0);
   const router = useRouter();
   const novoTema = finFlowTheme(isDark);
 
@@ -672,6 +674,7 @@ export default function Dashboard() {
   // --- Dados ---
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
+    const requisicaoAtual = ++ultimaRequisicaoDadosRef.current;
 
     try {
       const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes, resFaturas] = await Promise.all([
@@ -686,7 +689,11 @@ export default function Dashboard() {
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, data_compra, mes_fatura, categoria_id, pago").eq("user_id", session.user.id),
       ]);
 
-      if (resCategorias.error || resContas.error || resTransacoes.error) throw new Error("Sem conexão");
+      if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
+      if (resCategorias.error || resContas.error || resTransacoes.error) {
+        const erro = resTransacoes.error ?? resContas.error ?? resCategorias.error;
+        throw new Error(erro?.message || "Falha ao atualizar os dados financeiros.");
+      }
 
       const categoriasCarregadas = (resCategorias.data ?? []).map((c: Categoria) => ({ ...c, cor: PALETA_CORES.includes(c.cor) ? c.cor : PALETA_CORES[0] })).sort((a, b) =>
           a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
@@ -767,7 +774,9 @@ export default function Dashboard() {
           true
         );
       }
-    } catch {
+    } catch (error) {
+      if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
+      if (__DEV__) console.error("Falha ao atualizar a Home:", error);
       const cache = cacheHomePorUsuario.get(session.user.id);
       if (cache) {
         setCategorias(cache.categorias);
@@ -802,6 +811,31 @@ export default function Dashboard() {
       offlineSubscription.remove();
     };
   }, [carregarDados]);
+
+  React.useEffect(() => {
+    if (!session?.user?.id || IS_LOCAL_DEMO) return;
+
+    const atualizarAoVoltar = AppState.addEventListener("change", (estado) => {
+      if (estado === "active") void carregarDados();
+    });
+    const canal = supabase
+      .channel(`finflow-home-${session.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "transacoes" }, () => {
+        void carregarDados();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "contas" }, () => {
+        void carregarDados();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "fatura_itens" }, () => {
+        void carregarDados();
+      })
+      .subscribe();
+
+    return () => {
+      atualizarAoVoltar.remove();
+      void supabase.removeChannel(canal);
+    };
+  }, [carregarDados, session?.user?.id]);
 
   const { saldoPorConta, contasComLancamentos } = useMemo(() => {
     const saldos = new Map<number, number>();

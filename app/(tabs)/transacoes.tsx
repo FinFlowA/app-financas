@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Alert,
+  AppState,
   DeviceEventEmitter,
   KeyboardAvoidingView,
   Modal,
@@ -209,6 +210,7 @@ export default function TransacoesScreen() {
     mensagem: string;
   } | null>(null);
   const requisicaoHistoricoPagamentosRef = useRef(0);
+  const ultimaRequisicaoDadosRef = useRef(0);
 
   const [filtroContas, setFiltroContas] = useState<number[]>([]);
   const [filtroCategorias, setFiltroCategorias] = useState<number[]>([]);
@@ -301,6 +303,7 @@ export default function TransacoesScreen() {
 
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
+    const requisicaoAtual = ++ultimaRequisicaoDadosRef.current;
     try {
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
@@ -309,6 +312,9 @@ export default function TransacoesScreen() {
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
       ]);
+      if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
+      const erroLeitura = resTransacoes.error ?? resContas.error ?? resCategorias.error;
+      if (erroLeitura) throw erroLeitura;
       if (resCategorias.data) {
         setCategorias([...resCategorias.data].sort((a, b) =>
           a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" })
@@ -375,7 +381,8 @@ export default function TransacoesScreen() {
         setFaturaGrupos(Array.from(grupos.values()));
       }
     } catch (error) {
-      if (__DEV__) console.error(error);
+      if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
+      if (__DEV__) console.error("Falha ao atualizar o Histórico:", error);
     }
   }, [session?.user?.id]);
 
@@ -396,6 +403,28 @@ export default function TransacoesScreen() {
       offlineSubscription.remove();
     };
   }, [carregarDados]);
+
+  React.useEffect(() => {
+    if (!session?.user?.id || IS_LOCAL_DEMO) return;
+
+    const atualizarAoVoltar = AppState.addEventListener("change", (estado) => {
+      if (estado === "active") void carregarDados();
+    });
+    const canal = supabase
+      .channel(`finflow-historico-${session.user.id}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "transacoes" }, () => {
+        void carregarDados();
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "fatura_itens" }, () => {
+        void carregarDados();
+      })
+      .subscribe();
+
+    return () => {
+      atualizarAoVoltar.remove();
+      void supabase.removeChannel(canal);
+    };
+  }, [carregarDados, session?.user?.id]);
 
   React.useEffect(() => {
     const filtroRecebido = params.filtroPeriodo;
