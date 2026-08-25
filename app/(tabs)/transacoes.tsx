@@ -20,6 +20,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
+import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 import { compararHistoricoPorData, dataVencimentoFaturaHistorico } from "../../lib/history-order";
@@ -308,7 +309,11 @@ export default function TransacoesScreen() {
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
         supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
-        supabase.from("transacoes").select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id"),
+        fetchAllRows<Transacao>((from, to) => supabase
+          .from("transacoes")
+          .select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id")
+          .order("id", { ascending: true })
+          .range(from, to)),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
       ]);

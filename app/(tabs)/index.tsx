@@ -21,6 +21,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
+import { fetchAllRows } from "../../lib/supabase-pagination";
 import { isInvoicePaymentAdjustment } from "../../lib/invoice-operations";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
@@ -680,7 +681,11 @@ export default function Dashboard() {
       const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
-        supabase.from("transacoes").select("id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, transacao_pai_id"), // RLS retorna próprias + compartilhadas
+        fetchAllRows<Transacao>((from, to) => supabase
+          .from("transacoes")
+          .select("id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, transacao_pai_id")
+          .order("id", { ascending: true })
+          .range(from, to)), // RLS retorna próprias + compartilhadas
         supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
