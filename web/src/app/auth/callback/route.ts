@@ -43,6 +43,16 @@ export async function GET(request: NextRequest) {
 
   if (result.error) return errorRedirect(origin, flow);
 
+  if (flow === "oauth") {
+    // getUser valida o JWT no servidor de autenticação; não confie apenas na
+    // sessão/cookie retornada pelo navegador para liberar dados financeiros.
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData.user?.email || !userData.user.email_confirmed_at) {
+      await supabase.auth.signOut({ scope: "local" });
+      return errorRedirect(origin, flow);
+    }
+  }
+
   if (flow === "recovery") {
     const cookieStore = await cookies();
     cookieStore.set(RECOVERY_COOKIE_NAME, "1", {

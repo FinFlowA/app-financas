@@ -1,6 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
+import * as Linking from "expo-linking";
 import * as WebBrowser from "expo-web-browser";
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -32,6 +33,8 @@ import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { useAppTheme } from "./_layout";
 import { PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
+
+WebBrowser.maybeCompleteAuthSession();
 
 type AuthTheme = ReturnType<typeof finFlowTheme>;
 type MaterialIconName = React.ComponentProps<typeof MaterialIcons>["name"];
@@ -123,6 +126,7 @@ export default function LoginScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [aceitouTermos, setAceitouTermos] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [emailPendenteConfirmacao, setEmailPendenteConfirmacao] = useState("");
 
   const [isLogin, setIsLogin] = useState(true);
@@ -243,6 +247,70 @@ export default function LoginScreen() {
       router.replace("/(tabs)");
     }
     setLoading(false);
+  }
+
+  async function signInWithGoogle() {
+    if (oauthLoading || loading) return;
+    setOauthLoading(true);
+    try {
+      const redirectTo = Linking.createURL("auth/callback");
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          skipBrowserRedirect: true,
+          queryParams: { prompt: "select_account" },
+        },
+      });
+      if (error || !data.url) throw error ?? new Error("OAUTH_URL_MISSING");
+
+      const resultado = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (resultado.type !== "success" || !resultado.url) return;
+      if (!resultado.url.startsWith(redirectTo)) throw new Error("OAUTH_REDIRECT_INVALID");
+
+      const retorno = new URL(resultado.url);
+      const erroOAuth = retorno.searchParams.get("error");
+      const codigo = retorno.searchParams.get("code");
+      if (erroOAuth || !codigo) throw new Error(erroOAuth || "OAUTH_CODE_MISSING");
+
+      const troca = await supabase.auth.exchangeCodeForSession(codigo);
+      if (troca.error) {
+        const sessaoExistente = await supabase.auth.getSession();
+        if (!sessaoExistente.data.session) throw troca.error;
+      }
+
+      const { data: usuarioValidado, error: erroUsuario } = await supabase.auth.getUser();
+      const usuario = usuarioValidado.user;
+      if (erroUsuario || !usuario?.email || !usuario.email_confirmed_at) {
+        await supabase.auth.signOut({ scope: "local" });
+        throw erroUsuario ?? new Error("OAUTH_USER_NOT_VERIFIED");
+      }
+
+      const nascimento = usuario.user_metadata?.data_nascimento;
+      const idade = nascimento ? idadeEmAnos(nascimento) : null;
+      if (idade !== null && idade < 18) {
+        await supabase.auth.signOut({ scope: "local" });
+        setModalErro({
+          titulo: "Acesso não permitido",
+          mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
+          cor: FinFlowColors.red,
+        });
+        return;
+      }
+
+      await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+      setEmailPendenteConfirmacao("");
+      router.replace("/(tabs)");
+    } catch (error) {
+      if (__DEV__) console.error("Falha no login com Google", error);
+      setModalErro({
+        titulo: "Não foi possível entrar com Google",
+        mensagem: "Confira a conta escolhida e tente novamente. Você também pode entrar com e-mail e senha.",
+        cor: FinFlowColors.red,
+      });
+    } finally {
+      setOauthLoading(false);
+    }
   }
 
   async function signUpWithEmail() {
@@ -835,6 +903,33 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
 
+                {isLogin && !isRecuperandoSenha && (
+                  <>
+                    <View style={styles.oauthDividerRow}>
+                      <View style={[styles.oauthDividerLine, { backgroundColor: theme.border }]} />
+                      <Text style={[styles.oauthDividerText, { color: theme.textMuted }]}>OU CONTINUE COM</Text>
+                      <View style={[styles.oauthDividerLine, { backgroundColor: theme.border }]} />
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.googleButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
+                      onPress={signInWithGoogle}
+                      disabled={oauthLoading || loading}
+                      activeOpacity={0.82}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continuar com Google"
+                    >
+                      {oauthLoading ? (
+                        <ActivityIndicator color={theme.primary} />
+                      ) : (
+                        <>
+                          <View style={styles.googleIcon}><Text style={styles.googleIconText}>G</Text></View>
+                          <Text style={[styles.googleButtonText, { color: theme.text }]}>Continuar com Google</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </>
+                )}
+
                 {(isLogin || isRecuperandoSenha) && (
                   <>
                     <View style={[styles.legalDivider, { backgroundColor: theme.border }]} />
@@ -1091,6 +1186,13 @@ const styles = StyleSheet.create({
   switchButton: { marginTop: 18, alignItems: "center", paddingVertical: 4 },
   switchButtonPrefix: { fontSize: 12, lineHeight: 18, textAlign: "center" },
   switchButtonText: { fontWeight: "800" },
+  oauthDividerRow: { flexDirection: "row", alignItems: "center", gap: 10, marginTop: 20, marginBottom: 14 },
+  oauthDividerLine: { flex: 1, height: 1 },
+  oauthDividerText: { fontSize: 10, fontWeight: "800", letterSpacing: 0.8 },
+  googleButton: { minHeight: 52, borderWidth: 1, borderRadius: FinFlowRadius.medium, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10 },
+  googleButtonText: { fontSize: 14, fontWeight: "800" },
+  googleIcon: { width: 23, height: 23, borderRadius: 12, backgroundColor: "#FFF", alignItems: "center", justifyContent: "center" },
+  googleIconText: { color: "#4285F4", fontSize: 15, fontWeight: "900" },
   legalDivider: { height: 1, marginTop: 19, marginBottom: 8 },
   legalBtnRow: {
     flexDirection: "row",

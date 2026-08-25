@@ -102,7 +102,10 @@ export async function signInWithOAuthAction(provider: OAuthProvider): Promise<vo
     const supabase = await createClient();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider,
-      options: { redirectTo: callbackUrl(origin, "oauth") },
+      options: {
+        redirectTo: callbackUrl(origin, "oauth"),
+        queryParams: provider === "google" ? { prompt: "select_account" } : undefined,
+      },
     });
     if (!error && data.url) destination = data.url;
   } catch {
