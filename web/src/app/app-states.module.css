@@ -63,7 +63,7 @@
   border-radius: 24px;
   background:
     radial-gradient(ellipse at 67% -15%, rgba(77, 225, 168, 0.23), transparent 52%),
-    linear-gradient(130deg, #083f36, #052b2b 62%, #061e24);
+    linear-gradient(130deg, #1b2429, #151c21 62%, #11171b);
 }
 
 .loadingHero::after {
@@ -325,7 +325,7 @@
 }
 
 .stateButton:hover {
-  background: linear-gradient(110deg, #096c54, #064d3e);
+  background: linear-gradient(110deg, var(--ff-action-primary), var(--ff-action-primary-hover));
   box-shadow: 0 19px 42px -24px color-mix(in srgb, var(--ff-primary) 100%, transparent);
   transform: translateY(-1px);
 }

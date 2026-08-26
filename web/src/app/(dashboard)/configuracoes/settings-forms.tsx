@@ -322,7 +322,7 @@ export function DeleteAccountForm() {
   const formRef = useRef<HTMLFormElement>(null);
 
   return (
-    <form ref={formRef} action={action} className="mt-5 max-w-xl">
+    <form ref={formRef} action={action} className="mx-auto mt-5 max-w-xl text-left">
       <label className="block text-xs font-bold uppercase tracking-wide text-foreground-muted">
         Senha atual
         <span className="relative mt-1 block">

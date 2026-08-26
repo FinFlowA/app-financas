@@ -176,8 +176,8 @@ export default async function SettingsPage() {
 
       <DissolutionDecisions accounts={accountDecisions} goals={goalDecisions} />
 
-      <div className="grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
-        <section className="ff-card p-5 sm:p-6" data-interactive="true">
+      <div className="grid items-start gap-6 xl:grid-cols-[1.1fr_.9fr]">
+        <div className="grid gap-6"><section className="ff-card self-start p-5 sm:p-6" data-interactive="true">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-foreground">Perfil</h2>
@@ -186,7 +186,7 @@ export default async function SettingsPage() {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary-soft text-lg font-extrabold text-primary-dark">{name.slice(0, 1).toLocaleUpperCase("pt-BR")}</div>
           </div>
           <ProfileForm name={name} />
-        </section>
+        </section><PreferencesPanel userId={user.id} section="permission" /></div>
 
         <section className="ff-card p-5 sm:p-6" data-interactive="true">
           <div className="flex items-start justify-between gap-4">
@@ -210,7 +210,7 @@ export default async function SettingsPage() {
         </section>
       </div>
 
-      <PreferencesPanel userId={user.id} />
+      <PreferencesPanel userId={user.id} section="alerts" />
 
       <PartnershipPanel partnerships={partnerships} userId={user.id} userEmail={email} partnerName={partnerName} />
 
@@ -262,9 +262,9 @@ export default async function SettingsPage() {
         </section>
       </div>
 
-      <section className="ff-card border-red/30 p-5 sm:p-6">
+      <section className="ff-card mx-auto w-full max-w-3xl border-red/30 p-5 text-center sm:p-6">
         <h2 className="text-lg font-extrabold text-red">Excluir conta</h2>
-        <p id="delete-account-warning" className="mt-2 max-w-3xl text-sm leading-6 text-foreground-muted">
+        <p id="delete-account-warning" className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">
           Esta ação é permanente. Por segurança, ela só é executada pela RPC protegida do banco e fica bloqueada enquanto houver assinatura, convite, parceria ou decisão de separação pendente.
         </p>
         <DeleteAccountForm />

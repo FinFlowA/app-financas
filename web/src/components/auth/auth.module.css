@@ -1,9 +1,9 @@
 .page {
   --auth-accent: #34d399;
   --auth-accent-strong: #0f9b6c;
-  --auth-ink: #dff3ea;
-  --auth-muted: #9dc3b4;
-  --auth-line: rgba(110, 231, 183, 0.14);
+  --auth-ink: #f2f5f6;
+  --auth-muted: #98a5ac;
+  --auth-line: rgba(132, 150, 160, 0.18);
   position: relative;
   isolation: isolate;
   display: grid;
@@ -13,7 +13,9 @@
   padding: 40px 28px;
   color: var(--auth-ink);
   font-family: var(--font-auth-body), ui-sans-serif, system-ui, -apple-system, sans-serif;
-  background: radial-gradient(1100px 720px at 22% 42%, #0a2a1f 0%, #061711 45%, #04100c 100%);
+  background:
+    radial-gradient(900px 620px at 20% 40%, rgba(22, 150, 110, 0.11), transparent 58%),
+    linear-gradient(145deg, #11171b 0%, #0d1216 52%, #10161a 100%);
 }
 
 .stage {
@@ -50,7 +52,7 @@
   right: -140px;
   width: 520px;
   height: 520px;
-  background: radial-gradient(circle at 32% 32%, rgba(45, 212, 161, 0.18), rgba(6, 23, 17, 0) 68%);
+  background: radial-gradient(circle at 32% 32%, rgba(45, 212, 161, 0.11), rgba(13, 18, 22, 0) 68%);
   transition: transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.55s ease;
   transform:
     translate3d(calc(var(--mx, 0) * 46px), calc(var(--my, 0) * 34px), 0)
@@ -102,7 +104,7 @@
   font-size: 27px;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: #f0fdf7;
+  color: #f2f5f6;
 }
 
 .brandContent {
@@ -145,7 +147,7 @@
 }
 
 .brandTitle {
-  color: #f4fffb;
+  color: #f4f6f7;
   font-family: var(--font-auth-display), var(--font-auth-body), sans-serif;
   font-size: clamp(2.375rem, 4.4vw + 1rem, 3.875rem);
   font-weight: 800;
@@ -160,7 +162,7 @@
 
 .brandDescription {
   max-width: 430px;
-  color: #9dc3b4;
+  color: #9aa6ad;
   font-size: 15.5px;
   line-height: 1.6;
   text-wrap: pretty;
@@ -181,15 +183,15 @@
   align-items: center;
   gap: 14px;
   padding: 16px 18px;
-  border: 1px solid rgba(110, 231, 183, 0.12);
+  border: 1px solid rgba(132, 150, 160, 0.18);
   border-radius: 16px;
-  background: rgba(9, 32, 24, 0.72);
+  background: rgba(25, 33, 39, 0.76);
   transition: border-color 180ms ease, transform 180ms ease, background 180ms ease;
 }
 
 .featureItem:hover {
   border-color: rgba(62, 218, 170, 0.32);
-  background: rgba(11, 39, 39, 0.82);
+  background: rgba(30, 40, 46, 0.9);
   transform: translateY(-2px);
 }
 
@@ -212,7 +214,7 @@
 
 .featureLabel {
   display: block;
-  color: #e4f6ee;
+  color: #e8edef;
   font-size: 14px;
   font-weight: 700;
   line-height: 1.3;
@@ -221,7 +223,7 @@
 .featureDescription {
   display: block;
   margin-top: 3px;
-  color: #7fa899;
+  color: #91a0a8;
   font-size: 12.5px;
   line-height: 1.4;
 }
@@ -273,7 +275,7 @@
   padding: 30px 30px 32px;
   border: 1px solid rgba(110, 231, 183, 0.14);
   border-radius: 24px;
-  background: linear-gradient(180deg, rgba(10, 36, 27, 0.92), rgba(6, 21, 16, 0.92));
+  background: linear-gradient(180deg, rgba(25, 34, 40, 0.96), rgba(17, 23, 28, 0.96));
   box-shadow: 0 30px 70px rgba(2, 12, 9, 0.6);
 }
 
@@ -408,7 +410,7 @@
   outline: none;
   color: #eafff6;
   caret-color: var(--auth-accent);
-  background: rgba(4, 17, 13, 0.9);
+  background: rgba(12, 17, 21, 0.9);
   color-scheme: dark;
   font-size: 14.5px;
   line-height: 1.35;
@@ -421,7 +423,7 @@
 
 .input:focus {
   border-color: rgba(52, 211, 153, 0.6);
-  background: #0a2018;
+  background: #171f24;
   box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.12);
 }
 
@@ -629,14 +631,14 @@
   padding: 13px 14px;
   border: 1px solid rgba(110, 231, 183, 0.16);
   color: #e4f6ee;
-  background: rgba(4, 17, 13, 0.75);
+  background: rgba(14, 20, 24, 0.78);
   font-size: 13.5px;
   font-weight: 600;
 }
 
 .socialButton:hover:not(:disabled) {
   border-color: rgba(110, 231, 183, 0.38);
-  background: rgba(9, 32, 24, 0.9);
+  background: rgba(27, 36, 42, 0.92);
 }
 
 .socialButton:active:not(:disabled) {
@@ -657,7 +659,7 @@
   border: 1px solid rgba(110, 231, 183, 0.16);
   border-radius: 14px;
   color: #c3dcd2;
-  background: rgba(4, 17, 13, 0.6);
+  background: rgba(15, 21, 25, 0.72);
   font-size: 0.82rem;
   line-height: 1.55;
   cursor: pointer;
@@ -666,7 +668,7 @@
 
 .checkboxRow:hover {
   border-color: rgba(52, 211, 153, 0.3);
-  background: rgba(9, 32, 24, 0.72);
+  background: rgba(26, 35, 41, 0.82);
 }
 
 .checkbox {
@@ -703,7 +705,7 @@
   align-items: center;
   justify-content: center;
   gap: 30px;
-  background: radial-gradient(760px 520px at 50% 46%, #0a2a1f 0%, #061711 48%, #04100c 100%);
+  background: radial-gradient(760px 520px at 50% 46%, #162520 0%, #10171a 48%, #0d1216 100%);
   transition: opacity 0.5s ease;
 }
 

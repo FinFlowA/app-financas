@@ -194,7 +194,7 @@ function FormularioObjetivo({
         formData,
         objetivo ? "Objetivo atualizado." : "Objetivo criado.",
       )}
-      className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+      className="grid grid-cols-1 gap-4 lg:grid-cols-2"
     >
       <RequestId />
       {objetivo && (
@@ -230,7 +230,7 @@ function FormularioObjetivo({
           className={inputClass()}
         />
       </Field>
-      <Field titulo="Cor">
+      <div className="lg:col-span-2"><Field titulo="Cor">
         <input type="hidden" name="cor" value={cor} />
         <div className="flex flex-wrap gap-2">
           {CORES_OBJETIVO.map((item) => (
@@ -240,7 +240,7 @@ function FormularioObjetivo({
               aria-label={`Usar cor ${item}`}
               aria-pressed={cor === item}
               onClick={() => setCor(item)}
-              className="ff-focus h-9 w-9 rounded-full border-2 border-surface shadow-sm transition duration-200 hover:scale-110"
+              className="ff-focus h-8 w-8 rounded-full border-2 border-surface shadow-sm transition duration-200 hover:scale-110"
               style={{
                 backgroundColor: item,
                 outline: cor === item ? "3px solid var(--color-foreground)" : "none",
@@ -249,10 +249,10 @@ function FormularioObjetivo({
             />
           ))}
         </div>
-      </Field>
-      <Field titulo="Ícone">
+      </Field></div>
+      <div className="lg:col-span-2"><Field titulo="Ícone">
         <input type="hidden" name="icone" value={icone} />
-        <div className="flex flex-wrap gap-2">
+        <div className="grid grid-cols-5 gap-2 sm:grid-cols-7 lg:grid-cols-8">
           {ICONES_OBJETIVO.map((item) => (
             <button
               key={item}
@@ -260,17 +260,22 @@ function FormularioObjetivo({
               aria-label={`Usar ícone ${item}`}
               aria-pressed={icone === item}
               onClick={() => setIcone(item)}
-              className={`ff-focus inline-flex h-11 w-11 items-center justify-center rounded-xl border p-0 text-lg leading-none transition duration-200 hover:-translate-y-0.5 ${
-                icone === item ? "border-primary bg-primary-soft shadow-sm" : "border-border bg-surface-muted"
-              }`}
+              data-selected={icone === item || undefined}
+              className="ff-focus inline-flex aspect-square min-w-0 items-center justify-center rounded-xl border p-0 leading-none transition duration-150 hover:-translate-y-0.5"
+              style={{
+                borderColor: icone === item ? cor : "var(--border)",
+                backgroundColor: icone === item ? `${cor}18` : "var(--surface-muted)",
+                color: icone === item ? cor : "var(--foreground)",
+                boxShadow: icone === item ? `inset 0 0 0 1px ${cor}, 0 7px 18px rgb(0 0 0 / 14%)` : "none",
+              }}
             >
-              <FinancialIcon name={item} size={21} />
+              <FinancialIcon name={item} size={20} />
             </button>
           ))}
         </div>
-      </Field>
+      </Field></div>
       {!objetivo && partnerName && (
-        <label className="sm:col-span-2 flex cursor-pointer items-start gap-3 rounded-ff-sm border border-border bg-surface-muted p-3 text-sm text-foreground">
+        <label className="lg:col-span-2 flex cursor-pointer items-start gap-3 rounded-ff-sm border border-border bg-surface-muted p-3 text-sm text-foreground">
           <input type="checkbox" name="compartilhado" value="true" className="mt-1 h-4 w-4 accent-primary" />
           <span>
             <strong className="block">Compartilhar com {partnerName}</strong>
@@ -278,7 +283,7 @@ function FormularioObjetivo({
           </span>
         </label>
       )}
-      <div className="flex gap-2 sm:col-span-2">
+      <div className="flex gap-2 lg:col-span-2">
         <button
           disabled={pending}
           className="ff-focus rounded-full bg-primary px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50"
@@ -455,7 +460,7 @@ export default function ObjetivosManager({
 
   return (
     <div className="mx-auto max-w-7xl">
-      <header className="relative mb-6 overflow-hidden rounded-[26px] border border-primary/25 bg-[radial-gradient(circle_at_82%_0%,rgba(86,211,155,0.35),transparent_36%),linear-gradient(135deg,#062d27_0%,#075348_56%,#0b3b35_100%)] px-5 py-6 text-white shadow-[0_24px_70px_rgba(0,0,0,0.2)] sm:px-7 sm:py-7">
+      <header className="ff-page-hero mb-6 px-5 py-6 sm:px-7 sm:py-7">
         <div aria-hidden="true" className="absolute bottom-0 right-8 flex h-32 items-end gap-2 opacity-20"><span className="h-8 w-7 rounded-t-lg bg-mint" /><span className="h-14 w-7 rounded-t-lg bg-mint" /><span className="h-20 w-7 rounded-t-lg bg-mint" /><span className="h-28 w-7 rounded-t-lg bg-mint" /></div>
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -530,7 +535,12 @@ export default function ObjetivosManager({
             <FormularioObjetivo pending={pending} executar={executar} fechar={() => setPainel(null)} partnerName={partnerName} />
           )}
           {painel.tipo === "editar" && (
-            <FormularioObjetivo objetivo={painel.objetivo} pending={pending} executar={executar} fechar={() => setPainel(null)} partnerName={partnerName} />
+            <div>
+              <FormularioObjetivo objetivo={painel.objetivo} pending={pending} executar={executar} fechar={() => setPainel(null)} partnerName={partnerName} />
+              <div className="mt-5 border-t border-border pt-4">
+                {confirmar?.id === painel.objetivo.id ? <div role="alert" className={`rounded-xl border p-3 text-xs ${confirmar.acao === "delete_goal" ? "border-red/30 bg-red/10" : "border-orange/30 bg-orange/10"}`}><p className="mb-3 font-semibold text-foreground">{confirmar.acao === "delete_goal" ? "Excluir? Se houver saldo ou agendamentos, o objetivo será arquivado e o histórico preservado." : "Arquivar este objetivo?"}</p><div className="flex gap-2"><form action={(formData) => executar(alterarEstadoObjetivo, formData, "Objetivo atualizado.")}><RequestId /><input type="hidden" name="goal_id" value={painel.objetivo.id} /><input type="hidden" name="operacao" value={confirmar.acao} /><button disabled={pending} className={`rounded-full px-4 py-2 font-extrabold text-white ${confirmar.acao === "delete_goal" ? "bg-red" : "bg-orange"}`}>Confirmar</button></form><button type="button" onClick={() => setConfirmar(null)} className="rounded-full border border-border px-4 py-2 font-bold text-foreground-muted">Cancelar</button></div></div> : <div className="flex flex-wrap justify-end gap-2"><button type="button" onClick={() => setConfirmar({ id: painel.objetivo.id, acao: "archive_goal" })} className="ff-focus rounded-full border border-border px-4 py-2 text-xs font-bold text-foreground-muted"><GoalActionIcon action="archive" /> Arquivar</button><button type="button" onClick={() => setConfirmar({ id: painel.objetivo.id, acao: "delete_goal" })} className="ff-focus rounded-full border border-red/30 bg-red/10 px-4 py-2 text-xs font-bold text-red"><GoalActionIcon action="delete" /> Excluir</button></div>}
+              </div>
+            </div>
           )}
           {painel.tipo === "movimentar" && (
             <FormularioMovimento
@@ -545,18 +555,18 @@ export default function ObjetivosManager({
       )}
 
       <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Seus objetivos</h2><span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-bold text-foreground-muted">{ativos.length} {ativos.length === 1 ? "ativo" : "ativos"}</span></div>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid gap-4 xl:grid-cols-2">
         {ativos.map((objetivo) => {
           const meta = Math.max(Number(objetivo.meta_valor), 0.01);
           const percentual = Math.min(100, Math.max(0, Number(objetivo.saldo_atual) / meta * 100));
           const proprio = objetivo.user_id === userId;
           const previsaoMetaAbaixo = objetivo.previstoMeta !== null && objetivo.previstoMeta < meta;
           return (
-            <article key={objetivo.id} className="group relative overflow-hidden rounded-[22px] border border-border bg-surface p-5 shadow-[0_15px_44px_rgba(0,0,0,0.09)] transition duration-300 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_22px_56px_rgba(0,0,0,0.15)]">
+            <article key={objetivo.id} className="group relative overflow-hidden rounded-[20px] border border-border bg-surface p-4 shadow-[0_14px_38px_rgba(0,0,0,0.07)] transition duration-300 hover:border-primary/25 hover:shadow-[0_18px_44px_rgba(0,0,0,0.11)]">
               <div aria-hidden="true" className="absolute -right-16 -top-20 h-44 w-44 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.14]" style={{ backgroundColor: objetivo.cor }} />
               <div className="mb-3 flex items-start justify-between gap-3">
                 <div className="relative flex min-w-0 gap-3">
-                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/5 text-xl shadow-sm" style={{ backgroundColor: `${objetivo.cor}22`, color: objetivo.cor }}>
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/5 text-xl shadow-sm" style={{ backgroundColor: `${objetivo.cor}22`, color: objetivo.cor }}>
                     <FinancialIcon name={objetivo.icone} size={22} />
                   </div>
                   <div className="min-w-0">
@@ -572,27 +582,27 @@ export default function ObjetivosManager({
                   <span className="rounded-full bg-primary-soft px-2 py-1 text-xs font-bold text-primary-dark">Compartilhado</span>
                 )}
               </div>
-              <div className="relative mb-1 mt-5 flex items-baseline justify-between">
-                <strong data-private-value="true" className="text-2xl font-black tracking-tight text-foreground">{formatarReais(Number(objetivo.saldo_atual))}</strong>
-                <span className="text-xs text-foreground-muted">de {formatarReais(meta)}</span>
+              <div className="relative mb-2 mt-4 flex items-end justify-between gap-3 rounded-xl bg-surface-muted p-3">
+                <div><span className="block text-[10px] font-extrabold uppercase tracking-[.12em] text-foreground-muted">Guardado</span><strong data-private-value="true" className="text-2xl font-black tracking-tight text-foreground">{formatarReais(Number(objetivo.saldo_atual))}</strong></div>
+                <div className="text-right"><strong className="block text-sm text-foreground">{Math.round(percentual)}%</strong><span className="text-[11px] text-foreground-muted">Meta {formatarReais(meta)}</span></div>
               </div>
               <div className="relative h-2.5 overflow-hidden rounded-full bg-surface-muted">
                 <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${percentual}%`, backgroundColor: objetivo.cor }} />
               </div>
-              <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs font-semibold text-foreground-muted">
+              <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-foreground-muted">
                 {objetivo.previstoMeta !== null && (
-                  <span
+                  <span className="rounded-lg border border-border bg-surface-muted px-3 py-2"
                     data-private-value="true"
                     aria-label={`Previsão na data-meta: ${formatarReais(objetivo.previstoMeta)}${previsaoMetaAbaixo ? ", abaixo da meta" : ""}`}
                   >
-                    Na data-meta:{" "}
+                    <small className="block text-[10px] uppercase tracking-wide">Na data-meta</small>
                     <strong className={previsaoMetaAbaixo ? "text-red" : "text-foreground-muted"}>
                       {formatarReais(objetivo.previstoMeta)}
                     </strong>
-                    {previsaoMetaAbaixo && <span className="ml-1 text-red">(abaixo da meta)</span>}
+                    {previsaoMetaAbaixo && <span className="block text-[10px] text-red">Abaixo da meta</span>}
                   </span>
                 )}
-                <span data-private-value="true">Fim do ano: {formatarReais(objetivo.previstoFimAno)}</span>
+                <span data-private-value="true" className="rounded-lg border border-border bg-surface-muted px-3 py-2"><small className="block text-[10px] uppercase tracking-wide">Fim do ano</small><strong className="text-foreground">{formatarReais(objetivo.previstoFimAno)}</strong></span>
               </div>
               <div role="group" aria-label={`Ações do objetivo ${objetivo.nome}`} className="relative mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "movimentar", objetivo, operacao: "guardar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_8px_20px_rgba(22,150,110,0.2)] transition hover:-translate-y-0.5 hover:bg-primary-dark hover:shadow-[0_12px_24px_rgba(22,150,110,0.26)]">
@@ -629,35 +639,6 @@ export default function ObjetivosManager({
                   </div>
                 </form>
               )}
-              {proprio && <div className="mt-3 border-t border-border pt-3">
-                {confirmar?.id === objetivo.id ? (
-                  <div role="alert" className={`rounded-ff-sm border p-3 text-xs ${confirmar.acao === "delete_goal" ? "border-red/30 bg-red/10" : "border-orange/30 bg-orange/10"}`}>
-                    <p className="mb-2 font-semibold text-foreground">
-                      {confirmar.acao === "delete_goal"
-                        ? "Excluir? Se houver saldo ou agendamentos, o objetivo será arquivado e o histórico preservado."
-                        : "Arquivar este objetivo?"}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <form action={(formData) => executar(alterarEstadoObjetivo, formData, "Objetivo atualizado.")}>
-                        <RequestId />
-                        <input type="hidden" name="goal_id" value={objetivo.id} />
-                        <input type="hidden" name="operacao" value={confirmar.acao} />
-                        <button disabled={pending} className={`ff-focus min-h-9 rounded-lg px-3 py-2 font-extrabold text-white disabled:opacity-50 ${confirmar.acao === "delete_goal" ? "bg-red" : "bg-orange"}`}>Confirmar</button>
-                      </form>
-                      <button type="button" onClick={() => setConfirmar(null)} className="ff-focus min-h-9 rounded-lg border border-border bg-surface px-3 py-2 font-bold text-foreground-muted transition hover:bg-surface-muted">Cancelar</button>
-                    </div>
-                  </div>
-                ) : (
-                  <div role="group" aria-label={`Gerenciar objetivo ${objetivo.nome}`} className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => setConfirmar({ id: objetivo.id, acao: "archive_goal" })} className="ff-focus flex min-h-10 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2 text-xs font-bold text-foreground-muted transition hover:border-orange/35 hover:bg-orange/10 hover:text-orange">
-                      <GoalActionIcon action="archive" /> Arquivar
-                    </button>
-                    <button type="button" onClick={() => setConfirmar({ id: objetivo.id, acao: "delete_goal" })} className="ff-focus flex min-h-10 items-center justify-center gap-2 rounded-xl border border-red/30 bg-red/10 px-3 py-2 text-xs font-bold text-red transition hover:border-red/50 hover:bg-red/15">
-                      <GoalActionIcon action="delete" /> Excluir
-                    </button>
-                  </div>
-                )}
-              </div>}
             </article>
           );
         })}

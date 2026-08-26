@@ -17,7 +17,7 @@ export default async function CategoriasPage() {
 
   return (
     <div className="mx-auto max-w-7xl">
-      <header className="relative mb-6 overflow-hidden rounded-[26px] border border-primary/25 bg-[radial-gradient(circle_at_78%_-5%,rgba(86,211,155,0.3),transparent_38%),linear-gradient(135deg,#062d27_0%,#075348_55%,#0b3b35_100%)] px-5 py-6 text-white shadow-[0_24px_70px_rgba(0,0,0,0.2)] sm:px-7 sm:py-7">
+      <header className="ff-page-hero mb-6 px-5 py-6 sm:px-7 sm:py-7">
         <div aria-hidden="true" className="absolute -right-20 top-1/2 h-60 w-60 -translate-y-1/2 rounded-full border border-white/10" />
         <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
           <div>

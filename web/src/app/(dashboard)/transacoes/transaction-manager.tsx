@@ -663,6 +663,8 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   const periods: { value: PeriodFilter; label: string }[] = [{ value: "all", label: "Todos" }, { value: "completed", label: "Concluídos" }, { value: "pending", label: "Pendentes" }, { value: "overdue", label: "Atrasados" }];
   const detailSummary = detail ? detailHistory?.summary ?? summaryFor(detail) : null;
   const activeCategories = categories.filter(isActiveCategory);
+  const revenueCategories = activeCategories.filter((category) => category.tipo === "receita" || category.tipo === "ambos");
+  const expenseCategories = activeCategories.filter((category) => category.tipo === "despesa" || category.tipo === "ambos");
   const hasActiveFilters = search.trim().length > 0
     || period !== "all"
     || types.length > 0
@@ -670,7 +672,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     || categoryIds.length > 0;
 
   return <>
-    <header className="relative mb-5 overflow-hidden rounded-[26px] border border-primary/25 bg-[radial-gradient(circle_at_78%_-10%,rgba(86,211,155,0.34),transparent_38%),linear-gradient(135deg,#062d27_0%,#075348_55%,#0b3b35_100%)] px-5 py-6 text-white shadow-[0_24px_70px_rgba(0,0,0,0.2)] sm:px-7 sm:py-7">
+    <header className="ff-page-hero mb-5 px-5 py-6 sm:px-7 sm:py-7">
       <div aria-hidden="true" className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-white/10" />
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div><p className="text-xs font-extrabold uppercase tracking-[0.18em] text-mint">Movimentações</p><h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Histórico</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-white/72">Lançamentos, recorrências, transferências e faturas em uma linha do tempo completa.</p></div>
@@ -691,7 +693,10 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
       <div className="mt-4 grid gap-2 sm:grid-cols-3">
         <MultiFilter label="Tipo" summary={typeSummary} onClear={() => { setTypes([]); setLimit(PAGE_SIZE); }}>{(["receita", "despesa", "transferencia", "fatura"] as HistoryKind[]).map((value) => <FilterOption key={value} checked={types.includes(value)} label={value === "transferencia" ? "Transferências" : value === "fatura" ? "Faturas" : `${value.charAt(0).toUpperCase()}${value.slice(1)}s`} color={value === "receita" ? "#16966E" : value === "despesa" ? "#EE6B63" : value === "fatura" ? "#805AD5" : "#F28A55"} onChange={() => toggleType(value)} />)}</MultiFilter>
         <MultiFilter label="Conta" summary={accountSummary} onClear={() => { setAccountIds([]); setLimit(PAGE_SIZE); }}>{accounts.map((account) => <FilterOption key={account.id} checked={accountIds.includes(account.id)} label={`${account.nome}${account.arquivado ? " (arquivada)" : ""}`} color={account.cor} onChange={() => toggle(account.id, accountIds, setAccountIds)} />)}</MultiFilter>
-        <MultiFilter label="Categoria" summary={categorySummary} disabled={categoryDisabled} onClear={() => { setCategoryIds([]); setLimit(PAGE_SIZE); }}>{activeCategories.map((category) => <FilterOption key={category.id} checked={categoryIds.includes(category.id)} label={category.nome} color={category.cor} onChange={() => toggle(category.id, categoryIds, setCategoryIds)} />)}</MultiFilter>
+        <MultiFilter label="Categoria" summary={categorySummary} disabled={categoryDisabled} onClear={() => { setCategoryIds([]); setLimit(PAGE_SIZE); }}>
+          {expenseCategories.length > 0 && <><p className="px-2 pb-1 pt-2 text-[10px] font-extrabold uppercase tracking-[.12em] text-red">Despesas</p>{expenseCategories.map((category) => <FilterOption key={`expense-${category.id}`} checked={categoryIds.includes(category.id)} label={category.nome} color={category.cor} onChange={() => toggle(category.id, categoryIds, setCategoryIds)} />)}</>}
+          {revenueCategories.length > 0 && <><p className="mt-2 border-t border-border px-2 pb-1 pt-3 text-[10px] font-extrabold uppercase tracking-[.12em] text-primary">Receitas</p>{revenueCategories.map((category) => <FilterOption key={`revenue-${category.id}`} checked={categoryIds.includes(category.id)} label={category.nome} color={category.cor} onChange={() => toggle(category.id, categoryIds, setCategoryIds)} />)}</>}
+        </MultiFilter>
       </div>
     </section>
     <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Linha do tempo</h2><span className="text-xs font-semibold text-foreground-muted">Mais recentes primeiro</span></div>

@@ -61,7 +61,7 @@
   padding: clamp(28px, 4vw, 48px);
   background:
     radial-gradient(ellipse at 85% 12%, rgba(92, 235, 179, 0.2), transparent 42%),
-    linear-gradient(145deg, #083f36, #062c2b 62%, #071f25);
+    linear-gradient(145deg, #1b2429, #151c21 62%, #11171b);
   color: #f5fffb;
 }
 
@@ -357,7 +357,7 @@
 }
 
 .primaryButton:hover:not(:disabled) {
-  background: linear-gradient(110deg, #096c54, #064d3e);
+  background: linear-gradient(110deg, var(--ff-action-primary), var(--ff-action-primary-hover));
   box-shadow: 0 19px 38px -22px color-mix(in srgb, var(--ff-primary) 100%, transparent);
   transform: translateY(-1px);
 }
@@ -580,7 +580,7 @@
   padding: 10px 12px;
   border-radius: 13px;
   color: #f5fffb;
-  background: linear-gradient(125deg, #08765f, #06413a);
+  background: linear-gradient(125deg, #1c2928, #151d21);
 }
 .previewHero small { grid-column: 1 / -1; font-size: .53rem; opacity: .72; }
 .previewHero strong { font-size: 1.05rem; letter-spacing: -.04em; }

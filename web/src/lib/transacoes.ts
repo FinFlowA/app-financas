@@ -11,7 +11,7 @@ export interface TransacaoComDatas {
 
 const DESTINO_TRANSFERENCIA_REGEX = /\s*\[Destino:(\d+)\]\s*$/;
 const OBJETIVO_TRANSFERENCIA_REGEX = /\s*\[Objetivo:(\d+):(guardar|resgatar)\]\s*$/;
-const SERIE_REGEX = /\s*\[Serie:([A-Za-z0-9_-]+)\]/;
+const SERIE_REGEX = /\s*\[(?:Serie|Série):([^\]]+)\]/gi;
 const SALDO_PARCIAL_REGEX = /\s*\[SaldoParcial:(\d+)\]/;
 const PAGAMENTO_FATURA_REGEX = /\s*\[PagFatura:(\d+):(\d{4}-\d{2}):[^\]]+\]\s*$/;
 const MARCADORES_OBJETIVO = ["[Objetivo:", "Guardar em:", "Resgate de:"] as const;
@@ -42,7 +42,8 @@ export function getContaDestinoTransferencia(descricao?: string | null): number 
 }
 
 export function getIdSerie(descricao?: string | null): string | null {
-  return (descricao ?? "").match(SERIE_REGEX)?.[1] ?? null;
+  const match = /\s*\[(?:Serie|Série):([^\]]+)\]/i.exec(descricao ?? "");
+  return match?.[1] ?? null;
 }
 
 export function descricaoVisivel(descricao: string): string {
@@ -52,6 +53,7 @@ export function descricaoVisivel(descricao: string): string {
     .replace(OBJETIVO_TRANSFERENCIA_REGEX, "")
     .replace(SERIE_REGEX, "")
     .replace(SALDO_PARCIAL_REGEX, "")
+    .replace(/\s*\[(?:RequestId|Idempotency|Interno):[^\]]+\]/gi, "")
     .replace(/^\[Transf\.\]\s*/, "")
     .trim();
 }

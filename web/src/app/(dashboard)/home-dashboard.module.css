@@ -1,7 +1,7 @@
 .root {
-  --home-card: color-mix(in srgb, var(--surface) 96%, var(--ff-primary) 4%);
-  --home-card-strong: color-mix(in srgb, var(--surface) 90%, var(--ff-primary) 10%);
-  --home-line: color-mix(in srgb, var(--border) 78%, var(--ff-primary) 22%);
+  --home-card: color-mix(in srgb, var(--surface) 98%, #71818a 2%);
+  --home-card-strong: color-mix(in srgb, var(--surface) 94%, #71818a 6%);
+  --home-line: color-mix(in srgb, var(--border) 90%, var(--ff-primary) 10%);
   --home-chart-empty: color-mix(in srgb, var(--surface-muted) 85%, var(--foreground-muted) 15%);
   --home-shadow: 0 18px 48px color-mix(in srgb, #03110d 12%, transparent);
   position: relative;
@@ -11,10 +11,10 @@
 }
 
 :global(html.dark) .root {
-  --home-card: #0d1c20;
-  --home-card-strong: #10252a;
-  --home-line: #20383d;
-  --home-chart-empty: #223238;
+  --home-card: #151c21;
+  --home-card-strong: #1b242a;
+  --home-line: #2d383f;
+  --home-chart-empty: #263139;
   --home-shadow: 0 22px 55px rgb(0 0 0 / 22%);
 }
 
@@ -170,13 +170,13 @@
   align-items: center;
   gap: 2rem;
   padding: 1.75rem 2rem;
-  border: 1px solid rgb(64 221 161 / 34%);
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 42%, var(--border));
   border-radius: 1.35rem;
   background:
-    radial-gradient(circle at 18% 15%, rgb(45 216 155 / 23%), transparent 31%),
-    linear-gradient(118deg, #063e34 0%, #06473a 34%, #032f2a 68%, #06251f 100%);
-  box-shadow: 0 24px 65px rgb(0 24 18 / 24%), inset 0 1px rgb(255 255 255 / 7%);
-  color: #f5fffb;
+    radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--ff-primary) 11%, transparent), transparent 34%),
+    linear-gradient(118deg, color-mix(in srgb, var(--surface-raised) 96%, var(--ff-primary) 4%), var(--surface) 72%);
+  box-shadow: 0 24px 65px -45px color-mix(in srgb, var(--ff-primary) 52%, transparent), inset 0 1px color-mix(in srgb, white 34%, transparent);
+  color: var(--foreground);
   isolation: isolate;
 }
 
@@ -204,6 +204,18 @@
 .heroWaveSecondary { animation: homeWaveDriftSecondary 27s ease-in-out infinite alternate; }
 .heroWaveLine { animation: homeWaveLine 23s ease-in-out infinite alternate; }
 
+:global(html.dark) .hero {
+  border-color: color-mix(in srgb, var(--ff-primary) 38%, var(--border));
+  background:
+    radial-gradient(circle at 12% 22%, rgba(22, 150, 110, 0.13), transparent 35%),
+    linear-gradient(118deg, #17201f 0%, #161d20 48%, #13191d 100%);
+  box-shadow: 0 26px 70px -48px rgba(22, 150, 110, 0.72), inset 0 1px rgba(255, 255, 255, 0.035);
+}
+
+:global(html.dark) .heroWaves {
+  opacity: .38;
+}
+
 .heroBalance {
   min-width: 0;
 }
@@ -212,7 +224,7 @@
   display: flex;
   align-items: center;
   gap: .55rem;
-  color: rgb(238 255 249 / 77%);
+  color: var(--foreground-muted);
   font-size: .96rem;
   font-weight: 650;
 }
@@ -242,9 +254,9 @@
   align-items: center;
   gap: .38rem;
   padding: .38rem .72rem;
-  border: 1px solid rgb(255 255 255 / 15%);
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 18%, var(--border));
   border-radius: .65rem;
-  background: rgb(0 22 16 / 24%);
+  background: color-mix(in srgb, var(--ff-primary) 6%, var(--surface-muted));
   font-size: .73rem;
   font-style: normal;
   font-weight: 750;
@@ -257,18 +269,18 @@
   display: inline-flex;
 }
 
-.positiveChip { color: #8ff1c4; }
+.positiveChip { color: var(--ff-primary-dark); }
 .negativeChip { color: #ff9b91; }
 
 .accountSelectorButton {
-  color: rgb(255 255 255 / 82%);
+  color: var(--foreground-muted);
   transition: background .18s ease, border-color .18s ease;
 }
 
 .accountSelectorButton:hover,
 .accountSelectorButton[aria-expanded="true"] {
-  border-color: rgb(143 241 196 / 48%);
-  background: rgb(255 255 255 / 11%);
+  border-color: color-mix(in srgb, var(--ff-primary) 42%, var(--border));
+  background: var(--ff-primary-soft);
 }
 
 .heroActions {
@@ -284,7 +296,7 @@
   flex-direction: column;
   align-items: center;
   gap: .58rem;
-  color: #fff;
+  color: var(--foreground);
   text-align: center;
 }
 
@@ -293,9 +305,9 @@
   width: 3.65rem;
   height: 3.65rem;
   place-items: center;
-  border: 1px solid rgb(192 255 231 / 30%);
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 22%, var(--border));
   border-radius: 999px;
-  background: rgb(0 15 12 / 16%);
+  background: color-mix(in srgb, var(--surface-muted) 84%, transparent);
   box-shadow: inset 0 1px rgb(255 255 255 / 5%);
   transition: transform .2s ease, border-color .2s ease, background .2s ease, box-shadow .2s ease;
 }
@@ -308,8 +320,8 @@
 .actionLink:hover > span,
 .actionLink[aria-expanded="true"] > span {
   transform: translateY(-3px) scale(1.04);
-  border-color: rgb(137 244 203 / 70%);
-  background: rgb(255 255 255 / 11%);
+  border-color: color-mix(in srgb, var(--ff-primary) 55%, var(--border));
+  background: var(--ff-primary-soft);
   box-shadow: 0 9px 24px rgb(0 0 0 / 17%);
 }
 
@@ -410,7 +422,7 @@
   border: 1px solid var(--home-line);
   border-radius: 1.05rem;
   background:
-    radial-gradient(circle at 0 0, color-mix(in srgb, var(--ff-primary) 5%, transparent), transparent 35%),
+    radial-gradient(circle at 0 0, color-mix(in srgb, var(--ff-primary) 2.5%, transparent), transparent 35%),
     var(--home-card);
   box-shadow: var(--home-shadow);
 }
@@ -534,24 +546,37 @@
   gap: .12rem .55rem;
   padding: .85rem;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--account-color) 48%, transparent);
+  border: 1px solid color-mix(in srgb, var(--account-color) 24%, var(--home-line));
   border-radius: .85rem;
   background:
-    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--account-color) 58%, transparent), transparent 54%),
-    linear-gradient(145deg, color-mix(in srgb, var(--account-color) 32%, #09241d), color-mix(in srgb, var(--account-color) 8%, #0b1919));
-  box-shadow: inset 0 1px rgb(255 255 255 / 6%);
-  color: white;
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--account-color) 12%, transparent), transparent 58%),
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 94%, var(--account-color) 6%), var(--surface));
+  box-shadow: 0 8px 22px rgb(22 30 34 / 5%);
+  color: var(--foreground);
   scroll-snap-align: start;
   transition: transform .2s ease, filter .2s ease, box-shadow .2s ease;
 }
 
-.accountCard::after { position: absolute; right: -2rem; bottom: -2rem; width: 6rem; height: 6rem; border: 1px solid rgb(255 255 255 / 8%); border-radius: 999px; content: ""; }
-.accountCard:hover { z-index: 1; transform: translateY(-3px); filter: saturate(1.1); box-shadow: 0 12px 28px rgb(0 0 0 / 18%); }
-.accountIcon { display: grid; width: 2rem; height: 2rem; grid-row: span 2; place-items: center; border: 1px solid rgb(255 255 255 / 14%); border-radius: .55rem; background: rgb(255 255 255 / 9%); color: #a9f5d1; }
+.accountCard::after { position: absolute; right: -2rem; bottom: -2rem; width: 6rem; height: 6rem; border: 1px solid color-mix(in srgb, var(--account-color) 13%, transparent); border-radius: 999px; content: ""; }
+.accountCard:hover { z-index: 1; transform: translateY(-3px); border-color: color-mix(in srgb, var(--account-color) 38%, var(--home-line)); box-shadow: 0 12px 28px rgb(22 30 34 / 10%); }
+.accountIcon { display: grid; width: 2rem; height: 2rem; grid-row: span 2; place-items: center; border: 1px solid color-mix(in srgb, var(--account-color) 23%, var(--home-line)); border-radius: .55rem; background: color-mix(in srgb, var(--account-color) 9%, var(--surface-muted)); color: color-mix(in srgb, var(--account-color) 76%, var(--foreground)); }
 .accountName { align-self: end; overflow: hidden; font-size: .76rem; font-weight: 800; text-overflow: ellipsis; white-space: nowrap; }
-.accountCard small { color: rgb(255 255 255 / 59%); font-size: .62rem; }
+.accountCard small { color: var(--foreground-muted); font-size: .62rem; }
 .accountCard strong { align-self: end; grid-column: 1 / -1; margin-top: .7rem; font-size: 1.05rem; font-weight: 850; letter-spacing: -.02em; }
-.accountCard em { position: relative; z-index: 1; justify-self: start; grid-column: 1 / -1; margin-top: .3rem; padding: .25rem .5rem; border: 1px solid rgb(255 255 255 / 15%); border-radius: .48rem; background: rgb(0 0 0 / 12%); color: rgb(255 255 255 / 72%); font-size: .58rem; font-style: normal; font-weight: 650; }
+.accountCard em { position: relative; z-index: 1; justify-self: start; grid-column: 1 / -1; margin-top: .3rem; padding: .25rem .5rem; border: 1px solid var(--home-line); border-radius: .48rem; background: var(--surface-muted); color: var(--foreground-muted); font-size: .58rem; font-style: normal; font-weight: 650; }
+
+:global(html.dark) .accountCard {
+  border-color: color-mix(in srgb, var(--account-color) 42%, transparent);
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--account-color) 44%, transparent), transparent 56%),
+    linear-gradient(145deg, color-mix(in srgb, var(--account-color) 25%, #101719), color-mix(in srgb, var(--account-color) 7%, #0d1416));
+  box-shadow: inset 0 1px rgb(255 255 255 / 6%);
+  color: white;
+}
+
+:global(html.dark) .accountIcon { border-color: rgb(255 255 255 / 14%); background: rgb(255 255 255 / 9%); color: #a9f5d1; }
+:global(html.dark) .accountCard small { color: rgb(255 255 255 / 59%); }
+:global(html.dark) .accountCard em { border-color: rgb(255 255 255 / 15%); background: rgb(0 0 0 / 12%); color: rgb(255 255 255 / 72%); }
 
 .emptyState {
   display: grid;
@@ -576,6 +601,32 @@
 .donut small { color: var(--foreground-muted); font-size: .58rem; font-weight: 700; text-transform: uppercase; }
 .donut strong { max-width: 4.5rem; margin-top: .18rem; overflow: hidden; font-size: .72rem; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
 .categoryRows { display: grid; gap: .65rem; }
+.flowCategoryChart { display: grid; gap: .62rem; margin-top: .9rem; }
+.flowCategoryLegend { display: flex; justify-content: flex-end; gap: 1rem; color: var(--foreground-muted); font-size: .62rem; font-weight: 750; }
+.flowCategoryLegend span { display: inline-flex; align-items: center; gap: .35rem; }
+.flowCategoryLegend i { width: .5rem; height: .5rem; border-radius: 50%; }
+.incomeDot { background: var(--ff-primary); }
+.expenseDot { background: var(--ff-red); }
+.flowCategoryRow { display: grid; grid-template-columns: minmax(6.5rem, .7fr) minmax(10rem, 1.7fr) minmax(8rem, auto); align-items: center; gap: .75rem; width: 100%; border: 0; border-radius: .65rem; background: transparent; padding: .35rem .45rem; color: var(--foreground); cursor: pointer; text-align: left; transition: background .16s ease; }
+.flowCategoryRow:hover { background: var(--surface-muted); }
+.flowCategoryRow > span:first-child { overflow: hidden; font-size: .7rem; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
+.flowBars { display: grid; gap: .22rem; }
+.flowBars i { display: block; min-width: 2px; height: .36rem; border-radius: 99px; }
+.incomeBar { background: var(--ff-primary); }
+.expenseBar { background: var(--ff-red); }
+.flowCategoryRow > strong { display: grid; gap: .08rem; text-align: right; }
+.flowCategoryRow > strong b { color: var(--ff-primary-dark); font-size: .62rem; }
+.flowCategoryRow > strong em { color: var(--ff-red); font-size: .62rem; font-style: normal; }
+.verticalChart { display: grid; min-height: 15rem; grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr)); align-items: stretch; gap: .65rem; border-bottom: 1px solid var(--home-line); padding: .5rem .25rem 0; }
+.verticalGroup { display: grid; min-width: 0; grid-template-rows: 10.5rem auto 2.2rem; gap: .45rem; align-items: end; border: 0; border-radius: .65rem .65rem 0 0; background: transparent; padding: .35rem; color: var(--foreground); cursor: pointer; transition: background .16s ease; }
+.verticalGroup:hover { background: var(--surface-muted); }
+.verticalBars { display: flex; height: 100%; align-items: flex-end; justify-content: center; gap: .28rem; }
+.verticalBars i { display: block; width: min(1.2rem, 38%); border-radius: .35rem .35rem .08rem .08rem; transition: height .25s ease, filter .16s ease; }
+.verticalGroup:hover .verticalBars i { filter: brightness(1.08); }
+.verticalLabel { overflow: hidden; align-self: start; font-size: .65rem; font-weight: 800; text-align: center; text-overflow: ellipsis; white-space: nowrap; }
+.verticalGroup > strong { display: grid; align-self: start; gap: .08rem; text-align: center; }
+.verticalGroup > strong b { min-height: .75rem; color: var(--ff-primary-dark); font-size: .55rem; }
+.verticalGroup > strong em { min-height: .75rem; color: var(--ff-red); font-size: .55rem; font-style: normal; }
 .categoryRow { display: grid; grid-template-columns: minmax(5rem, .9fr) minmax(4rem, 1.45fr) auto 2rem; align-items: center; gap: .65rem; min-width: 0; font-size: .68rem; }
 .categoryName { display: flex; min-width: 0; align-items: center; gap: .48rem; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .categoryName i { width: .55rem; height: .55rem; flex: none; border-radius: 999px; }

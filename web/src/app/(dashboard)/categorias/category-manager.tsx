@@ -99,20 +99,25 @@ function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDisc
 
 function CategoryCard({ category }: { category: Categoria }) {
   const active = category.ativa === true || category.ativa === 1;
+  const [expanded, setExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [state, stateAction, changing] = useActionState(alterarEstadoCategoria, INITIAL);
   const [deleteBaseline, setDeleteBaseline] = useState<CategoriaActionState | null>(null);
   const confirmDelete = deleteBaseline !== null && !(state !== deleteBaseline && state.sucesso);
-  return <article className={`ff-card group relative overflow-hidden p-5 shadow-[0_14px_40px_rgba(0,0,0,0.08)] transition duration-300 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_20px_52px_rgba(0,0,0,0.14)] ${active ? "" : "opacity-65"}`}>
+  return <article className={`ff-card group relative overflow-hidden p-3 shadow-[0_12px_34px_rgba(0,0,0,0.07)] transition duration-200 hover:border-primary/25 ${active ? "" : "opacity-65"}`}>
     <div aria-hidden="true" className="absolute -right-10 -top-12 h-32 w-32 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.16]" style={{ backgroundColor: category.cor }} />
-    <div className="relative flex items-start gap-3"><span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-white/10 text-white shadow-lg" style={{ backgroundColor: category.cor }}><FinancialIcon name={category.icone} size={22} /></span><div className="min-w-0 flex-1"><h2 className="truncate font-extrabold text-foreground">{category.nome}</h2><p className={`mt-1 text-[10px] font-extrabold uppercase tracking-wide ${category.tipo === "receita" ? "text-primary" : "text-red"}`}>{category.tipo === "ambos" ? "Receita e despesa (legado)" : category.tipo} · {active ? "Ativa" : "Arquivada"}</p></div></div>
-    <div className="relative mt-4 border-t border-border/70 pt-4">
+    <button type="button" aria-expanded={expanded} onClick={() => { setExpanded((value) => !value); if (expanded) setEditOpen(false); }} className="ff-focus relative flex w-full items-center gap-3 rounded-xl p-1 text-left">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 text-white shadow-sm" style={{ backgroundColor: category.cor }}><FinancialIcon name={category.icone} size={20} /></span>
+      <span className="min-w-0 flex-1"><span className="block truncate font-extrabold text-foreground">{category.nome}</span><span className={`mt-0.5 block text-[9px] font-extrabold uppercase tracking-wide ${category.tipo === "receita" ? "text-primary" : "text-red"}`}>{active ? "Ativa" : "Arquivada"}</span></span>
+      <span aria-hidden="true" className={`text-primary transition ${expanded ? "rotate-180" : ""}`}>⌄</span>
+    </button>
+    {expanded && <div className="relative mt-3 border-t border-border/70 pt-3">
       {active ? <>
         <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((value) => !value)} className="ff-focus flex w-full items-center justify-between rounded-lg py-1 text-left font-bold text-primary"><span>Editar categoria</span><span aria-hidden="true" className={`transition ${editOpen ? "rotate-180" : ""}`}>⌄</span></button>
         {editOpen && <CategoryEditForm category={category} onDiscard={() => setEditOpen(false)} />}
       </> : <p className="text-xs font-semibold text-foreground-muted">Reative a categoria para editá-la.</p>}
-    </div>
-    <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} />
+    </div>}
+    {expanded && <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} />
       {active ? <button name="operation" value="archive_category" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button> : <button name="operation" value="reactivate_category" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button>}
       <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>
       {confirmDelete && <ConfirmationDialog
@@ -126,11 +131,11 @@ function CategoryCard({ category }: { category: Categoria }) {
       >
         {state !== deleteBaseline && state.erro && <p role="alert" className="mt-4 rounded-xl bg-red/10 p-3 text-sm font-semibold text-red">{state.erro}</p>}
       </ConfirmationDialog>}
-    </form><Message state={state} />
+    </form>}{expanded && <Message state={state} />}
   </article>;
 }
 
 export default function CategoryManager({ categories }: { categories: Categoria[] }) {
-  const ordered = [...categories].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
-  return <><NewCategory />{(["receita", "despesa"] as const).map((type) => { const filtered = ordered.filter((category) => category.tipo === type || category.tipo === "ambos"); return <section key={type} className="mb-9"><div className="mb-3 flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${type === "receita" ? "bg-primary" : "bg-red"}`} /><h2 className="text-lg font-extrabold text-foreground">Categorias de {type}</h2><span className="rounded-full bg-surface-muted px-2.5 py-1 text-[10px] font-extrabold text-foreground-muted">{filtered.length}</span></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{filtered.map((category) => <CategoryCard key={`${type}-${category.id}`} category={category} />)}</div>{filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">Nenhuma categoria de {type} cadastrada.</div>}</section>; })}</>;
+  const ordered = [...categories].sort((a, b) => Number(Boolean(b.ativa)) - Number(Boolean(a.ativa)) || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+  return <><NewCategory /><div className="grid items-start gap-6 lg:grid-cols-2">{(["despesa", "receita"] as const).map((type) => { const filtered = ordered.filter((category) => category.tipo === type || category.tipo === "ambos"); return <section key={type} className="min-w-0"><div className="mb-3 flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${type === "receita" ? "bg-primary" : "bg-red"}`} /><h2 className="text-lg font-extrabold text-foreground">Categorias de {type}</h2><span className="rounded-full bg-surface-muted px-2.5 py-1 text-[10px] font-extrabold text-foreground-muted">{filtered.length}</span></div><div className="grid gap-3">{filtered.map((category) => <CategoryCard key={`${type}-${category.id}`} category={category} />)}</div>{filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">Nenhuma categoria de {type} cadastrada.</div>}</section>; })}</div></>;
 }

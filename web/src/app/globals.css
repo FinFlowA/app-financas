@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --ff-primary: #13966d;
+  --ff-primary: #16966e;
   --ff-primary-dark: #08745b;
-  --ff-primary-soft: #dff5eb;
-  --ff-primary-bright: #43d89c;
-  --ff-mint: #61dca6;
+  --ff-primary-soft: #e3f2ec;
+  --ff-primary-bright: #48c995;
+  --ff-mint: #4fc294;
   --ff-blue: #5c86ef;
   --ff-orange: #f09a63;
   --ff-red: #ec6962;
@@ -16,34 +16,34 @@
   --ff-action-transfer: #a54325;
   --ff-on-action: #ffffff;
 
-  --background: #f3f7f5;
+  --background: #f5f7f8;
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --surface-muted: #eaf1ee;
-  --foreground: #102a22;
-  --foreground-muted: #647871;
-  --border: #d9e5e0;
-  --border-strong: #c8d8d1;
-  --header: #0b715d;
-  --shadow-color: 20 54 43;
+  --surface-muted: #edf1f3;
+  --foreground: #1d252b;
+  --foreground-muted: #68747c;
+  --border: #dce3e7;
+  --border-strong: #cbd4d9;
+  --header: #172126;
+  --shadow-color: 29 37 43;
 }
 
 html.dark {
   color-scheme: dark;
   --ff-primary: #1cae7d;
   --ff-primary-dark: #66e4b6;
-  --ff-primary-soft: #0d392d;
-  --ff-primary-bright: #57e0aa;
+  --ff-primary-soft: #123128;
+  --ff-primary-bright: #55d3a0;
 
-  --background: #061116;
-  --surface: #0d1a1f;
-  --surface-raised: #112128;
-  --surface-muted: #17272d;
-  --foreground: #f5faf8;
-  --foreground-muted: #91a59e;
-  --border: #20343a;
-  --border-strong: #2c464d;
-  --header: #075a4b;
+  --background: #0d1216;
+  --surface: #141a1f;
+  --surface-raised: #182026;
+  --surface-muted: #20282e;
+  --foreground: #f2f5f6;
+  --foreground-muted: #96a1a8;
+  --border: #2a343b;
+  --border-strong: #3a464e;
+  --header: #182126;
   --shadow-color: 0 0 0;
 }
 
@@ -87,8 +87,8 @@ body {
   margin: 0;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at 82% -12%, color-mix(in srgb, var(--ff-primary) 10%, transparent), transparent 34rem),
-    linear-gradient(155deg, color-mix(in srgb, var(--background) 96%, var(--ff-primary) 4%), var(--background) 45%);
+    radial-gradient(circle at 82% -12%, color-mix(in srgb, var(--ff-primary) 5%, transparent), transparent 34rem),
+    linear-gradient(155deg, color-mix(in srgb, var(--background) 98%, #9aa5ab 2%), var(--background) 45%);
   color: var(--foreground);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   text-rendering: optimizeLegibility;
@@ -96,9 +96,9 @@ body {
 
 html.dark body {
   background:
-    radial-gradient(circle at 78% -15%, rgba(21, 146, 105, 0.13), transparent 34rem),
-    radial-gradient(circle at -8% 85%, rgba(19, 86, 88, 0.12), transparent 28rem),
-    #061116;
+    radial-gradient(circle at 78% -15%, rgba(22, 150, 110, 0.055), transparent 34rem),
+    radial-gradient(circle at -8% 85%, rgba(73, 93, 105, 0.09), transparent 28rem),
+    #0d1216;
 }
 
 ::selection {
@@ -243,13 +243,13 @@ summary:focus-visible {
   border: 1px solid var(--border);
   border-radius: 18px;
   background:
-    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 96%, var(--ff-primary) 4%), var(--surface));
+    linear-gradient(145deg, color-mix(in srgb, var(--surface-raised) 98%, #71818a 2%), var(--surface));
   box-shadow: 0 18px 50px -40px rgb(var(--shadow-color) / 0.6);
 }
 
 html.dark .ff-card {
   background:
-    linear-gradient(145deg, rgba(17, 33, 40, 0.97), rgba(10, 24, 29, 0.97));
+    linear-gradient(145deg, rgba(25, 33, 39, 0.98), rgba(17, 23, 28, 0.98));
   box-shadow: 0 22px 60px -42px rgba(0, 0, 0, 0.92);
 }
 
@@ -286,24 +286,25 @@ html.dark .ff-card {
 }
 
 .bg-header {
-  border: 1px solid color-mix(in srgb, var(--ff-primary-bright) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 24%, var(--border));
   background:
-    radial-gradient(ellipse at 70% -10%, rgba(90, 230, 178, 0.22), transparent 45%),
-    linear-gradient(135deg, #0b725e, #06483f 72%, #073b37) !important;
-  box-shadow: 0 24px 70px -48px rgba(17, 190, 130, 0.78);
+    radial-gradient(ellipse at 72% -18%, color-mix(in srgb, var(--ff-primary) 9%, transparent), transparent 48%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 97%, var(--ff-primary) 3%), var(--surface)) !important;
+  box-shadow: 0 22px 58px -46px color-mix(in srgb, var(--ff-primary) 28%, transparent);
+  color: var(--foreground) !important;
 }
 
 .ff-page-hero {
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--ff-primary-bright) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 25%, var(--border));
   border-radius: 23px;
   background:
-    radial-gradient(ellipse at 72% -10%, rgba(92, 232, 178, 0.25), transparent 48%),
-    linear-gradient(135deg, #0b725e, #06483f 70%, #073b37);
-  box-shadow: 0 28px 72px -50px rgba(19, 190, 132, 0.8);
-  color: #fff;
+    radial-gradient(ellipse at 72% -10%, color-mix(in srgb, var(--ff-primary) 10%, transparent), transparent 48%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 97%, var(--ff-primary) 3%), var(--surface));
+  box-shadow: 0 28px 72px -52px color-mix(in srgb, var(--ff-primary) 34%, transparent);
+  color: var(--foreground);
 }
 
 .ff-page-hero::after {
@@ -313,11 +314,39 @@ html.dark .ff-card {
   bottom: -70%;
   width: 62%;
   aspect-ratio: 1.9;
-  border: 1px solid rgba(110, 235, 189, 0.2);
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 13%, transparent);
   border-radius: 50%;
-  box-shadow: 0 0 0 32px rgba(51, 191, 141, 0.04), 0 0 0 66px rgba(51, 191, 141, 0.03);
+  box-shadow: 0 0 0 32px color-mix(in srgb, var(--ff-primary) 2.8%, transparent), 0 0 0 66px color-mix(in srgb, var(--ff-primary) 1.8%, transparent);
   content: "";
   transform: rotate(-10deg);
+}
+
+.ff-page-hero [class*="text-white"] {
+  color: var(--foreground) !important;
+}
+
+.ff-page-hero [class*="border-white"] {
+  border-color: color-mix(in srgb, var(--border) 88%, var(--ff-primary) 12%) !important;
+}
+
+.ff-page-hero [class*="bg-black"] {
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent) !important;
+}
+
+.ff-page-hero button[class*="bg-white"] {
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 35%, var(--border));
+  background: var(--surface-raised) !important;
+  color: var(--ff-primary-dark) !important;
+  box-shadow: 0 14px 32px -24px color-mix(in srgb, var(--ff-primary) 55%, transparent);
+}
+
+html.dark .ff-page-hero,
+html.dark .bg-header {
+  border-color: color-mix(in srgb, var(--ff-primary) 30%, var(--border));
+  background:
+    radial-gradient(ellipse at 72% -10%, rgba(22, 150, 110, 0.09), transparent 48%),
+    linear-gradient(135deg, #192126, #141b20 72%, #12181c) !important;
+  box-shadow: 0 28px 72px -54px rgba(22, 150, 110, 0.46);
 }
 
 /* Shell desktop */
@@ -361,8 +390,8 @@ html.dark .ff-card {
 }
 
 html.dark .ff-sidebar {
-  background: rgba(5, 16, 21, 0.94);
-  box-shadow: 18px 0 70px -55px rgba(10, 178, 123, 0.45);
+  background: rgba(12, 17, 21, 0.96);
+  box-shadow: 18px 0 70px -58px rgba(22, 150, 110, 0.24);
 }
 
 .ff-brand {
@@ -534,7 +563,7 @@ html.dark .ff-sidebar {
 .ff-display-control {
   display: inline-flex;
   min-width: 0;
-  flex: 1;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   gap: 6px;
@@ -556,6 +585,20 @@ html.dark .ff-sidebar {
   width: 17px;
   height: 17px;
   flex: 0 0 auto;
+}
+
+.ff-display-control svg[data-active="true"] {
+  color: var(--ff-primary-dark);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--ff-primary) 24%, transparent));
+}
+
+.ff-display-control span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
 }
 
 .ff-sidebar-profile {

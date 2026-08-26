@@ -66,6 +66,7 @@ function NewAccount({ partnerName }: { partnerName: string | null }) {
 
 function AccountCard({ account, balance, own, partnerName }: { account: Conta; balance: number; own: boolean; partnerName: string | null }) {
   const [color, setColor] = useState(account.cor || COLORS[0]);
+  const [editOpen, setEditOpen] = useState(false);
   const [editState, editAction, editing] = useActionState(editarConta, INITIAL);
   const [state, stateAction, changing] = useActionState(alterarEstadoConta, INITIAL);
   const [sharingState, sharingAction, sharing] = useActionState(alterarCompartilhamentoConta, INITIAL);
@@ -90,13 +91,19 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
         </div>
         <Message state={sharingState} />
       </form>}
-      {own && <details className="group/edit mt-4 border-t border-border/70 pt-4"><summary className="ff-focus flex list-none items-center justify-between rounded-lg py-1 font-bold text-primary"><span>Editar conta</span><span className="transition group-open/edit:rotate-180">⌄</span></summary><form action={editAction} className="mt-4 grid gap-3 rounded-2xl bg-surface-muted/50 p-4">
-        <RequestId state={editState} /><input type="hidden" name="account_id" value={account.id} /><input type="hidden" name="expected_version" value={account.version ?? 1} />
-        <label className="text-xs font-bold uppercase text-foreground-muted">Nome<input name="name" required defaultValue={account.nome} maxLength={100} className="mt-1 w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-sm normal-case text-foreground outline-none focus:border-primary" /></label>
-        <label className="text-xs font-bold uppercase text-foreground-muted">Saldo inicial<CurrencyInput name="initial_balance" defaultValue={Number(account.saldo_inicial)} required /></label>
-        <ColorFields selected={color} onChange={setColor} />
-        <button disabled={editing} className="ff-focus rounded-full bg-primary px-4 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-50">{editing ? "Salvando..." : "Salvar alterações"}</button><Message state={editState} />
-      </form></details>}
+      {own && <button type="button" onClick={() => setEditOpen(true)} className="ff-focus mt-4 flex w-full items-center justify-between border-t border-border/70 pt-4 font-bold text-primary"><span>Editar conta</span><span aria-hidden="true">↗</span></button>}
+      {own && editOpen && <div className="fixed inset-0 z-[90] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => !editing && setEditOpen(false)}>
+        <section role="dialog" aria-modal="true" aria-label={`Editar conta ${account.nome}`} onMouseDown={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
+          <div className="mb-5 flex items-center justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Conta financeira</p><h2 className="mt-1 text-xl font-black text-foreground">Editar {account.nome}</h2></div><button type="button" onClick={() => setEditOpen(false)} disabled={editing} aria-label="Fechar edição" className="ff-focus grid h-10 w-10 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
+          <form action={editAction} className="grid gap-4">
+            <RequestId state={editState} /><input type="hidden" name="account_id" value={account.id} /><input type="hidden" name="expected_version" value={account.version ?? 1} />
+            <label className="text-xs font-bold uppercase text-foreground-muted">Nome<input name="name" required defaultValue={account.nome} maxLength={100} className="mt-1 w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-sm normal-case text-foreground outline-none focus:border-primary" /></label>
+            <label className="text-xs font-bold uppercase text-foreground-muted">Saldo inicial<CurrencyInput name="initial_balance" defaultValue={Number(account.saldo_inicial)} required /></label>
+            <div><p className="mb-2 text-xs font-bold uppercase text-foreground-muted">Cor</p><ColorFields selected={color} onChange={setColor} /></div>
+            <div className="flex flex-wrap gap-2"><button disabled={editing} className="ff-focus rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-50">{editing ? "Salvando..." : "Salvar alterações"}</button><button type="button" onClick={() => setEditOpen(false)} className="ff-focus rounded-full border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Cancelar</button></div><Message state={editState} />
+          </form>
+        </section>
+      </div>}
       {own && <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="account_id" value={account.id} />
         {account.arquivado ? <button name="operation" value="reactivate_account" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button> : <button name="operation" value="archive_account" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button>}
         <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>

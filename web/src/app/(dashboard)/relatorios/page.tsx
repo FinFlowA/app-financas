@@ -4,7 +4,7 @@ import { calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
-import { calcularSaldosPorConta, dataEfetivaTransacao, isMovimentoObjetivo, isPagamentoFatura, transacoesNoEscopo } from "@/lib/transacoes";
+import { calcularSaldosPorConta, dataEfetivaTransacao, descricaoVisivel, isMovimentoObjetivo, isPagamentoFatura, transacoesNoEscopo } from "@/lib/transacoes";
 import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import CategoryDistributionChart, { type CategoryDistributionItem } from "./category-distribution-chart";
 import type { MesFluxo, PontoSaldo } from "./fluxo-saldo-chart";
@@ -71,6 +71,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const expenseCategoryTotals = new Map<number | null, number>();
   const revenueCategoryTotals = new Map<number | null, number>();
+  const expenseCategoryDetails = new Map<number | null, CategoryDistributionItem["details"]>();
+  const revenueCategoryDetails = new Map<number | null, CategoryDistributionItem["details"]>();
   let detailExpense = 0;
   let detailRevenue = 0;
 
@@ -91,9 +93,11 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       if (transaction.tipo === "receita") {
         detailRevenue += value;
         revenueCategoryTotals.set(transaction.categoria_id, (revenueCategoryTotals.get(transaction.categoria_id) ?? 0) + value);
+        revenueCategoryDetails.set(transaction.categoria_id, [...(revenueCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
       } else if (!(allAccountsSelected && isPagamentoFatura(transaction.descricao))) {
         detailExpense += value;
         expenseCategoryTotals.set(transaction.categoria_id, (expenseCategoryTotals.get(transaction.categoria_id) ?? 0) + value);
+        expenseCategoryDetails.set(transaction.categoria_id, [...(expenseCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
       }
     }
   }
@@ -103,9 +107,10 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       if (!Number.isFinite(value)) continue;
       detailExpense += value;
       expenseCategoryTotals.set(item.categoria_id, (expenseCategoryTotals.get(item.categoria_id) ?? 0) + value);
+      expenseCategoryDetails.set(item.categoria_id, [...(expenseCategoryDetails.get(item.categoria_id) ?? []), { id: `invoice-${item.id}`, description: descricaoVisivel(item.descricao), value, date: item.data_compra }]);
     }
   }
-  const distributionItems = (totals: Map<number | null, number>, total: number, kind: "receita" | "despesa"): CategoryDistributionItem[] => (
+  const distributionItems = (totals: Map<number | null, number>, details: Map<number | null, CategoryDistributionItem["details"]>, total: number, kind: "receita" | "despesa"): CategoryDistributionItem[] => (
     [...totals.entries()]
       .map(([categoryId, value], index) => {
         const category = categoryId === null ? undefined : categoriesById.get(categoryId);
@@ -115,6 +120,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
           color: category?.cor ?? (kind === "receita" ? "#42C98B" : "#FF746C"),
           value,
           percentage: total ? value / total * 100 : 0,
+          details: details.get(categoryId) ?? [],
         };
       })
       .sort((a, b) => b.value - a.value)
@@ -124,8 +130,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const totalDespesas = selectedMonth?.despesas ?? 0;
   const resultadoRealizado = totalReceitas - totalDespesas;
   const saldoFimAno = balances.at(-1)?.saldo ?? initialBalance;
-  const revenueDistribution = distributionItems(revenueCategoryTotals, detailRevenue, "receita");
-  const expenseDistribution = distributionItems(expenseCategoryTotals, detailExpense, "despesa");
+  const revenueDistribution = distributionItems(revenueCategoryTotals, revenueCategoryDetails, detailRevenue, "receita");
+  const expenseDistribution = distributionItems(expenseCategoryTotals, expenseCategoryDetails, detailExpense, "despesa");
 
   return (
     <div className={styles.page}>
