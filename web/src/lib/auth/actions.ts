@@ -144,6 +144,7 @@ export async function signUpAction(
         emailRedirectTo: callbackUrl(origin, "signup"),
         data: {
           nome_usuario: nome,
+          full_name: nome,
           ...(telefoneE164 ? { telefone: telefoneE164 } : {}),
           data_nascimento: dataNascimento,
           termos_aceitos_em: new Date().toISOString(),

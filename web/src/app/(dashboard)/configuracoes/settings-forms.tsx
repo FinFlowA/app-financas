@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState, type ReactNode } from "react";
 import CurrencyInput from "@/components/ui/currency-input";
 import AccessibleConfirmationDialog from "@/components/ui/confirmation-dialog";
 import {
@@ -46,12 +46,16 @@ function ConfirmationDialog({
   confirmLabel,
   pending,
   onClose,
+  onConfirm,
+  children,
 }: {
   title: string;
   description: string;
   confirmLabel: string;
   pending: boolean;
   onClose: () => void;
+  onConfirm?: () => void;
+  children?: ReactNode;
 }) {
   return (
     <AccessibleConfirmationDialog
@@ -60,7 +64,10 @@ function ConfirmationDialog({
       confirmLabel={confirmLabel}
       pending={pending}
       onClose={onClose}
-    />
+      onConfirm={onConfirm}
+    >
+      {children}
+    </AccessibleConfirmationDialog>
   );
 }
 
@@ -311,20 +318,38 @@ export function DissolutionDecisions({ accounts, goals }: { accounts: AccountDec
 export function DeleteAccountForm() {
   const [state, action, pending] = useActionState(deleteAccountAction, INITIAL_SETTINGS_STATE);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const formRef = useRef<HTMLFormElement>(null);
 
   return (
-    <form action={action} className="mt-5 max-w-xl">
+    <form ref={formRef} action={action} className="mt-5 max-w-xl">
       <label className="block text-xs font-bold uppercase tracking-wide text-foreground-muted">
         Senha atual
-        <input
-          className={INPUT}
-          name="current_password"
-          type="password"
-          required
-          minLength={8}
-          maxLength={128}
-          autoComplete="current-password"
-        />
+        <span className="relative mt-1 block">
+          <input
+            className={`${INPUT} !mt-0 pr-12`}
+            name="current_password"
+            type={passwordVisible ? "text" : "password"}
+            required
+            minLength={8}
+            maxLength={128}
+            autoComplete="current-password"
+          />
+          <button
+            type="button"
+            onClick={() => setPasswordVisible((visible) => !visible)}
+            aria-label={passwordVisible ? "Ocultar senha" : "Mostrar senha"}
+            aria-pressed={passwordVisible}
+            title={passwordVisible ? "Ocultar senha" : "Mostrar senha"}
+            className="ff-focus absolute right-2 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-full text-foreground-muted transition hover:bg-surface hover:text-primary"
+          >
+            {passwordVisible ? (
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3l18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.6 10.6 0 0 1 12 4c5.5 0 9 5.2 9 5.2a14.8 14.8 0 0 1-2.3 2.8M6.2 6.2C4.2 7.6 3 9.2 3 9.2s3.5 5.2 9 5.2c.7 0 1.4-.1 2-.3" /></svg>
+            ) : (
+              <svg aria-hidden="true" viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12s3.5-5.2 9-5.2 9 5.2 9 5.2-3.5 5.2-9 5.2S3 12 3 12z" /><circle cx="12" cy="12" r="2.2" /></svg>
+            )}
+          </button>
+        </span>
       </label>
       <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-foreground-muted">
         Para confirmar, digite EXCLUIR
@@ -354,9 +379,12 @@ export function DeleteAccountForm() {
           confirmLabel="Excluir conta definitivamente"
           pending={pending}
           onClose={() => setConfirmDelete(false)}
-        />
+          onConfirm={() => formRef.current?.requestSubmit()}
+        >
+          <Feedback state={state} />
+        </ConfirmationDialog>
       )}
-      <Feedback state={state} />
+      {!confirmDelete && <Feedback state={state} />}
     </form>
   );
 }
