@@ -4,12 +4,13 @@ import { useState, useTransition } from "react";
 import CurrencyInput from "@/components/ui/currency-input";
 import { formatarReais } from "@/lib/format";
 import type { Conta } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import { pagarFatura } from "./actions";
 import styles from "./cartoes.module.css";
 
 function RequestId() {
-  const [id] = useState(() => crypto.randomUUID());
-  return <input type="hidden" name="request_id" value={id} />;
+  const [id] = useRequestId();
+  return <input type="hidden" name="request_id" value={id} readOnly />;
 }
 
 function inputClass() {

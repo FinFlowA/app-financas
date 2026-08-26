@@ -5,6 +5,7 @@ import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import CurrencyInput from "@/components/ui/currency-input";
 import { formatarReais } from "@/lib/format";
 import type { Conta } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import {
   alterarCompartilhamentoConta,
   alterarEstadoConta,
@@ -17,18 +18,17 @@ const COLORS = ["#16966E", "#4D76E8", "#F28A55", "#805AD5", "#EE6B63", "#56D39B"
 const INITIAL: ContaActionState = { erro: null };
 
 function RequestId({ state }: { state: ContaActionState }) {
-  const [id] = useState(() => crypto.randomUUID());
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [id, renewId] = useRequestId();
   const previousState = useRef(state);
 
   useEffect(() => {
-    if (state !== previousState.current && state.sucesso && inputRef.current) {
-      inputRef.current.value = crypto.randomUUID();
+    if (state !== previousState.current && state.sucesso) {
+      renewId();
     }
     previousState.current = state;
-  }, [state]);
+  }, [renewId, state]);
 
-  return <input ref={inputRef} type="hidden" name="request_id" defaultValue={id} />;
+  return <input type="hidden" name="request_id" value={id} readOnly />;
 }
 
 function Message({ state }: { state: ContaActionState }) {

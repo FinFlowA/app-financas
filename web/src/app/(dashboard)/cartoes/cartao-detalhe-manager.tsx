@@ -7,6 +7,7 @@ import { useState, useTransition } from "react";
 import { invoicePresentationStatus } from "@/lib/invoice-status";
 import { formatarData, formatarReais } from "@/lib/format";
 import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import { editarCompra, estornarPagamentoFatura, excluirCompra } from "./actions";
 import { adicionarMeses, dataVencimento, formatarMesAno, faturaEstaFechada } from "./card-utils";
 import NovaCompraForm from "./nova-compra-form";
@@ -22,8 +23,8 @@ export type PagamentoDaFatura = {
 };
 
 function RequestId({ name = "request_id" }: { name?: string }) {
-  const [id] = useState(() => crypto.randomUUID());
-  return <input type="hidden" name={name} value={id} />;
+  const [id] = useRequestId();
+  return <input type="hidden" name={name} value={id} readOnly />;
 }
 
 function inputClass() {

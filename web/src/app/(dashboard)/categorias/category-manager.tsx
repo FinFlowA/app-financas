@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import FinancialIcon from "@/components/ui/financial-icon";
 import type { Categoria } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import {
   alterarEstadoCategoria,
   criarCategoria,
@@ -27,18 +28,17 @@ const ICON_LABELS: Record<string, string> = {
 };
 
 function RequestId({ state }: { state: CategoriaActionState }) {
-  const [id] = useState(() => crypto.randomUUID());
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [id, renewId] = useRequestId();
   const previousState = useRef(state);
 
   useEffect(() => {
-    if (state !== previousState.current && state.sucesso && inputRef.current) {
-      inputRef.current.value = crypto.randomUUID();
+    if (state !== previousState.current && state.sucesso) {
+      renewId();
     }
     previousState.current = state;
-  }, [state]);
+  }, [renewId, state]);
 
-  return <input ref={inputRef} type="hidden" name="request_id" defaultValue={id} />;
+  return <input type="hidden" name="request_id" value={id} readOnly />;
 }
 
 function Message({ state }: { state: CategoriaActionState }) {

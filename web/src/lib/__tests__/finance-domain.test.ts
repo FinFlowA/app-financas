@@ -348,7 +348,7 @@ describe("executor financeiro manual", () => {
 
   it("reutiliza a chave da criação manual quando a resposta da rede se perde", () => {
     const manager = readFileSync(resolve(process.cwd(), "src/app/(dashboard)/transacoes/transaction-manager.tsx"), "utf8");
-    expect(manager).toContain("const [requestId] = useState(() => crypto.randomUUID())");
+    expect(manager).toContain("const [requestId] = useRequestId()");
     expect(manager).toContain('formData.set("request_id", requestId)');
   });
 });

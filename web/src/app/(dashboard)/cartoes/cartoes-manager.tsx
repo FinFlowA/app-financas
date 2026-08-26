@@ -6,6 +6,7 @@ import { useState, useTransition } from "react";
 import CurrencyInput from "@/components/ui/currency-input";
 import { formatarReais } from "@/lib/format";
 import type { Cartao } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import {
   alterarEstadoCartao,
   CORES_CARTAO,
@@ -24,8 +25,8 @@ export type CartaoResumo = Cartao & {
 type Acao = (formData: FormData) => Promise<{ erro: string | null }>;
 
 function RequestId() {
-  const [id] = useState(() => crypto.randomUUID());
-  return <input type="hidden" name="request_id" value={id} />;
+  const [id] = useRequestId();
+  return <input type="hidden" name="request_id" value={id} readOnly />;
 }
 
 function inputClass() {

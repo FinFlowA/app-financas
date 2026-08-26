@@ -7,6 +7,7 @@ import FinancialIcon from "@/components/ui/financial-icon";
 import { hojeEmSaoPaulo } from "@/lib/date";
 import { formatarData, formatarReais } from "@/lib/format";
 import type { Caixinha, Conta } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import {
   alterarCompartilhamentoObjetivo,
   alterarEstadoObjetivo,
@@ -134,8 +135,8 @@ function ObjectiveActionModal({
 }
 
 function RequestId({ name = "request_id" }: { name?: string }) {
-  const [id] = useState(() => crypto.randomUUID());
-  return <input type="hidden" name={name} value={id} />;
+  const [id] = useRequestId();
+  return <input type="hidden" name={name} value={id} readOnly />;
 }
 
 function Field({ titulo, children }: { titulo: string; children: React.ReactNode }) {

@@ -12,6 +12,7 @@ import { historyFinancialTotals } from "@/lib/history-totals";
 import { filterInvoiceGroupItems, groupInvoiceItems, type InvoiceHistoryGroup } from "@/lib/invoices";
 import { descricaoVisivel, isPagamentoFatura } from "@/lib/transacoes";
 import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
+import { useRequestId } from "@/lib/use-request-id";
 import {
   completeTransaction,
   createTransaction,
@@ -185,7 +186,7 @@ function NewTransactionDialog({ accounts, categories, today, initialKind, onClos
   // tentativa chegou ao banco, reenviar o formulário reproduz o recibo em vez
   // de criar um segundo lançamento. O modal desmonta após o sucesso e, então,
   // uma nova abertura recebe naturalmente outra chave.
-  const [requestId] = useState(() => crypto.randomUUID());
+  const [requestId] = useRequestId();
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<TransactionActionState | null>(null);
   const activeAccounts = accounts.filter((account) => !account.arquivado);
