@@ -11,24 +11,9 @@ import {
 } from "@/lib/finance-action";
 import { hojeEmSaoPaulo } from "@/lib/date";
 import { moneyIsPositive, parseMoney } from "@/lib/money";
+import { CORES_OBJETIVO, ICONES_OBJETIVO } from "./goal-options";
 
-export const CORES_OBJETIVO = [
-  "#16966E", "#4D76E8", "#F28A55", "#805AD5", "#EE6B63", "#56D39B",
-] as const;
-
-// Mesma lista exibida pelo aplicativo mobile. Os emojis antigos continuam
-// aceitos na validação para preservar objetivos já cadastrados.
-export const ICONES_OBJETIVO = [
-  "savings", "flight", "home", "directions-car", "school",
-  "fitness-center", "local-hospital", "shopping-cart", "pets",
-  "beach-access", "sports-esports", "music-note", "restaurant",
-  "local-movies", "card-giftcard", "smartphone", "laptop-mac",
-  "favorite", "work", "celebration", "coffee", "local-gas-station",
-  "child-care", "spa", "book", "camera-alt", "palette", "two-wheeler",
-  "electrical-services", "water-drop", "wifi", "checkroom", "bakery-dining",
-  "medical-services", "payments", "trending-up", "volunteer-activism",
-] as const;
-
+// Os emojis antigos continuam aceitos para preservar objetivos já cadastrados.
 const ICONES_OBJETIVO_LEGADOS = ["🎯", "✈️", "🏠", "🚗", "🎓", "💻", "🏖️", "💍"] as const;
 
 export type ResultadoObjetivo = ActionResponse;

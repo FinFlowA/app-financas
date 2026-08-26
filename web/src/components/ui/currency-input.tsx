@@ -46,7 +46,8 @@ export default function CurrencyInput({
           setValue(digits ? formatCents(digits) : "");
         }}
         onFocus={(event) => {
-          requestAnimationFrame(() => event.currentTarget.setSelectionRange(event.currentTarget.value.length, event.currentTarget.value.length));
+          const input = event.currentTarget;
+          requestAnimationFrame(() => input.setSelectionRange(input.value.length, input.value.length));
         }}
         placeholder="0,00"
         aria-label={ariaLabel}

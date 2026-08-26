@@ -9,10 +9,10 @@ import type { Cartao } from "@/lib/types";
 import { useRequestId } from "@/lib/use-request-id";
 import {
   alterarEstadoCartao,
-  CORES_CARTAO,
   criarCartao,
   editarCartao,
 } from "./actions";
+import { CORES_CARTAO } from "./card-options";
 import styles from "./cartoes.module.css";
 
 export type CartaoResumo = Cartao & {

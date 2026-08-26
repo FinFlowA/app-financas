@@ -11,12 +11,11 @@ import { useRequestId } from "@/lib/use-request-id";
 import {
   alterarCompartilhamentoObjetivo,
   alterarEstadoObjetivo,
-  CORES_OBJETIVO,
   criarObjetivo,
   editarObjetivo,
-  ICONES_OBJETIVO,
   movimentarObjetivo,
 } from "./actions";
+import { CORES_OBJETIVO, ICONES_OBJETIVO } from "./goal-options";
 
 type Movimento = {
   id: number;
@@ -261,7 +260,7 @@ function FormularioObjetivo({
               aria-label={`Usar ícone ${item}`}
               aria-pressed={icone === item}
               onClick={() => setIcone(item)}
-              className={`ff-focus h-11 w-11 rounded-xl border text-lg transition duration-200 hover:-translate-y-0.5 ${
+              className={`ff-focus inline-flex h-11 w-11 items-center justify-center rounded-xl border p-0 text-lg leading-none transition duration-200 hover:-translate-y-0.5 ${
                 icone === item ? "border-primary bg-primary-soft shadow-sm" : "border-border bg-surface-muted"
               }`}
             >
