@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { createPortal } from "react-dom";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import CurrencyInput from "@/components/ui/currency-input";
 import { formatarReais } from "@/lib/format";
@@ -14,8 +15,17 @@ import {
   type ContaActionState,
 } from "./actions";
 
-const COLORS = ["#16966E", "#4D76E8", "#F28A55", "#805AD5", "#EE6B63", "#56D39B", "#457B9D", "#6C7D77"];
+const COLORS = [
+  "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51",
+  "#264653", "#8AB17D", "#8A05BE", "#EC7000",
+  "#457B9D", "#CC092F", "#005CA9", "#1D3557",
+  "#E63946", "#6D597A", "#B56576", "#3A86FF",
+  "#8338EC", "#FF006E", "#3A5A40", "#D97706",
+];
 const INITIAL: ContaActionState = { erro: null };
+const subscribeToNothing = () => () => undefined;
+const getClientSnapshot = () => true;
+const getServerSnapshot = () => false;
 
 function RequestId({ state }: { state: ContaActionState }) {
   const [id, renewId] = useRequestId();
@@ -65,6 +75,7 @@ function NewAccount({ partnerName }: { partnerName: string | null }) {
 }
 
 function AccountCard({ account, balance, own, partnerName }: { account: Conta; balance: number; own: boolean; partnerName: string | null }) {
+  const canUseDOM = useSyncExternalStore(subscribeToNothing, getClientSnapshot, getServerSnapshot);
   const [color, setColor] = useState(account.cor || COLORS[0]);
   const [editOpen, setEditOpen] = useState(false);
   const [editState, editAction, editing] = useActionState(editarConta, INITIAL);
@@ -72,7 +83,7 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
   const [sharingState, sharingAction, sharing] = useActionState(alterarCompartilhamentoConta, INITIAL);
   const [deleteBaseline, setDeleteBaseline] = useState<ContaActionState | null>(null);
   const confirmDelete = deleteBaseline !== null && !(state !== deleteBaseline && state.sucesso);
-  return <article className="ff-card group relative overflow-hidden border-white/5 shadow-[0_16px_44px_rgba(0,0,0,0.1)] transition duration-300 hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_22px_56px_rgba(0,0,0,0.16)]">
+  return <article className={`ff-card group relative overflow-hidden border-white/5 shadow-[0_16px_44px_rgba(0,0,0,0.1)] transition duration-300 ${editOpen ? "" : "hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_22px_56px_rgba(0,0,0,0.16)]"}`}>
     <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: account.cor || COLORS[0] }} />
     <div aria-hidden="true" className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.14]" style={{ backgroundColor: account.cor || COLORS[0] }} />
     <div className="relative p-5 pl-6">
@@ -92,7 +103,7 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
         <Message state={sharingState} />
       </form>}
       {own && <button type="button" onClick={() => setEditOpen(true)} className="ff-focus mt-4 flex w-full items-center justify-between border-t border-border/70 pt-4 font-bold text-primary"><span>Editar conta</span><span aria-hidden="true">↗</span></button>}
-      {own && editOpen && <div className="fixed inset-0 z-[90] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => !editing && setEditOpen(false)}>
+      {own && editOpen && canUseDOM && createPortal(<div className="fixed inset-0 z-[90] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => !editing && setEditOpen(false)}>
         <section role="dialog" aria-modal="true" aria-label={`Editar conta ${account.nome}`} onMouseDown={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
           <div className="mb-5 flex items-center justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Conta financeira</p><h2 className="mt-1 text-xl font-black text-foreground">Editar {account.nome}</h2></div><button type="button" onClick={() => setEditOpen(false)} disabled={editing} aria-label="Fechar edição" className="ff-focus grid h-10 w-10 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
           <form action={editAction} className="grid gap-4">
@@ -103,7 +114,7 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
             <div className="flex flex-wrap gap-2"><button disabled={editing} className="ff-focus rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-50">{editing ? "Salvando..." : "Salvar alterações"}</button><button type="button" onClick={() => setEditOpen(false)} className="ff-focus rounded-full border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Cancelar</button></div><Message state={editState} />
           </form>
         </section>
-      </div>}
+      </div>, document.body)}
       {own && <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="account_id" value={account.id} />
         {account.arquivado ? <button name="operation" value="reactivate_account" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button> : <button name="operation" value="archive_account" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button>}
         <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>

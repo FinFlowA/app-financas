@@ -607,6 +607,7 @@
 .flowCategoryLegend i { width: .5rem; height: .5rem; border-radius: 50%; }
 .incomeDot { background: var(--ff-primary); }
 .expenseDot { background: var(--ff-red); }
+.transferDot { background: var(--ff-orange); }
 .flowCategoryRow { display: grid; grid-template-columns: minmax(6.5rem, .7fr) minmax(10rem, 1.7fr) minmax(8rem, auto); align-items: center; gap: .75rem; width: 100%; border: 0; border-radius: .65rem; background: transparent; padding: .35rem .45rem; color: var(--foreground); cursor: pointer; text-align: left; transition: background .16s ease; }
 .flowCategoryRow:hover { background: var(--surface-muted); }
 .flowCategoryRow > span:first-child { overflow: hidden; font-size: .7rem; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
@@ -614,11 +615,12 @@
 .flowBars i { display: block; min-width: 2px; height: .36rem; border-radius: 99px; }
 .incomeBar { background: var(--ff-primary); }
 .expenseBar { background: var(--ff-red); }
+.transferBar { background: var(--ff-orange); }
 .flowCategoryRow > strong { display: grid; gap: .08rem; text-align: right; }
 .flowCategoryRow > strong b { color: var(--ff-primary-dark); font-size: .62rem; }
 .flowCategoryRow > strong em { color: var(--ff-red); font-size: .62rem; font-style: normal; }
 .verticalChart { display: grid; min-height: 15rem; grid-template-columns: repeat(auto-fit, minmax(5.4rem, 1fr)); align-items: stretch; gap: .65rem; border-bottom: 1px solid var(--home-line); padding: .5rem .25rem 0; }
-.verticalGroup { display: grid; min-width: 0; grid-template-rows: 10.5rem auto 2.2rem; gap: .45rem; align-items: end; border: 0; border-radius: .65rem .65rem 0 0; background: transparent; padding: .35rem; color: var(--foreground); cursor: pointer; transition: background .16s ease; }
+.verticalGroup { display: grid; min-width: 0; grid-template-rows: 10.5rem auto 3rem; gap: .45rem; align-items: end; border: 0; border-radius: .65rem .65rem 0 0; background: transparent; padding: .35rem; color: var(--foreground); cursor: pointer; transition: background .16s ease; }
 .verticalGroup:hover { background: var(--surface-muted); }
 .verticalBars { display: flex; height: 100%; align-items: flex-end; justify-content: center; gap: .28rem; }
 .verticalBars i { display: block; width: min(1.2rem, 38%); border-radius: .35rem .35rem .08rem .08rem; transition: height .25s ease, filter .16s ease; }
@@ -627,6 +629,7 @@
 .verticalGroup > strong { display: grid; align-self: start; gap: .08rem; text-align: center; }
 .verticalGroup > strong b { min-height: .75rem; color: var(--ff-primary-dark); font-size: .55rem; }
 .verticalGroup > strong em { min-height: .75rem; color: var(--ff-red); font-size: .55rem; font-style: normal; }
+.verticalGroup > strong small { min-height: .75rem; color: var(--ff-orange); font-size: .55rem; }
 .categoryRow { display: grid; grid-template-columns: minmax(5rem, .9fr) minmax(4rem, 1.45fr) auto 2rem; align-items: center; gap: .65rem; min-width: 0; font-size: .68rem; }
 .categoryName { display: flex; min-width: 0; align-items: center; gap: .48rem; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .categoryName i { width: .55rem; height: .55rem; flex: none; border-radius: 999px; }
