@@ -28,7 +28,19 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .range(from, to)),
   ]);
   if (!authData.user) redirect("/login");
-  if (accountsResult.error || transactionsResult.error || categoriesResult.error || invoiceItemsResult.error) throw new Error("Não foi possível carregar seu painel agora.");
+  const queryErrors = [
+    ["accounts", accountsResult.error],
+    ["transactions", transactionsResult.error],
+    ["categories", categoriesResult.error],
+    ["invoice_items", invoiceItemsResult.error],
+  ] as const;
+  const failedQueries = queryErrors
+    .filter((entry) => entry[1])
+    .map(([query, error]) => ({ query, code: error?.code ?? "unknown" }));
+  if (failedQueries.length > 0) {
+    console.error("[dashboard-load] Supabase query failed", failedQueries);
+    throw new Error("Não foi possível carregar seu painel agora.");
+  }
   const metadata = authData.user.user_metadata as Record<string, unknown>;
   const displayName = typeof metadata.nome_usuario === "string" && metadata.nome_usuario.trim()
     ? metadata.nome_usuario.trim()

@@ -62,7 +62,13 @@ export async function executeManualFinancialAction<T = unknown>(
     p_client_created_at: new Date().toISOString(),
   });
 
-  if (error) return { erro: traduzirErro(error.message) };
+  if (error) {
+    console.error("[manual-financial-action] Supabase RPC failed", {
+      actionType,
+      code: error.code ?? "unknown",
+    });
+    return { erro: traduzirErro(error.message) };
+  }
   const code = backendCode(data);
   if (code) return { erro: traduzirErro(code) };
   if (!isSuccessfulEnvelope(data)) return invalidBackendResponse();
