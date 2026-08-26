@@ -250,8 +250,8 @@ Opções verificadas nos documentos oficiais:
 
 | Provedor | Compatibilidade | Observação do plano gratuito |
 |---|---|---|
-| [Netlify](https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/) | App Router, SSR, Server Actions e Middleware com OpenNext | Melhor ponto de partida para o MVP; o Free usa uma franquia mensal de créditos |
-| [Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs) | Runtime nativo do Next.js | Hobby é destinado a projetos pessoais e não comerciais |
+| [Vercel](https://vercel.com/docs/frameworks/full-stack/nextjs) | Runtime nativo do Next.js e plataforma usada em produção | Hobby é destinado a projetos pessoais e não comerciais |
+| [Netlify](https://docs.netlify.com/build/frameworks/framework-setup-guides/nextjs/overview/) | App Router, SSR, Server Actions e Middleware com OpenNext | Alternativa compatível, mas exige a camada de adaptação do OpenNext |
 | [Cloudflare Workers](https://developers.cloudflare.com/workers/framework-guides/web-apps/nextjs/) | Next.js completo por OpenNext | Exige adaptação e teste cuidadoso do limite de CPU do Free |
 | [Render](https://render.com/docs/web-services) | Web Service Node.js | O serviço Free hiberna quando fica ocioso e não é recomendado pelo provedor para produção |
 
