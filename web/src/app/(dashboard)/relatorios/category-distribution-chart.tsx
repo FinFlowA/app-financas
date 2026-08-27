@@ -81,7 +81,7 @@ export default function CategoryDistributionChart({
         <section className={styles.categoryDetailDialog} role="dialog" aria-modal="true" aria-labelledby="category-detail-title" onMouseDown={(event) => event.stopPropagation()}>
           <div className={styles.categoryDetailHeader}><div><p>Detalhamento do mês</p><h3 id="category-detail-title"><span style={{ background: selected.color }} />{selected.name}</h3></div><button type="button" onClick={() => setSelected(null)} aria-label="Fechar">×</button></div>
           <div className={styles.categoryDetailSummary}><span>{selected.details.length} {selected.details.length === 1 ? "lançamento" : "lançamentos"}</span><strong data-private-value="true">{formatarReais(selected.value)}</strong></div>
-          <div className={styles.categoryDetailList}>{selected.details.map((detail) => <div key={detail.id} className={styles.categoryDetailItem}><span><strong>{detail.description}</strong><small>{new Intl.DateTimeFormat("pt-BR").format(new Date(`${detail.date}T12:00:00-03:00`))}</small></span><strong data-private-value="true">{formatarReais(detail.value)}</strong></div>)}</div>
+          <div className={styles.categoryDetailList}>{[...selected.details].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).map((detail) => <div key={detail.id} className={styles.categoryDetailItem}><span><strong>{detail.description}</strong><small>{new Intl.DateTimeFormat("pt-BR").format(new Date(`${detail.date}T12:00:00-03:00`))}</small></span><strong data-private-value="true" className={kind === "receitas" ? styles.positiveDetailValue : styles.negativeDetailValue}>{kind === "receitas" ? "+" : "−"}{formatarReais(detail.value)}</strong></div>)}</div>
         </section>
       </div>}
     </div>

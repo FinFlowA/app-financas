@@ -513,7 +513,9 @@
 .categoryDetailItem span { min-width: 0; }
 .categoryDetailItem span strong { display: block; overflow: hidden; color: var(--foreground); font-size: .8rem; text-overflow: ellipsis; white-space: nowrap; }
 .categoryDetailItem small { display: block; margin-top: 2px; color: var(--foreground-muted); font-size: .68rem; }
-.categoryDetailItem > strong { flex: none; color: var(--ff-red); font-size: .8rem; }
+.categoryDetailItem > strong { flex: none; font-size: .8rem; }
+.positiveDetailValue { color: var(--ff-primary-dark); }
+.negativeDetailValue { color: var(--ff-red); }
 
 .distributionPanel,
 .rankingPanel {

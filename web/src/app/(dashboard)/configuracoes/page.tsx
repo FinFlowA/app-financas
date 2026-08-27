@@ -89,6 +89,9 @@ export default async function SettingsPage() {
   const phone = user.phone
     || (typeof metadata.telefone === "string" ? metadata.telefone : null);
   const birthDate = typeof metadata.data_nascimento === "string" ? metadata.data_nascimento : null;
+  // A RPC existe nas bases atualizadas e remove definitivamente apenas os
+  // avisos transitórios já expirados deste usuário.
+  await supabase.rpc("limpar_minhas_notificacoes_sistema_expiradas");
 
   const [
     partnershipResult,
@@ -218,7 +221,7 @@ export default async function SettingsPage() {
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
             <h2 className="text-lg font-extrabold text-foreground">Central de avisos</h2>
-            <p className="mt-1 text-sm text-foreground-muted">Eventos obrigatórios de parceria ficam persistidos e podem ser consultados aqui.</p>
+            <p className="mt-1 text-sm text-foreground-muted">Eventos recentes da parceria ficam disponíveis aqui por até cinco dias.</p>
           </div>
           <span className="rounded-full bg-primary-soft px-3 py-1.5 text-xs font-bold text-primary-dark">{notifications.filter((item) => !item.lida_em).length} não lidos</span>
         </div>
