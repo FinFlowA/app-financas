@@ -5,6 +5,8 @@
   --home-chart-empty: color-mix(in srgb, var(--surface-muted) 85%, var(--foreground-muted) 15%);
   --home-shadow: 0 18px 48px color-mix(in srgb, #03110d 12%, transparent);
   position: relative;
+  container-name: home-dashboard;
+  container-type: inline-size;
   max-width: 1380px;
   margin: 0 auto;
   color: var(--foreground);
@@ -717,10 +719,30 @@
   .upcomingPanel { grid-row: span 2; }
 }
 
+/*
+ * A largura da janela inclui a barra lateral do dashboard. Em notebooks e em
+ * sistemas com escala de 125%/150%, a janela pode continuar acima de 1120px,
+ * enquanto a área realmente disponível para esta página já é bem menor.
+ * A consulta pelo contêiner impede que as duas colunas se comprimam ou se
+ * sobreponham nessa faixa intermediária.
+ */
+@container home-dashboard (max-width: 1120px) {
+  .hero { grid-template-columns: 1fr; gap: 1.3rem; }
+  .heroActions { justify-self: stretch; }
+  .dashboardGrid { grid-template-columns: 1fr; }
+  .secondaryColumn { grid-template-columns: minmax(0, 1.5fr) minmax(15rem, .8fr); }
+  .upcomingPanel { grid-row: span 2; }
+}
+
 @media (max-width: 820px) {
   .hero { grid-template-columns: 1fr; gap: 1.3rem; padding: 1.5rem; }
   .heroActions { justify-self: stretch; }
   .selectorPanel { top: calc(100% + .6rem); }
+  .secondaryColumn { grid-template-columns: 1fr; }
+  .upcomingPanel { grid-row: auto; }
+}
+
+@container home-dashboard (max-width: 820px) {
   .secondaryColumn { grid-template-columns: 1fr; }
   .upcomingPanel { grid-row: auto; }
 }
