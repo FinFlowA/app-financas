@@ -51,6 +51,15 @@ export async function GET(request: NextRequest) {
       await supabase.auth.signOut({ scope: "local" });
       return errorRedirect(origin, flow);
     }
+
+    // Primeiro acesso via Google: nunca passou pelo cadastro por senha, que é
+    // quem normalmente liga essa flag. Sem isso, quem entra pelo Google nunca
+    // veria o tutorial guiado.
+    if (userData.user.user_metadata?.tutorial_pendente === undefined) {
+      await supabase.auth.updateUser({
+        data: { ...userData.user.user_metadata, tutorial_pendente: true },
+      });
+    }
   }
 
   if (flow === "recovery") {

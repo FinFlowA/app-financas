@@ -298,6 +298,15 @@ export default function LoginScreen() {
         return;
       }
 
+      // Primeiro acesso via Google: nunca passou pelo cadastro por senha, que é
+      // quem normalmente liga essa flag. Sem isso, quem entra pelo Google nunca
+      // veria o tutorial guiado.
+      if (usuario.user_metadata?.tutorial_pendente === undefined) {
+        await supabase.auth.updateUser({
+          data: { ...usuario.user_metadata, tutorial_pendente: true },
+        });
+      }
+
       await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
       setEmailPendenteConfirmacao("");
       router.replace("/(tabs)");
@@ -556,9 +565,6 @@ export default function LoginScreen() {
                 </View>
                 <Text style={styles.brandTitle}>FinFlow</Text>
                 <Text style={styles.brandEyebrow}>SEU PAINEL FINANCEIRO</Text>
-                <Text style={[styles.brandDescription, isWide && styles.brandDescriptionWide]}>
-                  Clareza para cuidar do presente e tranquilidade para planejar o futuro.
-                </Text>
 
                 {isWide && (
                   <View style={styles.brandBenefits}>
@@ -622,6 +628,33 @@ export default function LoginScreen() {
                       <Text style={[styles.modeTabText, { color: !isLogin ? theme.primary : theme.textMuted }]}>Criar conta</Text>
                     </TouchableOpacity>
                   </View>
+                )}
+
+                {isLogin && !isRecuperandoSenha && (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.googleButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
+                      onPress={signInWithGoogle}
+                      disabled={oauthLoading || loading}
+                      activeOpacity={0.82}
+                      accessibilityRole="button"
+                      accessibilityLabel="Continuar com Google"
+                    >
+                      {oauthLoading ? (
+                        <ActivityIndicator color={theme.primary} />
+                      ) : (
+                        <>
+                          <View style={styles.googleIcon}><Text style={styles.googleIconText}>G</Text></View>
+                          <Text style={[styles.googleButtonText, { color: theme.text }]}>Continuar com Google</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                    <View style={styles.oauthDividerRow}>
+                      <View style={[styles.oauthDividerLine, { backgroundColor: theme.border }]} />
+                      <Text style={[styles.oauthDividerText, { color: theme.textMuted }]}>OU CONTINUE COM E-MAIL</Text>
+                      <View style={[styles.oauthDividerLine, { backgroundColor: theme.border }]} />
+                    </View>
+                  </>
                 )}
 
                 {isLogin && !isRecuperandoSenha && emailPendenteConfirmacao !== "" && (
@@ -903,33 +936,6 @@ export default function LoginScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                {isLogin && !isRecuperandoSenha && (
-                  <>
-                    <View style={styles.oauthDividerRow}>
-                      <View style={[styles.oauthDividerLine, { backgroundColor: theme.border }]} />
-                      <Text style={[styles.oauthDividerText, { color: theme.textMuted }]}>OU CONTINUE COM</Text>
-                      <View style={[styles.oauthDividerLine, { backgroundColor: theme.border }]} />
-                    </View>
-                    <TouchableOpacity
-                      style={[styles.googleButton, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
-                      onPress={signInWithGoogle}
-                      disabled={oauthLoading || loading}
-                      activeOpacity={0.82}
-                      accessibilityRole="button"
-                      accessibilityLabel="Continuar com Google"
-                    >
-                      {oauthLoading ? (
-                        <ActivityIndicator color={theme.primary} />
-                      ) : (
-                        <>
-                          <View style={styles.googleIcon}><Text style={styles.googleIconText}>G</Text></View>
-                          <Text style={[styles.googleButtonText, { color: theme.text }]}>Continuar com Google</Text>
-                        </>
-                      )}
-                    </TouchableOpacity>
-                  </>
-                )}
-
                 {(isLogin || isRecuperandoSenha) && (
                   <>
                     <View style={[styles.legalDivider, { backgroundColor: theme.border }]} />
@@ -1115,8 +1121,8 @@ const styles = StyleSheet.create({
   formInner: { width: "100%", maxWidth: 520, alignSelf: "center" },
   formHeaderRow: { flexDirection: "row", alignItems: "flex-start", gap: 14, marginBottom: 20 },
   formHeadingCopy: { flex: 1 },
-  formTitle: { fontSize: 27, lineHeight: 33, fontWeight: "900", letterSpacing: -0.6 },
-  formSubtitle: { fontSize: 13, lineHeight: 19, marginTop: 6 },
+  formTitle: { fontSize: 27, lineHeight: 33, fontWeight: "900", letterSpacing: -0.6, textAlign: "center" },
+  formSubtitle: { fontSize: 13, lineHeight: 19, marginTop: 6, textAlign: "center" },
   backButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   modeTabs: { flexDirection: "row", padding: 4, borderRadius: 16, borderWidth: 1, marginBottom: 22 },
   modeTab: { flex: 1, minHeight: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
