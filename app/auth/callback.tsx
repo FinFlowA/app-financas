@@ -25,34 +25,39 @@ export default function AuthCallbackScreen() {
     let ativo = true;
 
     (async () => {
-      const codigo = typeof params.code === "string" ? params.code : null;
-      if (params.error || !codigo) {
-        if (ativo) setStatus("erro");
-        return;
-      }
-
-      const troca = await supabase.auth.exchangeCodeForSession(codigo);
-      if (troca.error) {
-        const sessaoExistente = await supabase.auth.getSession();
-        if (!sessaoExistente.data.session) {
+      try {
+        const codigo = typeof params.code === "string" ? params.code : null;
+        if (params.error || !codigo) {
           if (ativo) setStatus("erro");
           return;
         }
-      }
 
-      const resultado = await finalizarLoginOAuth(supabase);
-      if (!ativo) return;
-      if (resultado.status === "idade_invalida") {
-        setStatus("idade_invalida");
-        return;
-      }
-      if (resultado.status === "erro") {
-        setStatus("erro");
-        return;
-      }
+        const troca = await supabase.auth.exchangeCodeForSession(codigo);
+        if (troca.error) {
+          const sessaoExistente = await supabase.auth.getSession();
+          if (!sessaoExistente.data.session) {
+            if (ativo) setStatus("erro");
+            return;
+          }
+        }
 
-      await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
-      router.replace("/(tabs)");
+        const resultado = await finalizarLoginOAuth(supabase);
+        if (!ativo) return;
+        if (resultado.status === "idade_invalida") {
+          setStatus("idade_invalida");
+          return;
+        }
+        if (resultado.status === "erro") {
+          setStatus("erro");
+          return;
+        }
+
+        await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
+        router.replace("/(tabs)");
+      } catch (error) {
+        if (__DEV__) console.error("Falha ao concluir login com Google (fallback)", error);
+        if (ativo) setStatus("erro");
+      }
     })();
 
     return () => {

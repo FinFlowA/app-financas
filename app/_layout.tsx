@@ -1345,6 +1345,7 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" />
               <Stack.Screen name="reset-password" />
               <Stack.Screen name="email-confirmed" />
+              <Stack.Screen name="auth/callback" />
               <Stack.Screen name="seguranca" />
               <Stack.Screen name="planos" />
             </Stack>
