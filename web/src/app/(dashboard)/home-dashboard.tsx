@@ -3,6 +3,7 @@
 import type { CSSProperties } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import FinancialIcon from "@/components/ui/financial-icon";
 import DisplayControls from "@/components/layout/display-controls";
@@ -261,6 +262,21 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     setOverdueOpen(true);
   }, [overdueSignature, userId]);
 
+  useEffect(() => {
+    if (!overdueOpen) return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.body.style.overscrollBehavior = "none";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [overdueOpen]);
+
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const flowCategoryRows = useMemo(() => {
     const rows = new Map<string, { name: string; income: number; expense: number; transfer: number; details: { id: string; description: string; value: number; date: string; type: "receita" | "despesa" | "transferencia" }[] }>();
@@ -322,17 +338,17 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   }
 
   return <div className={`${styles.root} ${monthPending ? styles.monthPending : ""}`} aria-busy={monthPending}>
-    {overdueOpen && <div className="fixed inset-0 z-[95] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={closeOverduePopup}>
-      <section role="dialog" aria-modal="true" aria-labelledby="overdue-title" onMouseDown={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-[25px] border border-red/25 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
+    {overdueOpen && createPortal(<div className="fixed inset-0 z-[9999] grid h-[100dvh] w-screen place-items-center overflow-hidden bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={closeOverduePopup}>
+      <section role="dialog" aria-modal="true" aria-labelledby="overdue-title" onMouseDown={(event) => event.stopPropagation()} className="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[25px] border border-red/25 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
         <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.15em] text-red">Atenção financeira</p><h2 id="overdue-title" className="mt-1 text-xl font-black text-foreground">Transações atrasadas</h2><p className="mt-1 text-sm text-foreground-muted">Confira os lançamentos que já passaram da data de vencimento.</p></div><button type="button" onClick={closeOverduePopup} aria-label="Fechar" className="ff-focus grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
-        <div className="mt-5 space-y-2">{overdueTransactions.map((transaction) => { const category = transaction.categoria_id ? categoriesById.get(transaction.categoria_id) : undefined; return <Link href={`/transacoes?quick=overdue&focus=${transaction.id}`} onClick={closeOverduePopup} key={transaction.id} className="ff-focus grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-xl border border-border bg-surface-muted p-3 transition hover:border-red/35">
+        <div className="mt-5 min-h-0 space-y-2 overflow-y-auto overscroll-contain pr-1">{overdueTransactions.map((transaction) => { const category = transaction.categoria_id ? categoriesById.get(transaction.categoria_id) : undefined; return <Link href={`/transacoes?quick=overdue&focus=${transaction.id}`} onClick={closeOverduePopup} key={transaction.id} className="ff-focus grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-xl border border-border bg-surface-muted p-3 transition hover:border-red/35">
           <span className="grid h-10 w-10 place-items-center rounded-lg bg-red/10 text-red"><Icon name={transaction.tipo === "receita" ? "income" : "receipt"} size={19}/></span>
           <span className="min-w-0"><strong className="block truncate text-sm text-foreground">{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small className="text-xs text-foreground-muted">Venceu em {new Intl.DateTimeFormat("pt-BR").format(new Date(`${transaction.data_vencimento}T12:00:00-03:00`))} · {category?.nome ?? "Sem categoria"}</small></span>
           <strong data-private-value="true" className={transaction.tipo === "receita" ? "text-sm text-primary" : "text-sm text-red"}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>
         </Link>; })}</div>
         <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={closeOverduePopup} className="ff-focus rounded-full border border-border px-4 py-2.5 text-sm font-bold text-foreground-muted">Ver depois</button><Link href="/transacoes?quick=overdue" onClick={closeOverduePopup} className="ff-focus rounded-full bg-red px-5 py-2.5 text-sm font-extrabold text-white">Revisar atrasos</Link></div>
       </section>
-    </div>}
+    </div>, document.body)}
     <header className={styles.pageHeader}>
       <div>
         <p className={styles.eyebrow}>Seu painel financeiro</p>
