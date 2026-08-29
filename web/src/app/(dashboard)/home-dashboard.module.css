@@ -612,12 +612,16 @@
 .donut strong { max-width: 4.5rem; margin-top: .18rem; overflow: hidden; font-size: .72rem; font-weight: 850; text-overflow: ellipsis; white-space: nowrap; }
 .categoryRows { display: grid; gap: .65rem; }
 .flowCategoryChart { display: grid; gap: .62rem; margin-top: .9rem; }
+.flowCategoryToolbar { display: flex; align-items: center; justify-content: space-between; gap: .8rem; margin-top: .9rem; }
+.flowCategoryFilters { display: inline-flex; padding: .2rem; border: 1px solid var(--home-line); border-radius: 999px; background: var(--surface-muted); }
+.flowCategoryFilters button { min-height: 1.9rem; padding: 0 .85rem; border: 0; border-radius: 999px; background: transparent; color: var(--foreground-muted); font-size: .64rem; font-weight: 800; cursor: pointer; transition: background .16s ease, color .16s ease, box-shadow .16s ease; }
+.flowCategoryFilters button:hover { color: var(--foreground); }
+.flowCategoryFilters .flowCategoryFilterActive { background: var(--ff-primary); color: var(--ff-on-action); box-shadow: 0 5px 14px color-mix(in srgb, var(--ff-primary) 22%, transparent); }
 .flowCategoryLegend { display: flex; justify-content: flex-end; gap: 1rem; color: var(--foreground-muted); font-size: .62rem; font-weight: 750; }
 .flowCategoryLegend span { display: inline-flex; align-items: center; gap: .35rem; }
 .flowCategoryLegend i { width: .5rem; height: .5rem; border-radius: 50%; }
 .incomeDot { background: var(--ff-primary); }
 .expenseDot { background: var(--ff-red); }
-.transferDot { background: var(--ff-orange); }
 .flowCategoryRow { display: grid; grid-template-columns: minmax(6.5rem, .7fr) minmax(10rem, 1.7fr) minmax(8rem, auto); align-items: center; gap: .75rem; width: 100%; border: 0; border-radius: .65rem; background: transparent; padding: .35rem .45rem; color: var(--foreground); cursor: pointer; text-align: left; transition: background .16s ease; }
 .flowCategoryRow:hover { background: var(--surface-muted); }
 .flowCategoryRow > span:first-child { overflow: hidden; font-size: .7rem; font-weight: 780; text-overflow: ellipsis; white-space: nowrap; }
@@ -625,7 +629,6 @@
 .flowBars i { display: block; min-width: 2px; height: .36rem; border-radius: 99px; }
 .incomeBar { background: var(--ff-primary); }
 .expenseBar { background: var(--ff-red); }
-.transferBar { background: var(--ff-orange); }
 .flowCategoryRow > strong { display: grid; gap: .08rem; text-align: right; }
 .flowCategoryRow > strong b { color: var(--ff-primary-dark); font-size: .62rem; }
 .flowCategoryRow > strong em { color: var(--ff-red); font-size: .62rem; font-style: normal; }
@@ -639,7 +642,6 @@
 .verticalGroup > strong { display: grid; align-self: start; gap: .08rem; text-align: center; }
 .verticalGroup > strong b { min-height: .75rem; color: var(--ff-primary-dark); font-size: .55rem; }
 .verticalGroup > strong em { min-height: .75rem; color: var(--ff-red); font-size: .55rem; font-style: normal; }
-.verticalGroup > strong small { min-height: .75rem; color: var(--ff-orange); font-size: .55rem; }
 .categoryRow { display: grid; grid-template-columns: minmax(5rem, .9fr) minmax(4rem, 1.45fr) auto 2rem; align-items: center; gap: .65rem; min-width: 0; font-size: .68rem; }
 .categoryName { display: flex; min-width: 0; align-items: center; gap: .48rem; overflow: hidden; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
 .categoryName i { width: .55rem; height: .55rem; flex: none; border-radius: 999px; }
@@ -778,6 +780,10 @@
   .selectorPanel { position: fixed; z-index: 31; top: auto; right: 1rem; bottom: 5.5rem; left: 1rem; width: auto; max-height: calc(100dvh - 8rem); overflow-y: auto; border-radius: 1.25rem; }
   .monthPanel,
   .categoryPanel { padding: 1rem; }
+  .flowCategoryToolbar { align-items: stretch; flex-direction: column; }
+  .flowCategoryFilters { display: grid; width: 100%; grid-template-columns: repeat(3, 1fr); }
+  .flowCategoryFilters button { padding: 0 .45rem; }
+  .flowCategoryLegend { justify-content: flex-start; }
   .summaryGrid { margin-right: -.25rem; margin-left: -.25rem; }
   .summaryValue { padding: .25rem .45rem; }
   .summaryLabel { font-size: .61rem; }

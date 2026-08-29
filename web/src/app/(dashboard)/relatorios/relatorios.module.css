@@ -344,7 +344,8 @@
   z-index: 2;
   top: 7px;
   right: 7px;
-  min-width: 185px;
+  width: 224px;
+  max-width: calc(100% - 16px);
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-raised) 94%, transparent);
@@ -362,6 +363,42 @@
 .tooltipTitle {
   margin: 0 0 5px;
   font-weight: 820;
+}
+
+.tooltipRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 4px;
+  line-height: 1.2;
+}
+
+.tooltipRow span {
+  min-width: 0;
+}
+
+.tooltipRow strong {
+  flex: none;
+  font-size: 0.68rem;
+  white-space: nowrap;
+}
+
+.tooltipRow[data-tone="positive"] strong,
+.tooltipRow[data-tone="balance"] strong {
+  color: var(--ff-primary-dark);
+}
+
+.tooltipRow[data-tone="negative"] strong {
+  color: var(--ff-red);
+}
+
+.tooltipRow[data-tone="expected-positive"] strong {
+  color: color-mix(in srgb, var(--ff-primary-dark) 72%, var(--foreground-muted));
+}
+
+.tooltipRow[data-tone="expected-negative"] strong {
+  color: color-mix(in srgb, var(--ff-red) 72%, var(--foreground-muted));
 }
 
 .monthDetails {

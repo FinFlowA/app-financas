@@ -101,6 +101,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   const [monthMenuOpen, setMonthMenuOpen] = useState(false);
   const [overdueOpen, setOverdueOpen] = useState(false);
   const [flowCategoryKey, setFlowCategoryKey] = useState<string | null>(null);
+  const [flowStatus, setFlowStatus] = useState<"todos" | "concluidos" | "pendentes">("todos");
   const [pickerYear, setPickerYear] = useState(() => Number(month.slice(0, 4)));
   const accountSelectorRef = useRef<HTMLDivElement>(null);
   const accountSelectorButtonRef = useRef<HTMLButtonElement>(null);
@@ -263,7 +264,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   }, [overdueSignature, userId]);
 
   useEffect(() => {
-    if (!overdueOpen) return;
+    if (!overdueOpen && flowCategoryKey === null) return;
     const previousBodyOverflow = document.body.style.overflow;
     const previousBodyOverscroll = document.body.style.overscrollBehavior;
     const previousHtmlOverflow = document.documentElement.style.overflow;
@@ -275,11 +276,11 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       document.body.style.overscrollBehavior = previousBodyOverscroll;
       document.documentElement.style.overflow = previousHtmlOverflow;
     };
-  }, [overdueOpen]);
+  }, [flowCategoryKey, overdueOpen]);
 
   const categoriesById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const flowCategoryRows = useMemo(() => {
-    const rows = new Map<string, { name: string; income: number; expense: number; transfer: number; details: { id: string; description: string; value: number; date: string; type: "receita" | "despesa" | "transferencia" }[] }>();
+    const rows = new Map<string, { name: string; income: number; expense: number; details: { id: string; description: string; value: number; date: string; type: "receita" | "despesa" }[] }>();
     const categoryGroup = (categoryId: number | null) => {
       const name = categoryId ? categoriesById.get(categoryId)?.nome.trim() || "Sem categoria" : "Sem categoria";
       return { key: name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLocaleLowerCase("pt-BR").replace(/\s+/g, " "), name };
@@ -287,27 +288,35 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     for (const transaction of scoped) {
       const date = dataEfetivaTransacao(transaction).slice(0, 10);
       const value = Number(transaction.valor);
-      if (!date.startsWith(month) || !Number.isFinite(value) || isMovimentoObjetivo(transaction.descricao) || (allActiveSelected && isPagamentoFatura(transaction.descricao))) continue;
+      if (!date.startsWith(month) || !Number.isFinite(value) || isMovimentoObjetivo(transaction.descricao) || isTransferencia(transaction.descricao) || (allActiveSelected && isPagamentoFatura(transaction.descricao))) continue;
+      if (flowStatus === "concluidos" && transaction.status !== "paga") continue;
+      if (flowStatus === "pendentes" && transaction.status !== "pendente") continue;
       const group = categoryGroup(transaction.categoria_id);
-      const transfer = isTransferencia(transaction.descricao);
-      const key = transfer ? "__transferencias__" : group.key;
-      const row = rows.get(key) ?? { name: transfer ? "Transferências" : group.name, income: 0, expense: 0, transfer: 0, details: [] };
-      if (transfer) row.transfer += value; else if (transaction.tipo === "receita") row.income += value; else row.expense += value;
-      row.details.push({ id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date, type: transfer ? "transferencia" : transaction.tipo });
-      rows.set(key, row);
+      const row = rows.get(group.key) ?? { name: group.name, income: 0, expense: 0, details: [] };
+      if (transaction.tipo === "receita") row.income += value; else row.expense += value;
+      row.details.push({ id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date, type: transaction.tipo });
+      rows.set(group.key, row);
     }
-    if (allActiveSelected) for (const item of invoicePurchasesInMonth(invoiceItems, month)) {
+    if (allActiveSelected && flowStatus !== "pendentes") for (const item of invoicePurchasesInMonth(invoiceItems, month)) {
       const value = Number(item.valor); if (!Number.isFinite(value)) continue;
       const group = categoryGroup(item.categoria_id);
-      const row = rows.get(group.key) ?? { name: group.name, income: 0, expense: 0, transfer: 0, details: [] };
+      const row = rows.get(group.key) ?? { name: group.name, income: 0, expense: 0, details: [] };
       row.expense += value;
       row.details.push({ id: `invoice-${item.id}`, description: descricaoVisivel(item.descricao), value, date: item.data_compra, type: "despesa" });
       rows.set(group.key, row);
     }
-    return [...rows.entries()].filter(([, row]) => row.income + row.expense + row.transfer > 0).sort((a, b) => b[1].income + b[1].expense + b[1].transfer - a[1].income - a[1].expense - a[1].transfer).slice(0, 7);
-  }, [allActiveSelected, categoriesById, invoiceItems, month, scoped]);
-  const flowChartMax = Math.max(1, ...flowCategoryRows.flatMap(([, row]) => [row.income, row.expense, row.transfer]));
+    return [...rows.entries()].filter(([, row]) => row.income + row.expense > 0).sort((a, b) => b[1].income + b[1].expense - a[1].income - a[1].expense).slice(0, 7);
+  }, [allActiveSelected, categoriesById, flowStatus, invoiceItems, month, scoped]);
+  const flowChartMax = Math.max(1, ...flowCategoryRows.flatMap(([, row]) => [row.income, row.expense]));
   const selectedFlowCategory = flowCategoryKey === null ? null : flowCategoryRows.find(([key]) => key === flowCategoryKey) ?? null;
+  const selectedFlowDetails = selectedFlowCategory
+    ? [...selectedFlowCategory[1].details].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+    : [];
+  const selectedFlowExpenses = selectedFlowDetails.filter((detail) => detail.type === "despesa");
+  const selectedFlowIncome = selectedFlowDetails.filter((detail) => detail.type === "receita");
+  const selectedFlowExpenseTotal = selectedFlowExpenses.reduce((sum, detail) => sum + detail.value, 0);
+  const selectedFlowIncomeTotal = selectedFlowIncome.reduce((sum, detail) => sum + detail.value, 0);
+  const selectedFlowBalance = selectedFlowIncomeTotal - selectedFlowExpenseTotal;
   const categoryRows = useMemo(() => [...calculations.byCategory.entries()]
     .filter(([, values]) => values.expected > 0)
     .sort((a, b) => b[1].expected - a[1].expected)
@@ -469,7 +478,13 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
             <div><p className={styles.sectionKicker}>Distribuição mensal</p><h2>Gastos por categoria</h2></div>
             <Link href="/relatorios">Ver relatório <Icon name="chevron" size={15}/></Link>
           </div>
-          {flowCategoryRows.length ? <div className={styles.flowCategoryChart}><div className={styles.flowCategoryLegend}><span><i className={styles.incomeDot}/>Receitas</span><span><i className={styles.expenseDot}/>Despesas</span><span><i className={styles.transferDot}/>Transferências</span></div><div className={styles.verticalChart}>{flowCategoryRows.map(([key, values]) => <button type="button" key={key} onClick={() => setFlowCategoryKey(key)} className={styles.verticalGroup} aria-label={`Ver lançamentos de ${values.name}`}><span className={styles.verticalBars}><i className={styles.incomeBar} style={{ height: `${values.income ? Math.max(4, values.income / flowChartMax * 100) : 0}%` }}/><i className={styles.expenseBar} style={{ height: `${values.expense ? Math.max(4, values.expense / flowChartMax * 100) : 0}%` }}/><i className={styles.transferBar} style={{ height: `${values.transfer ? Math.max(4, values.transfer / flowChartMax * 100) : 0}%` }}/></span><span className={styles.verticalLabel}>{values.name}</span><strong data-private-value="true"><b>{values.income ? formatarReais(values.income) : ""}</b><em>{values.expense ? formatarReais(values.expense) : ""}</em><small>{values.transfer ? formatarReais(values.transfer) : ""}</small></strong></button>)}</div></div> : <div className={styles.emptyChart}><Icon name="category" size={28}/><p>Nenhuma movimentação registrada neste mês.</p><Link href={homeTransactionCreationHref("despesa")}>Adicionar lançamento</Link></div>}
+          <div className={styles.flowCategoryToolbar}>
+            <div className={styles.flowCategoryFilters} role="group" aria-label="Filtrar lançamentos do gráfico por status">
+              {([['todos', 'Todos'], ['concluidos', 'Concluídos'], ['pendentes', 'Pendentes']] as const).map(([value, label]) => <button type="button" key={value} aria-pressed={flowStatus === value} onClick={() => { setFlowStatus(value); setFlowCategoryKey(null); }} className={flowStatus === value ? styles.flowCategoryFilterActive : ""}>{label}</button>)}
+            </div>
+            <div className={styles.flowCategoryLegend}><span><i className={styles.incomeDot}/>Receitas</span><span><i className={styles.expenseDot}/>Despesas</span></div>
+          </div>
+          {flowCategoryRows.length ? <div className={styles.flowCategoryChart}><div className={styles.verticalChart}>{flowCategoryRows.map(([key, values]) => <button type="button" key={key} onClick={() => setFlowCategoryKey(key)} className={styles.verticalGroup} aria-label={`Ver lançamentos de ${values.name}`}><span className={styles.verticalBars}><i className={styles.incomeBar} style={{ height: `${values.income ? Math.max(4, values.income / flowChartMax * 100) : 0}%` }}/><i className={styles.expenseBar} style={{ height: `${values.expense ? Math.max(4, values.expense / flowChartMax * 100) : 0}%` }}/></span><span className={styles.verticalLabel}>{values.name}</span><strong data-private-value="true"><b>{values.income ? formatarReais(values.income) : ""}</b><em>{values.expense ? formatarReais(values.expense) : ""}</em></strong></button>)}</div></div> : <div className={styles.emptyChart}><Icon name="category" size={28}/><p>Nenhuma movimentação {flowStatus === "concluidos" ? "concluída" : flowStatus === "pendentes" ? "pendente" : "registrada"} neste mês.</p><Link href={homeTransactionCreationHref("despesa")}>Adicionar lançamento</Link></div>}
         </section>
       </div>
 
@@ -504,6 +519,23 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
         </section>
       </aside>
     </div>
-    {selectedFlowCategory && <div className="fixed inset-0 z-[95] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => setFlowCategoryKey(null)}><section role="dialog" aria-modal="true" aria-label="Detalhes da categoria" onMouseDown={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-xl overflow-y-auto rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)]"><div className="flex items-center justify-between"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Movimentações do mês</p><h2 className="mt-1 text-xl font-black text-foreground">{selectedFlowCategory[1].name}</h2></div><button type="button" onClick={() => setFlowCategoryKey(null)} className="grid h-10 w-10 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div><div className="mt-5 space-y-2">{[...selectedFlowCategory[1].details].sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id)).map((detail) => <div key={detail.id} className="flex items-center justify-between gap-3 rounded-xl border border-border bg-surface-muted p-3"><span><strong className="block text-sm text-foreground">{detail.description}</strong><small className="text-xs text-foreground-muted">{new Intl.DateTimeFormat("pt-BR").format(new Date(`${detail.date}T12:00:00-03:00`))}</small></span><strong data-private-value="true" className={detail.type === "receita" ? "text-primary" : detail.type === "transferencia" ? "text-orange" : "text-red"}>{detail.type === "receita" ? "+" : detail.type === "transferencia" ? "↔ " : "−"}{formatarReais(detail.value)}</strong></div>)}</div></section></div>}
+    {selectedFlowCategory && createPortal(<div className="fixed inset-0 z-[9999] grid h-[100dvh] w-screen place-items-center overflow-hidden bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => setFlowCategoryKey(null)}>
+      <section role="dialog" aria-modal="true" aria-label="Detalhes da categoria" onMouseDown={(event) => event.stopPropagation()} className="flex max-h-[calc(100dvh-2rem)] w-full max-w-4xl flex-col overflow-hidden rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
+        <div className="flex shrink-0 items-center justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Movimentações do mês</p><h2 className="mt-1 text-xl font-black text-foreground">{selectedFlowCategory[1].name}</h2></div><button type="button" onClick={() => setFlowCategoryKey(null)} aria-label="Fechar detalhes" className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
+        <div className="mt-5 min-h-0 overflow-y-auto overscroll-contain pr-1">
+          <div className="grid gap-4 md:grid-cols-2">
+            {selectedFlowExpenses.length > 0 && <section className={selectedFlowIncome.length === 0 ? "md:col-span-2" : ""}><h3 className="mb-2 text-sm font-extrabold text-red">Despesas</h3><div className="space-y-2">{selectedFlowExpenses.map((detail) => <div key={detail.id} className="flex items-center justify-between gap-3 rounded-xl border border-red/15 bg-surface-muted p-3"><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{detail.description}</strong><small className="text-xs text-foreground-muted">{new Intl.DateTimeFormat("pt-BR").format(new Date(`${detail.date}T12:00:00-03:00`))}</small></span><strong data-private-value="true" className="shrink-0 text-red">−{formatarReais(detail.value)}</strong></div>)}</div></section>}
+            {selectedFlowIncome.length > 0 && <section className={selectedFlowExpenses.length === 0 ? "md:col-span-2" : ""}><h3 className="mb-2 text-sm font-extrabold text-primary">Receitas</h3><div className="space-y-2">{selectedFlowIncome.map((detail) => <div key={detail.id} className="flex items-center justify-between gap-3 rounded-xl border border-primary/15 bg-surface-muted p-3"><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{detail.description}</strong><small className="text-xs text-foreground-muted">{new Intl.DateTimeFormat("pt-BR").format(new Date(`${detail.date}T12:00:00-03:00`))}</small></span><strong data-private-value="true" className="shrink-0 text-primary">+{formatarReais(detail.value)}</strong></div>)}</div></section>}
+          </div>
+          {selectedFlowExpenses.length > 0 && selectedFlowIncome.length > 0 && <footer className="mt-5 grid gap-2 border-t border-border pt-4 sm:grid-cols-3">
+            <div className="rounded-xl border border-red/20 bg-red/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-red">Total de despesas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-red">−{formatarReais(selectedFlowExpenseTotal)}</strong></div>
+            <div className="rounded-xl border border-white bg-white p-3 shadow-sm"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-slate-600">Balanço</p><strong data-private-value="true" className={`mt-1 block text-lg font-black ${selectedFlowBalance >= 0 ? "text-primary" : "text-red"}`}>{selectedFlowBalance >= 0 ? "+" : "−"}{formatarReais(Math.abs(selectedFlowBalance))}</strong></div>
+            <div className="rounded-xl border border-primary/20 bg-primary/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-primary">Total de receitas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-primary">+{formatarReais(selectedFlowIncomeTotal)}</strong></div>
+          </footer>}
+          {selectedFlowExpenses.length > 0 && selectedFlowIncome.length === 0 && <footer className="mt-5 border-t border-border pt-4"><div className="w-full rounded-xl border border-red/20 bg-red/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-red">Total de despesas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-red">−{formatarReais(selectedFlowExpenseTotal)}</strong></div></footer>}
+          {selectedFlowIncome.length > 0 && selectedFlowExpenses.length === 0 && <footer className="mt-5 border-t border-border pt-4"><div className="w-full rounded-xl border border-primary/20 bg-primary/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-primary">Total de receitas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-primary">+{formatarReais(selectedFlowIncomeTotal)}</strong></div></footer>}
+        </div>
+      </section>
+    </div>, document.body)}
   </div>;
 }

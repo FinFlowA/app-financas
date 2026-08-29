@@ -32,6 +32,7 @@ export default function FluxoSaldoChart({
   onSelect: (index: number) => void;
 }) {
   const [ativo, setAtivo] = useState<number | null>(null);
+  const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
 
   const maiorBarra = Math.max(1, ...meses.map((m) => Math.max(
     m.receitas + (m.receitasPrevistas ?? 0),
@@ -125,7 +126,25 @@ export default function FluxoSaldoChart({
                 key={mes.label}
                 className={styles.chartMonthGroup}
                 onMouseEnter={() => setAtivo(indice)}
-                onMouseLeave={() => setAtivo((atual) => (atual === indice ? null : atual))}
+                onMouseMove={(event) => {
+                  const container = event.currentTarget.ownerSVGElement?.parentElement;
+                  if (!container) return;
+                  const bounds = container.getBoundingClientRect();
+                  const tooltipWidth = 224;
+                  const tooltipHeight = 166;
+                  const cursorLeft = event.clientX - bounds.left + container.scrollLeft;
+                  const cursorTop = event.clientY - bounds.top + container.scrollTop;
+                  const minLeft = container.scrollLeft + 8;
+                  const maxLeft = container.scrollLeft + container.clientWidth - tooltipWidth - 8;
+                  setTooltipPosition({
+                    left: Math.max(minLeft, Math.min(cursorLeft + 14, maxLeft)),
+                    top: Math.max(8, Math.min(cursorTop + 14, container.clientHeight - tooltipHeight - 8)),
+                  });
+                }}
+                onMouseLeave={() => {
+                  setAtivo((atual) => (atual === indice ? null : atual));
+                  setTooltipPosition(null);
+                }}
                 onFocus={() => {
                   setAtivo(indice);
                   onSelect(indice);
@@ -226,6 +245,17 @@ export default function FluxoSaldoChart({
             </text>
           )}
         </svg>
+
+        {ativo !== null && mesAtivo && saldoAtivo && (
+          <aside className={styles.tooltip} style={tooltipPosition ? { ...tooltipPosition, right: "auto" } : undefined} aria-hidden="true">
+            <p className={styles.tooltipTitle}>{mesAtivo.label}</p>
+            <div className={styles.tooltipRow} data-tone="positive"><span>Receitas realizadas</span><strong>+{formatarReais(mesAtivo.receitas)}</strong></div>
+            <div className={styles.tooltipRow} data-tone="expected-positive"><span>Receitas previstas</span><strong>+{formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong></div>
+            <div className={styles.tooltipRow} data-tone="negative"><span>Despesas realizadas</span><strong>−{formatarReais(mesAtivo.despesas)}</strong></div>
+            <div className={styles.tooltipRow} data-tone="expected-negative"><span>Despesas previstas</span><strong>−{formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong></div>
+            <div className={styles.tooltipRow} data-tone={saldoAtivo.saldo < 0 ? "negative" : "balance"}><span>{saldoAtivo.projetado ? "Saldo projetado" : "Saldo realizado"}</span><strong>{formatarReais(saldoAtivo.saldo)}</strong></div>
+          </aside>
+        )}
 
       </div>
 
