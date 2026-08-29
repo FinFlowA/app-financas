@@ -421,6 +421,7 @@
 }
 
 .panel {
+  overflow: hidden;
   border: 1px solid var(--home-line);
   border-radius: 1.05rem;
   background:
@@ -431,9 +432,10 @@
 
 .panelHeader {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 1rem;
+  gap: .3rem 1rem;
 }
 
 .panelHeader > div:first-child {
