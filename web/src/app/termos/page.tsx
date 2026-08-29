@@ -74,7 +74,7 @@ export default function TermsPage() {
       </LegalSection>
 
       <LegalSection title="9. Propriedade intelectual">
-        <p>Nome, identidade, interfaces, textos e software são protegidos e pertencem aos respectivos titulares. É concedida somente licença pessoal, limitada, revogável, não exclusiva e intransferível para uso regular do aplicativo.</p>
+        <p>Nome, identidade, interfaces, textos e software são protegidos por direitos de propriedade intelectual e pertencem aos respectivos titulares, incluindo a proteção específica de programas de computador prevista na Lei nº 9.609, de 19 de fevereiro de 1998 (Lei do Software), aplicando-se subsidiariamente a Lei nº 9.610, de 19 de fevereiro de 1998 (Lei de Direitos Autorais), conforme o art. 2º da Lei nº 9.609/1998. É concedida somente licença pessoal, limitada, revogável, não exclusiva e intransferível para uso regular do aplicativo, sem transferência de titularidade ou de código-fonte.</p>
       </LegalSection>
 
       <LegalSection title="10. Responsabilidades">
