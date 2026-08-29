@@ -15,7 +15,7 @@ export default function PrivacyPage() {
       description="Entenda quais dados são tratados, para quais finalidades e como exercer seus direitos sob a LGPD."
     >
       <LegalSection title="1. Responsáveis pelo tratamento">
-        <p>O <strong className="text-foreground">FinFlow</strong> é um aplicativo de organização financeira pessoal desenvolvido e mantido por <strong className="text-foreground">Luís Henrique Palácio e Gabriel Henrique</strong>, responsáveis pelas decisões sobre o tratamento descrito nesta Política.</p>
+        <p>O <strong className="text-foreground">FinFlow</strong> é um aplicativo de organização financeira pessoal desenvolvido e mantido por <strong className="text-foreground">Luís Henrique Palácio e Gabriel Henrique de Alves Lima</strong>, responsáveis pelas decisões sobre o tratamento descrito nesta Política.</p>
         <p>Contato: <a className="font-bold text-primary hover:underline" href="mailto:Finflowfinancas@gmail.com?subject=%5BFinFlow%20-%20Privacidade%5D">Finflowfinancas@gmail.com</a></p>
       </LegalSection>
 
@@ -53,7 +53,7 @@ export default function PrivacyPage() {
           <li><strong className="text-foreground">Mercado Pago:</strong> checkout, cobrança recorrente e confirmação da assinatura;</li>
           <li><strong className="text-foreground">OpenAI ou Groq:</strong> processamento do assistente, somente quando o recurso for acionado.</li>
         </LegalList>
-        <p>Fornecedores podem processar dados fora do Brasil, observadas medidas compatíveis com a legislação. Dados também podem ser divulgados para cumprir obrigação legal, ordem válida ou proteger direitos e segurança.</p>
+        <p>Fornecedores podem processar dados fora do Brasil. Nesses casos, são observadas as garantias exigidas pela Lei Geral de Proteção de Dados (LGPD) para transferência internacional, como cláusulas contratuais padrão ou declaração de adequação do país de destino. Dados também podem ser divulgados para cumprir obrigação legal, ordem válida ou proteger direitos e segurança.</p>
       </LegalSection>
 
       <LegalSection title="5. Conta compartilhada">
@@ -71,7 +71,7 @@ export default function PrivacyPage() {
       <LegalSection title="6. Retenção e segurança">
         <p>Os dados são mantidos enquanto a conta estiver ativa e pelo tempo necessário às finalidades informadas, ao cumprimento de obrigações legais, à prevenção de fraude e ao exercício de direitos. Após pedido de exclusão, os dados são excluídos ou anonimizados, ressalvadas hipóteses legais de retenção e cópias temporárias de segurança.</p>
         <p>Conversas, propostas e auditoria operacional do assistente são eliminadas por rotina global diária quando ultrapassam 30 dias, salvo necessidade legal. Métricas técnicas sem conteúdo de conversa ou dados financeiros são eliminadas quando ultrapassam 90 dias. Propostas não confirmadas expiram rapidamente e não podem ser reutilizadas.</p>
-        <p>São adotadas medidas razoáveis de segurança, incluindo autenticação, conexões protegidas, controle de acesso por usuário, operações financeiras atômicas e confirmação do status de cobrança com o provedor. Nenhum sistema é totalmente imune; incidentes relevantes serão tratados conforme a legislação.</p>
+        <p>São adotadas medidas razoáveis de segurança, incluindo autenticação, conexões protegidas, controle de acesso por usuário, operações financeiras atômicas e confirmação do status de cobrança com o provedor. Nenhum sistema é totalmente imune; incidentes relevantes serão tratados conforme exige a Lei Geral de Proteção de Dados (LGPD), inclusive quanto à comunicação à Autoridade Nacional de Proteção de Dados e aos titulares quando aplicável.</p>
       </LegalSection>
 
       <LegalSection title="7. Assistente financeiro e decisões">

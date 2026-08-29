@@ -91,11 +91,11 @@ export default function TermsPage() {
       </LegalSection>
 
       <LegalSection title="13. Lei e conflitos">
-        <p>Aplicam-se as leis brasileiras. Permanecem preservados os direitos do consumidor, inclusive o foro legalmente competente de seu domicílio quando aplicável.</p>
+        <p>Este instrumento é regido pelas leis da República Federativa do Brasil, incluindo a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), o Código de Defesa do Consumidor (Lei nº 8.078/1990) e o Marco Civil da Internet (Lei nº 12.965/2014), sem prejuízo de outras normas aplicáveis. Permanecem preservados os direitos do consumidor, inclusive o foro legalmente competente de seu domicílio.</p>
       </LegalSection>
 
       <LegalSection title="14. Contato">
-        <p><strong className="text-foreground">Responsáveis:</strong> Luís Henrique Palácio e Gabriel Henrique.</p>
+        <p><strong className="text-foreground">Responsáveis:</strong> Luís Henrique Palácio e Gabriel Henrique de Alves Lima.</p>
         <p><strong className="text-foreground">E-mail:</strong> <a className="font-bold text-primary hover:underline" href="mailto:Finflowfinancas@gmail.com?subject=%5BFinFlow%20-%20Termos%5D">Finflowfinancas@gmail.com</a></p>
       </LegalSection>
     </LegalShell>
