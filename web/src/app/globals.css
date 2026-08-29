@@ -410,18 +410,13 @@ html.dark .ff-sidebar {
   width: 46px;
   height: 46px;
   flex: 0 0 46px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--ff-primary) 22%, transparent);
-  border-radius: 13px;
-  background: #061c1a;
-  box-shadow: 0 10px 24px -18px color-mix(in srgb, var(--ff-primary) 70%, transparent);
 }
 
 .ff-brand__image {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   image-rendering: auto;
 }
 

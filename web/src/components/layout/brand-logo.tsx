@@ -22,7 +22,7 @@ export default function BrandLogo({
     >
       <span className="ff-brand__mark" aria-hidden="true">
         <Image
-          src="/icon.png"
+          src="/finflow-logo.png"
           alt=""
           width={512}
           height={512}
