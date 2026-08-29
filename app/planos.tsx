@@ -1,45 +1,22 @@
 /**
  * app/planos.tsx
- * Tela de comparação e seleção de planos do FinFlow.
+ * Tela de planos do FinFlow — temporariamente em manutenção.
  *
- * Mostra Free / Smart / Premium com todos os recursos,
- * alternância mensal/anual e destaque de economia.
- *
- * Integração de pagamento: arquitetura preparada para
- * Stripe, Mercado Pago ou RevenueCat (pontos marcados com TODO).
+ * A comparação de planos e o checkout ficam desativados aqui; o arquivo
+ * completo com Free/Smart/Premium continua no histórico do git para quando
+ * as assinaturas voltarem.
  */
 
 import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import * as WebBrowser from "expo-web-browser";
-import React, { useState } from "react";
-import {
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from "react-native";
+import React from "react";
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAppTheme } from "./_layout";
-import {
-  PLANOS,
-  PRECOS,
-  type TipoPlano,
-} from "../lib/planos";
-import {
-  cancelSubscription,
-  createSubscriptionCheckout,
-  syncSubscription,
-} from "../lib/subscriptions";
 
 export default function PlanosScreen() {
-  const { isDark, plano: planoAtual, billingEnabled, refreshEntitlement } = useAppTheme();
+  const { isDark } = useAppTheme();
   const router = useRouter();
-
-  const [ciclo, setCiclo] = useState<"mensal" | "anual">("mensal");
-  const [processando, setProcessando] = useState(false);
 
   const Cores = {
     fundo: isDark ? "#121212" : "#F5F2EC",
@@ -47,90 +24,11 @@ export default function PlanosScreen() {
     secundario: isDark ? "#AAAAAA" : "#6B7280",
     card: isDark ? "#1E1E1E" : "#FFFDF9",
     borda: isDark ? "#333" : "#E5E7EB",
-    pillFundo: isDark ? "#2C2C2C" : "#F3F4F6",
+    destaque: "#2A9D8F",
   };
-
-  const getPreco = (planoId: TipoPlano): string => {
-    if (planoId === "free") return "Grátis";
-    const p = PRECOS[planoId as "smart" | "premium"];
-    if (ciclo === "anual") {
-      return `R$ ${p.anualPorMes.toFixed(2).replace(".", ",")}/mês`;
-    }
-    return `R$ ${p.mensal.toFixed(2).replace(".", ",")}/mês`;
-  };
-
-  const getSubtituloPreco = (planoId: TipoPlano): string | null => {
-    if (planoId === "free") return null;
-    const p = PRECOS[planoId as "smart" | "premium"];
-    if (ciclo === "anual") {
-      return `R$ ${p.anual.toFixed(2).replace(".", ",")} cobrado anualmente`;
-    }
-    return null;
-  };
-
-  const handleSelecionarPlano = async (planoId: TipoPlano) => {
-    if (planoId === planoAtual) return;
-
-    if (planoId === "free") {
-      if (planoAtual === "free") return;
-      Alert.alert(
-        "Cancelar assinatura?",
-        "A renovação será cancelada. O acesso pago permanece até o fim do período já quitado.",
-        [
-          { text: "Cancelar", style: "cancel" },
-          {
-            text: "Confirmar",
-            onPress: async () => {
-              try {
-                setProcessando(true);
-                await cancelSubscription();
-                await refreshEntitlement();
-                Alert.alert("Cancelamento solicitado", "Sua assinatura não será renovada.");
-              } catch {
-                Alert.alert("Não foi possível cancelar", "Tente novamente ou entre em contato com o suporte.");
-              } finally {
-                setProcessando(false);
-              }
-            },
-          },
-        ]
-      );
-      return;
-    }
-
-    if (!billingEnabled) {
-      Alert.alert(
-        "Assinaturas em breve",
-        "Durante o desenvolvimento, todas as funções estão liberadas gratuitamente. Nenhuma cobrança será realizada.",
-      );
-      return;
-    }
-
-    setProcessando(true);
-    try {
-      const productCode = `${planoId}_${ciclo === "anual" ? "annual" : "monthly"}`;
-      const checkout = await createSubscriptionCheckout(productCode);
-      await WebBrowser.openBrowserAsync(checkout.checkoutUrl);
-      await syncSubscription();
-      await refreshEntitlement();
-    } catch {
-      Alert.alert("Pagamento indisponível", "Não foi possível iniciar a assinatura. Nenhuma cobrança foi realizada.");
-    } finally {
-      setProcessando(false);
-    }
-  };
-
-  const corDestaque = (planoId: TipoPlano) => {
-    if (planoId === "smart") return "#2A9D8F";
-    if (planoId === "premium") return "#F4A261";
-    return Cores.borda;
-  };
-
-  const eSelecionado = (planoId: TipoPlano) => planoId === planoAtual;
 
   return (
     <SafeAreaView style={[estilos.safeArea, { backgroundColor: Cores.fundo }]}>
-      {/* Header */}
       <View style={estilos.header}>
         <TouchableOpacity onPress={() => router.back()} style={estilos.voltarBtn}>
           <MaterialIcons name="arrow-back" size={24} color={Cores.texto} />
@@ -139,134 +37,19 @@ export default function PlanosScreen() {
         <View style={{ width: 40 }} />
       </View>
 
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <Text style={[estilos.subtitulo, { color: Cores.secundario }]}>
-          Escolha o plano ideal para o seu controle financeiro
-        </Text>
-
-        {/* Alternância Mensal / Anual */}
-        <View style={[estilos.cicloContainer, { backgroundColor: Cores.pillFundo }]}>
-          <TouchableOpacity
-            style={[estilos.cicloBtn, ciclo === "mensal" && { backgroundColor: Cores.card }]}
-            onPress={() => setCiclo("mensal")}
-          >
-            <Text style={[estilos.cicloBtnText, { color: ciclo === "mensal" ? Cores.texto : Cores.secundario }]}>
-              Mensal
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[estilos.cicloBtn, ciclo === "anual" && { backgroundColor: Cores.card }]}
-            onPress={() => setCiclo("anual")}
-          >
-            <Text style={[estilos.cicloBtnText, { color: ciclo === "anual" ? Cores.texto : Cores.secundario }]}>
-              Anual
-            </Text>
-            {ciclo === "anual" && (
-              <View style={estilos.economiaBadge}>
-                <Text style={estilos.economiaBadgeText}>2 meses grátis</Text>
-              </View>
-            )}
-          </TouchableOpacity>
-        </View>
-
-        {ciclo === "anual" && (
-          <Text style={[estilos.economiaTexto, { color: "#2A9D8F" }]}>
-            Economize até R$ 88,90 por ano no plano anual
+      <ScrollView contentContainerStyle={estilos.conteudo} showsVerticalScrollIndicator={false}>
+        <View style={[estilos.card, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
+          <View style={[estilos.icone, { backgroundColor: Cores.destaque + "1F" }]}>
+            <MaterialIcons name="build" size={26} color={Cores.destaque} />
+          </View>
+          <Text style={[estilos.titulo, { color: Cores.texto }]}>Planos em manutenção</Text>
+          <Text style={[estilos.texto, { color: Cores.secundario }]}>
+            Estamos ajustando os planos do FinFlow. Enquanto isso, todos os recursos, incluindo a IA, continuam liberados sem custo para sua conta.
           </Text>
-        )}
-
-        {/* Cards de planos */}
-        <View style={estilos.planosContainer}>
-          {PLANOS.map((p) => {
-            const selecionado = eSelecionado(p.id);
-            const destaque = corDestaque(p.id);
-
-            return (
-              <TouchableOpacity
-                key={p.id}
-                style={[
-                  estilos.planoCard,
-                  {
-                    backgroundColor: Cores.card,
-                    borderColor: selecionado ? destaque : Cores.borda,
-                    borderWidth: selecionado ? 2 : 1,
-                  },
-                ]}
-                onPress={() => handleSelecionarPlano(p.id)}
-                activeOpacity={0.8}
-              >
-                {/* Badge */}
-                {p.badge && (
-                  <View style={[estilos.badge, { backgroundColor: destaque }]}>
-                    <Text style={estilos.badgeText}>{p.badge}</Text>
-                  </View>
-                )}
-
-                {/* Plano atual */}
-                {selecionado && (
-                  <View style={[estilos.atualBadge, { backgroundColor: destaque + "22", borderColor: destaque }]}>
-                    <MaterialIcons name="check-circle" size={12} color={destaque} />
-                    <Text style={[estilos.atualBadgeText, { color: destaque }]}>Plano Atual</Text>
-                  </View>
-                )}
-
-                {/* Nome e preço */}
-                <View style={[estilos.planoHeader, { borderBottomColor: Cores.borda }]}>
-                  <Text style={[estilos.planoNome, { color: Cores.texto }]}>{p.nome}</Text>
-                  <Text style={[estilos.planoDescricao, { color: Cores.secundario }]}>{p.descricao}</Text>
-                  <Text style={[estilos.planoPreco, { color: selecionado ? destaque : Cores.texto }]}>
-                    {getPreco(p.id)}
-                  </Text>
-                  {getSubtituloPreco(p.id) && (
-                    <Text style={[estilos.planoSubPreco, { color: Cores.secundario }]}>
-                      {getSubtituloPreco(p.id)}
-                    </Text>
-                  )}
-                </View>
-
-                {/* Recursos */}
-                <View style={estilos.recursosContainer}>
-                  {p.destaque.map((item, i) => (
-                    <View key={i} style={estilos.recursoLinha}>
-                      <MaterialIcons
-                        name="check-circle"
-                        size={16}
-                        color={destaque}
-                        style={{ marginRight: 8, marginTop: 1 }}
-                      />
-                      <Text style={[estilos.recursoTexto, { color: Cores.texto }]}>{item}</Text>
-                    </View>
-                  ))}
-                </View>
-
-                {/* Botão */}
-                {!selecionado && (
-                  <TouchableOpacity
-                    style={[estilos.btnSelecionar, { backgroundColor: destaque }]}
-                    onPress={() => handleSelecionarPlano(p.id)}
-                    disabled={processando}
-                  >
-                    <Text style={estilos.btnSelecionarText}>
-                      {p.id === "free" ? "Usar Gratuitamente" : `Assinar ${p.nome}`}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Nota sobre pagamento */}
-        <View style={[estilos.notaContainer, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
-          <MaterialIcons name="security" size={18} color={Cores.secundario} />
-          <Text style={[estilos.notaTexto, { color: Cores.secundario }]}>
-            {billingEnabled
-              ? "Pagamento processado pelo provedor oficial. Seus dados financeiros não são armazenados pelo FinFlow."
-              : "Cobranças desativadas durante o desenvolvimento. Todas as funções estão temporariamente liberadas sem custo."}
+          <Text style={[estilos.texto, { color: Cores.secundario }]}>
+            Nenhuma cobrança será feita durante esse período. Se você já tinha uma assinatura ativa, ela continua valendo normalmente.
           </Text>
         </View>
-
-        <View style={{ height: 40 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -283,91 +66,22 @@ const estilos = StyleSheet.create({
   },
   voltarBtn: { padding: 8 },
   headerTitulo: { fontSize: 20, fontWeight: "bold" },
-  subtitulo: { textAlign: "center", fontSize: 14, marginHorizontal: 24, marginBottom: 20 },
-
-  cicloContainer: {
-    flexDirection: "row",
-    marginHorizontal: 20,
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 8,
-  },
-  cicloBtn: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 6,
-  },
-  cicloBtnText: { fontWeight: "700", fontSize: 15 },
-  economiaBadge: {
-    backgroundColor: "#2A9D8F",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
-  },
-  economiaBadgeText: { color: "#FFF", fontSize: 10, fontWeight: "bold" },
-  economiaTexto: { textAlign: "center", fontSize: 13, marginBottom: 16, fontWeight: "600" },
-
-  planosContainer: { paddingHorizontal: 16, gap: 16 },
-  planoCard: {
-    borderRadius: 16,
-    padding: 20,
-    position: "relative",
-    overflow: "hidden",
-  },
-  badge: {
-    position: "absolute",
-    top: 14,
-    right: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-  },
-  badgeText: { color: "#FFF", fontSize: 11, fontWeight: "bold" },
-  atualBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  conteudo: { flexGrow: 1, justifyContent: "center", padding: 20 },
+  card: {
     borderRadius: 20,
     borderWidth: 1,
-    marginBottom: 12,
-  },
-  atualBadgeText: { fontSize: 11, fontWeight: "bold" },
-  planoHeader: {
-    borderBottomWidth: 1,
-    paddingBottom: 16,
-    marginBottom: 16,
-  },
-  planoNome: { fontSize: 22, fontWeight: "bold", marginBottom: 2 },
-  planoDescricao: { fontSize: 13, marginBottom: 10 },
-  planoPreco: { fontSize: 26, fontWeight: "bold" },
-  planoSubPreco: { fontSize: 12, marginTop: 2 },
-  recursosContainer: { gap: 10, marginBottom: 16 },
-  recursoLinha: { flexDirection: "row", alignItems: "flex-start" },
-  recursoTexto: { flex: 1, fontSize: 14 },
-  btnSelecionar: {
-    paddingVertical: 13,
-    borderRadius: 10,
+    padding: 24,
     alignItems: "center",
-    marginTop: 4,
-  },
-  btnSelecionarText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
-
-  notaContainer: {
-    flexDirection: "row",
-    alignItems: "flex-start",
     gap: 10,
-    marginHorizontal: 16,
-    marginTop: 16,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
   },
-  notaTexto: { flex: 1, fontSize: 12, lineHeight: 18 },
+  icone: {
+    width: 56,
+    height: 56,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 6,
+  },
+  titulo: { fontSize: 19, fontWeight: "900", textAlign: "center" },
+  texto: { fontSize: 14, lineHeight: 20, textAlign: "center" },
 });
