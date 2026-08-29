@@ -436,6 +436,10 @@
   gap: 1rem;
 }
 
+.panelHeader > div:first-child {
+  min-width: 0;
+}
+
 .panelHeader h2,
 .alertCard h2,
 .insightTitle h2 {
@@ -448,11 +452,13 @@
 .panelHeader > span,
 .panelHeader > a {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   gap: .2rem;
   color: var(--foreground-muted);
   font-size: .7rem;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .panelHeader > a:hover { color: var(--ff-primary); }
