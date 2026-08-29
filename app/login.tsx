@@ -31,7 +31,7 @@ import {
 } from "../lib/legal";
 import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { useAppTheme } from "./_layout";
-import { PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
+import { finalizarLoginOAuth, PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -279,17 +279,8 @@ export default function LoginScreen() {
         if (!sessaoExistente.data.session) throw troca.error;
       }
 
-      const { data: usuarioValidado, error: erroUsuario } = await supabase.auth.getUser();
-      const usuario = usuarioValidado.user;
-      if (erroUsuario || !usuario?.email || !usuario.email_confirmed_at) {
-        await supabase.auth.signOut({ scope: "local" });
-        throw erroUsuario ?? new Error("OAUTH_USER_NOT_VERIFIED");
-      }
-
-      const nascimento = usuario.user_metadata?.data_nascimento;
-      const idade = nascimento ? idadeEmAnos(nascimento) : null;
-      if (idade !== null && idade < 18) {
-        await supabase.auth.signOut({ scope: "local" });
+      const resultadoOAuth = await finalizarLoginOAuth(supabase);
+      if (resultadoOAuth.status === "idade_invalida") {
         setModalErro({
           titulo: "Acesso não permitido",
           mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
@@ -297,15 +288,7 @@ export default function LoginScreen() {
         });
         return;
       }
-
-      // Primeiro acesso via Google: nunca passou pelo cadastro por senha, que é
-      // quem normalmente liga essa flag. Sem isso, quem entra pelo Google nunca
-      // veria o tutorial guiado.
-      if (usuario.user_metadata?.tutorial_pendente === undefined) {
-        await supabase.auth.updateUser({
-          data: { ...usuario.user_metadata, tutorial_pendente: true },
-        });
-      }
+      if (resultadoOAuth.status === "erro") throw new Error("OAUTH_USER_NOT_VERIFIED");
 
       await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
       setEmailPendenteConfirmacao("");
