@@ -16,6 +16,7 @@ export type ReconciliationCandidate = {
   dueDate: string;
   remainingValue: number;
   kind: "standard" | "transfer";
+  status: "pendente" | "paga";
 };
 
 type ImportedEntry = StatementEntry & { fingerprint: string };
@@ -78,11 +79,13 @@ function dayDistance(a: string, b: string): number {
 }
 
 function rankedCandidates(entry: StatementEntry, accountId: number, candidates: ReconciliationCandidate[]): ReconciliationCandidate[] {
-  return candidates.filter((candidate) => candidate.accountId === accountId && candidate.type === entry.type)
+  return candidates.filter((candidate) => candidate.accountId === accountId && candidate.type === entry.type
+      && (candidate.status === "pendente" || Math.round(candidate.remainingValue * 100) === Math.round(entry.amount * 100)))
     .sort((a, b) => {
       const exactA = Math.round(a.remainingValue * 100) === Math.round(entry.amount * 100) ? 1 : 0;
       const exactB = Math.round(b.remainingValue * 100) === Math.round(entry.amount * 100) ? 1 : 0;
       return exactB - exactA
+        || (b.status === "paga" ? 1 : 0) - (a.status === "paga" ? 1 : 0)
         || descriptionScore(entry.description, b.description) - descriptionScore(entry.description, a.description)
         || dayDistance(entry.date, a.dueDate) - dayDistance(entry.date, b.dueDate);
     });
@@ -104,13 +107,13 @@ function CandidatePicker({ entry, draft, candidates, onChange }: {
       <span className="mb-2 block">Pesquisar lançamento</span>
       <span className="relative block"><span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-4 grid place-items-center text-foreground-muted">⌕</span><input type="search" value={draft.search} onChange={(event) => onChange({ search: event.target.value })} placeholder={`Buscar ${entry.type === "receita" ? "receitas" : "despesas"} ou transferências`} className="ff-focus min-h-12 w-full rounded-xl border border-border bg-surface py-3 pl-11 pr-4 font-normal outline-none transition placeholder:text-foreground-muted/65 hover:border-primary/35 focus:border-primary" /></span>
     </label>
-    <div className="mt-3" role="listbox" aria-label="Lançamentos pendentes">
+    <div className="mt-3" role="listbox" aria-label="Lançamentos existentes">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-extrabold uppercase tracking-[.1em] text-foreground-muted">Selecione o lançamento</p>{search ? <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-primary">Todos os meses</span> : <div className="flex items-center rounded-full border border-primary/25 bg-primary/10 p-1"><button type="button" aria-label="Mês anterior" onClick={() => onChange({ month: shiftMonth(statementMonth, -1) })} className="ff-focus grid h-8 w-8 place-items-center rounded-full text-primary transition hover:bg-primary/15">‹</button><span className="min-w-32 px-2 text-center text-[10px] font-extrabold uppercase text-primary">{new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${statementMonth}-15T12:00:00Z`))}</span><button type="button" aria-label="Próximo mês" onClick={() => onChange({ month: shiftMonth(statementMonth, 1) })} className="ff-focus grid h-8 w-8 place-items-center rounded-full text-primary transition hover:bg-primary/15">›</button></div>}</div>
       <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
         {visible.map((candidate) => {
           const selected = draft.transactionId === candidate.id;
           const exact = Math.round(candidate.remainingValue * 100) === Math.round(entry.amount * 100);
-          return <button key={`${candidate.id}:${candidate.accountId}:${candidate.type}`} type="button" role="option" aria-selected={selected} onClick={() => onChange({ transactionId: candidate.id })} className={`ff-focus flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${selected ? "border-primary bg-primary/10 shadow-[0_8px_22px_rgba(22,150,110,.12)]" : "border-border bg-surface hover:border-primary/35 hover:bg-primary/5"}`}><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{candidate.description}</strong><small className="mt-1 block text-xs text-foreground-muted">{candidate.kind === "transfer" ? "Transferência · " : ""}{formatDate(candidate.dueDate)}</small></span><span className="shrink-0 text-right"><strong className={exact ? "text-primary" : "text-orange"}>{formatarReais(candidate.remainingValue)}</strong>{exact && <small className="block text-[10px] font-extrabold uppercase text-primary">valor exato</small>}</span></button>;
+          return <button key={`${candidate.id}:${candidate.accountId}:${candidate.type}`} type="button" role="option" aria-selected={selected} onClick={() => onChange({ transactionId: candidate.id })} className={`ff-focus flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${selected ? "border-primary bg-primary/10 shadow-[0_8px_22px_rgba(22,150,110,.12)]" : "border-border bg-surface hover:border-primary/35 hover:bg-primary/5"}`}><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{candidate.description}</strong><small className="mt-1 block text-xs text-foreground-muted">{candidate.kind === "transfer" ? "Transferência · " : ""}{formatDate(candidate.dueDate)}</small>{candidate.status === "paga" && <small className="mt-1 block text-[10px] font-extrabold uppercase text-primary">Já concluído · somente vincular</small>}</span><span className="shrink-0 text-right"><strong className={exact ? "text-primary" : "text-orange"}>{formatarReais(candidate.remainingValue)}</strong>{exact && <small className="block text-[10px] font-extrabold uppercase text-primary">valor exato</small>}</span></button>;
         })}
         {visible.length === 0 && <p className="rounded-xl border border-dashed border-border bg-surface p-4 text-center text-sm text-foreground-muted">Nenhum lançamento compatível encontrado.</p>}
       </div>
@@ -229,8 +232,8 @@ export default function ReconciliationWorkspace({
     const draft = drafts[entry.id];
     if (!draft || draft.busy) return;
     const selected = candidates.find((candidate) => candidate.id === draft.transactionId && candidate.accountId === accountId && candidate.type === entry.type);
-    const excess = draft.mode === "existing" && selected ? Math.round((entry.amount - selected.remainingValue) * 100) / 100 : 0;
-    const remainingAfterPartial = selected ? Math.round((selected.remainingValue - entry.amount) * 100) / 100 : 0;
+    const excess = draft.mode === "existing" && selected && selected.status !== "paga" ? Math.round((entry.amount - selected.remainingValue) * 100) / 100 : 0;
+    const remainingAfterPartial = selected?.status !== "paga" ? Math.round(((selected?.remainingValue ?? 0) - entry.amount) * 100) / 100 : 0;
     if (excess > 0 && confirmation !== "interest") {
       setInterestEntryId(entry.id);
       return;
@@ -247,6 +250,7 @@ export default function ReconciliationWorkspace({
       mode: draft.mode, transactionId: draft.transactionId, categoryId: draft.categoryId,
       description: draft.description, requestId: draft.requestId, excessAsInterest: excess > 0,
       existingKind: selected?.kind,
+      existingStatus: selected?.status,
     });
     if (result.erro) {
       setDrafts((current) => ({ ...current, [entry.id]: { ...current[entry.id], busy: false, error: result.erro } }));

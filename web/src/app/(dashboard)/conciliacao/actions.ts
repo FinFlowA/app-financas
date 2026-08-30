@@ -17,6 +17,7 @@ export type ReconcileEntryInput = {
   requestId: string;
   excessAsInterest?: boolean;
   existingKind?: "standard" | "transfer";
+  existingStatus?: "pendente" | "paga";
 };
 
 export type ReconcileEntryResult = { erro: string | null; sucesso?: string };
@@ -68,7 +69,9 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return { erro: "Sua sessão expirou. Entre novamente." };
-  const rpcName = input.mode === "existing" && input.existingKind === "transfer"
+  const rpcName = input.mode === "existing" && input.existingStatus === "paga"
+    ? "link_completed_bank_statement_entry"
+    : input.mode === "existing" && input.existingKind === "transfer"
     ? "reconcile_bank_transfer_entry"
     : input.mode === "existing" && input.excessAsInterest
       ? "reconcile_bank_statement_excess_interest"
@@ -83,7 +86,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
     p_expected_user_id: user.id,
     p_client_created_at: new Date().toISOString(),
   };
-  const rpcInput = rpcName === "reconcile_bank_transfer_entry" || rpcName === "reconcile_bank_statement_excess_interest" ? {
+  const rpcInput = rpcName === "reconcile_bank_transfer_entry" || rpcName === "reconcile_bank_statement_excess_interest" || rpcName === "link_completed_bank_statement_entry" ? {
     ...commonRpcInput,
     p_transaction_id: input.transactionId,
   } : {

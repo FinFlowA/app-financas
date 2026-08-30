@@ -14,7 +14,7 @@ export default async function ReconciliationPage() {
     supabase.auth.getClaims(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome"),
-    fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").eq("status", "pendente").is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
+    fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
     supabase.rpc("list_bank_reconciliation_fingerprints"),
     supabase.rpc("list_pending_bank_transfer_counterparts"),
   ]);
@@ -34,7 +34,8 @@ export default async function ReconciliationPage() {
       categoryId: transaction.categoria_id,
       description: descricaoVisivel(transaction.descricao),
       dueDate: transaction.data_vencimento,
-      remainingValue: remainingById.get(transaction.id) ?? Number(transaction.valor),
+      remainingValue: transaction.status === "paga" ? Number(transaction.valor) : remainingById.get(transaction.id) ?? Number(transaction.valor),
+      status: transaction.status === "paga" ? "paga" as const : "pendente" as const,
     };
     if (!isTransferencia(transaction.descricao)) return [{ ...base, accountId: transaction.conta_id, type: transaction.tipo, kind: "standard" as const }];
     const destinationId = getContaDestinoTransferencia(transaction.descricao);
@@ -47,7 +48,7 @@ export default async function ReconciliationPage() {
     for (const row of (counterpartsResult.data ?? []) as TransferCounterpartRow[]) candidates.push({
       id: Number(row.transaction_id), accountId: Number(row.account_id), categoryId: null,
       type: row.entry_type, description: descricaoVisivel(row.description), dueDate: row.due_date,
-      remainingValue: Number(row.amount), kind: "transfer",
+      remainingValue: Number(row.amount), kind: "transfer", status: "pendente",
     });
   }
   const fingerprints = fingerprintsResult.error?.code === "PGRST202" ? [] : (fingerprintsResult.data ?? []) as FingerprintRow[];
