@@ -92,6 +92,7 @@ web/
   src/lib/                   domínio web e clientes Supabase SSR
 docs/                        setup, handoffs, políticas e auditorias
 scripts/                     testes e verificações de segurança
+constants/                   catálogos compartilhados entre app e site
 ```
 
 ## Desenvolvimento local
@@ -241,6 +242,46 @@ negação de serviço ao processar imagens especialmente criadas durante o build
 o npm só oferece correção automática por uma atualização principal do Expo.
 Essa atualização não foi forçada nesta rodada porque exige migração e novo
 binário, e não deve ser misturada com as correções funcionais sem teste nativo.
+
+### Atualização de extrato, conciliação e experiência web — 29/08/2026
+
+- A nova área **Extrato e conciliação**, posicionada abaixo de Contas no site,
+  importa arquivos CSV e OFX de até 5 MB por seleção ou arrastar e soltar.
+- O arquivo bancário é interpretado localmente e permanece apenas na sessão do
+  navegador. O arquivo original e suas linhas cruas não são armazenados no
+  banco; somente as decisões confirmadas e identificadores não reversíveis
+  usados para impedir conciliação duplicada são persistidos.
+- Cada item pode ser conciliado com um lançamento existente, transformado em
+  nova receita/despesa ou ignorado. Itens podem ser selecionados e ignorados em
+  massa, com opções de selecionar e desmarcar todos.
+- A busca de agendamentos aceita trechos do nome e ignora diferenças de caixa e
+  acentuação. Sem busca, os candidatos são filtrados por mês, com navegação
+  para períodos anteriores e posteriores.
+- Valores menores realizam baixa parcial e preservam o restante pendente.
+  Valores maiores exigem confirmação para registrar a diferença como juros no
+  mesmo lançamento, tanto para receitas quanto para despesas.
+- Transferências conciliadas nos dois extratos usam os dois lados da mesma
+  movimentação, evitando duplicar o valor ao conferir origem e destino.
+- Reabrir uma baixa conciliada libera novamente a respectiva linha do extrato.
+- O fluxo de caixa do site e do app passou a usar a mesma base acumulada e a
+  mesma paginação de contas. O gráfico web ganhou detalhes ao passar o cursor
+  pelo mês, sem o tooltip nativo duplicado, e os relatórios por categoria
+  excluem transferências.
+- O detalhamento de categorias separa despesas e receitas, apresenta totais e
+  balanço quando aplicável e bloqueia a rolagem da tela ao fundo.
+- Todas as áreas principais do site possuem ajuda contextual pelo botão `?`,
+  com explicação da finalidade, principais ações e regras da tela.
+- Site e aplicativo utilizam o mesmo catálogo versionado de categorias iniciais,
+  cores e ícones. A complementação automática é limitada a cadastros novos que
+  possuam apenas as categorias “Outros”; categorias excluídas pelo usuário não
+  são recriadas.
+- Os modais de confirmação permanecem centralizados na viewport, bloqueiam a
+  rolagem do fundo e mantêm o vínculo correto com formulários renderizados por
+  portal, inclusive na exclusão de categorias.
+
+O leitor não extrai dados de PDF nesta versão. Converta o extrato para CSV ou
+OFX antes da importação; essa limitação evita interpretar incorretamente PDFs
+com layouts bancários não padronizados.
 
 ## Deploy do site
 

@@ -1,6 +1,14 @@
 import { supabase } from "./supabase";
+import defaultCategoriesJson from "../constants/default-categories.json";
 
 const DEFAULT_CATEGORY_TYPES = ["despesa", "receita"] as const;
+const DEFAULT_CATEGORIES_VERSION = 1;
+const DEFAULT_CATEGORIES = defaultCategoriesJson as ReadonlyArray<{
+  name: string;
+  type: (typeof DEFAULT_CATEGORY_TYPES)[number];
+  color: string;
+  icon: string;
+}>;
 
 export const CATEGORIAS_INICIAIS_METADATA_KEY = "categorias_iniciais_criadas";
 
@@ -14,7 +22,7 @@ export type ResultadoCategoriasIniciais = {
 const inicializacoesEmAndamento = new Map<string, Promise<ResultadoCategoriasIniciais>>();
 
 const metadataIndicaInicializacao = (metadata?: UserMetadata | null) =>
-  metadata?.[CATEGORIAS_INICIAIS_METADATA_KEY] === true;
+  metadata?.categorias_padrao_versao === DEFAULT_CATEGORIES_VERSION;
 
 async function garantirCategoriaOutrosInterno(
   userId: string,
@@ -26,38 +34,44 @@ async function garantirCategoriaOutrosInterno(
 
   const { data, error } = await supabase
     .from("categorias")
-    .select("id, tipo, ativa")
+    .select("id, nome, tipo, ativa")
     .eq("user_id", userId)
-    .ilike("nome", "Outros")
     .order("id", { ascending: true });
 
   if (error) throw error;
 
   const existentes = data ?? [];
-  const tiposExistentes = new Set(existentes.map((categoria) => categoria.tipo));
-  const categoriaAmbos = existentes.find((categoria) => categoria.tipo === "ambos");
-  const tiposAusentes = DEFAULT_CATEGORY_TYPES.filter((tipo) => !tiposExistentes.has(tipo));
+  const deveCompletarCatalogo = metadataConhecida?.[CATEGORIAS_INICIAIS_METADATA_KEY] !== true
+    || existentes.every((categoria) => categoria.nome.trim().toLocaleLowerCase("pt-BR") === "outros");
+  const categoriaAmbos = existentes.find((categoria) => categoria.tipo === "ambos" && categoria.nome.toLocaleLowerCase("pt-BR") === "outros");
   let alterouCategorias = false;
 
-  if (categoriaAmbos && tiposAusentes.length > 0) {
-    const tipoNormalizado = tiposAusentes.shift()!;
+  if (categoriaAmbos) {
     const { error: updateError } = await supabase
       .from("categorias")
-      .update({ tipo: tipoNormalizado })
+      .update({ tipo: "despesa" })
       .eq("id", categoriaAmbos.id)
       .eq("user_id", userId);
     if (updateError) throw updateError;
+    categoriaAmbos.tipo = "despesa";
     alterouCategorias = true;
   }
 
-  if (tiposAusentes.length > 0) {
+  const chavesExistentes = new Set(existentes.map((categoria) =>
+    `${categoria.tipo}:${categoria.nome.trim().toLocaleLowerCase("pt-BR")}`,
+  ));
+  const categoriasAusentes = (deveCompletarCatalogo ? DEFAULT_CATEGORIES : []).filter((categoria) =>
+    !chavesExistentes.has(`${categoria.type}:${categoria.name.toLocaleLowerCase("pt-BR")}`),
+  );
+
+  if (categoriasAusentes.length > 0) {
     const { error: insertError } = await supabase.from("categorias").insert(
-      tiposAusentes.map((tipo) => ({
+      categoriasAusentes.map((categoria) => ({
         user_id: userId,
-        nome: "Outros",
-        tipo,
-        cor: "#6C7D77",
-        icone: "more-horiz",
+        nome: categoria.name,
+        tipo: categoria.type,
+        cor: categoria.color,
+        icone: categoria.icon,
         ativa: 1,
       })),
     );
@@ -78,6 +92,7 @@ async function garantirCategoriaOutrosInterno(
     data: {
       ...metadataAtual,
       [CATEGORIAS_INICIAIS_METADATA_KEY]: true,
+      categorias_padrao_versao: DEFAULT_CATEGORIES_VERSION,
     },
   });
   if (metadataError) throw metadataError;
@@ -86,11 +101,10 @@ async function garantirCategoriaOutrosInterno(
 }
 
 /**
- * Garante as categorias iniciais "Outros" uma unica vez por usuario.
+ * Garante o catálogo inicial compartilhado pelo app e pelo site uma vez por versão.
  *
- * Depois que `categorias_iniciais_criadas` e salvo no `user_metadata`, esta
- * funcao nao reconcilia mais a lista. Assim, excluir, arquivar ou renomear uma
- * categoria "Outros" continua sendo uma escolha permanente do usuario.
+ * A versão permite complementar cadastros antigos quando o catálogo oficial muda,
+ * sem recriar categorias que o usuário remover depois de receber essa versão.
  */
 export function garantirCategoriaOutros(
   userId: string,

@@ -163,9 +163,6 @@ export default function FluxoSaldoChart({
                 style={{ cursor: "pointer" }}
               >
                 <rect className={styles.chartMonthHitArea} x={grupoX} y={margemTopo} width={larguraGrupo} height={areaAltura} fill="transparent" />
-                <title>
-                  {`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
-                </title>
                 <rect
                   x={centro - larguraBarra - 1}
                   y={y(mes.receitas + (mes.receitasPrevistas ?? 0))}

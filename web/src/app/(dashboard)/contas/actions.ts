@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { isAccountColor } from "@/lib/account-colors";
 import {
   executeManualFinancialAction,
   executeOptimisticUpdate,
@@ -12,7 +13,6 @@ import { parseMoney } from "@/lib/money";
 
 export type ContaActionState = { erro: string | null; sucesso?: string };
 
-const COLORS = ["#16966E", "#4D76E8", "#F28A55", "#805AD5", "#EE6B63", "#56D39B", "#457B9D", "#6C7D77"];
 
 function refreshAccounts() {
   revalidatePath("/");
@@ -36,7 +36,7 @@ export async function criarConta(_: ContaActionState, formData: FormData): Promi
   const shared = formString(formData, "shared") === "true";
   if (!name || name.length > 100) return { erro: "Informe um nome de até 100 caracteres." };
   if (!Number.isFinite(initialBalance) || initialBalance < 0) return { erro: "Informe um saldo inicial válido." };
-  if (!COLORS.includes(color)) return { erro: "Escolha uma cor disponível." };
+  if (!isAccountColor(color)) return { erro: "Escolha uma cor disponível." };
 
   const result = await executeManualFinancialAction("create_account", {
     name,
@@ -69,7 +69,7 @@ export async function editarConta(_: ContaActionState, formData: FormData): Prom
   if (!Number.isInteger(accountId) || accountId <= 0 || !Number.isInteger(expectedVersion)) return { erro: "Conta inválida." };
   if (!name || name.length > 100) return { erro: "Informe um nome de até 100 caracteres." };
   if (!Number.isFinite(initialBalance) || initialBalance < 0) return { erro: "Informe um saldo inicial válido." };
-  if (!COLORS.includes(color)) return { erro: "Escolha uma cor disponível." };
+  if (!isAccountColor(color)) return { erro: "Escolha uma cor disponível." };
 
   const result = await executeOptimisticUpdate("update_account", {
     account_id: accountId,
@@ -123,5 +123,3 @@ export async function alterarCompartilhamentoConta(
     sucesso: shared ? "Conta compartilhada com seu parceiro." : "Conta agora é privada.",
   };
 }
-
-export { COLORS };

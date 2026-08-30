@@ -57,7 +57,7 @@ export default function CategoryDistributionChart({
                 strokeLinecap="butt"
                 transform="rotate(-90 60 60)"
               >
-                <title>{item.name}: {formatarReais(item.value)} ({item.percentage.toFixed(0)}%)</title>
+                <title>{`${item.name}: ${formatarReais(item.value)} (${item.percentage.toFixed(0)}%)`}</title>
               </circle>
             );
           })}

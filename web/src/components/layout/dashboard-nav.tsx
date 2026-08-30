@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-type IconName = "home" | "history" | "goals" | "cards" | "flow" | "ai" | "settings" | "accounts" | "categories" | "plans" | "security" | "menu" | "close";
+type IconName = "home" | "history" | "goals" | "cards" | "flow" | "ai" | "settings" | "accounts" | "reconciliation" | "categories" | "plans" | "security" | "menu" | "close";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Início", icon: "home", exact: true },
   { href: "/transacoes", label: "Histórico", icon: "history" },
   { href: "/contas", label: "Contas", icon: "accounts" },
+  { href: "/conciliacao", label: "Extrato e conciliação", shortLabel: "Extrato", icon: "reconciliation" },
   { href: "/categorias", label: "Categorias", icon: "categories" },
   { href: "/objetivos", label: "Objetivos", icon: "goals" },
   { href: "/cartoes", label: "Cartões", icon: "cards" },
@@ -48,6 +49,7 @@ export function NavIcon({ name, className = "" }: { name: IconName; className?: 
     ai: <><path d="m12 2 1.2 3.8L17 7l-3.8 1.2L12 12l-1.2-3.8L7 7l3.8-1.2L12 2Z" /><path d="m19 13 .8 2.2L22 16l-2.2.8L19 19l-.8-2.2L16 16l2.2-.8L19 13ZM5 12l.8 2.2L8 15l-2.2.8L5 18l-.8-2.2L2 15l2.2-.8L5 12Z" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
     accounts: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M16 10h5v5h-5a2.5 2.5 0 0 1 0-5ZM7 9h4" /></>,
+    reconciliation: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h3" /><path d="m14 15 1.5 1.5L19 13" /></>,
     categories: <><path d="m3 11 8-8h7l3 3v7l-8 8L3 11Z" /><circle cx="16" cy="8" r="1" /></>,
     plans: <><path d="m4 8 3 3 5-7 5 7 3-3-2 11H6L4 8Z" /><path d="M7 15h10" /></>,
     security: <><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z" /><path d="m9 12 2 2 4-5" /></>,

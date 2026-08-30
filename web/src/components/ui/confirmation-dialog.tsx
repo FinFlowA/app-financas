@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 type Props = {
   title: string;
@@ -11,6 +12,7 @@ type Props = {
   onConfirm?: () => void;
   confirmName?: string;
   confirmValue?: string;
+  confirmFormId?: string;
   children?: ReactNode;
 };
 
@@ -23,6 +25,7 @@ export default function ConfirmationDialog({
   onConfirm,
   confirmName,
   confirmValue,
+  confirmFormId,
   children,
 }: Props) {
   const titleId = useId();
@@ -75,7 +78,9 @@ export default function ConfirmationDialog({
     };
   }, []);
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div
       className="fixed inset-0 z-[90] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]"
       onMouseDown={() => { if (!pending) onClose(); }}
@@ -103,6 +108,7 @@ export default function ConfirmationDialog({
             type={onConfirm ? "button" : "submit"}
             name={onConfirm ? undefined : confirmName}
             value={onConfirm ? undefined : confirmValue}
+            form={onConfirm ? undefined : confirmFormId}
             disabled={pending}
             onClick={onConfirm}
             className="ff-focus rounded-full bg-red px-4 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(238,107,99,0.2)] transition hover:brightness-95 disabled:opacity-50"
@@ -111,6 +117,7 @@ export default function ConfirmationDialog({
           </button>
         </div>
       </section>
-    </div>
+    </div>,
+    document.body,
   );
 }

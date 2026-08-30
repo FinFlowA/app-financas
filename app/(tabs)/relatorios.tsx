@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { supabase } from "../../lib/supabase";
+import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
@@ -151,11 +152,16 @@ export default function RelatoriosScreen() {
     if (!session?.user?.id) return;
     try {
       const [resT, resC] = await Promise.all([
-        supabase.from("transacoes").select("valor, tipo, status, data_vencimento, data_realizacao, conta_id, descricao"),
+        fetchAllRows<Transacao>((from, to) => supabase
+          .from("transacoes")
+          .select("valor, tipo, status, data_vencimento, data_realizacao, conta_id, descricao")
+          .order("id", { ascending: true })
+          .range(from, to)),
         supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
       ]);
-      if (resT.data) setTransacoes(resT.data);
-      if (resC.data) setContas(resC.data.filter((c) => !c.arquivado));
+      if (resT.error || resC.error) throw new Error(resT.error?.message ?? resC.error?.message ?? "Falha ao carregar o fluxo de caixa.");
+      setTransacoes(resT.data ?? []);
+      setContas((resC.data ?? []).filter((c) => !c.arquivado));
     } catch (e) { console.error(e); }
   }, [session?.user?.id]);
 

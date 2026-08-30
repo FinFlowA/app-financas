@@ -370,12 +370,18 @@ export async function reopenTransaction(formData: FormData): Promise<Transaction
 export async function getTransactionPaymentHistory(transactionId: number): Promise<TransactionActionState<unknown>> {
   if (!validId(transactionId)) return { erro: "Lançamento inválido." };
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("get_transaction_payment_history", {
-    p_transaction_id: transactionId,
-  });
+  const [{ data, error }, adjustmentResult] = await Promise.all([
+    supabase.rpc("get_transaction_payment_history", { p_transaction_id: transactionId }),
+    supabase.rpc("get_bank_reconciliation_adjustment", { p_transaction_id: transactionId }),
+  ]);
   if (error) {
     if (error.code === "PGRST202") return { erro: null, dados: null };
     return { erro: transactionError(error.message) };
   }
-  return { erro: null, dados: data };
+  if (adjustmentResult.error && adjustmentResult.error.code !== "PGRST202") {
+    return { erro: transactionError(adjustmentResult.error.message) };
+  }
+  const adjustment = adjustmentResult.error?.code === "PGRST202" ? null : adjustmentResult.data?.[0] ?? null;
+  const body = data && typeof data === "object" && !Array.isArray(data) ? data as Record<string, unknown> : {};
+  return { erro: null, dados: { ...body, reconciliation_adjustment: adjustment } };
 }

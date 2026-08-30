@@ -4,6 +4,15 @@ import { LEGAL_DOCUMENT_VERSION } from "@/lib/auth/constants";
 import { ageFromIsoDate } from "@/lib/auth/validation";
 import { executeManualFinancialAction } from "@/lib/finance-action";
 import { createClient } from "@/lib/supabase/server";
+import defaultCategoriesJson from "../../../../constants/default-categories.json";
+
+const DEFAULT_CATEGORIES_VERSION = 1;
+const DEFAULT_CATEGORIES = defaultCategoriesJson as ReadonlyArray<{
+  name: string;
+  type: "receita" | "despesa";
+  color: string;
+  icon: string;
+}>;
 
 export type ProfileActionState = { status: "idle" | "success" | "error"; message?: string };
 
@@ -45,48 +54,50 @@ export async function ensureDefaultCategories(): Promise<ProfileActionState> {
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
   if (userError || !user) return { status: "error", message: "Sua sessão expirou." };
+  if (user.user_metadata?.categorias_padrao_versao === DEFAULT_CATEGORIES_VERSION) {
+    return { status: "success" };
+  }
 
   const { data, error } = await supabase
     .from("categorias")
-    .select("id,tipo")
+    .select("id,nome,tipo")
     .eq("user_id", user.id)
-    .ilike("nome", "Outros")
     .order("id");
   if (error) return { status: "error", message: "Não foi possível preparar as categorias iniciais." };
 
   const rows = data ?? [];
-  const existing = new Set(rows.map((row) => row.tipo));
-  let missing = (["despesa", "receita"] as const).filter((type) => !existing.has(type));
-  const legacy = rows.find((row) => row.tipo === "ambos");
+  const shouldCompleteCatalog = user.user_metadata?.categorias_iniciais_criadas !== true
+    || rows.every((row) => row.nome.trim().toLocaleLowerCase("pt-BR") === "outros");
+  const legacy = rows.find((row) => row.tipo === "ambos" && row.nome.trim().toLocaleLowerCase("pt-BR") === "outros");
 
-  if (legacy && missing.length > 0) {
-    const normalized = missing[0];
+  if (legacy) {
     const { error: updateError } = await supabase
       .from("categorias")
-      .update({ tipo: normalized })
+      .update({ tipo: "despesa" })
       .eq("id", legacy.id)
       .eq("user_id", user.id)
       .eq("tipo", "ambos");
     if (updateError) return { status: "error", message: "Não foi possível normalizar a categoria inicial." };
-
-    // Duas abas podem iniciar o cadastro ao mesmo tempo. Releia o estado
-    // depois da atualização condicional para não criar uma categoria duplicada.
-    const { data: refreshed, error: refreshError } = await supabase
-      .from("categorias")
-      .select("tipo")
-      .eq("user_id", user.id)
-      .ilike("nome", "Outros");
-    if (refreshError) return { status: "error", message: "Não foi possível preparar as categorias iniciais." };
-    const refreshedTypes = new Set((refreshed ?? []).map((row) => row.tipo));
-    missing = (["despesa", "receita"] as const).filter((type) => !refreshedTypes.has(type));
   }
 
-  for (const type of missing) {
+  const { data: refreshed, error: refreshError } = await supabase
+    .from("categorias")
+    .select("nome,tipo")
+    .eq("user_id", user.id);
+  if (refreshError) return { status: "error", message: "Não foi possível preparar as categorias iniciais." };
+  const existingKeys = new Set((refreshed ?? []).map((row) =>
+    `${row.tipo}:${row.nome.trim().toLocaleLowerCase("pt-BR")}`,
+  ));
+  const missing = (shouldCompleteCatalog ? DEFAULT_CATEGORIES : []).filter((category) =>
+    !existingKeys.has(`${category.type}:${category.name.toLocaleLowerCase("pt-BR")}`),
+  );
+
+  for (const category of missing) {
     const result = await executeManualFinancialAction("create_category", {
-      name: "Outros",
-      type,
-      color: "#6C7D77",
-      icon: "more-horiz",
+      name: category.name,
+      type: category.type,
+      color: category.color,
+      icon: category.icon,
     });
     if (result.erro) {
       // O executor serializa as ações por usuário. Se outra aba venceu a
@@ -95,8 +106,8 @@ export async function ensureDefaultCategories(): Promise<ProfileActionState> {
         .from("categorias")
         .select("id")
         .eq("user_id", user.id)
-        .eq("tipo", type)
-        .ilike("nome", "Outros")
+        .eq("tipo", category.type)
+        .ilike("nome", category.name)
         .limit(1)
         .maybeSingle();
       if (lookupError || !existingCategory) return { status: "error", message: result.erro };
@@ -106,6 +117,7 @@ export async function ensureDefaultCategories(): Promise<ProfileActionState> {
   const { error: metadataError } = await supabase.auth.updateUser({ data: {
     ...user.user_metadata,
     categorias_iniciais_criadas: true,
+    categorias_padrao_versao: DEFAULT_CATEGORIES_VERSION,
   } });
   return metadataError
     ? { status: "error", message: "As categorias foram criadas, mas o cadastro não pôde ser finalizado." }

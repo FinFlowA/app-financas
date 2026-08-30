@@ -643,7 +643,7 @@ export default function RootLayout() {
     if (!uid) return;
 
     const metadata = (session.user.user_metadata ?? {}) as Record<string, unknown>;
-    if (metadata.categorias_iniciais_criadas === true) {
+    if (metadata.categorias_padrao_versao === 1) {
       categoriasIniciaisProcessadas.current.add(uid);
       return;
     }

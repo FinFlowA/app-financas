@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState, useSyncExternalStore } fro
 import { createPortal } from "react-dom";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import CurrencyInput from "@/components/ui/currency-input";
+import { ACCOUNT_COLORS } from "@/lib/account-colors";
 import { formatarReais } from "@/lib/format";
 import type { Conta } from "@/lib/types";
 import { useRequestId } from "@/lib/use-request-id";
@@ -15,13 +16,6 @@ import {
   type ContaActionState,
 } from "./actions";
 
-const COLORS = [
-  "#2A9D8F", "#E9C46A", "#F4A261", "#E76F51",
-  "#264653", "#8AB17D", "#8A05BE", "#EC7000",
-  "#457B9D", "#CC092F", "#005CA9", "#1D3557",
-  "#E63946", "#6D597A", "#B56576", "#3A86FF",
-  "#8338EC", "#FF006E", "#3A5A40", "#D97706",
-];
 const INITIAL: ContaActionState = { erro: null };
 const subscribeToNothing = () => () => undefined;
 const getClientSnapshot = () => true;
@@ -48,12 +42,12 @@ function Message({ state }: { state: ContaActionState }) {
 }
 
 function ColorFields({ selected, onChange }: { selected: string; onChange: (value: string) => void }) {
-  return <><input type="hidden" name="color" value={selected} /><div className="flex flex-wrap gap-2.5">{COLORS.map((color) => <button key={color} type="button" aria-label={`Usar cor ${color}`} aria-pressed={selected === color} onClick={() => onChange(color)} className="ff-focus h-9 w-9 rounded-full border-2 border-surface shadow-sm transition duration-200 hover:scale-110" style={{ backgroundColor: color, outline: selected === color ? "2px solid var(--color-foreground)" : "none", outlineOffset: 2 }} />)}</div></>;
+  return <><input type="hidden" name="color" value={selected} /><div className="flex flex-wrap gap-2.5">{ACCOUNT_COLORS.map((color) => <button key={color} type="button" aria-label={`Usar cor ${color}`} aria-pressed={selected === color} onClick={() => onChange(color)} className="ff-focus h-9 w-9 rounded-full border-2 border-surface shadow-sm transition duration-200 hover:scale-110" style={{ backgroundColor: color, outline: selected === color ? "2px solid var(--color-foreground)" : "none", outlineOffset: 2 }} />)}</div></>;
 }
 
 function NewAccount({ partnerName }: { partnerName: string | null }) {
   const [open, setOpen] = useState(false);
-  const [color, setColor] = useState(COLORS[0]);
+  const [color, setColor] = useState<string>(ACCOUNT_COLORS[0]);
   const [state, action, pending] = useActionState(criarConta, INITIAL);
   return <section className="ff-card mb-6 overflow-hidden border-primary/15 bg-[linear-gradient(135deg,var(--color-surface),color-mix(in_srgb,var(--color-primary)_5%,var(--color-surface)))] shadow-[0_18px_50px_rgba(0,0,0,0.08)]">
     <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
@@ -76,7 +70,7 @@ function NewAccount({ partnerName }: { partnerName: string | null }) {
 
 function AccountCard({ account, balance, own, partnerName }: { account: Conta; balance: number; own: boolean; partnerName: string | null }) {
   const canUseDOM = useSyncExternalStore(subscribeToNothing, getClientSnapshot, getServerSnapshot);
-  const [color, setColor] = useState(account.cor || COLORS[0]);
+  const [color, setColor] = useState<string>(account.cor || ACCOUNT_COLORS[0]);
   const [editOpen, setEditOpen] = useState(false);
   const [editState, editAction, editing] = useActionState(editarConta, INITIAL);
   const [state, stateAction, changing] = useActionState(alterarEstadoConta, INITIAL);
@@ -84,10 +78,10 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
   const [deleteBaseline, setDeleteBaseline] = useState<ContaActionState | null>(null);
   const confirmDelete = deleteBaseline !== null && !(state !== deleteBaseline && state.sucesso);
   return <article className={`ff-card group relative overflow-hidden border-white/5 shadow-[0_16px_44px_rgba(0,0,0,0.1)] transition duration-300 ${editOpen ? "" : "hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_22px_56px_rgba(0,0,0,0.16)]"}`}>
-    <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: account.cor || COLORS[0] }} />
-    <div aria-hidden="true" className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.14]" style={{ backgroundColor: account.cor || COLORS[0] }} />
+    <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: account.cor || ACCOUNT_COLORS[0] }} />
+    <div aria-hidden="true" className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.14]" style={{ backgroundColor: account.cor || ACCOUNT_COLORS[0] }} />
     <div className="relative p-5 pl-6">
-      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: account.cor || COLORS[0] }} /><h2 className="truncate font-extrabold text-foreground">{account.nome}</h2></div><p data-private-value="true" className="mt-3 text-2xl font-black tracking-tight">{formatarReais(balance)}</p><p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-foreground-muted">Saldo disponível</p></div><span className="rounded-full border border-border/70 bg-surface-muted/70 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">{account.arquivado ? "Arquivada" : account.compartilhado ? "Compartilhada" : "Ativa"}</span></div>
+      <div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex items-center gap-2"><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: account.cor || ACCOUNT_COLORS[0] }} /><h2 className="truncate font-extrabold text-foreground">{account.nome}</h2></div><p data-private-value="true" className="mt-3 text-2xl font-black tracking-tight">{formatarReais(balance)}</p><p className="mt-1 text-[10px] font-bold uppercase tracking-widest text-foreground-muted">Saldo disponível</p></div><span className="rounded-full border border-border/70 bg-surface-muted/70 px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">{account.arquivado ? "Arquivada" : account.compartilhado ? "Compartilhada" : "Ativa"}</span></div>
       {!own && <p className="mt-3 text-xs text-foreground-muted">Conta compartilhada pelo parceiro. A edição pertence ao titular.</p>}
       {own && partnerName && (!account.arquivado || account.compartilhado) && <form action={sharingAction} className="mt-4 rounded-ff-sm border border-border bg-surface-muted p-3">
         <RequestId state={sharingState} />

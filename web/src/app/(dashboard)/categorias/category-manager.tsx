@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState } from "react";
+import { useActionState, useEffect, useId, useRef, useState } from "react";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import FinancialIcon from "@/components/ui/financial-icon";
 import type { Categoria } from "@/lib/types";
@@ -98,6 +98,7 @@ function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDisc
 }
 
 function CategoryCard({ category }: { category: Categoria }) {
+  const actionFormId = useId();
   const active = category.ativa === true || category.ativa === 1;
   const [expanded, setExpanded] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
@@ -117,7 +118,7 @@ function CategoryCard({ category }: { category: Categoria }) {
         {editOpen && <CategoryEditForm category={category} onDiscard={() => setEditOpen(false)} />}
       </> : <p className="text-xs font-semibold text-foreground-muted">Reative a categoria para editá-la.</p>}
     </div>}
-    {expanded && <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} />
+    {expanded && <form id={actionFormId} action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} />
       {active ? <button name="operation" value="archive_category" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button> : <button name="operation" value="reactivate_category" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button>}
       <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>
       {confirmDelete && <ConfirmationDialog
@@ -126,6 +127,7 @@ function CategoryCard({ category }: { category: Categoria }) {
         confirmLabel="Confirmar exclusão"
         confirmName="operation"
         confirmValue="delete_category"
+        confirmFormId={actionFormId}
         pending={changing}
         onClose={() => setDeleteBaseline(null)}
       >

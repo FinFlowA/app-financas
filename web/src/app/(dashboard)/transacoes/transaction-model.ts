@@ -42,6 +42,7 @@ export type PaymentHistoryItem = {
 export type PaymentHistory = {
   summary: PaymentSummary;
   payments: PaymentHistoryItem[];
+  reconciliationAdjustment: { scheduledAmount: number; interestAmount: number; totalAmount: number } | null;
 };
 
 export type TransactionKind = "receita" | "despesa" | "transferencia";
@@ -157,7 +158,20 @@ export function normalizePaymentHistory(value: unknown, transaction: Transaction
     }
   }
   payments.sort((a, b) => b.paymentSequence - a.paymentSequence || (b.createdAt ?? "").localeCompare(a.createdAt ?? ""));
-  return { summary, payments };
+  const rawAdjustment = body.reconciliation_adjustment;
+  const adjustment = rawAdjustment && typeof rawAdjustment === "object" && !Array.isArray(rawAdjustment)
+    ? rawAdjustment as Record<string, unknown>
+    : null;
+  const scheduledAmount = nonNegativeMoney(adjustment?.scheduled_amount);
+  const interestAmount = nonNegativeMoney(adjustment?.interest_amount);
+  const totalAmount = nonNegativeMoney(adjustment?.entry_amount);
+  return {
+    summary,
+    payments,
+    reconciliationAdjustment: scheduledAmount !== null && interestAmount !== null && totalAmount !== null
+      ? { scheduledAmount, interestAmount, totalAmount }
+      : null,
+  };
 }
 
 export function transactionKind(transaction: TransactionRow): TransactionKind {

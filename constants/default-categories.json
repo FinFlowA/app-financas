@@ -1,0 +1,13 @@
+[
+  { "name": "Alimentação", "type": "despesa", "color": "#E76F51", "icon": "restaurant" },
+  { "name": "Moradia", "type": "despesa", "color": "#457B9D", "icon": "home" },
+  { "name": "Transporte", "type": "despesa", "color": "#F4A261", "icon": "directions-car" },
+  { "name": "Lazer", "type": "despesa", "color": "#8A05BE", "icon": "beach-access" },
+  { "name": "Saúde", "type": "despesa", "color": "#E63946", "icon": "medical-services" },
+  { "name": "Compras", "type": "despesa", "color": "#EC7000", "icon": "shopping-cart" },
+  { "name": "Outros", "type": "despesa", "color": "#6C7D77", "icon": "label" },
+  { "name": "Salário", "type": "receita", "color": "#2A9D8F", "icon": "payments" },
+  { "name": "Freelance", "type": "receita", "color": "#3A86FF", "icon": "laptop" },
+  { "name": "Investimentos", "type": "receita", "color": "#8AB17D", "icon": "trending-up" },
+  { "name": "Outros", "type": "receita", "color": "#6C7D77", "icon": "label" }
+]
