@@ -11,6 +11,7 @@ import { formatarReais } from "@/lib/format";
 import { listUpcomingTransactions } from "@/lib/home-agenda";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
 import { homeTransactionCreationHref } from "@/lib/transaction-entry";
+import { calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import {
   calcularSaldosPorConta,
   dataEfetivaTransacao,
@@ -64,11 +65,6 @@ function shiftMonth(month: string, delta: number) {
   const [year, number] = month.split("-").map(Number);
   const date = new Date(Date.UTC(year, number - 1 + delta, 1));
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function endOfMonth(month: string) {
-  const [year, number] = month.split("-").map(Number);
-  return `${month}-${String(new Date(Date.UTC(year, number, 0)).getUTCDate()).padStart(2, "0")}`;
 }
 
 function shortDate(iso: string) {
@@ -180,8 +176,16 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   const calculations = useMemo(() => {
     const balances = calcularSaldosPorConta(activeAccounts, transactions);
     const currentBalance = selectedAccounts.reduce((sum, account) => sum + (balances.get(account.id) ?? Number(account.saldo_inicial)), 0);
-    const monthEnd = endOfMonth(month);
-    let predictedBalance = selectedAccounts.reduce((sum, account) => sum + Number(account.saldo_inicial), 0);
+    const initialBalance = selectedAccounts.reduce((sum, account) => sum + Number(account.saldo_inicial), 0);
+    const projectionYear = Number(month.slice(0, 4));
+    const projectionMonthIndex = Number(month.slice(5, 7)) - 1;
+    const projection = calcularSaldoProjetadoPorMes(
+      initialBalance,
+      scoped,
+      projectionYear,
+      new Date(`${today}T12:00:00-03:00`),
+    );
+    const predictedBalance = projection[projectionMonthIndex]?.saldo ?? currentBalance;
     const byCategory = new Map<number | null, { realized: number; expected: number }>();
     const monthFinancialTransactions: Transacao[] = [];
     let realizedIncome = 0;
@@ -191,9 +195,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       const value = Number(transaction.valor);
       if (!Number.isFinite(value)) continue;
       const effectiveDate = dataEfetivaTransacao(transaction).slice(0, 10);
-      if ((transaction.status === "paga" || transaction.status === "pendente") && effectiveDate && effectiveDate <= monthEnd) {
-        predictedBalance += transaction.tipo === "receita" ? value : -value;
-      }
       if (!effectiveDate.startsWith(month)) continue;
       if (isMovimentoObjetivo(transaction.descricao)) continue;
       if (allActiveSelected && isPagamentoFatura(transaction.descricao)) continue;
@@ -230,7 +231,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       byCategory,
       balances,
     };
-  }, [activeAccounts, allActiveSelected, invoiceItems, month, scoped, selectedAccounts, transactions]);
+  }, [activeAccounts, allActiveSelected, invoiceItems, month, scoped, selectedAccounts, today, transactions]);
 
   const nextDate = useMemo(() => {
     const date = new Date(`${today}T12:00:00-03:00`);
@@ -458,7 +459,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
           </div>
           <div className={styles.progressLegend}>
             <span><i className={styles.realizedLegend}/><span data-private-value="true">Realizado: {formatarReais(calculations.monthBalance)}</span></span>
-            <span><i className={styles.expectedLegend}/><span data-private-value="true">Saldo previsto: {formatarReais(calculations.predictedBalance)}</span></span>
+            <span><i className={styles.expectedLegend}/><span data-private-value="true">Saldo previsto no fim do mês: {formatarReais(calculations.predictedBalance)}</span></span>
             <strong>{expectedExpenseProgress.toFixed(0)}% das saídas previstas realizado</strong>
           </div>
           <div className={styles.accountsHeader}><h3>Contas desta visão</h3></div>
