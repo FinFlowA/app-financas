@@ -8,6 +8,8 @@ type SummaryRow = { root_transaction_id: number; remaining_value: number };
 type FingerprintRow = { account_id: number; entry_fingerprint: string };
 type TransferCounterpartRow = { transaction_id: number; account_id: number; entry_type: "receita" | "despesa"; description: string; due_date: string; amount: number };
 
+const PAYMENT_SUMMARY_BATCH_SIZE = 500;
+
 export default async function ReconciliationPage() {
   const supabase = await createClient();
   const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, fingerprintsResult, counterpartsResult] = await Promise.all([
@@ -24,10 +26,16 @@ export default async function ReconciliationPage() {
   const categories = ((categoriesResult.data ?? []) as Categoria[]).filter((category) => category.ativa === true || category.ativa === 1);
   const transactions = ((transactionsResult.data ?? []) as Transacao[]).filter((transaction) => (transaction.categoria_id !== null || isTransferencia(transaction.descricao))
     && !isMovimentoObjetivo(transaction.descricao) && !isPagamentoFatura(transaction.descricao));
-  const ids = transactions.map((transaction) => transaction.id);
-  const summariesResult = ids.length ? await supabase.rpc("list_transaction_payment_summaries", { p_transaction_ids: ids }) : { data: [], error: null };
-  if (summariesResult.error) throw new Error("Não foi possível calcular os saldos pendentes.");
-  const remainingById = new Map(((summariesResult.data ?? []) as SummaryRow[]).map((row) => [Number(row.root_transaction_id), Number(row.remaining_value)]));
+  const ids = transactions.filter((transaction) => transaction.status === "pendente").map((transaction) => transaction.id);
+  const summaryBatches = await Promise.all(Array.from(
+    { length: Math.ceil(ids.length / PAYMENT_SUMMARY_BATCH_SIZE) },
+    (_, index) => supabase.rpc("list_transaction_payment_summaries", {
+      p_transaction_ids: ids.slice(index * PAYMENT_SUMMARY_BATCH_SIZE, (index + 1) * PAYMENT_SUMMARY_BATCH_SIZE),
+    }),
+  ));
+  if (summaryBatches.some((result) => result.error)) throw new Error("Não foi possível calcular os saldos pendentes.");
+  const summaries = summaryBatches.flatMap((result) => (result.data ?? []) as SummaryRow[]);
+  const remainingById = new Map(summaries.map((row) => [Number(row.root_transaction_id), Number(row.remaining_value)]));
   const candidates: ReconciliationCandidate[] = transactions.flatMap<ReconciliationCandidate>((transaction) => {
     const base = {
       id: transaction.id,
