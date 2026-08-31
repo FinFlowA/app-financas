@@ -32,11 +32,19 @@ if (nativeModalImports.length) {
 
 const layout = fs.readFileSync(path.join(root, "app", "_layout.tsx"), "utf8");
 const route = fs.readFileSync(path.join(root, "app", "flow-screen.tsx"), "utf8");
+const flowScreen = fs.readFileSync(path.join(root, "components", "FinFlowScreen.tsx"), "utf8");
 if (!layout.includes("<FinFlowScreenProvider>") || !layout.includes('name="flow-screen"')) {
   throw new Error("A rota global de fluxos não está registrada no layout raiz.");
 }
 if (!route.includes("FinFlowScreenPage")) {
   throw new Error("A página global de fluxos não está conectada ao Expo Router.");
+}
+
+if (!flowScreen.includes('from "react-native-safe-area-context"')) {
+  throw new Error("As telas de fluxo precisam usar a SafeAreaView compativel com Android e iOS.");
+}
+if (!flowScreen.includes('edges={["top", "right", "bottom", "left"]}')) {
+  throw new Error("As telas de fluxo precisam respeitar todas as areas seguras do aparelho.");
 }
 
 console.log("Flow screen navigation tests passed.");

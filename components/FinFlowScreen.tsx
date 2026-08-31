@@ -14,7 +14,8 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { SafeAreaView, StyleSheet, View, type ModalProps } from "react-native";
+import { StyleSheet, View, type ModalProps } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { finFlowTheme } from "../constants/finflow-design";
 import { useTheme } from "@react-navigation/native";
 
@@ -129,7 +130,10 @@ export function FinFlowScreenPage() {
   const pageContent = expandContentToPage(entry?.content, theme.background);
 
   return (
-    <SafeAreaView style={[styles.page, { backgroundColor: theme.background }]}> 
+    <SafeAreaView
+      edges={["top", "right", "bottom", "left"]}
+      style={[styles.page, { backgroundColor: theme.background }]}
+    >
       <View style={styles.content}>{pageContent}</View>
     </SafeAreaView>
   );
