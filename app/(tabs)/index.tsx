@@ -2893,7 +2893,12 @@ export default function Dashboard() {
                 <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
               </TouchableOpacity>
             </View>
-            <ScrollView contentContainerStyle={styles.transactionForm} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+            <ScrollView
+              style={styles.transactionFormScroll}
+              contentContainerStyle={styles.transactionForm}
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+            >
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Tipo de movimentação</Text>
               <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
                 <TouchableOpacity style={[styles.typeButton, styles.transactionTypeButton, tipoTransacao === "despesa" && styles.expenseSelected]} onPress={() => { setTipoTransacao("despesa"); setCatSelecionadaId(null); }}>
@@ -3197,7 +3202,8 @@ const styles = StyleSheet.create({
   transactionTitle: { fontSize: 20, fontWeight: "900", letterSpacing: -0.3 },
   transactionSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   transactionClose: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
-  transactionForm: { paddingHorizontal: 20, paddingBottom: 26 },
+  transactionFormScroll: { flex: 1 },
+  transactionForm: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 26 },
   transactionSectionLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.45, textTransform: "uppercase", marginBottom: 8 },
   transactionSelector: { minHeight: 50, borderRadius: FinFlowRadius.medium, padding: 4, marginBottom: 18 },
   transactionTypeButton: { minHeight: 40, borderRadius: 12 },
@@ -3217,7 +3223,7 @@ const styles = StyleSheet.create({
   transactionPlainInput: { minHeight: 52, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 14, fontSize: 15, marginBottom: 14 },
   transactionChipRow: { paddingRight: 12 },
   transactionChip: { minHeight: 42, borderWidth: 1.5, paddingHorizontal: 13, marginRight: 9 },
-  transactionActions: { flexDirection: "row", gap: 10, marginTop: 8 },
+  transactionActions: { flexDirection: "row", gap: 10, marginTop: "auto", paddingTop: 18 },
   transactionActionButton: { flex: 1, minWidth: 0, borderRadius: FinFlowRadius.medium },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
   notificationPanel: { width: "92%", maxWidth: 520, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },

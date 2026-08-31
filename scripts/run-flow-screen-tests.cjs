@@ -33,6 +33,8 @@ if (nativeModalImports.length) {
 const layout = fs.readFileSync(path.join(root, "app", "_layout.tsx"), "utf8");
 const route = fs.readFileSync(path.join(root, "app", "flow-screen.tsx"), "utf8");
 const flowScreen = fs.readFileSync(path.join(root, "components", "FinFlowScreen.tsx"), "utf8");
+const home = fs.readFileSync(path.join(root, "app", "(tabs)", "index.tsx"), "utf8");
+const settings = fs.readFileSync(path.join(root, "app", "(tabs)", "configuracoes.tsx"), "utf8");
 if (!layout.includes("<FinFlowScreenProvider>") || !layout.includes('name="flow-screen"')) {
   throw new Error("A rota global de fluxos não está registrada no layout raiz.");
 }
@@ -45,6 +47,12 @@ if (!flowScreen.includes('from "react-native-safe-area-context"')) {
 }
 if (!flowScreen.includes('edges={["top", "right", "bottom", "left"]}')) {
   throw new Error("As telas de fluxo precisam respeitar todas as areas seguras do aparelho.");
+}
+if (!home.includes('transactionForm: { flexGrow: 1') || !home.includes('marginTop: "auto"')) {
+  throw new Error("A acao da tela de transacao precisa permanecer alinhada ao rodape.");
+}
+if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includes('offlineQueueList: { flex: 1')) {
+  throw new Error("As acoes de notificacao e sincronizacao precisam permanecer alinhadas ao rodape.");
 }
 
 console.log("Flow screen navigation tests passed.");
