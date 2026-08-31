@@ -36,7 +36,7 @@
     "@react-navigation/bottom-tabs": "^7.4.0",
     "@react-navigation/elements": "^2.6.3",
     "@react-navigation/native": "^7.1.8",
-    "@supabase/supabase-js": "^2.111.0",
+    "@supabase/supabase-js": "^2.112.4",
     "axios": "^1.19.0",
     "expo": "~54.0.36",
     "expo-constants": "~18.0.13",
