@@ -40,8 +40,25 @@ export default function DisplayControls() {
   }, [dark]);
 
   function toggleTheme() {
-    localStorage.setItem(THEME_KEY, dark ? "light" : "dark");
-    window.dispatchEvent(new Event("finflow-display-change"));
+    const applyTheme = () => {
+      localStorage.setItem(THEME_KEY, dark ? "light" : "dark");
+      window.dispatchEvent(new Event("finflow-display-change"));
+    };
+    const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const documentWithTransition = document as Document & {
+      startViewTransition?: (callback: () => void) => { finished: Promise<void> };
+    };
+
+    if (!reducedMotion && documentWithTransition.startViewTransition) {
+      void documentWithTransition.startViewTransition(applyTheme).finished;
+      return;
+    }
+
+    if (!reducedMotion) {
+      document.documentElement.classList.add("ff-theme-transition");
+      window.setTimeout(() => document.documentElement.classList.remove("ff-theme-transition"), 420);
+    }
+    applyTheme();
   }
 
   return (

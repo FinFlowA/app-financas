@@ -54,6 +54,19 @@ export async function salvarPreferenciasNotificacoes(
 let Notif: any = null;
 let geracaoAgendaNotificacoes = 0;
 let geracaoSessaoNotificacoes = 0;
+
+async function garantirCanalNotificacoesAndroid(): Promise<void> {
+  if (!Notif || Platform.OS !== "android") return;
+  await Notif.setNotificationChannelAsync(ANDROID_NOTIFICATION_CHANNEL_ID, {
+    name: "FinFlow",
+    importance: Notif.AndroidImportance.MAX,
+    vibrationPattern: [0, 250, 250, 250],
+    sound: "default",
+    enableVibrate: true,
+    lockscreenVisibility: Notif.AndroidNotificationVisibility.PRIVATE,
+  });
+}
+
 if (!LOCAL_DEMO) {
   try {
     // Carregamento lazy evita derrubar web/local quando o módulo nativo não existe.
@@ -70,14 +83,7 @@ if (!LOCAL_DEMO) {
     });
     // Canal Android obrigatório para exibir notificações no Android 8+
     if (Platform.OS === "android") {
-      Notif.setNotificationChannelAsync(ANDROID_NOTIFICATION_CHANNEL_ID, {
-        name: "FinFlow",
-        importance: Notif.AndroidImportance.MAX,
-        vibrationPattern: [0, 250, 250, 250],
-        sound: "default",
-        enableVibrate: true,
-        lockscreenVisibility: Notif.AndroidNotificationVisibility.PRIVATE,
-      });
+      void garantirCanalNotificacoesAndroid();
     }
   } catch {
     // expo-notifications não disponível — modo silencioso
@@ -122,9 +128,18 @@ async function gravarMarcadorSistemaSeSessaoAtiva(
 export async function pedirPermissaoNotificacoes(): Promise<boolean> {
   if (LOCAL_DEMO || !Notif || Platform.OS === "web") return false;
   try {
+    // No Android, o canal precisa existir antes do pedido para que o sistema
+    // operacional apresente corretamente a permissão de notificações.
+    await garantirCanalNotificacoesAndroid();
     const { status: existing } = await Notif.getPermissionsAsync();
     if (existing === "granted") return true;
-    const { status } = await Notif.requestPermissionsAsync();
+    const { status } = await Notif.requestPermissionsAsync({
+      ios: {
+        allowAlert: true,
+        allowBadge: false,
+        allowSound: true,
+      },
+    });
     return status === "granted";
   } catch {
     return false;

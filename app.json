@@ -27,7 +27,8 @@
       "package": "com.luishpalacio.meuappfinancas",
       "permissions": [
         "INTERNET",
-        "RECEIVE_BOOT_COMPLETED"
+        "RECEIVE_BOOT_COMPLETED",
+        "android.permission.POST_NOTIFICATIONS"
       ]
     },
     "web": {

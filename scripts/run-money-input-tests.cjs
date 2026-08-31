@@ -5,6 +5,7 @@ const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
 const source = fs.readFileSync(path.join(root, "lib", "utils.ts"), "utf8");
+const goalsScreen = fs.readFileSync(path.join(root, "app", "(tabs)", "caixinhas.tsx"), "utf8");
 const output = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText;
@@ -32,5 +33,18 @@ expectEqual(valorDaEntradaMoeda("nao-e-valor"), 0, "Entrada invalida deve falhar
 expectEqual(valorDaEntradaMoeda("999.999.999.999,99"), MAX_MONEY_VALUE, "Limite monetario valido foi rejeitado");
 expectEqual(valorDaEntradaMoeda("1.000.000.000.000,00"), 0, "Valor acima do limite deve ser rejeitado");
 expectEqual(formatarEntradaMoeda("999999999999999999999"), "999.999.999.999,99", "Mascara deve limitar o tamanho da entrada");
+
+if (!goalsScreen.includes("setMetaValor(formatarEntradaMoeda(texto))")) {
+  throw new Error("Valor da meta deve aplicar a mascara monetaria durante a digitacao");
+}
+if (!goalsScreen.includes("setSaldoInicialCaixinha(formatarEntradaMoeda(texto))")) {
+  throw new Error("Saldo inicial do objetivo deve aplicar a mascara monetaria durante a digitacao");
+}
+if (!goalsScreen.includes("valorDaEntradaMoeda(metaValor)")) {
+  throw new Error("Valor da meta deve usar o parser monetario compartilhado");
+}
+if (!goalsScreen.includes("valorDaEntradaMoeda(saldoInicialCaixinha)")) {
+  throw new Error("Saldo inicial do objetivo deve usar o parser monetario compartilhado");
+}
 
 console.log("Money input tests passed.");

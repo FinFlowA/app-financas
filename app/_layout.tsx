@@ -1180,7 +1180,16 @@ export default function RootLayout() {
     if (value) {
       const concedida = await pedirPermissaoNotificacoes();
       if (!concedida) {
-        Alert.alert("Permissão Negada", "Para ativar as notificações, habilite-as nas configurações do seu celular.");
+        setNotificacoesAtivas(false);
+        await AsyncStorage.setItem(`@notificacoes_enabled_${userId}`, "false");
+        Alert.alert(
+          "Permissão de notificações",
+          "O celular não autorizou as notificações do FinFlow. Permita o acesso nas configurações do sistema.",
+          [
+            { text: "Agora não", style: "cancel" },
+            { text: "Abrir configurações", onPress: () => void Linking.openSettings() },
+          ],
+        );
         return;
       }
     } else {

@@ -798,7 +798,10 @@ export default function Dashboard() {
         setTemParceiro(false);
       }
       void AsyncStorage.multiRemove(CHAVES_CACHE_HOME_LEGADO).catch(() => {});
-      setIsOffline(true);
+      // Uma falha de consulta também pode vir do servidor, de permissão ou de
+      // um recurso temporariamente indisponível. Só apresente o estado offline
+      // quando o monitor do dispositivo confirmar ausência de conexão.
+      setIsOffline(await dispositivoSemConexao());
     }
   }, [notificacoesAtivas, session?.user?.id]);
 
@@ -2032,16 +2035,6 @@ export default function Dashboard() {
             </View>
           </View>
 
-          {isOffline ? (
-            <View style={{ alignItems: "center", paddingVertical: 32, gap: 10 }}>
-              <MaterialIcons name="wifi-off" size={36} color={Cores.textoSecundario} />
-              <Text style={{ color: Cores.textoSecundario, fontSize: 15, fontWeight: "600" }}>Sem conexão</Text>
-              <Text style={{ color: Cores.textoSecundario, fontSize: 13, textAlign: "center" }}>
-                O fluxo de caixa não está disponível offline.{"\n"}Reconecte para ver a distribuição por categoria.
-              </Text>
-            </View>
-          ) : (
-          <>
           {/* Despesas por categoria */}
           <View style={[styles.graficoCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 12 }}>
@@ -2079,8 +2072,6 @@ export default function Dashboard() {
               </Text>
             )}
           </View>
-          </>
-          )}
         </View>
 
       </ScrollView>

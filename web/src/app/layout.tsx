@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import WebPlatform from "@/components/platform/web-platform";
+import "@fontsource/material-icons";
 import "./globals.css";
 
 export const metadata: Metadata = {
