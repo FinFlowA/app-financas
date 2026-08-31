@@ -8,11 +8,11 @@ const layout = fs.readFileSync(path.join(root, "app", "_layout.tsx"), "utf8");
 
 const updateTitle = layout.indexOf("Novidades no FinFlow");
 assert.notEqual(updateTitle, -1, "Titulo do modal de atualizacao nao encontrado.");
-const modalStart = layout.lastIndexOf("<Modal", updateTitle);
-assert.notEqual(modalStart, -1, "Modal de atualizacao nao encontrado em app/_layout.tsx.");
+const modalStart = layout.lastIndexOf("<FinFlowPopup", updateTitle);
+assert.notEqual(modalStart, -1, "Popup de atualizacao nao encontrado em app/_layout.tsx.");
 
-const nextModal = layout.indexOf("\n      <Modal", modalStart + 1);
-assert.notEqual(nextModal, -1, "Nao foi possivel delimitar o modal de atualizacao.");
+const nextModal = layout.indexOf("\n      <FinFlowPopup", modalStart + 1);
+assert.notEqual(nextModal, -1, "Nao foi possivel delimitar o popup de atualizacao.");
 const modal = layout.slice(modalStart, nextModal);
 
 assert.match(

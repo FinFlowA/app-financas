@@ -17,6 +17,11 @@ export default async function DashboardLayout({ children }: { children: React.Re
   // a cada navegação); o proxy.ts já fez a verificação forte contra o
   // servidor antes de deixar a requisição chegar aqui.
   const { data } = await supabase.auth.getClaims();
+  if (typeof data?.claims.sub === "string") {
+    // Recompõe de forma idempotente a janela móvel das séries fixas. Uma
+    // indisponibilidade momentânea não deve impedir o acesso ao painel.
+    await supabase.rpc("refresh_my_recurring_schedules");
+  }
   const email = typeof data?.claims.email === "string" ? data.claims.email : undefined;
   const metadata = data?.claims.user_metadata as Record<string, unknown> | undefined;
   const nome = typeof metadata?.nome_usuario === "string" ? metadata.nome_usuario : "Usuário";

@@ -106,7 +106,6 @@ export async function criarCompra(formData: FormData): Promise<ResultadoCartao> 
   const frequency = formString(formData, "frequency") || "unica";
   const installments = formInteger(formData, "installments");
   const valueMode = formString(formData, "value_mode") || "total";
-  const recurrenceCount = formInteger(formData, "recurrence_count");
 
   if (!Number.isInteger(cardId) || cardId <= 0) return { erro: "Cartão inválido." };
   if (!Number.isInteger(categoryId) || categoryId <= 0) return { erro: "Selecione uma categoria de despesa." };
@@ -119,9 +118,6 @@ export async function criarCompra(formData: FormData): Promise<ResultadoCartao> 
   }
   if (frequency === "parcelada" && !["total", "parcela"].includes(valueMode)) {
     return { erro: "Escolha como o valor parcelado foi informado." };
-  }
-  if (frequency === "mensal" && (!Number.isInteger(recurrenceCount) || recurrenceCount < 2 || recurrenceCount > 60)) {
-    return { erro: "Use entre 2 e 60 cobranças mensais." };
   }
 
   const total = frequency === "parcelada" && valueMode === "parcela"
@@ -140,7 +136,7 @@ export async function criarCompra(formData: FormData): Promise<ResultadoCartao> 
     payload.installments = installments;
     if (valueMode === "parcela") payload.installment_value = informedValue;
   }
-  if (frequency === "mensal") payload.recurrence_count = recurrenceCount;
+  if (frequency === "mensal") payload.recurrence_count = 60;
 
   const resultado = await executeManualFinancialAction("create_card_purchase", payload, formString(formData, "request_id"));
   if (!resultado.erro) revalidarCartoes(cardId);

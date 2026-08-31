@@ -73,7 +73,7 @@ export default async function ObjetivosPage() {
       ...objetivo,
       previstoMeta: objetivo.data_prazo ? Math.max(0, projetarAte(objetivo.data_prazo)) : null,
       previstoFimAno: Math.max(0, projetarAte(fimDoAno)),
-      movimentos: movimentos.map((item) => ({
+      movimentos: movimentos.filter((item) => item.status === "paga").map((item) => ({
         id: item.id,
         descricao: item.descricao
           .replace(/^\[Transf\.\]\s*/, "")

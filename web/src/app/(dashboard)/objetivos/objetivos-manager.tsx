@@ -316,8 +316,6 @@ function FormularioMovimento({
   executar: Executar;
 }) {
   const [frequencia, setFrequencia] = useState("unica");
-  const limite = frequencia === "semanal" ? 260 : frequencia === "mensal" ? 60 : 5;
-  const ocorrenciasPadrao = frequencia === "anual" ? 5 : 12;
   const hoje = hojeEmSaoPaulo();
 
   return (
@@ -367,19 +365,6 @@ function FormularioMovimento({
           <option value="anual">Anual (agendada)</option>
         </select>
       </Field>
-      <Field titulo="Ocorrências">
-        <input
-          key={frequencia}
-          name="recurrence_count"
-          type="number"
-          min={2}
-          max={limite}
-          defaultValue={ocorrenciasPadrao}
-          disabled={frequencia === "unica"}
-          required={frequencia !== "unica"}
-          className={`${inputClass()} disabled:opacity-50`}
-        />
-      </Field>
       <div className="sm:col-span-2">
         {operacao === "resgatar" && (
           <p data-private-value="true" className="mb-2 text-xs font-semibold text-orange">
@@ -388,7 +373,7 @@ function FormularioMovimento({
         )}
         {frequencia !== "unica" && (
           <p className="mb-3 text-xs text-foreground-muted">
-            A recorrência cria agendamentos pendentes. O saldo muda somente quando cada ocorrência for concluída.
+            O FinFlow mantém automaticamente uma janela de cinco anos de agendamentos. O saldo muda somente quando cada ocorrência for concluída.
           </p>
         )}
         <button
@@ -494,36 +479,6 @@ export default function ObjetivosManager({
         </div>
       )}
 
-      {painel && painel.tipo === "historico" && (
-        <section
-          key={`${painel.tipo}-${"objetivo" in painel ? painel.objetivo.id : "novo"}`}
-          className="mb-6 overflow-hidden rounded-[22px] border border-primary/25 bg-surface p-5 shadow-[0_22px_60px_rgba(0,0,0,0.14)] sm:p-6"
-        >
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-extrabold text-foreground">{painelTitulo}</h2>
-            <button type="button" onClick={() => setPainel(null)} aria-label="Fechar" className="ff-focus grid h-9 w-9 place-items-center rounded-full bg-surface-muted text-lg font-bold text-foreground-muted transition hover:bg-primary-soft hover:text-primary">×</button>
-          </div>
-          <div className="space-y-2">
-            {painel.objetivo.movimentos.map((item) => (
-              <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-ff-sm bg-surface-muted px-3 py-3">
-                <div>
-                  <p className="font-semibold text-foreground">{item.descricao}</p>
-                  <p className="text-xs text-foreground-muted">
-                    {formatarData(item.data)} · {item.status === "paga" ? "Realizado" : "Pendente"}
-                  </p>
-                </div>
-                <p data-private-value="true" className={`font-extrabold ${item.operacao === "guardar" ? "text-primary" : "text-orange"}`}>
-                  {item.operacao === "guardar" ? "+" : "−"}{formatarReais(item.valor)}
-                </p>
-              </div>
-            ))}
-            {painel.objetivo.movimentos.length === 0 && (
-              <p className="text-sm text-foreground-muted">Ainda não há movimentações neste objetivo.</p>
-            )}
-          </div>
-        </section>
-      )}
-
       {painel && painel.tipo !== "historico" && (
         <ObjectiveActionModal title={painelTitulo} pending={pending} onClose={() => setPainel(null)}>
           {erro && (
@@ -561,6 +516,7 @@ export default function ObjetivosManager({
           const percentual = Math.min(100, Math.max(0, Number(objetivo.saldo_atual) / meta * 100));
           const proprio = objetivo.user_id === userId;
           const previsaoMetaAbaixo = objetivo.previstoMeta !== null && objetivo.previstoMeta < meta;
+          const historicoAberto = painel?.tipo === "historico" && painel.objetivo.id === objetivo.id;
           return (
             <article key={objetivo.id} className="group relative overflow-hidden rounded-[20px] border border-border bg-surface p-4 shadow-[0_14px_38px_rgba(0,0,0,0.07)] transition duration-300 hover:border-primary/25 hover:shadow-[0_18px_44px_rgba(0,0,0,0.11)]">
               <div aria-hidden="true" className="absolute -right-16 -top-20 h-44 w-44 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.14]" style={{ backgroundColor: objetivo.cor }} />
@@ -611,10 +567,34 @@ export default function ObjetivosManager({
                 <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "movimentar", objetivo, operacao: "resgatar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange/35 bg-orange/10 px-3 py-2.5 text-xs font-extrabold text-orange transition hover:-translate-y-0.5 hover:border-orange/55 hover:bg-orange/15">
                   <GoalActionIcon action="withdraw" /> Resgatar
                 </button>
-                <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "historico", objetivo })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs font-extrabold text-foreground transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary-soft hover:text-primary">
+                <button type="button" aria-expanded={historicoAberto} onClick={() => historicoAberto ? setPainel(null) : abrirPainel({ tipo: "historico", objetivo })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs font-extrabold text-foreground transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary-soft hover:text-primary">
                   <GoalActionIcon action="history" /> Histórico
                 </button>
               </div>
+              {historicoAberto && (
+                <section className="relative mt-4 border-t border-border pt-4" aria-label={`Histórico realizado de ${objetivo.nome}`}>
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-extrabold text-foreground">Histórico realizado</h3>
+                    <button type="button" onClick={() => setPainel(null)} className="ff-focus text-xs font-bold text-foreground-muted transition hover:text-primary">Fechar</button>
+                  </div>
+                  <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                    {objetivo.movimentos.map((item) => (
+                      <div key={item.id} className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-surface-muted px-3 py-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{item.descricao}</p>
+                          <p className="text-xs text-foreground-muted">{formatarData(item.data)} · Realizado</p>
+                        </div>
+                        <p data-private-value="true" className={`font-extrabold ${item.operacao === "guardar" ? "text-primary" : "text-orange"}`}>
+                          {item.operacao === "guardar" ? "+" : "−"}{formatarReais(item.valor)}
+                        </p>
+                      </div>
+                    ))}
+                    {objetivo.movimentos.length === 0 && (
+                      <p className="rounded-xl bg-surface-muted px-3 py-4 text-sm text-foreground-muted">Ainda não há movimentações realizadas neste objetivo.</p>
+                    )}
+                  </div>
+                </section>
+              )}
               {proprio && partnerName && (
                 <form
                   action={(formData) => executar(

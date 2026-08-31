@@ -5,12 +5,13 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-22-objetivos-conta-v8",
+  id: "2.0.0-2026-08-31-fluxos-recorrencias-v9",
   items: [
-    "Guardar e resgatar em objetivos compartilhados agora funciona para as duas pessoas da parceria",
-    "Transferências parceladas para objetivos podem ser concluídas sem deixar saldo e histórico divergentes",
-    "O estorno pelo Histórico foi corrigido e reabre o lançamento de forma segura",
-    "A exclusão de conta agora confirma sua senha e remove os dados em uma única operação protegida",
-    "Links de recuperação de senha ficaram mais confiáveis e protegidos pelo fluxo PKCE",
+    "Formulários de criação e edição agora abrem em telas próprias, com navegação mais estável",
+    "Objetivos com apenas saldo inicial podem ser excluídos; objetivos movimentados preservam o histórico",
+    "O histórico dos objetivos mostra apenas movimentações realizadas e fica junto ao respectivo card no site",
+    "O fluxo de caixa detalha valores guardados e resgatados dos objetivos com cores próprias",
+    "Recorrências fixas mantêm automaticamente uma janela móvel de cinco anos, sem pedir quantidade de ocorrências",
+    "Seletores de conta, paletas de cores, barra inferior e criação de contas receberam correções visuais e de navegação",
   ],
 } as const;

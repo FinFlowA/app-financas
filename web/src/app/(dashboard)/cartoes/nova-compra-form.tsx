@@ -131,19 +131,13 @@ export default function NovaCompraForm({
           </>
         )}
 
-        {frequencia === "mensal" && (
-          <label>
-            <span className={styles.fieldLabel}>Cobranças mensais</span>
-            <input name="recurrence_count" type="number" min={2} max={60} defaultValue={12} required className={inputClass()} />
-          </label>
-        )}
       </div>
 
       {frequencia === "parcelada" && (
         <p className={styles.helperText}>O total é distribuído em centavos entre as parcelas; todas as cobranças são criadas atomicamente.</p>
       )}
       {frequencia === "mensal" && (
-        <p className={styles.helperText}>Compras fixas reservam limite apenas no mês corrente e podem ser encerradas nas cobranças futuras.</p>
+        <p className={styles.helperText}>O FinFlow mantém automaticamente cinco anos de cobranças mensais. Compras fixas reservam limite apenas no mês corrente e podem ser encerradas nas cobranças futuras.</p>
       )}
       {erro && <p role="alert" className={styles.errorText}>{erro}</p>}
 

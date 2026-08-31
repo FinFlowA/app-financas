@@ -172,7 +172,6 @@ export async function movimentarObjetivo(formData: FormData): Promise<ResultadoO
   const description = formString(formData, "description");
   const value = parseMoney(formData.get("value"));
   const frequency = formString(formData, "frequency") || "unica";
-  const recurrenceCount = formInteger(formData, "recurrence_count");
   const date = formString(formData, "date") || hojeEmSaoPaulo();
   const requestId = formString(formData, "request_id");
 
@@ -185,15 +184,6 @@ export async function movimentarObjetivo(formData: FormData): Promise<ResultadoO
   if (frequency === "unica" && date > hojeEmSaoPaulo()) {
     return { erro: "Um movimento realizado não pode ter data futura. Use uma recorrência para agendar." };
   }
-  const recurrenceLimit = frequency === "semanal" ? 260 : frequency === "mensal" ? 60 : 5;
-  if (frequency !== "unica" && (
-    !Number.isInteger(recurrenceCount)
-    || recurrenceCount < 2
-    || recurrenceCount > recurrenceLimit
-  )) {
-    return { erro: `Use entre 2 e ${recurrenceLimit} ocorrências para esta frequência.` };
-  }
-
   const payload: Record<string, unknown> = {
     operation,
     goal_id: goalId,
@@ -205,7 +195,7 @@ export async function movimentarObjetivo(formData: FormData): Promise<ResultadoO
   if (frequency === "unica") payload.realization_date = date;
   else {
     payload.scheduled_date = date;
-    payload.recurrence_count = recurrenceCount;
+    payload.recurrence_count = frequency === "semanal" ? 260 : frequency === "mensal" ? 60 : 5;
   }
 
   const resultado = await executeManualFinancialAction("move_goal", payload, requestId);

@@ -679,6 +679,7 @@ export default function Dashboard() {
     const requisicaoAtual = ++ultimaRequisicaoDadosRef.current;
 
     try {
+      if (!IS_LOCAL_DEMO) await supabase.rpc("refresh_my_recurring_schedules");
       const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
         supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
