@@ -401,6 +401,14 @@
   color: color-mix(in srgb, var(--ff-red) 72%, var(--foreground-muted));
 }
 
+.tooltipRow[data-tone="goal-save"] strong {
+  color: var(--color-orange);
+}
+
+.tooltipRow[data-tone="goal-withdraw"] strong {
+  color: var(--color-blue);
+}
+
 .monthDetails {
   margin-top: 16px;
   border: 1px solid color-mix(in srgb, var(--ff-primary) 18%, var(--border));
@@ -495,6 +503,14 @@
 
 .monthDetailItem[data-tone="expected-negative"] strong {
   color: color-mix(in srgb, var(--ff-red) 72%, var(--foreground-muted));
+}
+
+.monthDetailItem[data-tone="goal-save"] strong {
+  color: var(--color-orange);
+}
+
+.monthDetailItem[data-tone="goal-withdraw"] strong {
+  color: var(--color-blue);
 }
 
 .analysisGrid {

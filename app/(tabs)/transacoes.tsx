@@ -8,7 +8,6 @@ import {
   AppState,
   DeviceEventEmitter,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "../../components/FinFlowScreen";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { fetchAllRows } from "../../lib/supabase-pagination";
@@ -2143,7 +2144,7 @@ export default function TransacoesScreen() {
       </Animated.ScrollView>
 
       {faturaAbrirCartao && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setFaturaAbrirCartao(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setFaturaAbrirCartao(null)}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: faturaAbrirCartao.cartao_cor }]}>
               <View style={{ alignItems: "center", marginBottom: 14 }}>
@@ -2177,7 +2178,7 @@ export default function TransacoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {transacaoDetalhe && (() => {
@@ -2327,7 +2328,7 @@ export default function TransacoesScreen() {
         const alvo = transacaoEstornarPagamento;
         const resumo = resumoPagamentoDaTransacao(alvo);
         return (
-          <Modal animationType="fade" transparent visible onRequestClose={() => setTransacaoEstornarPagamento(null)}>
+          <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setTransacaoEstornarPagamento(null)}>
             <View style={styles.modalOverlay}>
               <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: "#F59E0B" }]}>
                 <View style={{ alignItems: "center", marginBottom: 12 }}>
@@ -2362,7 +2363,7 @@ export default function TransacoesScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </Modal>
+          </FinFlowPopup>
         );
       })()}
 
@@ -2423,7 +2424,7 @@ export default function TransacoesScreen() {
       )}
 
       {faturaEstornar && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setFaturaEstornar(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setFaturaEstornar(null)}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderTopWidth: 4, borderTopColor: "#F59E0B" }]}>
               <View style={{ alignItems: "center", marginBottom: 12 }}>
@@ -2447,7 +2448,7 @@ export default function TransacoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {transacaoConfirmar && (
@@ -2727,7 +2728,7 @@ export default function TransacoesScreen() {
 
       {/* MODAL OPÇÕES SÉRIE */}
       {modalOpcoesSerie && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesSerie(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalOpcoesSerie(null)}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF" }]}>
               <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>{modalOpcoesSerie.titulo}</Text>
@@ -2764,12 +2765,12 @@ export default function TransacoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* MODAL CONFIRMAR DELETE SIMPLES */}
       {modalDeleteSimples && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => { if (!loadingEstornoFatura) setModalDeleteSimples(null); }}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => { if (!loadingEstornoFatura) setModalDeleteSimples(null); }}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", borderTopWidth: 3, borderTopColor: parseInvoicePaymentMarker(modalDeleteSimples.descricao) ? "#F59E0B" : "#E76F51" }]}>
               <View style={{ alignItems: "center", marginBottom: 12 }}>
@@ -2805,11 +2806,11 @@ export default function TransacoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {modalFiltroAno && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroAno(false)}>
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalFiltroAno(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1 }]}>
             <View style={styles.filterModalHeader}>
@@ -2841,11 +2842,11 @@ export default function TransacoesScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
 
       {modalFiltroTipo && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroTipo(false)}>
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalFiltroTipo(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1 }]}>
             <View style={styles.filterModalHeader}>
@@ -2881,11 +2882,11 @@ export default function TransacoesScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
 
       {modalFiltroConta && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroConta(false)}>
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalFiltroConta(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1, maxHeight: "82%" }]}>
             <View style={styles.filterModalHeader}>
@@ -2921,11 +2922,11 @@ export default function TransacoesScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
 
       {modalFiltroCat && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalFiltroCat(false)}>
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalFiltroCat(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda, borderWidth: 1, maxHeight: "85%" }]}>
             <View style={styles.filterModalHeader}>
@@ -3025,7 +3026,7 @@ export default function TransacoesScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
       </View>
     </SafeAreaView>

@@ -20,6 +20,7 @@ import { fmtReais } from "../../lib/utils";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
   dataEfetivaTransacao,
+  getMovimentoObjetivo,
   getContaDestinoTransferencia,
   isMovimentoObjetivo,
   isTransferencia,
@@ -261,6 +262,10 @@ export default function RelatoriosScreen() {
       despPagas: 0,
       recPendentes: 0,
       despPendentes: 0,
+      guardado: 0,
+      resgatado: 0,
+      aGuardar: 0,
+      aResgatar: 0,
     }));
 
     for (const transacao of transacoesFiltradas) {
@@ -279,14 +284,24 @@ export default function RelatoriosScreen() {
         if (vencimento) datasPendentesValidas.push(vencimento);
       }
 
-      // Guardar ou resgatar valores de um objetivo altera o saldo disponível,
-      // mas não representa receita nem despesa nas barras do gráfico.
-      if (isMovimentoObjetivo(transacao.descricao)) continue;
       if (!dataEfetiva.startsWith(`${anoSelecionado}-`)) continue;
 
       const mesIdx = Number(dataEfetiva.slice(5, 7)) - 1;
       const mes = meses.at(mesIdx);
       if (!mes) continue;
+      const movimentoObjetivo = getMovimentoObjetivo(transacao.descricao);
+      if (movimentoObjetivo) {
+        if (movimentoObjetivo.operacao === "guardar") {
+          if (realizada) mes.guardado += valor;
+          else mes.aGuardar += valor;
+        } else {
+          if (realizada) mes.resgatado += valor;
+          else mes.aResgatar += valor;
+        }
+        // Movimentos de objetivo afetam o saldo, mas não são receitas ou
+        // despesas. Eles recebem linhas próprias no detalhamento do mês.
+        continue;
+      }
       if (transacao.tipo === "receita") {
         if (realizada) mes.recPagas += valor;
         else mes.recPendentes += valor;
@@ -714,22 +729,34 @@ export default function RelatoriosScreen() {
                 {mesDetalhe.isAtual ? "  •  Mês atual" : ""}
               </Text>
 
-              <DetalheRow
+              {mesDetalhe.recPagas > 0 && <DetalheRow
                 label="Recebido"
                 valor={`+ ${fmtReais(mesDetalhe.recPagas)}`}
                 cor="#2A9D8F"
                 dotCor="#2A9D8F"
                 cores={Cores}
-              />
-              <DetalheRow
+              />}
+              {mesDetalhe.despPagas > 0 && <DetalheRow
                 label="Pago"
                 valor={`- ${fmtReais(mesDetalhe.despPagas)}`}
                 cor="#E76F51"
                 dotCor="#E76F51"
                 cores={Cores}
-              />
+              />}
 
-              {(mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0) && (
+              {(mesDetalhe.guardado > 0 || mesDetalhe.resgatado > 0) && (
+                <>
+                  <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
+                  {mesDetalhe.guardado > 0 && (
+                    <DetalheRow label="Guardado em objetivos" valor={`- ${fmtReais(mesDetalhe.guardado)}`} cor="#F4A261" dotCor="#F4A261" cores={Cores} />
+                  )}
+                  {mesDetalhe.resgatado > 0 && (
+                    <DetalheRow label="Resgatado de objetivos" valor={`+ ${fmtReais(mesDetalhe.resgatado)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
+                  )}
+                </>
+              )}
+
+              {(mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0 || mesDetalhe.aGuardar > 0 || mesDetalhe.aResgatar > 0) && (
                 <>
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
                   {mesDetalhe.recPendentes > 0 && (
@@ -749,6 +776,12 @@ export default function RelatoriosScreen() {
                       dotCor="#E9C46A"
                       cores={Cores}
                     />
+                  )}
+                  {mesDetalhe.aGuardar > 0 && (
+                    <DetalheRow label="A guardar em objetivos" valor={`- ${fmtReais(mesDetalhe.aGuardar)}`} cor="#F4A261" dotCor="#F4A261" cores={Cores} />
+                  )}
+                  {mesDetalhe.aResgatar > 0 && (
+                    <DetalheRow label="A resgatar de objetivos" valor={`+ ${fmtReais(mesDetalhe.aResgatar)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
                   )}
                 </>
               )}

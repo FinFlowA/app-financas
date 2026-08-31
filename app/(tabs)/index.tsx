@@ -8,7 +8,6 @@ import {
   AppState,
   DeviceEventEmitter,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -18,6 +17,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "../../components/FinFlowScreen";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
@@ -2096,7 +2097,6 @@ export default function Dashboard() {
             <TouchableOpacity
               style={[styles.accountScopeCreate, { backgroundColor: novoTema.primary }]}
               onPress={() => {
-                setModalContasHomeVisivel(false);
                 setModalContaVisivel(true);
               }}
               activeOpacity={0.8}
@@ -2327,7 +2327,7 @@ export default function Dashboard() {
       )}
 
       {contaConfirmarArquivo && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setContaConfirmarArquivo(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setContaConfirmarArquivo(null)}>
           <View style={styles.modalOverlay}>
             <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "90%", borderTopWidth: 4, borderTopColor: contaConfirmarArquivo.temLancamentos ? "#F4A261" : "#E76F51" }]}>
               <View style={{ alignItems: "center", marginBottom: 14 }}>
@@ -2365,7 +2365,7 @@ export default function Dashboard() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* MODAL PICKER MÊS/ANO */}
@@ -2795,7 +2795,7 @@ export default function Dashboard() {
 
       {/* MODAL LANÇAMENTOS VENCIDOS */}
       {modalVencidosVisivel && !temPopupPrioritario && (
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible
@@ -2831,11 +2831,11 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
 
       {confirmarEdicaoSaldo && (
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible
@@ -2871,7 +2871,7 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
 
       {/* MODAL NOVA TRANSAÇÃO */}
@@ -3060,7 +3060,7 @@ export default function Dashboard() {
       </Modal>
       )}
       {modalIaEmBreve && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalIaEmBreve(false)}>
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalIaEmBreve(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxWidth: 390, alignItems: "center", borderTopWidth: 4, borderTopColor: "#7C6FF0" }]}>
             <View style={{ width: 68, height: 68, borderRadius: 24, backgroundColor: "#7C6FF022", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
@@ -3078,7 +3078,7 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
     </SafeAreaView>
   );

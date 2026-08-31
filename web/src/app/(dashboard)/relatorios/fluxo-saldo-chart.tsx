@@ -10,6 +10,10 @@ export type MesFluxo = {
   despesas: number;
   receitasPrevistas?: number;
   despesasPrevistas?: number;
+  guardadoObjetivos?: number;
+  resgatadoObjetivos?: number;
+  guardarObjetivosPrevisto?: number;
+  resgatarObjetivosPrevisto?: number;
 };
 export type PontoSaldo = { label: string; saldo: number; projetado: boolean };
 
@@ -73,6 +77,9 @@ export default function FluxoSaldoChart({
   const detailIndex = ativo ?? selectedIndex;
   const mesAtivo = meses[detailIndex];
   const saldoAtivo = saldos[detailIndex];
+  const linhasObjetivoTooltip = mesAtivo
+    ? [mesAtivo.guardadoObjetivos, mesAtivo.resgatadoObjetivos, mesAtivo.guardarObjetivosPrevisto, mesAtivo.resgatarObjetivosPrevisto].filter((valor) => (valor ?? 0) > 0).length
+    : 0;
 
   return (
     <section className={styles.chartPanel}>
@@ -131,7 +138,7 @@ export default function FluxoSaldoChart({
                   if (!container) return;
                   const bounds = container.getBoundingClientRect();
                   const tooltipWidth = 224;
-                  const tooltipHeight = 166;
+                  const tooltipHeight = 166 + linhasObjetivoTooltip * 24;
                   const cursorLeft = event.clientX - bounds.left + container.scrollLeft;
                   const cursorTop = event.clientY - bounds.top + container.scrollTop;
                   const minLeft = container.scrollLeft + 8;
@@ -246,10 +253,14 @@ export default function FluxoSaldoChart({
         {ativo !== null && mesAtivo && saldoAtivo && (
           <aside className={styles.tooltip} style={tooltipPosition ? { ...tooltipPosition, right: "auto" } : undefined} aria-hidden="true">
             <p className={styles.tooltipTitle}>{mesAtivo.label}</p>
-            <div className={styles.tooltipRow} data-tone="positive"><span>Receitas realizadas</span><strong>+{formatarReais(mesAtivo.receitas)}</strong></div>
-            <div className={styles.tooltipRow} data-tone="expected-positive"><span>Receitas previstas</span><strong>+{formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong></div>
-            <div className={styles.tooltipRow} data-tone="negative"><span>Despesas realizadas</span><strong>−{formatarReais(mesAtivo.despesas)}</strong></div>
-            <div className={styles.tooltipRow} data-tone="expected-negative"><span>Despesas previstas</span><strong>−{formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong></div>
+            {mesAtivo.receitas > 0 && <div className={styles.tooltipRow} data-tone="positive"><span>Receitas realizadas</span><strong>+{formatarReais(mesAtivo.receitas)}</strong></div>}
+            {(mesAtivo.receitasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-positive"><span>Receitas previstas</span><strong>+{formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong></div>}
+            {mesAtivo.despesas > 0 && <div className={styles.tooltipRow} data-tone="negative"><span>Despesas realizadas</span><strong>−{formatarReais(mesAtivo.despesas)}</strong></div>}
+            {(mesAtivo.despesasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-negative"><span>Despesas previstas</span><strong>−{formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong></div>}
+            {(mesAtivo.guardadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>Guardado em objetivos</span><strong>−{formatarReais(mesAtivo.guardadoObjetivos ?? 0)}</strong></div>}
+            {(mesAtivo.resgatadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+{formatarReais(mesAtivo.resgatadoObjetivos ?? 0)}</strong></div>}
+            {(mesAtivo.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>A guardar em objetivos</span><strong>−{formatarReais(mesAtivo.guardarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesAtivo.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+{formatarReais(mesAtivo.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
             <div className={styles.tooltipRow} data-tone={saldoAtivo.saldo < 0 ? "negative" : "balance"}><span>{saldoAtivo.projetado ? "Saldo projetado" : "Saldo realizado"}</span><strong>{formatarReais(saldoAtivo.saldo)}</strong></div>
           </aside>
         )}
@@ -268,22 +279,26 @@ export default function FluxoSaldoChart({
             </span>
           </div>
           <div className={styles.monthDetailsGrid}>
-            <div className={styles.monthDetailItem} data-tone="positive">
+            {mesAtivo.receitas > 0 && <div className={styles.monthDetailItem} data-tone="positive">
               <span>Receitas realizadas</span>
               <strong>+ {formatarReais(mesAtivo.receitas)}</strong>
-            </div>
-            <div className={styles.monthDetailItem} data-tone="negative">
+            </div>}
+            {mesAtivo.despesas > 0 && <div className={styles.monthDetailItem} data-tone="negative">
               <span>Despesas realizadas</span>
               <strong>- {formatarReais(mesAtivo.despesas)}</strong>
-            </div>
-            <div className={styles.monthDetailItem} data-tone="expected-positive">
+            </div>}
+            {(mesAtivo.receitasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-positive">
               <span>A receber</span>
               <strong>+ {formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong>
-            </div>
-            <div className={styles.monthDetailItem} data-tone="expected-negative">
+            </div>}
+            {(mesAtivo.despesasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-negative">
               <span>A pagar</span>
               <strong>- {formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong>
-            </div>
+            </div>}
+            {(mesAtivo.guardadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>Guardado em objetivos</span><strong>- {formatarReais(mesAtivo.guardadoObjetivos ?? 0)}</strong></div>}
+            {(mesAtivo.resgatadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+ {formatarReais(mesAtivo.resgatadoObjetivos ?? 0)}</strong></div>}
+            {(mesAtivo.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>A guardar em objetivos</span><strong>- {formatarReais(mesAtivo.guardarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesAtivo.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+ {formatarReais(mesAtivo.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
           </div>
         </section>
       )}

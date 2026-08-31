@@ -1,6 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
-import { Alert, Modal, StyleSheet, Text, TouchableOpacity, View, type AlertButton, type AlertOptions } from "react-native";
+import { Alert, StyleSheet, Text, TouchableOpacity, View, type AlertButton, type AlertOptions } from "react-native";
+import Modal from "./FinFlowPopup";
 import { finFlowTheme, FinFlowRadius, FinFlowShadow } from "../constants/finflow-design";
 
 type AlertState = { title: string; message?: string; buttons: AlertButton[] } | null;

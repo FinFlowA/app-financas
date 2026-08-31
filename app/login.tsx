@@ -10,7 +10,6 @@ import {
   Dimensions,
   Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { supabase } from "../lib/supabase";
@@ -275,6 +275,8 @@ export default function LoginScreen() {
 
       const troca = await supabase.auth.exchangeCodeForSession(codigo);
       if (troca.error) {
+        // O listener global de deep links pode concluir a mesma troca primeiro.
+        // Nesse caso, aceite apenas uma sessão já validada pelo servidor.
         const sessaoExistente = await supabase.auth.getSession();
         if (!sessaoExistente.data.session) throw troca.error;
       }

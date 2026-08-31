@@ -9,7 +9,6 @@ import {
   Animated,
   DeviceEventEmitter,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -19,6 +18,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "../../components/FinFlowScreen";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
@@ -1274,7 +1275,7 @@ export default function ConfiguracoesScreen() {
 
       {/* MODAL INFO/AVISO */}
       {modalInfo && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalInfo(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalInfo(null)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
             <View style={{ width: "100%", backgroundColor: Cores.card, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalInfo.cor ?? "#2A9D8F" }}>
               <Text style={{ color: Cores.texto, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>{modalInfo.titulo}</Text>
@@ -1287,12 +1288,12 @@ export default function ConfiguracoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* MODAL CONFIRMAÇÃO */}
       {modalConfirmarAcao && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalConfirmarAcao(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalConfirmarAcao(null)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
             <View style={{ width: "100%", backgroundColor: Cores.card, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalConfirmarAcao.cor ?? "#2A9D8F" }}>
               <Text style={{ color: Cores.texto, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>
@@ -1315,7 +1316,7 @@ export default function ConfiguracoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* MODAL SENHA PARA EXCLUSÃO DE CONTA */}

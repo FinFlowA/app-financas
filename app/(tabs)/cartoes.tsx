@@ -54,7 +54,6 @@ import {
   Alert,
   DeviceEventEmitter,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -63,6 +62,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "../../components/FinFlowScreen";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
@@ -1796,7 +1797,7 @@ export default function CartoesScreen() {
 
       {/* Modal: Opções do Cartão (long-press) */}
       {modalOpcoesCartao && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesCartao(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalOpcoesCartao(null)}>
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
@@ -1866,12 +1867,12 @@ export default function CartoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* Modal: Excluir Item de Fatura */}
       {modalExcluirItem && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalExcluirItem(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalExcluirItem(null)}>
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
@@ -1947,11 +1948,11 @@ export default function CartoesScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {estornoPendente && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setEstornoPendente(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setEstornoPendente(null)}>
           <View style={estilos.modalFaturaOverlay}>
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               <View style={estilos.modalHeaderRow}>
@@ -1983,7 +1984,7 @@ export default function CartoesScreen() {
               </View>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
     </SafeAreaView>
   );

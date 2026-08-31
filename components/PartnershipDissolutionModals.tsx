@@ -2,13 +2,13 @@ import { MaterialIcons } from "@expo/vector-icons";
 import React from "react";
 import {
   ActivityIndicator,
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "./FinFlowPopup";
 import { finFlowTheme, FinFlowRadius, FinFlowShadow } from "../constants/finflow-design";
 
 export type ItemResumoDissolucao = {

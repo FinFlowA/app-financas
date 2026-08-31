@@ -6,7 +6,6 @@ import {
   Alert,
   Animated,
   DeviceEventEmitter,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -16,6 +15,8 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "../../components/FinFlowScreen";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
@@ -544,14 +545,31 @@ export default function CaixinhasScreen() {
     else { setModalEditarVisivel(false); setCaixaOpcoes(null); carregarDados(); }
   };
 
-  const deletarCaixinha = (caixa: Caixinha) => {
+  const deletarCaixinha = async (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
-    if (Number(caixa.saldo_atual) > 0) {
+
+    const { data: transacoesDoObjetivo, error } = await supabase
+      .from("transacoes")
+      .select("descricao");
+
+    if (error) {
       return setModalAvisoCaixinha({
-        titulo: "Ação não permitida",
-        mensagem: `O objetivo "${caixa.nome}" ainda possui ${fmtReais(Number(caixa.saldo_atual))} guardados.\n\nPara excluir, primeiro resgate todo o saldo para uma conta.`,
+        titulo: "Não foi possível verificar",
+        mensagem: "Confira sua conexão e tente novamente antes de excluir este objetivo.",
       });
     }
+
+    const possuiMovimentacao = (transacoesDoObjetivo ?? []).some(
+      (transacao) => movimentoPertenceAoObjetivo(transacao.descricao, caixa),
+    );
+
+    if (possuiMovimentacao) {
+      return setModalAvisoCaixinha({
+        titulo: "Ação não permitida",
+        mensagem: `O objetivo "${caixa.nome}" possui movimentações registradas. Para preservar o histórico financeiro, ele não pode ser excluído.`,
+      });
+    }
+
     setModalConfirmarDeletar(caixa);
   };
 
@@ -781,7 +799,18 @@ export default function CaixinhasScreen() {
         scrollEventThrottle={32}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.sectionHeading, { color: Cores.textoPrincipal }]}>Seus objetivos</Text>
+        <View style={styles.objectivesSectionHeader}>
+          <Text style={[styles.sectionHeading, { color: Cores.textoPrincipal, marginBottom: 0 }]}>Seus objetivos</Text>
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Criar novo objetivo"
+            style={styles.newObjectiveButton}
+            onPress={() => setModalNovaVisivel(true)}
+          >
+            <MaterialIcons name="add" size={19} color="#FFF" />
+            <Text style={styles.newObjectiveButtonText}>Novo objetivo</Text>
+          </TouchableOpacity>
+        </View>
 
         {caixinhas.length === 0 ? (
           <TouchableOpacity
@@ -885,7 +914,7 @@ export default function CaixinhasScreen() {
 
       {/* MODAL OPÇÕES */}
       {modalOpcoesVisivel && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalOpcoesVisivel(false)}>
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalOpcoesVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
             {caixaOpcoes && (
@@ -931,12 +960,12 @@ export default function CaixinhasScreen() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
       )}
 
       {/* MODAL AVISO CAIXINHA */}
       {modalAvisoCaixinha && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalAvisoCaixinha(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalAvisoCaixinha(null)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
             <View style={{ width: "100%", backgroundColor: Cores.cardFundo, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: "#E76F51" }}>
               <Text style={{ color: Cores.textoPrincipal, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>{modalAvisoCaixinha.titulo}</Text>
@@ -949,12 +978,12 @@ export default function CaixinhasScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* MODAL CONFIRMAR DELETAR CAIXINHA */}
       {modalConfirmarDeletar && (
-        <Modal animationType="fade" transparent visible onRequestClose={() => setModalConfirmarDeletar(null)}>
+        <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalConfirmarDeletar(null)}>
           <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
             <View style={{ width: "100%", backgroundColor: Cores.cardFundo, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: "#FF4444" }}>
               <Text style={{ color: Cores.textoPrincipal, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>Apagar Objetivo</Text>
@@ -966,14 +995,18 @@ export default function CaixinhasScreen() {
                 onPress={async () => {
                   const caixa = modalConfirmarDeletar;
                   setModalConfirmarDeletar(null);
-                  // Renomeia transações para não aparecerem em novo objetivo de mesmo nome
-                  await supabase.from("transacoes")
-                    .update({ descricao: `Guardar em: ${caixa.nome} (excluído)` })
-                    .eq("descricao", `Guardar em: ${caixa.nome}`);
-                  await supabase.from("transacoes")
-                    .update({ descricao: `Resgate de: ${caixa.nome} (excluído)` })
-                    .eq("descricao", `Resgate de: ${caixa.nome}`);
-                  await supabase.from("caixinhas").delete().eq("id", caixa.id);
+                  const { error: erroExclusao } = await supabase
+                    .from("caixinhas")
+                    .delete()
+                    .eq("id", caixa.id);
+
+                  if (erroExclusao) {
+                    return setModalAvisoCaixinha({
+                      titulo: "Erro ao excluir",
+                      mensagem: "Não foi possível excluir o objetivo. Tente novamente.",
+                    });
+                  }
+
                   carregarDados();
                 }}
               >
@@ -987,7 +1020,7 @@ export default function CaixinhasScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </Modal>
+        </FinFlowPopup>
       )}
 
       {/* MODAL EDITAR CAIXINHA */}
@@ -1061,7 +1094,7 @@ export default function CaixinhasScreen() {
                 </View>
               )}
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
+              <View style={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (
                   <TouchableOpacity
                     key={cor}
@@ -1069,7 +1102,7 @@ export default function CaixinhasScreen() {
                     onPress={() => setCorEditCaixa(cor)}
                   />
                 ))}
-              </ScrollView>
+              </View>
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -1179,7 +1212,7 @@ export default function CaixinhasScreen() {
               )}
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-              <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
+              <View style={styles.colorPalette}>
                 {PALETA_CORES.map((cor) => (
                   <TouchableOpacity
                     key={cor}
@@ -1187,7 +1220,7 @@ export default function CaixinhasScreen() {
                     onPress={() => setCorSelecionada(cor)}
                   />
                 ))}
-              </ScrollView>
+              </View>
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
               <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 }}>
                 {LISTA_ICONES.map((icone) => (
@@ -1257,7 +1290,12 @@ export default function CaixinhasScreen() {
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>
               {tipoMovimento === "guardar" ? "Saiu de qual conta?" : "Vai entrar em qual conta?"}
             </Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.contaScroll}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              style={styles.contaScroll}
+              contentContainerStyle={styles.contaScrollContent}
+            >
               {contas.map((conta) => (
                 <TouchableOpacity
                   key={conta.id}
@@ -1474,6 +1512,25 @@ const styles = StyleSheet.create({
   addButton: { backgroundColor: "rgba(255,255,255,0.16)", paddingHorizontal: 18, paddingVertical: 10, borderRadius: 20 },
   addButtonText: { color: "#FFF", fontWeight: "bold" },
   sectionHeading: { fontSize: 15, fontWeight: "800", marginBottom: 12 },
+  objectivesSectionHeader: {
+    minHeight: 46,
+    marginBottom: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  newObjectiveButton: {
+    minHeight: 42,
+    paddingHorizontal: 15,
+    borderRadius: 14,
+    backgroundColor: "#2A9D8F",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+  },
+  newObjectiveButtonText: { color: "#FFF", fontSize: 13, fontWeight: "800" },
   emptyText: { fontStyle: "italic", textAlign: "center", marginTop: 20 },
   card: { padding: 17, borderRadius: 18, borderWidth: 1, marginBottom: 12, elevation: 1 },
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
@@ -1502,15 +1559,16 @@ const styles = StyleSheet.create({
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 16, marginBottom: 20 },
   colorLabel: { fontSize: 14, fontWeight: "500", marginBottom: 10 },
-  colorPalette: { flexDirection: "row", gap: 8, paddingRight: 12, marginBottom: 20 },
+  colorPalette: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 20 },
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 44, height: 44, borderRadius: 10, alignItems: "center", justifyContent: "center" },
   modalButtons: { flexDirection: "row", justifyContent: "space-around" },
   typeSelector: { flexDirection: "row", marginBottom: 20, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   typeButton: { flex: 1, padding: 12, alignItems: "center" },
   typeButtonText: { fontWeight: "bold" },
-  contaScroll: { flexDirection: "row", marginBottom: 20 },
-  contaPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, marginRight: 10, borderWidth: 1 },
+  contaScroll: { flexGrow: 0, maxHeight: 58, marginBottom: 20 },
+  contaScrollContent: { alignItems: "center", paddingRight: 10 },
+  contaPill: { minHeight: 44, flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 9, borderRadius: 20, marginRight: 10, borderWidth: 1 },
   contaPillText: { fontSize: 14, fontWeight: "500" },
   mesFiltro: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 20, marginRight: 8 },
   movRow: { flexDirection: "row", alignItems: "center", padding: 12, borderRadius: 10, marginBottom: 8, gap: 10 },

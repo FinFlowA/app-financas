@@ -5,7 +5,6 @@ import React, { useCallback, useState } from "react";
 import {
     Alert,
     Button,
-    Modal,
     ScrollView,
     StyleSheet,
     Text,
@@ -13,6 +12,8 @@ import {
     TouchableOpacity,
     View,
 } from "react-native";
+import Modal from "../../components/FinFlowScreen";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 interface Categoria {
@@ -341,7 +342,7 @@ export default function RankingScreen() {
       </Modal>
 
       {/* MODAL DE MESES */}
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent={true}
         visible={modalMesVisivel}
@@ -400,7 +401,7 @@ export default function RankingScreen() {
             />
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
     </SafeAreaView>
   );
 }

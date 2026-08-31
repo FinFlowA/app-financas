@@ -4,7 +4,7 @@ import { calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
-import { calcularSaldosPorConta, dataEfetivaTransacao, descricaoVisivel, isMovimentoObjetivo, isPagamentoFatura, transacoesNoEscopo } from "@/lib/transacoes";
+import { calcularSaldosPorConta, dataEfetivaTransacao, descricaoVisivel, getOperacaoObjetivo, isMovimentoObjetivo, isPagamentoFatura, transacoesNoEscopo } from "@/lib/transacoes";
 import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import CategoryDistributionChart, { type CategoryDistributionItem } from "./category-distribution-chart";
 import type { MesFluxo, PontoSaldo } from "./fluxo-saldo-chart";
@@ -67,7 +67,17 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const referenceDate = new Date(`${today}T12:00:00-03:00`);
   const projection = calcularSaldoProjetadoPorMes(initialBalance, scoped, year, referenceDate);
   const balances: PontoSaldo[] = projection.map((point) => ({ label: `${MONTHS[point.mesIdx]} ${year}`, saldo: point.saldo, projetado: point.projetado }));
-  const months: MesFluxo[] = MONTHS.map((name) => ({ label: `${name} ${year}`, receitas: 0, despesas: 0, receitasPrevistas: 0, despesasPrevistas: 0 }));
+  const months: MesFluxo[] = MONTHS.map((name) => ({
+    label: `${name} ${year}`,
+    receitas: 0,
+    despesas: 0,
+    receitasPrevistas: 0,
+    despesasPrevistas: 0,
+    guardadoObjetivos: 0,
+    resgatadoObjetivos: 0,
+    guardarObjetivosPrevisto: 0,
+    resgatarObjetivosPrevisto: 0,
+  }));
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const expenseCategoryTotals = new Map<number | null, number>();
   const revenueCategoryTotals = new Map<number | null, number>();
@@ -79,12 +89,22 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   for (const transaction of scoped) {
     const value = Number(transaction.valor);
     if (!Number.isFinite(value)) continue;
-    if (isMovimentoObjetivo(transaction.descricao)) continue;
     const date = dataEfetivaTransacao(transaction);
     if (!date.startsWith(`${year}-`)) continue;
     const monthIndex = Number(date.slice(5, 7)) - 1;
     const month = months[monthIndex];
     if (!month) continue;
+    if (isMovimentoObjetivo(transaction.descricao)) {
+      const operation = getOperacaoObjetivo(transaction.descricao);
+      if (operation === "guardar") {
+        if (transaction.status === "paga") month.guardadoObjetivos = (month.guardadoObjetivos ?? 0) + value;
+        else month.guardarObjetivosPrevisto = (month.guardarObjetivosPrevisto ?? 0) + value;
+      } else if (operation === "resgatar") {
+        if (transaction.status === "paga") month.resgatadoObjetivos = (month.resgatadoObjetivos ?? 0) + value;
+        else month.resgatarObjetivosPrevisto = (month.resgatarObjetivosPrevisto ?? 0) + value;
+      }
+      continue;
+    }
     const key = transaction.tipo === "receita" ? "receitas" : "despesas";
     const pendingKey = transaction.tipo === "receita" ? "receitasPrevistas" : "despesasPrevistas";
     if (transaction.status === "paga") month[key] += value;

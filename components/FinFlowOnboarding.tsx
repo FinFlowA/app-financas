@@ -1,13 +1,13 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
-  Modal,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
+import Modal from "./FinFlowScreen";
 
 type MaterialIconName = React.ComponentProps<typeof MaterialIcons>["name"];
 

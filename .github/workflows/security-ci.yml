@@ -77,6 +77,7 @@ jobs:
       - run: npm run test:offline-queue
       - run: npm run test:native-compat
       - run: npm run test:release-notes-modal
+      - run: npm run test:flow-screens
       - run: npm run test:edge-security
       - run: npm run test:local-demo
       - name: npm audit (informativo — não bloqueia o merge)

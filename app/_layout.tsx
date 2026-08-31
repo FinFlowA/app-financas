@@ -25,7 +25,6 @@ import {
   Animated,
   AppState,
   DeviceEventEmitter,
-  Modal,
   Platform,
   ScrollView,
   StyleSheet,
@@ -74,6 +73,8 @@ import PartnershipDissolutionModals, {
   type DecisaoContaDissolucao,
   type ResumoDissolucao,
 } from "../components/PartnershipDissolutionModals";
+import FinFlowScreen, { FinFlowScreenProvider } from "../components/FinFlowScreen";
+import FinFlowPopup from "../components/FinFlowPopup";
 import {
   dataNascimentoParaISO,
   formatarDataNascimento,
@@ -1345,6 +1346,7 @@ export default function RootLayout() {
   const notificacaoEhRecusa = notificacaoParceriaAtual?.tipo === "parceria_recusada";
 
   return (
+    <FinFlowScreenProvider>
     <View style={{ flex: 1 }}>
       <ErrorBoundary>
         <ThemeContext.Provider value={themeContextValue}>
@@ -1357,6 +1359,7 @@ export default function RootLayout() {
               <Stack.Screen name="auth/callback" />
               <Stack.Screen name="seguranca" />
               <Stack.Screen name="planos" />
+              <Stack.Screen name="flow-screen" />
             </Stack>
             <StatusBar style={isDark ? "light" : "dark"} />
           </ThemeProvider>
@@ -1382,7 +1385,7 @@ export default function RootLayout() {
         <Text style={styles.toastText}>{toastMsg}</Text>
       </Animated.View>
 
-      <Modal
+      <FinFlowScreen
         animationType="fade"
         transparent
         visible={Boolean(session?.user?.id) && pendenciasCadastro.length > 0}
@@ -1476,7 +1479,7 @@ export default function RootLayout() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowScreen>
 
       <FinFlowOnboarding
         visible={
@@ -1509,7 +1512,7 @@ export default function RootLayout() {
         onResolverConta={(manterAtiva) => void resolverContaDissolucao(manterAtiva)}
       />
 
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible={
@@ -1550,9 +1553,9 @@ export default function RootLayout() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
 
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible={
@@ -1655,9 +1658,9 @@ export default function RootLayout() {
             )}
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
 
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible={
@@ -1747,9 +1750,9 @@ export default function RootLayout() {
             )}
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
 
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible={
@@ -1829,10 +1832,10 @@ export default function RootLayout() {
             )}
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
 
       {/* Modal de downgrade — itens bloqueados */}
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible={modalDowngrade.visivel}
@@ -1869,10 +1872,10 @@ export default function RootLayout() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
 
       {/* Modal de limite de plano */}
-      <Modal
+      <FinFlowPopup
         animationType="fade"
         transparent
         visible={modalLimite.visivel}
@@ -1913,8 +1916,9 @@ export default function RootLayout() {
             </TouchableOpacity>
           </View>
         </View>
-      </Modal>
+      </FinFlowPopup>
     </View>
+    </FinFlowScreenProvider>
   );
 }
 

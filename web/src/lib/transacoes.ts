@@ -69,6 +69,17 @@ export function isMovimentoObjetivo(descricao?: string | null): boolean {
   return /^(Guardar em|Resgate de):/.test(visivel) || visivel.includes("· Guardar em:") || visivel.includes("· Resgate de:");
 }
 
+export function getOperacaoObjetivo(descricao?: string | null): "guardar" | "resgatar" | null {
+  const texto = descricao ?? "";
+  const marcador = texto.match(OBJETIVO_TRANSFERENCIA_REGEX);
+  if (marcador) return marcador[2] as "guardar" | "resgatar";
+  if (!isMovimentoObjetivo(texto)) return null;
+  const visivel = descricaoVisivel(texto);
+  if (/(?:^|·\s*)Guardar em:/.test(visivel)) return "guardar";
+  if (/(?:^|·\s*)Resgate de:/.test(visivel)) return "resgatar";
+  return null;
+}
+
 /**
  * Calcula o saldo bancário real. Uma transferência possui uma única linha:
  * debita a origem e credita o destino indicado no marcador interno.

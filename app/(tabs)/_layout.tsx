@@ -23,11 +23,18 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderColor: theme.border,
           elevation: 12,
-          minHeight: Platform.OS === "android" ? 70 : 85,
-          paddingBottom: Platform.OS === "android" ? 15 : 25,
-          paddingTop: 10,
+          height: Platform.OS === "android" ? 78 : 92,
+          paddingBottom: Platform.OS === "android" ? 12 : 24,
+          paddingTop: 8,
           position: "absolute",
+          overflow: "visible",
         },
+        tabBarItemStyle: {
+          minHeight: 56,
+          paddingTop: 2,
+          overflow: "visible",
+        },
+        tabBarIconStyle: { overflow: "visible" },
         tabBarLabelStyle: { fontSize: 11, fontWeight: "700" },
       }}
     >
