@@ -11,7 +11,7 @@
   border: 1px solid rgba(91, 232, 179, 0.2);
   border-radius: 23px;
   background:
-    radial-gradient(circle at 76% -20%, rgba(22, 150, 110, 0.12), transparent 45%),
+    radial-gradient(circle at 76% -20%, rgba(52, 161, 100, 0.12), transparent 45%),
     linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 96%, var(--ff-primary) 4%), var(--surface) 70%);
   padding: clamp(28px, 6vw, 54px);
   box-shadow: 0 28px 78px -48px rgba(21, 190, 130, 0.8);
@@ -97,7 +97,7 @@
   gap: 20px;
   border-bottom: 1px solid rgba(88, 231, 175, 0.15);
   background:
-    radial-gradient(circle at 80% -80%, rgba(22, 150, 110, 0.12), transparent 60%),
+    radial-gradient(circle at 80% -80%, rgba(52, 161, 100, 0.12), transparent 60%),
     linear-gradient(120deg, color-mix(in srgb, var(--surface-raised) 96%, var(--ff-primary) 4%), var(--surface) 72%);
   padding: 18px 21px;
   color: var(--foreground);

@@ -83,8 +83,8 @@ export default function AuthCallbackScreen() {
             </>
           ) : status === "idade_invalida" ? (
             <>
-              <View style={[styles.iconWrap, { backgroundColor: "#EE6B631A" }]}>
-                <MaterialIcons name="block" size={42} color="#EE6B63" />
+              <View style={[styles.iconWrap, { backgroundColor: "#C0392E1A" }]}>
+                <MaterialIcons name="block" size={42} color="#C0392E" />
               </View>
               <Text style={[styles.title, { color: theme.text }]}>Acesso não permitido</Text>
               <Text style={[styles.subtitle, { color: theme.textMuted }]}>O FinFlow é destinado somente a pessoas com 18 anos ou mais.</Text>
@@ -95,8 +95,8 @@ export default function AuthCallbackScreen() {
             </>
           ) : (
             <>
-              <View style={[styles.iconWrap, { backgroundColor: "#EE6B631A" }]}>
-                <MaterialIcons name="link-off" size={42} color="#EE6B63" />
+              <View style={[styles.iconWrap, { backgroundColor: "#C0392E1A" }]}>
+                <MaterialIcons name="link-off" size={42} color="#C0392E" />
               </View>
               <Text style={[styles.title, { color: theme.text }]}>Não foi possível entrar com Google</Text>
               <Text style={[styles.subtitle, { color: theme.textMuted }]}>Confira a conta escolhida e tente novamente. Você também pode entrar com e-mail e senha.</Text>

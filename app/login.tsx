@@ -216,7 +216,7 @@ export default function LoginScreen() {
       setTentativasFalhadas(novasTentativas);
       if (novasTentativas >= 3) {
         setBloqueadoAte(Date.now() + 30000);
-        setModalErro({ titulo: "Bloqueado", mensagem: "3 tentativas incorretas. Aguarde 30 segundos.", cor: "#FF4444" });
+        setModalErro({ titulo: "Bloqueado", mensagem: "3 tentativas incorretas. Aguarde 30 segundos.", cor: "#A94F44" });
       } else {
         const mensagemErro =
           error.message.includes("Invalid login credentials") ||
@@ -226,7 +226,7 @@ export default function LoginScreen() {
         setModalErro({
           titulo: "Erro ao entrar",
           mensagem: `${mensagemErro} (${3 - novasTentativas} tentativa${3 - novasTentativas !== 1 ? "s" : ""} restante${3 - novasTentativas !== 1 ? "s" : ""})`,
-          cor: "#E76F51",
+          cor: "#A94F44",
         });
       }
     } else {
@@ -238,7 +238,7 @@ export default function LoginScreen() {
         setModalErro({
           titulo: "Acesso não permitido",
           mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-          cor: "#E76F51",
+          cor: "#A94F44",
         });
         return;
       }
@@ -348,7 +348,7 @@ export default function LoginScreen() {
       return setModalErro({
         titulo: "Cadastro não permitido",
         mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-        cor: "#E76F51",
+        cor: "#A94F44",
       });
     if (!aceitouTermos)
       return Alert.alert(
@@ -537,7 +537,7 @@ export default function LoginScreen() {
                 accessibilityRole="button"
                 accessibilityLabel={isDark ? "Ativar tema claro" : "Ativar tema escuro"}
               >
-                <MaterialIcons name={isDark ? "light-mode" : "dark-mode"} size={20} color="#FFF" />
+                <MaterialIcons name={isDark ? "light-mode" : "dark-mode"} size={20} color="#E4EAEA" />
               </TouchableOpacity>
 
               <View style={[styles.brandContent, isWide && styles.brandContentWide]}>
@@ -554,15 +554,15 @@ export default function LoginScreen() {
                 {isWide && (
                   <View style={styles.brandBenefits}>
                     <View style={styles.brandBenefitItem}>
-                      <MaterialIcons name="account-balance-wallet" size={18} color="#D9FFF0" />
+                      <MaterialIcons name="account-balance-wallet" size={18} color="#7BA3AD" />
                       <Text style={styles.brandBenefitText}>Contas e movimentações em um só lugar</Text>
                     </View>
                     <View style={styles.brandBenefitItem}>
-                      <MaterialIcons name="insights" size={18} color="#D9FFF0" />
+                      <MaterialIcons name="insights" size={18} color="#7BA3AD" />
                       <Text style={styles.brandBenefitText}>Visão simples do realizado e do previsto</Text>
                     </View>
                     <View style={styles.brandBenefitItem}>
-                      <MaterialIcons name="verified-user" size={18} color="#D9FFF0" />
+                      <MaterialIcons name="verified-user" size={18} color="#7BA3AD" />
                       <Text style={styles.brandBenefitText}>Seus dados protegidos com segurança</Text>
                     </View>
                   </View>
@@ -887,7 +887,7 @@ export default function LoginScreen() {
                   activeOpacity={0.84}
                 >
                   {loading ? (
-                    <ActivityIndicator color="#FFF" />
+                    <ActivityIndicator color="#E4EAEA" />
                   ) : bloqueadoAte ? (
                     <>
                       <MaterialIcons name="timer" size={19} color={theme.textMuted} />
@@ -902,7 +902,7 @@ export default function LoginScreen() {
                             ? "Entrar no FinFlow"
                             : "Criar minha conta"}
                       </Text>
-                      <MaterialIcons name={isRecuperandoSenha ? "send" : "arrow-forward"} size={19} color="#FFF" />
+                      <MaterialIcons name={isRecuperandoSenha ? "send" : "arrow-forward"} size={19} color="#E4EAEA" />
                     </>
                   )}
                 </TouchableOpacity>
@@ -1019,7 +1019,7 @@ const styles = StyleSheet.create({
     right: -230,
     top: 72,
     borderRadius: 260,
-    backgroundColor: "rgba(119, 245, 187, 0.16)",
+    backgroundColor: "rgba(123, 163, 173, 0.18)",
     transform: [{ rotate: "-13deg" }],
   },
   brandWaveMedium: {
@@ -1029,7 +1029,7 @@ const styles = StyleSheet.create({
     left: -210,
     bottom: -28,
     borderRadius: 220,
-    backgroundColor: "rgba(7, 83, 72, 0.28)",
+    backgroundColor: "rgba(31, 70, 80, 0.35)",
     transform: [{ rotate: "12deg" }],
   },
   brandGlow: {
@@ -1039,7 +1039,7 @@ const styles = StyleSheet.create({
     right: -52,
     bottom: -80,
     borderRadius: 105,
-    backgroundColor: "rgba(217, 255, 240, 0.10)",
+    backgroundColor: "rgba(228, 234, 234, 0.08)",
   },
   themeButton: {
     position: "absolute",
@@ -1051,9 +1051,9 @@ const styles = StyleSheet.create({
     borderRadius: 21,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "rgba(4, 49, 42, 0.28)",
+    backgroundColor: "rgba(31, 70, 80, 0.35)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.18)",
+    borderColor: "rgba(228,234,234,0.18)",
   },
   brandContent: { zIndex: 2, alignItems: "center" },
   brandContentWide: { alignItems: "flex-start" },
@@ -1067,20 +1067,20 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.91)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.65)",
-    shadowColor: "#003C31",
+    shadowColor: "#1F4650",
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.2,
     shadowRadius: 10,
     elevation: 4,
   },
   logo: { width: 72, height: 72 },
-  brandTitle: { color: "#FFF", fontSize: 32, fontWeight: "900", letterSpacing: -0.7 },
-  brandEyebrow: { color: "rgba(255,255,255,0.72)", fontSize: 10, fontWeight: "800", letterSpacing: 1.6, marginTop: 2 },
-  brandDescription: { maxWidth: 390, color: "rgba(255,255,255,0.90)", fontSize: 15, lineHeight: 22, textAlign: "center", marginTop: 13 },
+  brandTitle: { color: "#E4EAEA", fontSize: 32, fontWeight: "900", letterSpacing: -0.7 },
+  brandEyebrow: { color: "#7BA3AD", fontSize: 10, fontWeight: "800", letterSpacing: 1.6, marginTop: 2 },
+  brandDescription: { maxWidth: 390, color: "#B2BCBD", fontSize: 15, lineHeight: 22, textAlign: "center", marginTop: 13 },
   brandDescriptionWide: { textAlign: "left" },
   brandBenefits: { width: "100%", marginTop: 34, gap: 15 },
   brandBenefitItem: { flexDirection: "row", alignItems: "center", gap: 11 },
-  brandBenefitText: { flex: 1, color: "rgba(255,255,255,0.86)", fontSize: 13, lineHeight: 19 },
+  brandBenefitText: { flex: 1, color: "#B2BCBD", fontSize: 13, lineHeight: 19 },
   formPanel: { borderWidth: 1 },
   formPanelMobile: {
     zIndex: 3,
@@ -1173,7 +1173,7 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   buttonDisabled: { shadowOpacity: 0, elevation: 0 },
-  mainButtonText: { color: "#FFF", fontSize: 15, fontWeight: "800" },
+  mainButtonText: { color: "#E4EAEA", fontSize: 15, fontWeight: "800" },
   switchButton: { marginTop: 18, alignItems: "center", paddingVertical: 4 },
   switchButtonPrefix: { fontSize: 12, lineHeight: 18, textAlign: "center" },
   switchButtonText: { fontWeight: "800" },
@@ -1201,5 +1201,5 @@ const styles = StyleSheet.create({
   modalTitle: { paddingHorizontal: 16, fontSize: 20, lineHeight: 25, fontWeight: "800", textAlign: "center", marginBottom: 9 },
   modalMessage: { fontSize: 13, lineHeight: 20, textAlign: "center", marginBottom: 22 },
   modalButton: { minHeight: 50, borderRadius: 15, alignItems: "center", justifyContent: "center" },
-  modalButtonText: { color: "#FFF", fontSize: 14, fontWeight: "800" },
+  modalButtonText: { color: "#E4EAEA", fontSize: 14, fontWeight: "800" },
 });

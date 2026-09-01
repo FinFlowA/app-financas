@@ -80,7 +80,7 @@ function shortDate(iso: string) {
 }
 
 function safeColor(value?: string | null) {
-  return value && /^(#[0-9a-f]{3,8}|rgb\([\d\s,.%]+\)|hsl\([\d\s,.%]+\))$/i.test(value) ? value : "#16966e";
+  return value && /^(#[0-9a-f]{3,8}|rgb\([\d\s,.%]+\)|hsl\([\d\s,.%]+\))$/i.test(value) ? value : "#34a164";
 }
 
 function SummaryValue({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "income" | "expense" | "neutral" }) {
@@ -401,10 +401,10 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
 
     <section className={styles.hero}>
       <svg className={styles.heroWaves} viewBox="0 0 1200 280" preserveAspectRatio="none" aria-hidden="true">
-        <defs><linearGradient id="home-wave-a" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#55e0a4" stopOpacity=".58"/><stop offset="1" stopColor="#08745b" stopOpacity=".08"/></linearGradient><linearGradient id="home-wave-b" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#0bb887" stopOpacity=".42"/><stop offset="1" stopColor="#0b342d" stopOpacity="0"/></linearGradient></defs>
+        <defs><linearGradient id="home-wave-a" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#6fcb84" stopOpacity=".58"/><stop offset="1" stopColor="#2a8552" stopOpacity=".08"/></linearGradient><linearGradient id="home-wave-b" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#34a164" stopOpacity=".42"/><stop offset="1" stopColor="#123a24" stopOpacity="0"/></linearGradient></defs>
         <path className={styles.heroWavePrimary} d="M-70 55C130 12 283-38 409 39c107 65 91 151 237 142 136-9 227-135 406-126 88 4 152 38 220 91v161H-70Z" fill="url(#home-wave-a)"/>
         <path className={styles.heroWaveSecondary} d="M-30 125C165 85 258 15 405 96c113 62 177 147 333 104 137-38 227-124 484-71v178H-30Z" fill="url(#home-wave-b)"/>
-        <path className={styles.heroWaveLine} d="M34 44c207-38 339 6 425 81 93 82 202 109 341 45 114-53 211-96 383-51" fill="none" stroke="#75e8b7" strokeOpacity=".22"/>
+        <path className={styles.heroWaveLine} d="M34 44c207-38 339 6 425 81 93 82 202 109 341 45 114-53 211-96 383-51" fill="none" stroke="#96dea4" strokeOpacity=".22"/>
       </svg>
       <div className={styles.heroBalance}>
         <div className={styles.balanceLabelRow}>

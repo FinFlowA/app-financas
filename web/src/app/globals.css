@@ -1,49 +1,51 @@
 @import "tailwindcss";
 
 :root {
-  --ff-primary: #16966e;
-  --ff-primary-dark: #08745b;
-  --ff-primary-soft: #e3f2ec;
-  --ff-primary-bright: #48c995;
-  --ff-mint: #4fc294;
+  /* Design Tokens v1.0 — ramps teal/green/mint da marca */
+  --ff-primary: #34a164;
+  --ff-primary-dark: #2a8552;
+  --ff-primary-soft: #ecf8f0;
+  --ff-primary-bright: #418e9f;
+  --ff-mint: #6fcb84;
   --ff-blue: #5c86ef;
   --ff-orange: #f09a63;
-  --ff-red: #ec6962;
+  --ff-red: #c0392e;
   --ff-purple: #9568e8;
-  --ff-action-primary: #08745b;
-  --ff-action-primary-hover: #075c49;
-  --ff-action-danger: #b93e39;
+  --ff-action-primary: #34a164;
+  --ff-action-primary-hover: #2a8552;
+  --ff-action-danger: #c0392e;
   --ff-action-transfer: #a54325;
   --ff-on-action: #ffffff;
 
-  --background: #f5f7f8;
+  --background: #f7f9f9;
   --surface: #ffffff;
-  --surface-raised: #ffffff;
-  --surface-muted: #edf1f3;
-  --foreground: #1d252b;
-  --foreground-muted: #68747c;
-  --border: #dce3e7;
-  --border-strong: #cbd4d9;
-  --header: #172126;
-  --shadow-color: 29 37 43;
+  --surface-raised: #eaf4f6;
+  --surface-muted: #eff2f3;
+  --foreground: #131819;
+  --foreground-muted: #6e7c80;
+  --border: #dfe5e6;
+  --border-strong: #c4cdcf;
+  --header: #0e3b45;
+  --shadow-color: 19 24 25;
 }
 
 html.dark {
   color-scheme: dark;
-  --ff-primary: #1cae7d;
-  --ff-primary-dark: #66e4b6;
-  --ff-primary-soft: #123128;
-  --ff-primary-bright: #55d3a0;
+  /* Tons 300/400 — os 500+ das ramps não passam contraste sobre fundo escuro */
+  --ff-primary: #52b87a;
+  --ff-primary-dark: #79cd98;
+  --ff-primary-soft: #1a5233;
+  --ff-primary-bright: #6fadbb;
 
-  --background: #0d1216;
-  --surface: #141a1f;
-  --surface-raised: #182026;
-  --surface-muted: #20282e;
-  --foreground: #f2f5f6;
-  --foreground-muted: #96a1a8;
-  --border: #2a343b;
-  --border-strong: #3a464e;
-  --header: #182126;
+  --background: #0c161a;
+  --surface: #142226;
+  --surface-raised: #1f3237;
+  --surface-muted: #1a2a2f;
+  --foreground: #f2f6f6;
+  --foreground-muted: #8e9c9f;
+  --border: #2a3639;
+  --border-strong: #374144;
+  --header: #0a2b32;
   --shadow-color: 0 0 0;
 }
 
@@ -96,9 +98,9 @@ body {
 
 html.dark body {
   background:
-    radial-gradient(circle at 78% -15%, rgba(22, 150, 110, 0.055), transparent 34rem),
+    radial-gradient(circle at 78% -15%, rgba(31, 115, 133, 0.09), transparent 34rem),
     radial-gradient(circle at -8% 85%, rgba(73, 93, 105, 0.09), transparent 28rem),
-    #0d1216;
+    #0e1416;
 }
 
 ::view-transition-old(root),
@@ -262,8 +264,10 @@ summary:focus-visible {
 }
 
 html.dark .ff-card {
+  /* Fundo volta a vir 100% dos tokens (já com a leve tinta de teal) — só a
+     sombra precisa ser mais opaca no escuro pra continuar visível. */
   background:
-    linear-gradient(145deg, rgba(25, 33, 39, 0.98), rgba(17, 23, 28, 0.98));
+    linear-gradient(145deg, var(--surface-raised), var(--surface));
   box-shadow: 0 22px 60px -42px rgba(0, 0, 0, 0.92);
 }
 
@@ -356,11 +360,13 @@ html.dark .ff-card {
 
 html.dark .ff-page-hero,
 html.dark .bg-header {
-  border-color: color-mix(in srgb, var(--ff-primary) 30%, var(--border));
+  /* Mesma fórmula do claro (superfície neutra + leve tinta de marca), só que com
+     teal em vez de verde — evita um bloco saturado que destoa do resto da UI. */
+  border-color: color-mix(in srgb, var(--ff-primary-bright) 26%, var(--border));
   background:
-    radial-gradient(ellipse at 72% -10%, rgba(22, 150, 110, 0.09), transparent 48%),
-    linear-gradient(135deg, #192126, #141b20 72%, #12181c) !important;
-  box-shadow: 0 28px 72px -54px rgba(22, 150, 110, 0.46);
+    radial-gradient(ellipse at 72% -10%, color-mix(in srgb, var(--ff-primary-bright) 12%, transparent), transparent 48%),
+    linear-gradient(135deg, color-mix(in srgb, var(--surface-raised) 90%, var(--ff-primary-bright) 10%), var(--surface)) !important;
+  box-shadow: 0 28px 72px -52px color-mix(in srgb, var(--ff-primary-bright) 34%, transparent);
 }
 
 /* Shell desktop */
@@ -404,8 +410,9 @@ html.dark .bg-header {
 }
 
 html.dark .ff-sidebar {
-  background: rgba(12, 17, 21, 0.96);
-  box-shadow: 18px 0 70px -58px rgba(22, 150, 110, 0.24);
+  border-right-color: var(--border);
+  background: #131819;
+  box-shadow: 18px 0 70px -58px rgba(0, 0, 0, 0.5);
 }
 
 .ff-brand {

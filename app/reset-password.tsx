@@ -53,7 +53,7 @@ function ResetPasswordField({
       <View
         style={[
           styles.inputContainer,
-          { backgroundColor: theme.surfaceMuted, borderColor: hasError ? "#EE6B63" : theme.border },
+          { backgroundColor: theme.surfaceMuted, borderColor: hasError ? "#C0392E" : theme.border },
         ]}
       >
         <View style={[styles.inputIcon, { backgroundColor: theme.primarySoft }]}>
@@ -199,7 +199,7 @@ export default function ResetPasswordScreen() {
             ) : statusFluxo === "invalido" ? (
               <View style={styles.flowState}>
                 <View style={styles.invalidFlowIcon}>
-                  <MaterialIcons name="link-off" size={34} color="#EE6B63" />
+                  <MaterialIcons name="link-off" size={34} color="#C0392E" />
                 </View>
                 <Text style={[styles.flowStateTitle, { color: theme.text }]}>Link inválido ou expirado</Text>
                 <Text style={[styles.flowStateText, { color: theme.textMuted }]}>Abra um novo link enviado pelo FinFlow para redefinir sua senha.</Text>
@@ -245,15 +245,15 @@ export default function ResetPasswordScreen() {
               <View
                 style={[
                   styles.validationRow,
-                  { backgroundColor: senhasConferem ? `${theme.primary}12` : "#EE6B6312" },
+                  { backgroundColor: senhasConferem ? `${theme.primary}12` : "#C0392E12" },
                 ]}
               >
                 <MaterialIcons
                   name={senhasConferem ? "check-circle" : "error-outline"}
                   size={17}
-                  color={senhasConferem ? theme.primary : "#EE6B63"}
+                  color={senhasConferem ? theme.primary : "#C0392E"}
                 />
-                <Text style={[styles.validationText, { color: senhasConferem ? theme.primary : "#EE6B63" }]}>
+                <Text style={[styles.validationText, { color: senhasConferem ? theme.primary : "#C0392E" }]}>
                   {senhasConferem ? "As senhas conferem" : "Confira a senha e os requisitos acima"}
                 </Text>
               </View>
@@ -340,7 +340,7 @@ const styles = StyleSheet.create({
     ...FinFlowShadow,
   },
   flowState: { width: "100%", alignItems: "center", paddingVertical: 16 },
-  invalidFlowIcon: { width: 70, height: 70, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 2, backgroundColor: "#EE6B631A" },
+  invalidFlowIcon: { width: 70, height: 70, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 2, backgroundColor: "#C0392E1A" },
   flowStateTitle: { fontSize: 19, lineHeight: 25, fontWeight: "900", textAlign: "center", marginTop: 14 },
   flowStateText: { fontSize: 13, lineHeight: 19, textAlign: "center", marginTop: 7, marginBottom: 16 },
   securityNote: { flexDirection: "row", alignItems: "center", gap: 11, padding: 12, borderRadius: FinFlowRadius.medium, borderWidth: 1, marginBottom: 22 },

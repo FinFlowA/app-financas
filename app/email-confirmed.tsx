@@ -68,8 +68,8 @@ export default function EmailConfirmedScreen() {
             </>
           ) : (
             <>
-              <View style={[styles.iconWrap, { backgroundColor: "#EE6B631A" }]}>
-                <MaterialIcons name="link-off" size={42} color="#EE6B63" />
+              <View style={[styles.iconWrap, { backgroundColor: "#C0392E1A" }]}>
+                <MaterialIcons name="link-off" size={42} color="#C0392E" />
               </View>
               <Text style={[styles.title, { color: theme.text }]}>Link inválido ou expirado</Text>
               <Text style={[styles.subtitle, { color: theme.textMuted }]}>Volte ao login e solicite um novo envio da confirmação.</Text>

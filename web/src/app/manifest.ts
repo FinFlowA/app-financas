@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Controle financeiro pessoal, compartilhado e assistido por IA.",
     start_url: "/",
     display: "standalone",
-    background_color: "#081116",
-    theme_color: "#16966E",
+    background_color: "#0e1416",
+    theme_color: "#34A164",
     lang: "pt-BR",
     categories: ["finance", "productivity"],
     icons: [

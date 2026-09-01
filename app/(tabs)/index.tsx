@@ -1892,7 +1892,7 @@ export default function Dashboard() {
           {[
             { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => setModalTransVisivel(true) },
             { label: "Categorias", icon: "category", color: "#4D76E8", action: () => setModalGerenciarCatVisivel(true) },
-            { label: "Cartões", icon: "credit-card", color: "#EE6B63", action: () => router.push("/(tabs)/cartoes" as any) },
+            { label: "Cartões", icon: "credit-card", color: "#C0392E", action: () => router.push("/(tabs)/cartoes" as any) },
             { label: "IA", icon: "auto-awesome", color: "#805AD5", action: () => router.push("/chat-ia") },
           ].map((item) => (
             <TouchableOpacity key={item.label} style={styles.homeActionItem} onPress={item.action}>
@@ -1922,13 +1922,13 @@ export default function Dashboard() {
                 <Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Balanço atual</Text>
                 <MaterialIcons name="info-outline" size={12} color={novoTema.textMuted} />
               </View>
-              <Text style={[styles.homeMetricValue, { color: balancoMensal < 0 ? "#EE6B63" : novoTema.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(balancoMensal)}</Text>
+              <Text style={[styles.homeMetricValue, { color: balancoMensal < 0 ? "#C0392E" : novoTema.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(balancoMensal)}</Text>
             </TouchableOpacity>
-            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#EE6B63" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(despesasDoMes)}</Text></View>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#C0392E" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(despesasDoMes)}</Text></View>
           </View>
           <View style={[styles.homeMonthTrack, { backgroundColor: novoTema.surfaceMuted }]}>
             <View style={{ flex: Math.max(receitasDoMes, 1), backgroundColor: "#42C78B" }} />
-            <View style={{ flex: Math.max(despesasDoMes, 1), backgroundColor: "#EE6B63" }} />
+            <View style={{ flex: Math.max(despesasDoMes, 1), backgroundColor: "#C0392E" }} />
           </View>
           <Text style={{ color: saldoPrevistoFimDoMes < 0 ? (isDark ? "#F28B82" : "#C96A6A") : novoTema.textMuted, fontSize: 11, marginTop: 9 }}>
             Saldo previsto no fim do mês: {formatarValorPrivado(saldoPrevistoFimDoMes)}
@@ -1980,7 +1980,7 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
           <TouchableOpacity style={[styles.actionButtonFull, { backgroundColor: novoTema.surface, borderColor: novoTema.border, position: "relative" }]} onPress={() => router.push("/(tabs)/cartoes" as any)}>
-            <MaterialIcons name="credit-card" size={19} color="#EE6B63" style={{ marginRight: 7 }} />
+            <MaterialIcons name="credit-card" size={19} color="#C0392E" style={{ marginRight: 7 }} />
             <Text style={[styles.actionButtonText, { color: novoTema.text }]}>Cartão de Crédito</Text>
             {temFaturaVencida && (
               <View style={styles.faturaVencidaBadge}>
@@ -2333,7 +2333,7 @@ export default function Dashboard() {
               )}
               {temFaturaVencidaHome && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/cartoes" as any); }}>
-                  <View style={[styles.notificationItemIcon, { backgroundColor: "#EE6B6322" }]}><MaterialIcons name="credit-card" size={20} color="#EE6B63" /></View>
+                  <View style={[styles.notificationItemIcon, { backgroundColor: "#C0392E22" }]}><MaterialIcons name="credit-card" size={20} color="#C0392E" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Fatura vencida</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>Existe uma fatura em aberto após o vencimento.</Text></View>
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
                 </TouchableOpacity>
@@ -2836,7 +2836,7 @@ export default function Dashboard() {
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.accountScopePanel, FinFlowShadow, { backgroundColor: novoTema.surface, borderColor: novoTema.border, alignItems: "center", padding: 24, maxHeight: undefined }]}>
-            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: "#EE6B6322", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
+            <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: "#C0392E22", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
               <MaterialIcons name="warning-amber" size={28} color={FinFlowColors.red} />
             </View>
             <Text style={{ color: novoTema.text, fontSize: 18, fontWeight: "900", marginBottom: 8, textAlign: "center" }}>

@@ -13,11 +13,11 @@
 }
 
 :global(html.dark) .root {
-  --home-card: #151c21;
-  --home-card-strong: #1b242a;
-  --home-line: #2d383f;
-  --home-chart-empty: #263139;
-  --home-shadow: 0 22px 55px rgb(0 0 0 / 22%);
+  /* --home-card/--home-card-strong/--home-line/--home-chart-empty ficam de fora:
+     herdam a fórmula acima, que já é baseada em var(--surface)/var(--border) e
+     por isso segue os tokens escuros normalmente — sem esse override eles
+     ficavam presos numa paleta neutra fixa, desligada do resto do app. */
+  --home-shadow: 0 22px 55px rgb(0 0 0 / 30%);
 }
 
 .root a,
@@ -207,11 +207,13 @@
 .heroWaveLine { animation: homeWaveLine 23s ease-in-out infinite alternate; }
 
 :global(html.dark) .hero {
-  border-color: color-mix(in srgb, var(--ff-primary) 38%, var(--border));
+  /* Mesma fórmula do claro (superfície + leve tinta), com teal em vez de verde —
+     consistente com o header/sidebar, sem o brilho saturado que tinha antes. */
+  border-color: color-mix(in srgb, var(--ff-primary-bright) 30%, var(--border));
   background:
-    radial-gradient(circle at 12% 22%, rgba(22, 150, 110, 0.13), transparent 35%),
-    linear-gradient(118deg, #17201f 0%, #161d20 48%, #13191d 100%);
-  box-shadow: 0 26px 70px -48px rgba(22, 150, 110, 0.72), inset 0 1px rgba(255, 255, 255, 0.035);
+    radial-gradient(circle at 12% 22%, color-mix(in srgb, var(--ff-primary-bright) 10%, transparent), transparent 35%),
+    linear-gradient(118deg, color-mix(in srgb, var(--surface-raised) 90%, var(--ff-primary-bright) 10%), var(--surface) 72%);
+  box-shadow: 0 26px 70px -48px color-mix(in srgb, var(--ff-primary-bright) 34%, transparent), inset 0 1px rgba(255, 255, 255, 0.035);
 }
 
 :global(html.dark) .heroWaves {

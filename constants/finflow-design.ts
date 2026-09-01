@@ -1,26 +1,28 @@
+// Design Tokens v1.0 — ramps teal/green/mint da marca
 export const FinFlowColors = {
-  primary: "#16966E",
-  primaryDark: "#08745B",
-  primarySoft: "#DDF4E9",
-  mint: "#56D39B",
+  primary: "#34A164",
+  primaryDark: "#2A8552",
+  primarySoft: "#ECF8F0",
+  mint: "#6FCB84",
   blue: "#4D76E8",
   orange: "#F28A55",
-  red: "#EE6B63",
+  red: "#C0392E",
   purple: "#805AD5",
 } as const;
 
 export const finFlowTheme = (isDark: boolean) => ({
-  background: isDark ? "#081116" : "#F6F8F6",
-  surface: isDark ? "#111B20" : "#FFFFFF",
-  surfaceElevated: isDark ? "#172328" : "#FFFFFF",
-  surfaceMuted: isDark ? "#1C292E" : "#EEF3F0",
-  text: isDark ? "#F4F8F6" : "#173129",
-  textMuted: isDark ? "#92A49E" : "#6C7D77",
-  border: isDark ? "#26363C" : "#DDE7E2",
-  primary: FinFlowColors.primary,
-  primaryDark: FinFlowColors.primaryDark,
-  primarySoft: isDark ? "#113D31" : FinFlowColors.primarySoft,
-  header: isDark ? "#075348" : "#1EA778",
+  background: isDark ? "#0C161A" : "#F7F9F9",
+  surface: isDark ? "#142226" : "#FFFFFF",
+  surfaceElevated: isDark ? "#1F3237" : "#EAF4F6",
+  surfaceMuted: isDark ? "#1A2A2F" : "#EFF2F3",
+  text: isDark ? "#F2F6F6" : "#131819",
+  textMuted: isDark ? "#8E9C9F" : "#6E7C80",
+  border: isDark ? "#2A3639" : "#DFE5E6",
+  // Tons 300/400 no escuro — os 500+ das ramps não passam contraste sobre fundo escuro
+  primary: isDark ? "#52B87A" : FinFlowColors.primary,
+  primaryDark: isDark ? "#79CD98" : FinFlowColors.primaryDark,
+  primarySoft: isDark ? "#1A5233" : FinFlowColors.primarySoft,
+  header: isDark ? "#0A2B32" : "#0E3B45",
   overlay: "rgba(2, 12, 15, 0.78)",
 });
 

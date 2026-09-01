@@ -204,7 +204,7 @@ export default function CartoesManager({ cartoes }: { cartoes: CartaoResumo[] })
                   <span data-private-value="true" className={styles.usageLabel}>de {formatarReais(Number(cartao.limite))}</span>
                 </div>
                 <div className={styles.usageTrack} aria-label={`${percentual.toFixed(0)}% do limite utilizado`}>
-                  <div className={styles.usageFill} style={{ width: `${percentual}%`, backgroundColor: percentual >= 80 ? "#EE6B63" : cartao.cor }} />
+                  <div className={styles.usageFill} style={{ width: `${percentual}%`, backgroundColor: percentual >= 80 ? "#C0392E" : cartao.cor }} />
                 </div>
                 <div className={styles.metricGrid}>
                   <div className={styles.metric}>
