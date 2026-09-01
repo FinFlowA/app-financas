@@ -23,12 +23,16 @@ export default function CurrencyInput({
   required = false,
   className = "",
   ariaLabel,
+  onValueChange,
 }: {
   name: string;
   defaultValue?: number | string;
   required?: boolean;
   className?: string;
   ariaLabel?: string;
+  /** Chamado a cada mudança com o texto formatado atual (ex.: "1.234,56").
+   * Opcional — quem não usa não é afetado. */
+  onValueChange?: (formatted: string) => void;
 }) {
   const [value, setValue] = useState(() => initialValue(defaultValue));
 
@@ -43,7 +47,9 @@ export default function CurrencyInput({
         value={value}
         onChange={(event) => {
           const digits = event.target.value.replace(/\D/g, "").slice(0, 14);
-          setValue(digits ? formatCents(digits) : "");
+          const formatted = digits ? formatCents(digits) : "";
+          setValue(formatted);
+          onValueChange?.(formatted);
         }}
         onFocus={(event) => {
           const input = event.currentTarget;

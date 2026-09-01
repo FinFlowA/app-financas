@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import CurrencyInput from "@/components/ui/currency-input";
@@ -73,6 +73,18 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
   const [color, setColor] = useState<string>(account.cor || ACCOUNT_COLORS[0]);
   const [editOpen, setEditOpen] = useState(false);
   const [editState, editAction, editing] = useActionState(editarConta, INITIAL);
+  const editFormRef = useRef<HTMLFormElement>(null);
+  const initialBalanceText = useMemo(
+    () => Number(account.saldo_inicial).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+    [account.saldo_inicial],
+  );
+  const [balanceText, setBalanceText] = useState(initialBalanceText);
+  const balanceChanged = balanceText !== initialBalanceText;
+  const [confirmBalanceChange, setConfirmBalanceChange] = useState(false);
+  // Ref (não state) para o onSubmit ler o valor mais recente de forma
+  // síncrona — setState é assíncrono e o requestSubmit() disparado pelo
+  // diálogo de confirmação rodaria antes do re-render.
+  const balanceChangeConfirmedRef = useRef(false);
   const [state, stateAction, changing] = useActionState(alterarEstadoConta, INITIAL);
   const [sharingState, sharingAction, sharing] = useActionState(alterarCompartilhamentoConta, INITIAL);
   const [deleteBaseline, setDeleteBaseline] = useState<ContaActionState | null>(null);
@@ -100,12 +112,45 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
       {own && editOpen && canUseDOM && createPortal(<div className="fixed inset-0 z-[90] grid place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => !editing && setEditOpen(false)}>
         <section role="dialog" aria-modal="true" aria-label={`Editar conta ${account.nome}`} onMouseDown={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-2rem)] w-full max-w-lg overflow-y-auto rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
           <div className="mb-5 flex items-center justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Conta financeira</p><h2 className="mt-1 text-xl font-black text-foreground">Editar {account.nome}</h2></div><button type="button" onClick={() => setEditOpen(false)} disabled={editing} aria-label="Fechar edição" className="ff-focus grid h-10 w-10 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
-          <form action={editAction} className="grid gap-4">
+          <form
+            ref={editFormRef}
+            action={editAction}
+            className="grid gap-4"
+            onSubmit={(event) => {
+              if (balanceChanged && !balanceChangeConfirmedRef.current) {
+                event.preventDefault();
+                setConfirmBalanceChange(true);
+              }
+            }}
+          >
             <RequestId state={editState} /><input type="hidden" name="account_id" value={account.id} /><input type="hidden" name="expected_version" value={account.version ?? 1} />
             <label className="text-xs font-bold uppercase text-foreground-muted">Nome<input name="name" required defaultValue={account.nome} maxLength={100} className="mt-1 w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-sm normal-case text-foreground outline-none focus:border-primary" /></label>
-            <label className="text-xs font-bold uppercase text-foreground-muted">Saldo inicial<CurrencyInput name="initial_balance" defaultValue={Number(account.saldo_inicial)} required /></label>
+            <label className="text-xs font-bold uppercase text-foreground-muted">
+              Saldo inicial
+              <CurrencyInput
+                name="initial_balance"
+                defaultValue={Number(account.saldo_inicial)}
+                required
+                onValueChange={(formatted) => {
+                  setBalanceText(formatted);
+                  balanceChangeConfirmedRef.current = false;
+                }}
+              />
+              {balanceChanged && <span className="mt-1.5 block text-[11px] font-semibold normal-case text-orange">⚠ Isso recalcula o saldo atual e os relatórios desta conta.</span>}
+            </label>
             <div><p className="mb-2 text-xs font-bold uppercase text-foreground-muted">Cor</p><ColorFields selected={color} onChange={setColor} /></div>
             <div className="flex flex-wrap gap-2"><button disabled={editing} className="ff-focus rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-white transition hover:bg-primary-dark disabled:opacity-50">{editing ? "Salvando..." : "Salvar alterações"}</button><button type="button" onClick={() => setEditOpen(false)} className="ff-focus rounded-full border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Cancelar</button></div><Message state={editState} />
+            {confirmBalanceChange && <ConfirmationDialog
+              title="Editar saldo inicial"
+              description="Alterar o saldo inicial recalcula o saldo atual e os relatórios desta conta. Deseja continuar?"
+              confirmLabel="Confirmar alteração"
+              onConfirm={() => {
+                balanceChangeConfirmedRef.current = true;
+                setConfirmBalanceChange(false);
+                editFormRef.current?.requestSubmit();
+              }}
+              onClose={() => setConfirmBalanceChange(false)}
+            />}
           </form>
         </section>
       </div>, document.body)}
