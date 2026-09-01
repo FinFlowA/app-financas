@@ -268,6 +268,8 @@ export default function TransacoesScreen() {
   const conclusaoRequestIdsRef = useRef(new Map<string, string>());
   const reaberturaRequestIdsRef = useRef(new Map<string, string>());
   const exclusaoObjetivoRequestIdsRef = useRef(new Map<string, string>());
+  const conclusaoAposRetornoRef = useRef<Transacao | null>(null);
+  const alternarStatusRef = useRef<((id: number, statusAtual: string, tipo: string) => Promise<void>) | null>(null);
 
   const hoje = new Date();
   const anoAtualNum = hoje.getFullYear();
@@ -396,6 +398,17 @@ export default function TransacoesScreen() {
 
   useFocusEffect(useCallback(() => {
     void carregarDados();
+    const transacaoPendente = conclusaoAposRetornoRef.current;
+    if (transacaoPendente) {
+      conclusaoAposRetornoRef.current = null;
+      requestAnimationFrame(() => {
+        void alternarStatusRef.current?.(
+          transacaoPendente.id,
+          transacaoPendente.status,
+          transacaoPendente.tipo,
+        );
+      });
+    }
   }, [carregarDados]));
 
   React.useEffect(() => {
@@ -1329,6 +1342,17 @@ export default function TransacoesScreen() {
     setAjusteValor("");
     setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacao.valor) * 100))));
     setTransacaoConfirmar(transacao);
+  };
+  alternarStatusRef.current = alternarStatus;
+
+  const concluirDepoisDeFecharDetalhe = (transacao: Transacao) => {
+    // A tela de detalhes ainda ocupa uma rota FinFlowScreen. Abrir a tela de
+    // realizacao no mesmo evento cria dois push/back concorrentes no Android.
+    // Guardamos a intencao e deixamos o useFocusEffect executa-la somente
+    // quando a aba Historico tiver recuperado o foco.
+    conclusaoAposRetornoRef.current = transacao;
+    fecharDetalheTransacao();
+    router.back();
   };
 
   const toggleFiltroConta = (id: number) => {
@@ -2348,7 +2372,7 @@ export default function TransacoesScreen() {
                         <MaterialIcons name="edit" size={20} color="#457B9D" /><Text style={{ color: "#457B9D", fontWeight: "700" }}>Editar</Text>
                       </TouchableOpacity>
                       {!concluida && (
-                        <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => { fecharDetalheTransacao(); void alternarStatus(transacaoPendenteAtual.id, transacaoPendenteAtual.status, transacaoPendenteAtual.tipo); }}>
+                        <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => concluirDepoisDeFecharDetalhe(transacaoPendenteAtual)}>
                           <MaterialIcons name="check-circle" size={20} color="#2A9D8F" /><Text style={{ color: "#2A9D8F", fontWeight: "700" }}>Concluir restante</Text>
                         </TouchableOpacity>
                       )}

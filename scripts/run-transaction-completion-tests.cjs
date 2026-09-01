@@ -266,6 +266,21 @@ expect(
   !/useFocusEffect\(useCallback\(\(\) => \{[\s\S]*?setTransacaoConfirmar\(null\);[\s\S]*?carregarDados\(\);/.test(screen),
   "O foco da aba ainda fecha a confirmacao de realizacao e devolve o usuario para a tela anterior.",
 );
+includes(screen, "conclusaoAposRetornoRef.current = transacao", "Conclusao aberta pelos detalhes nao aguarda o retorno da rota anterior.");
+matches(
+  screen,
+  /conclusaoAposRetornoRef\.current = transacao;[\s\S]*?fecharDetalheTransacao\(\);[\s\S]*?router\.back\(\);/,
+  "A tela de detalhes nao retorna explicitamente ao Historico antes de abrir a confirmacao.",
+);
+matches(
+  screen,
+  /useFocusEffect\(useCallback\(\(\) => \{[\s\S]*?conclusaoAposRetornoRef\.current[\s\S]*?requestAnimationFrame[\s\S]*?alternarStatusRef\.current/,
+  "A confirmacao nao e retomada de forma serializada quando a aba recupera o foco.",
+);
+expect(
+  !screen.includes("fecharDetalheTransacao(); void alternarStatus(transacaoPendenteAtual.id"),
+  "O detalhe ainda fecha e abre outra rota no mesmo evento, causando corrida de navegacao no Android.",
+);
 expect(!statusBlock.includes('from("transacoes").insert'), "Aplicar status ainda cria saldo parcial manualmente.");
 expect(!statusBlock.includes("saldoRestanteCriadoId"), "Rollback manual inseguro ainda existe.");
 includes(statusBlock, 'p_action_type: "complete_transaction"', "Movimento interno nao usa o executor manual atomico para concluir.");
