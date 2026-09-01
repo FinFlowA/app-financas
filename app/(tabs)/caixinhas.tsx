@@ -7,6 +7,7 @@ import {
   Animated,
   DeviceEventEmitter,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -237,6 +238,7 @@ export default function CaixinhasScreen() {
   const [tipoMovimento, setTipoMovimento] = useState<"guardar" | "resgatar">("guardar");
   const [contaMovimentoId, setContaMovimentoId] = useState<number | null>(null);
   const [loadingMovimento, setLoadingMovimento] = useState(false);
+  const [atualizandoTela, setAtualizandoTela] = useState(false);
 
   // Modal histórico
   const [modalHistoricoVisivel, setModalHistoricoVisivel] = useState(false);
@@ -795,6 +797,17 @@ export default function CaixinhasScreen() {
       <Animated.ScrollView
         style={styles.content}
         contentContainerStyle={[styles.contentContainer, { paddingBottom: 112 + Math.max(insets.bottom, 8) }]}
+        refreshControl={(
+          <RefreshControl
+            refreshing={atualizandoTela}
+            onRefresh={() => {
+              setAtualizandoTela(true);
+              void carregarDados().finally(() => setAtualizandoTela(false));
+            }}
+            tintColor="#2A9D8F"
+            colors={["#2A9D8F"]}
+          />
+        )}
         onScroll={onScrollObjetivos}
         scrollEventThrottle={32}
         showsVerticalScrollIndicator={false}

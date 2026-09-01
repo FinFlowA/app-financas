@@ -1,12 +1,15 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import { Platform } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { finFlowTheme, FinFlowColors } from "../../constants/finflow-design";
 import { useAppTheme } from "../_layout"; // Puxando nossa memória global!
 
 export default function TabLayout() {
   const { isDark } = useAppTheme();
   const theme = finFlowTheme(isDark);
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 10 : 20);
 
   return (
     <Tabs
@@ -23,8 +26,8 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderColor: theme.border,
           elevation: 12,
-          height: Platform.OS === "android" ? 78 : 92,
-          paddingBottom: Platform.OS === "android" ? 12 : 24,
+          height: 64 + bottomInset,
+          paddingBottom: bottomInset,
           paddingTop: 8,
           position: "absolute",
           overflow: "visible",

@@ -5,6 +5,7 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   PanResponder,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -123,6 +124,7 @@ export default function RelatoriosScreen() {
   const [chartCardHeight, setChartCardHeight] = useState(0);
   const [chartChromeHeight, setChartChromeHeight] = useState(0);
   const [detailHeight, setDetailHeight] = useState(0);
+  const [atualizandoTela, setAtualizandoTela] = useState(false);
 
   const projScrollRef = useRef<ScrollView>(null);
   const chartScrollXRef = useRef(0);
@@ -487,8 +489,21 @@ export default function RelatoriosScreen() {
         )}
       </View>
 
-      <View
-        style={[styles.content, { paddingBottom: tabBarHeight + 6 }]}
+      <ScrollView
+        style={styles.contentScroll}
+        contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 6 }]}
+        showsVerticalScrollIndicator={false}
+        refreshControl={(
+          <RefreshControl
+            refreshing={atualizandoTela}
+            onRefresh={() => {
+              setAtualizandoTela(true);
+              void carregarDados().finally(() => setAtualizandoTela(false));
+            }}
+            tintColor="#2A9D8F"
+            colors={["#2A9D8F"]}
+          />
+        )}
       >
         {/* COMBINED BAR + LINE CHART */}
         <View
@@ -815,7 +830,7 @@ export default function RelatoriosScreen() {
           )}
         </View>
 
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -891,7 +906,8 @@ const styles = StyleSheet.create({
   contaChipDot: { width: 8, height: 8, borderRadius: 4 },
   contaChipText: { fontSize: 11, fontWeight: "700" },
 
-  content: { flex: 1, minHeight: 0, paddingHorizontal: 12, paddingTop: 14 },
+  contentScroll: { flex: 1 },
+  content: { flexGrow: 1, minHeight: 0, paddingHorizontal: 12, paddingTop: 14 },
 
   chartCard: { flex: 1, minHeight: 0, padding: 8, borderRadius: 16, borderWidth: 1, elevation: 3 },
   chartChrome: { flexShrink: 0 },

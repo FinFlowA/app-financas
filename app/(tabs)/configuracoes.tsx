@@ -10,6 +10,7 @@ import {
   DeviceEventEmitter,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -126,6 +127,7 @@ export default function ConfiguracoesScreen() {
   const [parceria, setParceria] = useState<any>(null);
   const [emailConvite, setEmailConvite] = useState("");
   const [loadingParceria, setLoadingParceria] = useState(false);
+  const [atualizandoTela, setAtualizandoTela] = useState(false);
 
   // Edição de perfil
   const [modalPerfilVisivel, setModalPerfilVisivel] = useState(false);
@@ -791,6 +793,20 @@ export default function ConfiguracoesScreen() {
         <Animated.ScrollView
           style={styles.mainScroll}
           contentContainerStyle={styles.mainScrollContent}
+          refreshControl={(
+            <RefreshControl
+              refreshing={atualizandoTela}
+              onRefresh={() => {
+                setAtualizandoTela(true);
+                void Promise.all([
+                  carregarParceria(),
+                  carregarResumoFilaOffline(),
+                ]).finally(() => setAtualizandoTela(false));
+              }}
+              tintColor="#2A9D8F"
+              colors={["#2A9D8F"]}
+            />
+          )}
           onScroll={onScrollAjustes}
           scrollEventThrottle={32}
           keyboardDismissMode="on-drag"

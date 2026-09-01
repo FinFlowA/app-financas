@@ -54,9 +54,13 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
 }
 
-function monthTitle(month: string, compact = false) {
+function monthTitle(month: string, compact = false, includeYear = true) {
   const [year, number] = month.split("-").map(Number);
-  const label = new Intl.DateTimeFormat("pt-BR", { month: compact ? "short" : "long", year: "numeric", timeZone: "America/Sao_Paulo" })
+  const label = new Intl.DateTimeFormat("pt-BR", {
+    month: compact ? "short" : "long",
+    ...(includeYear ? { year: "numeric" as const } : {}),
+    timeZone: "America/Sao_Paulo",
+  })
     .format(new Date(Date.UTC(year, number - 1, 10)));
   return label.charAt(0).toUpperCase() + label.slice(1).replace(".", "");
 }
@@ -387,7 +391,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
             <div className={styles.monthGrid}>
               {Array.from({ length: 12 }, (_, index) => {
                 const value = `${pickerYear}-${String(index + 1).padStart(2, "0")}`;
-                return <button type="button" key={value} data-active={value === month || undefined} onClick={() => navigateMonth(value)}>{monthTitle(value, true)}</button>;
+                return <button type="button" key={value} data-active={value === month || undefined} onClick={() => navigateMonth(value)}>{monthTitle(value, true, false)}</button>;
               })}
             </div>
           </div>}

@@ -9,6 +9,7 @@ import {
   DeviceEventEmitter,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -253,6 +254,7 @@ export default function Dashboard() {
   const [temParceiro, setTemParceiro] = useState(false);
   const [isOffline, setIsOffline] = useState(false);
   const [modalIaEmBreve, setModalIaEmBreve] = useState(false);
+  const [atualizandoTela, setAtualizandoTela] = useState(false);
 
   const [mesAtual, setMesAtual] = useState(new Date());
   const [mostrarPickerMesAno, setMostrarPickerMesAno] = useState(false);
@@ -307,6 +309,8 @@ export default function Dashboard() {
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [loadingTrans, setLoadingTrans] = useState(false);
+  const transactionFormRef = useRef<ScrollView>(null);
+  const transactionValueYRef = useRef(0);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
   const [tipoTransacao, setTipoTransacao] = useState<"receita" | "despesa" | "transferencia">("despesa");
@@ -1809,7 +1813,22 @@ export default function Dashboard() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
-      <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 110 }} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 110 }}
+        showsVerticalScrollIndicator={false}
+        refreshControl={(
+          <RefreshControl
+            refreshing={atualizandoTela}
+            onRefresh={() => {
+              setAtualizandoTela(true);
+              void carregarDados().finally(() => setAtualizandoTela(false));
+            }}
+            tintColor={FinFlowColors.primary}
+            colors={[FinFlowColors.primary]}
+          />
+        )}
+      >
         <View style={[styles.homeHero, { backgroundColor: novoTema.header }]}>
           <View pointerEvents="none" style={styles.homeHeroWaves}>
             <View style={[styles.homeHeroWave, styles.homeHeroWaveOne]} />
@@ -2894,10 +2913,12 @@ export default function Dashboard() {
               </TouchableOpacity>
             </View>
             <ScrollView
+              ref={transactionFormRef}
               style={styles.transactionFormScroll}
               contentContainerStyle={styles.transactionForm}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Tipo de movimentação</Text>
               <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
@@ -2968,7 +2989,12 @@ export default function Dashboard() {
                 <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginLeft: "auto" }} />
               </TouchableOpacity>
               {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
-              <View style={styles.rowInputs}>
+              <View
+                style={styles.rowInputs}
+                onLayout={({ nativeEvent }) => {
+                  transactionValueYRef.current = nativeEvent.layout.y;
+                }}
+              >
                 <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flex: 1 }]}>
                   <View style={[styles.transactionCurrency, { backgroundColor: `${corTipoTransacao}22` }]}><Text style={{ color: corTipoTransacao, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
                   <TextInput
@@ -2978,6 +3004,14 @@ export default function Dashboard() {
                     value={valorTransacao}
                     onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))}
                     keyboardType="number-pad"
+                    onFocus={() => {
+                      setTimeout(() => {
+                        transactionFormRef.current?.scrollTo({
+                          y: Math.max(0, transactionValueYRef.current - 72),
+                          animated: true,
+                        });
+                      }, 180);
+                    }}
                     selectTextOnFocus={false}
                     selection={{ start: valorTransacao.length, end: valorTransacao.length }}
                   />

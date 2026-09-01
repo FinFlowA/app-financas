@@ -35,6 +35,7 @@ const route = fs.readFileSync(path.join(root, "app", "flow-screen.tsx"), "utf8")
 const flowScreen = fs.readFileSync(path.join(root, "components", "FinFlowScreen.tsx"), "utf8");
 const home = fs.readFileSync(path.join(root, "app", "(tabs)", "index.tsx"), "utf8");
 const settings = fs.readFileSync(path.join(root, "app", "(tabs)", "configuracoes.tsx"), "utf8");
+const tabsLayout = fs.readFileSync(path.join(root, "app", "(tabs)", "_layout.tsx"), "utf8");
 if (!layout.includes("<FinFlowScreenProvider>") || !layout.includes('name="flow-screen"')) {
   throw new Error("A rota global de fluxos não está registrada no layout raiz.");
 }
@@ -53,6 +54,22 @@ if (!home.includes('transactionForm: { flexGrow: 1') || !home.includes('marginTo
 }
 if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includes('offlineQueueList: { flex: 1')) {
   throw new Error("As acoes de notificacao e sincronizacao precisam permanecer alinhadas ao rodape.");
+}
+if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("64 + bottomInset")) {
+  throw new Error("A barra de abas precisa reservar a area de navegacao do aparelho.");
+}
+if (!home.includes("transactionFormRef.current?.scrollTo") || !home.includes("transactionValueYRef.current")) {
+  throw new Error("O campo de valor da transacao precisa subir quando o teclado abrir.");
+}
+
+for (const tabFile of [home, settings,
+  fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8"),
+  fs.readFileSync(path.join(root, "app", "(tabs)", "caixinhas.tsx"), "utf8"),
+  fs.readFileSync(path.join(root, "app", "(tabs)", "relatorios.tsx"), "utf8"),
+]) {
+  if (!tabFile.includes("<RefreshControl")) {
+    throw new Error("Todas as abas principais precisam oferecer atualizacao por gesto.");
+  }
 }
 
 console.log("Flow screen navigation tests passed.");

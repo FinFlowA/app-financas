@@ -9,6 +9,7 @@ import {
   DeviceEventEmitter,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Switch,
@@ -205,6 +206,7 @@ export default function TransacoesScreen() {
   const [resumosPagamentos, setResumosPagamentos] = useState<Map<number, TransactionPaymentSummary>>(new Map());
   const [historicoPagamentosDetalhe, setHistoricoPagamentosDetalhe] = useState<TransactionPaymentHistory | null>(null);
   const [carregandoPagamentosDetalhe, setCarregandoPagamentosDetalhe] = useState(false);
+  const [atualizandoTela, setAtualizandoTela] = useState(false);
   const [erroPagamentosDetalhe, setErroPagamentosDetalhe] = useState<string | null>(null);
   const [transacaoEstornarPagamento, setTransacaoEstornarPagamento] = useState<Transacao | null>(null);
   const [avisoPagamentoVinculado, setAvisoPagamentoVinculado] = useState<{
@@ -1013,7 +1015,29 @@ export default function TransacoesScreen() {
       }
 
       if (novoStatus === "pendente") {
-        if (transacaoComum) {
+        if (isTransferencia(transacao.descricao)) {
+          const assinaturaReabertura = ["transfer", transacao.id, transacao.status].join(":");
+          let requestId = reaberturaRequestIdsRef.current.get(assinaturaReabertura);
+          if (!requestId) {
+            requestId = randomUuidCompat();
+            reaberturaRequestIdsRef.current.set(assinaturaReabertura, requestId);
+          }
+          const { data: resultadoReabertura, error: erroReabertura } = await supabase.rpc(
+            "set_transfer_transaction_status",
+            {
+              p_transaction_id: transacao.id,
+              p_expected_status: "paga",
+              p_new_status: "pendente",
+              p_realization_date: null,
+              p_idempotency_key: requestId,
+            },
+          );
+          if (erroReabertura) throw erroReabertura;
+          if (!resultadoReabertura || resultadoReabertura.ok !== true) {
+            throw new Error("A reabertura atÃ´mica da transferÃªncia nÃ£o devolveu um recibo vÃ¡lido.");
+          }
+          reaberturaRequestIdsRef.current.delete(assinaturaReabertura);
+        } else if (transacaoComum) {
           const assinaturaReabertura = [
             transacao.id,
             transacao.status,
@@ -1129,7 +1153,29 @@ export default function TransacoesScreen() {
         }
 
         const valorEfetivo = Math.round(valorInformado * 100) / 100;
-        if (permiteParcial) {
+        if (isTransferencia(transacao.descricao)) {
+          const assinaturaConclusao = ["transfer", transacao.id, transacao.status, dataFormatada].join(":");
+          let requestId = conclusaoRequestIdsRef.current.get(assinaturaConclusao);
+          if (!requestId) {
+            requestId = randomUuidCompat();
+            conclusaoRequestIdsRef.current.set(assinaturaConclusao, requestId);
+          }
+          const { data: resultadoAtomico, error: erroAtomico } = await supabase.rpc(
+            "set_transfer_transaction_status",
+            {
+              p_transaction_id: transacao.id,
+              p_expected_status: "pendente",
+              p_new_status: "paga",
+              p_realization_date: dataFormatada,
+              p_idempotency_key: requestId,
+            },
+          );
+          if (erroAtomico) throw erroAtomico;
+          if (!resultadoAtomico || resultadoAtomico.ok !== true) {
+            throw new Error("A confirmaÃ§Ã£o atÃ´mica da transferÃªncia nÃ£o devolveu um recibo vÃ¡lido.");
+          }
+          conclusaoRequestIdsRef.current.delete(assinaturaConclusao);
+        } else if (permiteParcial) {
           const ajusteServidor = !ajusteAplicavel || ajusteTipo === "nenhum" || ajuste <= 0
             ? "none"
             : ajusteTipo === "juros" ? "interest" : "discount";
@@ -1772,6 +1818,17 @@ export default function TransacoesScreen() {
         ref={paginaScrollRef}
         style={styles.mainScroll}
         contentContainerStyle={styles.mainScrollContent}
+        refreshControl={(
+          <RefreshControl
+            refreshing={atualizandoTela}
+            onRefresh={() => {
+              setAtualizandoTela(true);
+              void carregarDados().finally(() => setAtualizandoTela(false));
+            }}
+            tintColor="#2A9D8F"
+            colors={["#2A9D8F"]}
+          />
+        )}
         onScroll={onScrollHistorico}
         scrollEventThrottle={32}
         keyboardDismissMode="on-drag"

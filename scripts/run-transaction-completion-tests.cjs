@@ -24,6 +24,10 @@ const groupedPayments = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260808001600_group_partial_transaction_payments.sql"),
   "utf8",
 );
+const atomicTransferStatus = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260901000100_atomic_transfer_status.sql"),
+  "utf8",
+);
 const partnershipDissolution = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260731000400_partnership_dissolution_summary.sql"),
   "utf8",
@@ -262,6 +266,11 @@ expect(!statusBlock.includes('from("transacoes").insert'), "Aplicar status ainda
 expect(!statusBlock.includes("saldoRestanteCriadoId"), "Rollback manual inseguro ainda existe.");
 includes(statusBlock, 'p_action_type: "complete_transaction"', "Movimento interno nao usa o executor manual atomico para concluir.");
 includes(statusBlock, 'p_action_type: "reopen_transaction"', "Movimento interno nao usa o executor manual atomico para reabrir.");
+includes(statusBlock, '"set_transfer_transaction_status"', "Transferencia nao usa a RPC atomica especializada.");
+includes(atomicTransferStatus, "create or replace function public.set_transfer_transaction_status", "RPC atomica de status da transferencia ausente.");
+includes(atomicTransferStatus, "order by ids.account_id", "RPC de transferencia nao trava as contas em ordem canonica.");
+includes(atomicTransferStatus, "transaction_row.status = p_new_status", "RPC de transferencia nao e idempotente em repeticoes.");
+includes(atomicTransferStatus, "transaction_row.status <> p_expected_status", "RPC de transferencia nao protege contra mudanca concorrente de status.");
 expect(!statusBlock.includes('from("caixinhas").update({ saldo_atual:'), "Conclusao ainda altera saldo do objetivo por REST.");
 expect(!statusBlock.includes('from("transacoes").update({\n            status: "paga"'), "Movimento interno ainda e concluido por UPDATE REST.");
 expect(!statusBlock.includes('.update({ status: "pendente", data_realizacao: null })'), "Movimento interno ainda e reaberto por UPDATE REST.");

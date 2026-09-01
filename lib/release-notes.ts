@@ -5,7 +5,7 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-08-31-safe-area-actions-v10",
+  id: "2.0.0-2026-09-01-transfer-status-v12",
   items: [
     "Formulários de criação e edição agora abrem em telas próprias, com navegação mais estável",
     "Objetivos com apenas saldo inicial podem ser excluídos; objetivos movimentados preservam o histórico",
@@ -14,5 +14,7 @@ export const RELEASE_NOTES = {
     "Recorrências fixas mantêm automaticamente uma janela móvel de cinco anos, sem pedir quantidade de ocorrências",
     "Seletores de conta, paletas de cores, barra inferior e criação de contas receberam correções visuais e de navegação",
     "Telas de criação e configuração agora respeitam as barras do aparelho e mantêm suas ações no rodapé",
+    "A navegação inferior respeita os botões do aparelho, as abas atualizam ao puxar e o teclado não cobre mais o valor da transação",
+    "Transferências entre contas agora podem ser concluídas e reabertas com segurança",
   ],
 } as const;
