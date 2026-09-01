@@ -3015,6 +3015,12 @@ export default function Dashboard() {
                         });
                       }, 260);
                     }}
+                    onBlur={() => {
+                      // Sem isso, o formulário fica preso na posição rolada
+                      // pro campo de Valor depois que o usuário termina de
+                      // digitar, escondendo Tipo/Repetição/Status.
+                      transactionFormRef.current?.scrollTo({ y: 0, animated: true });
+                    }}
                     selectTextOnFocus={false}
                     selection={{ start: valorTransacao.length, end: valorTransacao.length }}
                   />
