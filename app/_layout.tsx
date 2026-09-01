@@ -389,6 +389,12 @@ export default function RootLayout() {
 
   useEffect(() => {
     if (!url) return;
+    // O login com Google tem tela própria (app/auth/callback.tsx) que já troca
+    // o código e decide a navegação. Como o código de troca é de uso único,
+    // deixar este handler genérico também consumi-lo cria uma corrida entre os
+    // dois: um dos dois sempre recebe "código inválido" e, dependendo de quem
+    // vence, a tela dedicada pode nunca ver a sessão que o outro já criou.
+    if (url.includes("auth/callback")) return;
     if (authLinkProcessadoRef.current === url) return;
     authLinkProcessadoRef.current = url;
 
