@@ -395,8 +395,7 @@ export default function TransacoesScreen() {
   }, [session?.user?.id]);
 
   useFocusEffect(useCallback(() => {
-    setTransacaoConfirmar(null);
-    carregarDados();
+    void carregarDados();
   }, [carregarDados]));
 
   React.useEffect(() => {

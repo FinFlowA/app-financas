@@ -262,6 +262,10 @@ const statusStart = screen.indexOf("const aplicarStatus = async");
 const statusEnd = screen.indexOf("const alternarStatus = async", statusStart);
 const statusBlock = statusStart >= 0 && statusEnd > statusStart ? screen.slice(statusStart, statusEnd) : "";
 expect(statusBlock.length > 0, "Nao foi possivel localizar aplicarStatus.");
+expect(
+  !/useFocusEffect\(useCallback\(\(\) => \{[\s\S]*?setTransacaoConfirmar\(null\);[\s\S]*?carregarDados\(\);/.test(screen),
+  "O foco da aba ainda fecha a confirmacao de realizacao e devolve o usuario para a tela anterior.",
+);
 expect(!statusBlock.includes('from("transacoes").insert'), "Aplicar status ainda cria saldo parcial manualmente.");
 expect(!statusBlock.includes("saldoRestanteCriadoId"), "Rollback manual inseguro ainda existe.");
 includes(statusBlock, 'p_action_type: "complete_transaction"', "Movimento interno nao usa o executor manual atomico para concluir.");
