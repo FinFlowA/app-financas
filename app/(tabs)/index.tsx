@@ -310,6 +310,7 @@ export default function Dashboard() {
 
   const [modalTransVisivel, setModalTransVisivel] = useState(false);
   const [loadingTrans, setLoadingTrans] = useState(false);
+  const [transactionKeyboardVisivel, setTransactionKeyboardVisivel] = useState(false);
   const transactionFormRef = useRef<ScrollView>(null);
   const transactionValueYRef = useRef(0);
 
@@ -319,10 +320,17 @@ export default function Dashboard() {
     // dispara onBlur do campo (ele mantém o foco lógico, só o teclado some
     // visualmente). Escutar o evento do próprio teclado garante que a
     // rolagem volte ao topo independente de como ele foi fechado.
-    const sub = Keyboard.addListener("keyboardDidHide", () => {
+    const subShow = Keyboard.addListener("keyboardDidShow", () => {
+      setTransactionKeyboardVisivel(true);
+    });
+    const subHide = Keyboard.addListener("keyboardDidHide", () => {
+      setTransactionKeyboardVisivel(false);
       transactionFormRef.current?.scrollTo({ y: 0, animated: true });
     });
-    return () => sub.remove();
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
   }, [modalTransVisivel]);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
@@ -2928,7 +2936,10 @@ export default function Dashboard() {
             <ScrollView
               ref={transactionFormRef}
               style={styles.transactionFormScroll}
-              contentContainerStyle={styles.transactionForm}
+              contentContainerStyle={[
+                styles.transactionForm,
+                transactionKeyboardVisivel && styles.transactionFormKeyboardSpace,
+              ]}
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
@@ -3259,10 +3270,13 @@ const styles = StyleSheet.create({
   transactionSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   transactionClose: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   transactionFormScroll: { flex: 1 },
-  // paddingBottom generoso: sem isso, o ScrollView não tem pra onde rolar
-  // além do fim do conteúdo, então o campo de Valor (perto do fim do
-  // formulário) fica preso atrás do teclado sem jeito de revelar.
-  transactionForm: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 320 },
+  transactionForm: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 32 },
+  // Espaço extra só existe enquanto o teclado está aberto: sem isso, o
+  // ScrollView não tem pra onde rolar além do fim do conteúdo e o campo de
+  // Valor (perto do fim do formulário) fica preso atrás do teclado sem
+  // jeito de revelar. Fora dessa hora ele fica de fora, senão o formulário
+  // ganha uma área vazia arrastável mesmo com o teclado fechado.
+  transactionFormKeyboardSpace: { paddingBottom: 320 },
   transactionSectionLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.45, textTransform: "uppercase", marginBottom: 8 },
   transactionSelector: { minHeight: 50, borderRadius: FinFlowRadius.medium, padding: 4, marginBottom: 18 },
   transactionTypeButton: { minHeight: 40, borderRadius: 12 },

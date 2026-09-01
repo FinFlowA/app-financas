@@ -53,6 +53,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   DeviceEventEmitter,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -255,6 +256,11 @@ export default function CartoesScreen() {
   const [editFecha, setEditFecha] = useState("");
   const [loadingEditar, setLoadingEditar] = useState(false);
 
+  // Espaço extra pro teclado nos formulários dos modais abaixo: só existe
+  // enquanto o teclado está de fato aberto, senão o formulário ganha uma
+  // área vazia arrastável mesmo com o teclado fechado.
+  const [cartoesKeyboardVisivel, setCartoesKeyboardVisivel] = useState(false);
+
   // Modal pagamento — selecionar conta
   const [modalPagamento, setModalPagamento] = useState(false);
   const [mesPagamento, setMesPagamento] = useState("");
@@ -269,6 +275,16 @@ export default function CartoesScreen() {
   const pagamentoRequestIdRef = useRef<string | null>(null);
   const estornoRequestIdsRef = useRef(new Map<number, string>());
   const estornoFaturaAlvoRef = useRef<{ key: string; transactionId: number } | null>(null);
+
+  useEffect(() => {
+    if (!modalNovoCartao && !modalNovaCompra && !modalEditarCartao && !modalPagamento) return;
+    const subShow = Keyboard.addListener("keyboardDidShow", () => setCartoesKeyboardVisivel(true));
+    const subHide = Keyboard.addListener("keyboardDidHide", () => setCartoesKeyboardVisivel(false));
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [modalNovoCartao, modalNovaCompra, modalEditarCartao, modalPagamento]);
 
   // Modal opções cartão (long-press) — substitui Alert
   const [modalOpcoesCartao, setModalOpcoesCartao] = useState<Cartao | null>(null);
@@ -1237,7 +1253,7 @@ export default function CartoesScreen() {
             <View style={[estilos.modalCentradoContent, { backgroundColor: Cores.card }]}>
               <ScrollView
                 style={estilos.modalFormScroll}
-                contentContainerStyle={estilos.modalFormContent}
+                contentContainerStyle={[estilos.modalFormContent, cartoesKeyboardVisivel && estilos.modalFormContentKeyboard]}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 showsVerticalScrollIndicator={false}
@@ -1354,7 +1370,7 @@ export default function CartoesScreen() {
               <View style={[estilos.sheetHandle, { backgroundColor: Cores.borda }]} />
               <ScrollView
                 style={estilos.modalFormScroll}
-                contentContainerStyle={estilos.modalFormContent}
+                contentContainerStyle={[estilos.modalFormContent, cartoesKeyboardVisivel && estilos.modalFormContentKeyboard]}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 showsVerticalScrollIndicator={false}
@@ -1526,7 +1542,7 @@ export default function CartoesScreen() {
             <View style={[estilos.modalFaturaContent, { backgroundColor: Cores.card }]}>
               <ScrollView
                 style={estilos.modalFormScroll}
-                contentContainerStyle={estilos.modalFormContent}
+                contentContainerStyle={[estilos.modalFormContent, cartoesKeyboardVisivel && estilos.modalFormContentKeyboard]}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 showsVerticalScrollIndicator={false}
@@ -1732,7 +1748,7 @@ export default function CartoesScreen() {
               <View style={[estilos.sheetHandle, { backgroundColor: Cores.borda }]} />
               <ScrollView
                 style={estilos.modalFormScroll}
-                contentContainerStyle={estilos.modalFormContent}
+                contentContainerStyle={[estilos.modalFormContent, cartoesKeyboardVisivel && estilos.modalFormContentKeyboard]}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 showsVerticalScrollIndicator={false}
@@ -2192,11 +2208,13 @@ const estilos = StyleSheet.create({
     ...FinFlowShadow,
   },
   modalFormScroll: { width: "100%" },
-  // paddingBottom generoso: usado pelos 4 formulários de modal desta tela
-  // (nova compra, pagar fatura, cartão). Sem espaço de sobra, campos perto
-  // do fim do formulário ficam presos atrás do teclado sem jeito de rolar
-  // até eles.
-  modalFormContent: { paddingBottom: 320 },
+  modalFormContent: { paddingBottom: 24 },
+  // Espaço extra só existe enquanto o teclado está aberto (usado pelos 4
+  // formulários de modal desta tela: nova compra, pagar fatura, cartão).
+  // Sem ele, campos perto do fim do formulário ficam presos atrás do
+  // teclado sem jeito de rolar até eles; deixá-lo sempre ativo, porém,
+  // criava uma área vazia arrastável mesmo com o teclado fechado.
+  modalFormContentKeyboard: { paddingBottom: 320 },
   modalHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
