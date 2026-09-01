@@ -2192,7 +2192,11 @@ const estilos = StyleSheet.create({
     ...FinFlowShadow,
   },
   modalFormScroll: { width: "100%" },
-  modalFormContent: { paddingBottom: 2 },
+  // paddingBottom generoso: usado pelos 4 formulários de modal desta tela
+  // (nova compra, pagar fatura, cartão). Sem espaço de sobra, campos perto
+  // do fim do formulário ficam presos atrás do teclado sem jeito de rolar
+  // até eles.
+  modalFormContent: { paddingBottom: 320 },
   modalHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",

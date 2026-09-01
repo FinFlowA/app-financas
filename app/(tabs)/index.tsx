@@ -3005,12 +3005,15 @@ export default function Dashboard() {
                     onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))}
                     keyboardType="number-pad"
                     onFocus={() => {
+                      // 260ms: no Android o teclado pode demorar mais que 180ms
+                      // para abrir; rolar cedo demais usa uma altura de tela
+                      // que ainda não refletia o teclado.
                       setTimeout(() => {
                         transactionFormRef.current?.scrollTo({
                           y: Math.max(0, transactionValueYRef.current - 72),
                           animated: true,
                         });
-                      }, 180);
+                      }, 260);
                     }}
                     selectTextOnFocus={false}
                     selection={{ start: valorTransacao.length, end: valorTransacao.length }}
@@ -3237,7 +3240,10 @@ const styles = StyleSheet.create({
   transactionSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 2 },
   transactionClose: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   transactionFormScroll: { flex: 1 },
-  transactionForm: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 26 },
+  // paddingBottom generoso: sem isso, o ScrollView não tem pra onde rolar
+  // além do fim do conteúdo, então o campo de Valor (perto do fim do
+  // formulário) fica preso atrás do teclado sem jeito de revelar.
+  transactionForm: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 320 },
   transactionSectionLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.45, textTransform: "uppercase", marginBottom: 8 },
   transactionSelector: { minHeight: 50, borderRadius: FinFlowRadius.medium, padding: 4, marginBottom: 18 },
   transactionTypeButton: { minHeight: 40, borderRadius: 12 },
