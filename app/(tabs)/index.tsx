@@ -7,6 +7,7 @@ import {
   Alert,
   AppState,
   DeviceEventEmitter,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -311,6 +312,18 @@ export default function Dashboard() {
   const [loadingTrans, setLoadingTrans] = useState(false);
   const transactionFormRef = useRef<ScrollView>(null);
   const transactionValueYRef = useRef(0);
+
+  React.useEffect(() => {
+    if (!modalTransVisivel) return;
+    // No Android, fechar o teclado pela seta/gesto da barra de navegação não
+    // dispara onBlur do campo (ele mantém o foco lógico, só o teclado some
+    // visualmente). Escutar o evento do próprio teclado garante que a
+    // rolagem volte ao topo independente de como ele foi fechado.
+    const sub = Keyboard.addListener("keyboardDidHide", () => {
+      transactionFormRef.current?.scrollTo({ y: 0, animated: true });
+    });
+    return () => sub.remove();
+  }, [modalTransVisivel]);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
   const [tipoTransacao, setTipoTransacao] = useState<"receita" | "despesa" | "transferencia">("despesa");
