@@ -23,8 +23,23 @@
   justify-content: center;
   gap: 30px;
   border-radius: 24px;
+  background: radial-gradient(620px 430px at 50% 48%, color-mix(in srgb, var(--ff-primary) 13%, transparent) 0%, transparent 70%);
+}
+
+.dashboardSplashBrand { color: var(--foreground); }
+.dashboardSplashLabel { color: color-mix(in srgb, var(--ff-primary-dark) 72%, var(--foreground-muted)); }
+.dashboardSplashTrack { background: color-mix(in srgb, var(--ff-primary) 12%, var(--surface-muted)); }
+.dashboardSplashHalo { border-color: color-mix(in srgb, var(--ff-primary) 38%, transparent); }
+.dashboardSplashOrbit { border-color: color-mix(in srgb, var(--ff-primary) 18%, var(--border)); border-top-color: var(--ff-primary); }
+
+:global(html.dark) .dashboardSplash {
   background: radial-gradient(760px 520px at 50% 46%, color-mix(in srgb, #1f4650 72%, transparent) 0%, transparent 68%);
 }
+
+:global(html.dark) .dashboardSplashBrand { color: #e4eaea; }
+:global(html.dark) .dashboardSplashLabel { color: #7ba3ad; }
+:global(html.dark) .dashboardSplashTrack { background: #1c2426; }
+:global(html.dark) .dashboardSplashOrbit { border-color: #263133; border-top-color: #3e9b6c; }
 
 @keyframes dashboardLoadingProgress {
   from { width: 18%; }
