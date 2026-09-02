@@ -1,47 +1,22 @@
+import Image from "next/image";
+import authStyles from "@/components/auth/auth.module.css";
 import styles from "../app-states.module.css";
 
 export default function DashboardLoading() {
   return (
-    <div className={styles.loadingPage} role="status" aria-live="polite" aria-busy="true">
-      <span className={styles.srOnly}>Carregando seu painel financeiro...</span>
-      <div className={styles.loadingHeading} aria-hidden="true">
-        <span className={`${styles.skeleton} ${styles.headingLine}`} />
-        <span className={`${styles.skeleton} ${styles.headingAction}`} />
+    <div className={styles.dashboardSplash} role="status" aria-live="polite" aria-busy="true" aria-label="Carregando seu painel financeiro">
+      <div className={authStyles.splashMark} aria-hidden="true">
+        <span className={authStyles.splashHalo} />
+        <span className={authStyles.splashOrbit} />
+        <Image className={authStyles.splashLogo} src="/finflow-logo.png" alt="" width={144} height={144} priority unoptimized />
       </div>
-
-      <section className={styles.loadingHero} aria-hidden="true">
-        <div>
-          <span className={`${styles.skeleton} ${styles.heroLabel}`} />
-          <span className={`${styles.skeleton} ${styles.heroValue}`} />
-          <span className={`${styles.skeleton} ${styles.heroBadge}`} />
-        </div>
-        <div className={styles.heroActions}>
-          {[0, 1, 2, 3].map((item) => <span key={item} className={`${styles.skeleton} ${styles.heroAction}`} />)}
-        </div>
-      </section>
-
-      <div className={styles.loadingColumns} aria-hidden="true">
-        <div className={styles.loadingMain}>
-          <section className={styles.loadingCard}>
-            <span className={`${styles.skeleton} ${styles.cardTitle}`} />
-            <div className={styles.statsRow}>
-              {[0, 1, 2].map((item) => <span key={item} className={`${styles.skeleton} ${styles.stat}`} />)}
-            </div>
-            <span className={`${styles.skeleton} ${styles.progress}`} />
-          </section>
-          <section className={styles.loadingCard}>
-            <span className={`${styles.skeleton} ${styles.cardTitle}`} />
-            <div className={styles.accountRow}>
-              {[0, 1, 2].map((item) => <span key={item} className={`${styles.skeleton} ${styles.account}`} />)}
-            </div>
-          </section>
-        </div>
-        <aside className={styles.loadingCard}>
-          <span className={`${styles.skeleton} ${styles.cardTitle}`} />
-          <div className={styles.listSkeleton}>
-            {[0, 1, 2, 3].map((item) => <span key={item} className={`${styles.skeleton} ${styles.listLine}`} />)}
-          </div>
-        </aside>
+      <div className={authStyles.splashTexts}>
+        <span className={authStyles.splashBrand}>FinFlow</span>
+        <span className={authStyles.splashLabel}>Carregando seu painel financeiro</span>
+      </div>
+      <div className={authStyles.splashTrack} aria-hidden="true">
+        <div className={`${authStyles.splashFill} ${styles.dashboardSplashFill}`} />
+        <span className={authStyles.splashShine} />
       </div>
     </div>
   );

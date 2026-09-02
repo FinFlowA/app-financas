@@ -88,7 +88,7 @@ export default function ReportOverview({
           </p>
           <p className={styles.heroDescription}>Selecione um mês no gráfico para conferir o saldo daquele período. Transferências para objetivos não são tratadas como despesas.</p>
         </div>
-        <div className={styles.heroMetrics} aria-label="Resumo do mês selecionado e projeção anual">
+        <div className={styles.heroMetrics} aria-label="Resumo do mês atual">
           {metrics.map((metric) => (
             <div className={styles.heroMetric} data-tone={metric.tone} key={metric.label}>
               <span>{metric.label}</span>

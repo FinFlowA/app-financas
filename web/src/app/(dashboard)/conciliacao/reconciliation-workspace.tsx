@@ -315,7 +315,7 @@ export default function ReconciliationWorkspace({
 
   const allEntriesSelected = entries.length > 0 && selectedEntryIds.size === entries.length;
 
-  return <div className="mx-auto w-full max-w-6xl pb-10">
+  return <div className="w-full pb-10">
     <header className="relative overflow-hidden rounded-[28px] border border-primary/25 bg-[linear-gradient(135deg,#075f50,#063a36)] p-6 text-white shadow-[0_24px_70px_rgba(0,0,0,.24)] sm:p-8">
       <div className="absolute -right-20 -top-28 h-72 w-72 rounded-full bg-mint/10 blur-2xl" aria-hidden="true" />
       <p className="text-[11px] font-extrabold uppercase tracking-[.16em] text-mint">Conferência bancária</p>

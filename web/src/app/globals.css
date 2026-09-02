@@ -698,14 +698,25 @@ html.dark .ff-sidebar {
 
 .ff-main-shell {
   width: 100%;
-  max-width: 1660px;
   min-height: 100dvh;
-  margin: 0 auto;
   padding: clamp(24px, 2.35vw, 40px);
 }
 
 .ff-route-frame {
+  width: 100%;
   animation: ff-page-in 280ms ease both;
+}
+
+/* As páginas do painel ocupam toda a área útil em monitores largos. Os
+   limites internos de textos, formulários e diálogos continuam preservados. */
+.ff-route-frame > * {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
+@media (min-width: 1600px) {
+  html { font-size: 17px; }
 }
 
 .ff-mobile-header,

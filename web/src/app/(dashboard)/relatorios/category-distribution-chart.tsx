@@ -67,6 +67,7 @@ export default function CategoryDistributionChart({
         </div>
       </div>
       <div className={styles.distributionLegend}>
+        <p className={styles.categoryClickHint}>Clique em uma categoria para ver os lançamentos</p>
         {items.map((item) => (
           <button type="button" key={item.id} onClick={() => setSelected(item)} className={`${styles.distributionLegendItem} ${styles.distributionLegendButton}`}>
             <span className={styles.categoryName}>

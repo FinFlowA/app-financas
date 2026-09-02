@@ -74,11 +74,12 @@ export default function FluxoSaldoChart({
     .join(" ");
 
   const ultimoSaldo = saldos.at(-1);
-  const detailIndex = ativo ?? selectedIndex;
-  const mesAtivo = meses[detailIndex];
-  const saldoAtivo = saldos[detailIndex];
-  const linhasObjetivoTooltip = mesAtivo
-    ? [mesAtivo.guardadoObjetivos, mesAtivo.resgatadoObjetivos, mesAtivo.guardarObjetivosPrevisto, mesAtivo.resgatarObjetivosPrevisto].filter((valor) => (valor ?? 0) > 0).length
+  const mesSelecionado = meses[selectedIndex];
+  const saldoSelecionado = saldos[selectedIndex];
+  const mesHover = ativo === null ? null : meses[ativo];
+  const saldoHover = ativo === null ? null : saldos[ativo];
+  const linhasObjetivoTooltip = mesHover
+    ? [mesHover.guardadoObjetivos, mesHover.resgatadoObjetivos, mesHover.guardarObjetivosPrevisto, mesHover.resgatarObjetivosPrevisto].filter((valor) => (valor ?? 0) > 0).length
     : 0;
 
   return (
@@ -154,7 +155,6 @@ export default function FluxoSaldoChart({
                 }}
                 onFocus={() => {
                   setAtivo(indice);
-                  onSelect(indice);
                 }}
                 onBlur={() => setAtivo((atual) => (atual === indice ? null : atual))}
                 onClick={() => onSelect(indice)}
@@ -250,55 +250,55 @@ export default function FluxoSaldoChart({
           )}
         </svg>
 
-        {ativo !== null && mesAtivo && saldoAtivo && (
+        {ativo !== null && mesHover && saldoHover && (
           <aside className={styles.tooltip} style={tooltipPosition ? { ...tooltipPosition, right: "auto" } : undefined} aria-hidden="true">
-            <p className={styles.tooltipTitle}>{mesAtivo.label}</p>
-            {mesAtivo.receitas > 0 && <div className={styles.tooltipRow} data-tone="positive"><span>Receitas realizadas</span><strong>+{formatarReais(mesAtivo.receitas)}</strong></div>}
-            {(mesAtivo.receitasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-positive"><span>Receitas previstas</span><strong>+{formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong></div>}
-            {mesAtivo.despesas > 0 && <div className={styles.tooltipRow} data-tone="negative"><span>Despesas realizadas</span><strong>−{formatarReais(mesAtivo.despesas)}</strong></div>}
-            {(mesAtivo.despesasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-negative"><span>Despesas previstas</span><strong>−{formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong></div>}
-            {(mesAtivo.guardadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>Guardado em objetivos</span><strong>−{formatarReais(mesAtivo.guardadoObjetivos ?? 0)}</strong></div>}
-            {(mesAtivo.resgatadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+{formatarReais(mesAtivo.resgatadoObjetivos ?? 0)}</strong></div>}
-            {(mesAtivo.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>A guardar em objetivos</span><strong>−{formatarReais(mesAtivo.guardarObjetivosPrevisto ?? 0)}</strong></div>}
-            {(mesAtivo.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+{formatarReais(mesAtivo.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
-            <div className={styles.tooltipRow} data-tone={saldoAtivo.saldo < 0 ? "negative" : "balance"}><span>{saldoAtivo.projetado ? "Saldo projetado" : "Saldo realizado"}</span><strong>{formatarReais(saldoAtivo.saldo)}</strong></div>
+            <p className={styles.tooltipTitle}>{mesHover.label}</p>
+            {mesHover.receitas > 0 && <div className={styles.tooltipRow} data-tone="positive"><span>Receitas realizadas</span><strong>+{formatarReais(mesHover.receitas)}</strong></div>}
+            {(mesHover.receitasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-positive"><span>Receitas previstas</span><strong>+{formatarReais(mesHover.receitasPrevistas ?? 0)}</strong></div>}
+            {mesHover.despesas > 0 && <div className={styles.tooltipRow} data-tone="negative"><span>Despesas realizadas</span><strong>−{formatarReais(mesHover.despesas)}</strong></div>}
+            {(mesHover.despesasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-negative"><span>Despesas previstas</span><strong>−{formatarReais(mesHover.despesasPrevistas ?? 0)}</strong></div>}
+            {(mesHover.guardadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>Guardado em objetivos</span><strong>−{formatarReais(mesHover.guardadoObjetivos ?? 0)}</strong></div>}
+            {(mesHover.resgatadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+{formatarReais(mesHover.resgatadoObjetivos ?? 0)}</strong></div>}
+            {(mesHover.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>A guardar em objetivos</span><strong>−{formatarReais(mesHover.guardarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesHover.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+{formatarReais(mesHover.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
+            <div className={styles.tooltipRow} data-tone={saldoHover.saldo < 0 ? "negative" : "balance"}><span>{saldoHover.projetado ? "Saldo projetado" : "Saldo realizado"}</span><strong>{formatarReais(saldoHover.saldo)}</strong></div>
           </aside>
         )}
 
       </div>
 
-      {mesAtivo && saldoAtivo && (
-        <section className={styles.monthDetails} aria-live="polite" aria-label={`Resumo de ${mesAtivo.label}`}>
+      {mesSelecionado && saldoSelecionado && (
+        <section className={styles.monthDetails} aria-live="polite" aria-label={`Resumo de ${mesSelecionado.label}`}>
           <div className={styles.monthDetailsHeader}>
             <div>
               <p className={styles.monthDetailsEyebrow}>Mês selecionado</p>
-              <h3>{mesAtivo.label}</h3>
+              <h3>{mesSelecionado.label}</h3>
             </div>
-            <span className={styles.monthDetailsStatus} data-projected={saldoAtivo.projetado}>
-              {saldoAtivo.projetado ? "Projeção" : "Realizado"}
+            <span className={styles.monthDetailsStatus} data-projected={saldoSelecionado.projetado}>
+              {saldoSelecionado.projetado ? "Projeção" : "Realizado"}
             </span>
           </div>
           <div className={styles.monthDetailsGrid}>
-            {mesAtivo.receitas > 0 && <div className={styles.monthDetailItem} data-tone="positive">
+            {mesSelecionado.receitas > 0 && <div className={styles.monthDetailItem} data-tone="positive">
               <span>Receitas realizadas</span>
-              <strong>+ {formatarReais(mesAtivo.receitas)}</strong>
+              <strong>+ {formatarReais(mesSelecionado.receitas)}</strong>
             </div>}
-            {mesAtivo.despesas > 0 && <div className={styles.monthDetailItem} data-tone="negative">
+            {mesSelecionado.despesas > 0 && <div className={styles.monthDetailItem} data-tone="negative">
               <span>Despesas realizadas</span>
-              <strong>- {formatarReais(mesAtivo.despesas)}</strong>
+              <strong>- {formatarReais(mesSelecionado.despesas)}</strong>
             </div>}
-            {(mesAtivo.receitasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-positive">
+            {(mesSelecionado.receitasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-positive">
               <span>A receber</span>
-              <strong>+ {formatarReais(mesAtivo.receitasPrevistas ?? 0)}</strong>
+              <strong>+ {formatarReais(mesSelecionado.receitasPrevistas ?? 0)}</strong>
             </div>}
-            {(mesAtivo.despesasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-negative">
+            {(mesSelecionado.despesasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-negative">
               <span>A pagar</span>
-              <strong>- {formatarReais(mesAtivo.despesasPrevistas ?? 0)}</strong>
+              <strong>- {formatarReais(mesSelecionado.despesasPrevistas ?? 0)}</strong>
             </div>}
-            {(mesAtivo.guardadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>Guardado em objetivos</span><strong>- {formatarReais(mesAtivo.guardadoObjetivos ?? 0)}</strong></div>}
-            {(mesAtivo.resgatadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+ {formatarReais(mesAtivo.resgatadoObjetivos ?? 0)}</strong></div>}
-            {(mesAtivo.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>A guardar em objetivos</span><strong>- {formatarReais(mesAtivo.guardarObjetivosPrevisto ?? 0)}</strong></div>}
-            {(mesAtivo.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+ {formatarReais(mesAtivo.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesSelecionado.guardadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>Guardado em objetivos</span><strong>- {formatarReais(mesSelecionado.guardadoObjetivos ?? 0)}</strong></div>}
+            {(mesSelecionado.resgatadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+ {formatarReais(mesSelecionado.resgatadoObjetivos ?? 0)}</strong></div>}
+            {(mesSelecionado.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>A guardar em objetivos</span><strong>- {formatarReais(mesSelecionado.guardarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesSelecionado.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+ {formatarReais(mesSelecionado.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
           </div>
         </section>
       )}

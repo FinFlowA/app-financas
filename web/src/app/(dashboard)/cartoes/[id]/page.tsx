@@ -3,7 +3,6 @@ import { mesAtualEmSaoPaulo } from "@/lib/date";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import type { Cartao, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
-import { adicionarMeses } from "../card-utils";
 import CartaoDetalheManager, { type PagamentoDaFatura } from "../cartao-detalhe-manager";
 
 type CartaoDetalhePageProps = {
@@ -99,14 +98,6 @@ export default async function CartaoDetalhePage({ params, searchParams }: Cartao
     });
   }
 
-  const mesesDisponiveis = [...new Set([
-    ...itens.map((item) => item.mes_fatura),
-    ...pagamentos.map((pagamento) => pagamento.mes),
-    mesAtual,
-    adicionarMeses(mesAtual, 1),
-    mesSelecionado,
-  ])].sort((a, b) => b.localeCompare(a));
-
   return (
     <CartaoDetalheManager
       cartao={cartao}
@@ -123,7 +114,6 @@ export default async function CartaoDetalhePage({ params, searchParams }: Cartao
           modo: pagamento.modo,
         }))}
       mesSelecionado={mesSelecionado}
-      mesesDisponiveis={mesesDisponiveis}
     />
   );
 }

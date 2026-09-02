@@ -16,7 +16,7 @@ export default async function CategoriasPage() {
   const expenses = active.filter((category) => category.tipo === "despesa" || category.tipo === "ambos").length;
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="w-full">
       <header className="ff-page-hero mb-6 px-5 py-6 sm:px-7 sm:py-7">
         <div aria-hidden="true" className="absolute -right-20 top-1/2 h-60 w-60 -translate-y-1/2 rounded-full border border-white/10" />
         <div className="relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">

@@ -41,7 +41,7 @@ export default async function ContasPage() {
   const totalBalance = activeAccounts.reduce((total, account) => total + (balances[account.id] ?? Number(account.saldo_inicial)), 0);
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="w-full">
       <header className="ff-page-hero mb-6 px-5 py-6 sm:px-7 sm:py-7">
         <div aria-hidden="true" className="absolute -right-16 -top-24 h-64 w-64 rounded-full border border-white/10" />
         <div aria-hidden="true" className="absolute -right-6 -top-20 h-52 w-52 rounded-full border border-white/10" />

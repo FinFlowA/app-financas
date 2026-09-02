@@ -115,7 +115,7 @@ export default async function TransactionsPage({
   const reconciledTransactionIds = (reconciledResult.data ?? []).map((row: { transaction_id: number }) => Number(row.transaction_id));
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="w-full">
       <TransactionManager
         userId={authData.user.id}
         initialMonth={month}

@@ -2624,7 +2624,7 @@ export default function TransacoesScreen() {
                     ))}
                   </View>
                   {ajusteTipo !== "nenhum" && (
-                    <View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                    <><View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                       <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
                       <TextInput value={ajusteValor} onChangeText={(texto) => {
                         const formatado = formatarEntradaMoeda(texto);
@@ -2636,6 +2636,10 @@ export default function TransacoesScreen() {
                         setValorRealizado(formatarEntradaMoeda(String(Math.round(novoValor * 100))));
                       }} keyboardType="numeric" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
                     </View>
+                    <View style={{ marginTop: 10, borderRadius: 10, padding: 11, backgroundColor: isDark ? "#15352F" : "#E3F7F0", borderWidth: 1, borderColor: "#2A9D8F" }}>
+                      <Text style={{ color: Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>Valor final do lançamento</Text>
+                      <Text style={{ color: "#2A9D8F", fontSize: 18, fontWeight: "900", marginTop: 2 }}>{fmtReais(valorDevidoConclusao)}</Text>
+                    </View></>
                   )}
                 </View>
               )}

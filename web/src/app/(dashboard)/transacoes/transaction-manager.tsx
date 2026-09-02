@@ -303,10 +303,12 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
 }) {
   const [realizationDate, setRealizationDate] = useState(today);
   const [adjustmentType, setAdjustmentType] = useState<"none" | "interest" | "discount">("none");
+  const [adjustmentValue, setAdjustmentValue] = useState(0);
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<TransactionActionState | null>(null);
   const common = transaction.categoria_id !== null && transactionKind(transaction) !== "transferencia" && !/\[(?:Objetivo:|PagFatura:)/.test(transaction.descricao);
   const adjustmentAllowed = common;
+  const finalValue = Math.max(0.01, Number(transaction.valor) + (adjustmentType === "interest" ? adjustmentValue : adjustmentType === "discount" ? -adjustmentValue : 0));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -330,8 +332,11 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
       {common ? <>
         <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput name="realized_value" defaultValue={Number(transaction.valor)} required /></Field>
         <p className="rounded-ff-sm bg-primary-soft p-3 text-xs font-semibold text-primary-dark">Se o valor for menor, a baixa fica registrada e o restante continua pendente neste mesmo agendamento.</p>
-        {adjustmentAllowed ? <Field label="Juros ou desconto"><select name="adjustment_type" value={adjustmentType} onChange={(event) => setAdjustmentType(event.target.value as typeof adjustmentType)} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
-        {adjustmentAllowed && adjustmentType !== "none" && <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required /></Field>}
+        {adjustmentAllowed ? <Field label="Juros ou desconto"><select name="adjustment_type" value={adjustmentType} onChange={(event) => { setAdjustmentType(event.target.value as typeof adjustmentType); setAdjustmentValue(0); }} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
+        {adjustmentAllowed && adjustmentType !== "none" && <>
+          <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required onValueChange={(formatted) => setAdjustmentValue(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>
+          <div className="rounded-ff-sm border border-primary/25 bg-primary-soft p-3" aria-live="polite"><p className="text-xs font-bold text-primary-dark">Valor final do lançamento</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-primary-dark">{formatarReais(finalValue)}</strong></div>
+        </>}
       </> : <><input type="hidden" name="realized_value" value={Number(transaction.valor)} /><input type="hidden" name="adjustment_type" value="none" /><p className="rounded-ff-sm bg-blue/10 p-3 text-xs font-semibold text-blue">Transferências e movimentos internos são concluídos integralmente e não aceitam pagamento parcial, juros ou desconto.</p></>}
       <Feedback state={feedback} />
       <div className="grid grid-cols-2 gap-3"><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-4 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted">Cancelar</button><button disabled={busy} className="ff-focus rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50">{busy ? "Concluindo..." : "Confirmar"}</button></div>

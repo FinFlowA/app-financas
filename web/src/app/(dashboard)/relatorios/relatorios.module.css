@@ -1,7 +1,5 @@
 .page {
   width: 100%;
-  max-width: 1220px;
-  margin: 0 auto;
 }
 
 .hero {
@@ -527,6 +525,13 @@
   cursor: pointer;
   text-align: left;
   transition: color 160ms ease, transform 160ms ease;
+}
+
+.categoryClickHint {
+  margin: 0 0 7px;
+  color: var(--foreground-muted);
+  font-size: .65rem;
+  font-weight: 680;
 }
 
 .distributionLegendButton:hover { color: var(--ff-primary-dark); transform: translateX(2px); }

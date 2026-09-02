@@ -480,7 +480,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
 
         <section className={`${styles.panel} ${styles.categoryPanel}`}>
           <div className={styles.panelHeader}>
-            <div><p className={styles.sectionKicker}>Distribuição mensal</p><h2>Gastos por categoria</h2></div>
+            <div><p className={styles.sectionKicker}>Distribuição mensal</p><h2>Movimentações por categoria</h2></div>
             <Link href="/relatorios">Ver relatório <Icon name="chevron" size={15}/></Link>
           </div>
           <div className={styles.flowCategoryToolbar}>

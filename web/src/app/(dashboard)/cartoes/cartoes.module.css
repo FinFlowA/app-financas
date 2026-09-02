@@ -1,8 +1,6 @@
 .page {
   --card-accent: var(--ff-primary);
   width: 100%;
-  max-width: 1180px;
-  margin: 0 auto;
 }
 
 .pageHeader {
@@ -593,6 +591,7 @@
 }
 
 .invoiceNav {
+  position: relative;
   margin-bottom: 17px;
   border: 1px solid var(--border);
   border-radius: 16px;
@@ -602,9 +601,86 @@
 
 .invoiceNavRow {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto;
+  grid-template-columns: 44px minmax(160px, 1fr) 44px;
+  align-items: center;
   gap: 8px;
 }
+
+.invoiceMonthArrow {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--card-accent) 28%, var(--border));
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--card-accent) 7%, var(--surface-muted));
+  color: var(--foreground);
+  font-size: 1.55rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.invoiceMonthLabel {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--foreground);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 850;
+  text-align: center;
+  text-transform: capitalize;
+  transition: background 160ms ease, border-color 160ms ease;
+}
+
+.invoiceMonthLabel:hover,
+.invoiceMonthLabel[aria-expanded="true"] { border-color: var(--border); background: var(--surface-muted); }
+.invoiceMonthChevron { color: var(--foreground-muted); }
+
+.invoiceMonthPicker {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 8px);
+  left: 50%;
+  width: min(410px, calc(100vw - 32px));
+  border: 1px solid color-mix(in srgb, var(--card-accent) 28%, var(--border));
+  border-radius: 17px;
+  background: var(--surface-raised);
+  padding: 14px;
+  box-shadow: 0 24px 60px -28px rgb(var(--shadow-color) / .9);
+  transform: translateX(-50%);
+}
+
+.invoiceMonthPickerHeader {
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  align-items: center;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.invoiceMonthPickerHeader button,
+.invoiceMonthGrid button {
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground-muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 780;
+}
+
+.invoiceMonthPickerHeader button { height: 38px; font-size: 1.3rem; }
+.invoiceMonthGrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 7px; }
+.invoiceMonthGrid button { min-height: 42px; text-transform: capitalize; }
+.invoiceMonthPickerHeader button:hover,
+.invoiceMonthGrid button:hover { border-color: var(--border); background: var(--surface-muted); color: var(--foreground); }
+.invoiceMonthGrid button[aria-pressed="true"] { background: var(--card-accent); color: #fff; }
 
 .invoicePanel {
   position: relative;
@@ -875,14 +951,7 @@
     grid-column: auto;
   }
 
-  .invoiceNavRow {
-    grid-template-columns: 1fr;
-  }
-
-  .invoiceNavRow select {
-    grid-column: auto;
-    grid-row: auto;
-  }
+  .invoiceNavRow { grid-template-columns: 44px minmax(0, 1fr) 44px; }
 
   .invoiceHeader,
   .invoiceHeadline,

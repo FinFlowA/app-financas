@@ -209,7 +209,6 @@ export default function CartaoDetalheManager({
   contas,
   pagamentos,
   mesSelecionado,
-  mesesDisponiveis,
 }: {
   cartao: Cartao;
   itens: FaturaItem[];
@@ -217,9 +216,10 @@ export default function CartaoDetalheManager({
   contas: Conta[];
   pagamentos: PagamentoDaFatura[];
   mesSelecionado: string;
-  mesesDisponiveis: string[];
 }) {
   const router = useRouter();
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(() => Number(mesSelecionado.slice(0, 4)));
   const itensDaFatura = itens.filter((item) => item.mes_fatura === mesSelecionado);
   const totalFatura = itensDaFatura.reduce((total, item) => total + Number(item.valor), 0);
   const totalAberto = Math.max(0, itensDaFatura
@@ -235,6 +235,7 @@ export default function CartaoDetalheManager({
   });
   const quitada = statusFatura === "paid";
   const anterior = adicionarMeses(mesSelecionado, -1);
+  const proximo = adicionarMeses(mesSelecionado, 1);
 
   return (
     <div className={styles.page} style={{ "--card-accent": cartao.cor } as CSSProperties}>
@@ -256,16 +257,26 @@ export default function CartaoDetalheManager({
 
       <nav aria-label="Navegação de faturas" className={styles.invoiceNav}>
         <div className={styles.invoiceNavRow}>
-          <select
-            aria-label="Selecionar fatura"
-            value={mesSelecionado}
-            onChange={(event) => router.push(`/cartoes/${cartao.id}?fatura=${event.target.value}`)}
-            className={styles.input}
-          >
-            {mesesDisponiveis.map((mes) => <option key={mes} value={mes}>{formatarMesAno(mes)}</option>)}
-          </select>
-          <Link href={`/cartoes/${cartao.id}?fatura=${anterior}`} className={styles.secondaryButton} aria-label="Fatura anterior">← Anterior</Link>
+          <Link href={`/cartoes/${cartao.id}?fatura=${anterior}`} className={styles.invoiceMonthArrow} aria-label="Fatura anterior">‹</Link>
+          <button type="button" className={styles.invoiceMonthLabel} aria-expanded={monthPickerOpen} aria-haspopup="dialog" onClick={() => { setPickerYear(Number(mesSelecionado.slice(0, 4))); setMonthPickerOpen((open) => !open); }}>
+            <span aria-hidden>▣</span>{formatarMesAno(mesSelecionado)}<span aria-hidden className={styles.invoiceMonthChevron}>⌄</span>
+          </button>
+          <Link href={`/cartoes/${cartao.id}?fatura=${proximo}`} className={styles.invoiceMonthArrow} aria-label="Próxima fatura">›</Link>
         </div>
+        {monthPickerOpen && <section className={styles.invoiceMonthPicker} role="dialog" aria-label="Escolher mês e ano">
+          <div className={styles.invoiceMonthPickerHeader}>
+            <button type="button" onClick={() => setPickerYear((year) => year - 1)} aria-label="Ano anterior">‹</button>
+            <strong>{pickerYear}</strong>
+            <button type="button" onClick={() => setPickerYear((year) => year + 1)} aria-label="Próximo ano">›</button>
+          </div>
+          <div className={styles.invoiceMonthGrid}>
+            {Array.from({ length: 12 }, (_, index) => {
+              const value = `${pickerYear}-${String(index + 1).padStart(2, "0")}`;
+              const label = new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(Date.UTC(2020, index, 1))).replace(".", "");
+              return <button type="button" key={value} aria-pressed={value === mesSelecionado} onClick={() => { setMonthPickerOpen(false); router.push(`/cartoes/${cartao.id}?fatura=${value}`); }}>{label}</button>;
+            })}
+          </div>
+        </section>}
       </nav>
 
       <section className={`${styles.invoicePanel} ${quitada ? styles.invoicePanelPaid : ""}`}>

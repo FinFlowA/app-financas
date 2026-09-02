@@ -444,7 +444,7 @@ export default function ObjetivosManager({
           : "";
 
   return (
-    <div className="mx-auto max-w-7xl">
+    <div className="w-full">
       <header className="ff-page-hero mb-6 px-5 py-6 sm:px-7 sm:py-7">
         <div aria-hidden="true" className="absolute bottom-0 right-8 flex h-32 items-end gap-2 opacity-20"><span className="h-8 w-7 rounded-t-lg bg-mint" /><span className="h-14 w-7 rounded-t-lg bg-mint" /><span className="h-20 w-7 rounded-t-lg bg-mint" /><span className="h-28 w-7 rounded-t-lg bg-mint" /></div>
         <div className="relative flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">

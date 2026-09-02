@@ -145,11 +145,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       })
       .sort((a, b) => b.value - a.value)
   );
-  const selectedMonth = months[detailMonthIndex];
-  const totalReceitas = selectedMonth?.receitas ?? 0;
-  const totalDespesas = selectedMonth?.despesas ?? 0;
+  const overviewMonthIndex = year === currentYear ? currentMonthIndex : detailMonthIndex;
+  const overviewMonth = months[overviewMonthIndex];
+  const totalReceitas = overviewMonth?.receitas ?? 0;
+  const totalDespesas = overviewMonth?.despesas ?? 0;
   const resultadoRealizado = totalReceitas - totalDespesas;
-  const saldoFimAno = balances.at(-1)?.saldo ?? initialBalance;
+  const saldoFimMes = balances[overviewMonthIndex]?.saldo ?? initialBalance;
   const revenueDistribution = distributionItems(revenueCategoryTotals, revenueCategoryDetails, detailRevenue, "receita");
   const expenseDistribution = distributionItems(expenseCategoryTotals, expenseCategoryDetails, detailExpense, "despesa");
 
@@ -168,7 +169,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
           { label: "Receitas realizadas no mês", value: totalReceitas, tone: "positive" },
           { label: "Despesas realizadas no mês", value: totalDespesas, tone: "negative" },
           { label: "Balanço realizado do mês", value: resultadoRealizado, tone: resultadoRealizado < 0 ? "negative" : "positive" },
-          { label: "Saldo previsto no fim do ano", value: saldoFimAno, tone: saldoFimAno < 0 ? "negative" : "positive" },
+          { label: "Saldo previsto no fim do mês", value: saldoFimMes, tone: saldoFimMes < 0 ? "negative" : "positive" },
         ]}
         selectedAccountIds={selectedIds}
         accounts={accounts.map((account) => ({ id: account.id, name: account.nome, color: account.cor }))}
