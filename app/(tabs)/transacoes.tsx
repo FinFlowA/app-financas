@@ -204,6 +204,7 @@ export default function TransacoesScreen() {
   const [faturaEstornar, setFaturaEstornar] = useState<FaturaGrupo | null>(null);
   const [transacaoDetalhe, setTransacaoDetalhe] = useState<Transacao | null>(null);
   const [resumosPagamentos, setResumosPagamentos] = useState<Map<number, TransactionPaymentSummary>>(new Map());
+  const [transacoesConciliadas, setTransacoesConciliadas] = useState<Set<number>>(new Set());
   const [historicoPagamentosDetalhe, setHistoricoPagamentosDetalhe] = useState<TransactionPaymentHistory | null>(null);
   const [carregandoPagamentosDetalhe, setCarregandoPagamentosDetalhe] = useState(false);
   const [atualizandoTela, setAtualizandoTela] = useState(false);
@@ -311,7 +312,7 @@ export default function TransacoesScreen() {
     if (!session?.user?.id) return;
     const requisicaoAtual = ++ultimaRequisicaoDadosRef.current;
     try {
-      const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas] = await Promise.all([
+      const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas, resConciliadas] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
         supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
         fetchAllRows<Transacao>((from, to) => supabase
@@ -321,6 +322,7 @@ export default function TransacoesScreen() {
           .range(from, to)),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
+        supabase.rpc("list_bank_reconciled_transaction_ids"),
       ]);
       if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
       const erroLeitura = resTransacoes.error ?? resContas.error ?? resCategorias.error;
@@ -331,6 +333,9 @@ export default function TransacoesScreen() {
         ));
       }
       if (resContas.data) setContas(resContas.data);
+      if (!resConciliadas.error) {
+        setTransacoesConciliadas(new Set(((resConciliadas.data ?? []) as { transaction_id: number }[]).map((row) => Number(row.transaction_id))));
+      }
       if (resTransacoes.data) {
         const todas = resTransacoes.data as Transacao[];
         const raizes = todas.filter((transacao) => transacao.transacao_pai_id == null);
@@ -1027,7 +1032,7 @@ export default function TransacoesScreen() {
       }
 
       if (novoStatus === "pendente") {
-        if (isTransferencia(transacao.descricao)) {
+        if (isTransferencia(transacao.descricao) && !isMovimentoObjetivo(transacao.descricao)) {
           const assinaturaReabertura = ["transfer", transacao.id, transacao.status].join(":");
           let requestId = reaberturaRequestIdsRef.current.get(assinaturaReabertura);
           if (!requestId) {
@@ -1127,22 +1132,17 @@ export default function TransacoesScreen() {
         if (!data) throw new Error("A data de realização é obrigatória.");
 
         const dataFormatada = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
-        const agendada = new Date(`${transacao.data_vencimento}T00:00:00`);
-        const realizada = new Date(data);
-        realizada.setHours(0, 0, 0, 0);
-        const ajusteAplicavel = realizada > agendada;
-
         let valorDevido = Number(transacao.valor);
         const ajuste = valorDaEntradaMoeda(ajusteValor);
-        if (ajusteAplicavel && ajusteTipo === "juros" && ajuste > valorDevido) {
+        if (ajusteTipo === "juros" && ajuste > valorDevido) {
           Alert.alert("Juros inválidos", "O ajuste de juros não pode ser maior que o valor original do lançamento.");
           return;
         }
-        if (ajusteAplicavel && ajusteTipo === "desconto" && ajuste >= valorDevido) {
+        if (ajusteTipo === "desconto" && ajuste >= valorDevido) {
           Alert.alert("Desconto inválido", "O desconto precisa ser menor que o valor original do lançamento.");
           return;
         }
-        if (ajusteAplicavel && ajusteTipo !== "nenhum" && ajuste > 0) {
+        if (ajusteTipo !== "nenhum" && ajuste > 0) {
           valorDevido = ajusteTipo === "juros"
             ? valorDevido + ajuste
             : Math.max(0.01, valorDevido - ajuste);
@@ -1165,7 +1165,7 @@ export default function TransacoesScreen() {
         }
 
         const valorEfetivo = Math.round(valorInformado * 100) / 100;
-        if (isTransferencia(transacao.descricao)) {
+        if (isTransferencia(transacao.descricao) && !isMovimentoObjetivo(transacao.descricao)) {
           const assinaturaConclusao = ["transfer", transacao.id, transacao.status, dataFormatada].join(":");
           let requestId = conclusaoRequestIdsRef.current.get(assinaturaConclusao);
           if (!requestId) {
@@ -1188,7 +1188,7 @@ export default function TransacoesScreen() {
           }
           conclusaoRequestIdsRef.current.delete(assinaturaConclusao);
         } else if (permiteParcial) {
-          const ajusteServidor = !ajusteAplicavel || ajusteTipo === "nenhum" || ajuste <= 0
+          const ajusteServidor = ajusteTipo === "nenhum" || ajuste <= 0
             ? "none"
             : ajusteTipo === "juros" ? "interest" : "discount";
           const valorAjusteServidor = ajusteServidor === "none" ? 0 : ajuste;
@@ -1715,17 +1715,11 @@ export default function TransacoesScreen() {
     && !ehMovimentoInternoSemCategoria(transacaoConfirmar),
   );
   const ajusteConclusao = valorDaEntradaMoeda(ajusteValor);
-  const realizacaoAposAgendamento = Boolean(
-    transacaoConfirmar
-    && chaveDataLocal(dataRealizacao) > transacaoConfirmar.data_vencimento,
-  );
   const valorDevidoConclusao = transacaoConfirmar
     ? Math.max(
       0.01,
       Number(transacaoConfirmar.valor)
-        + (realizacaoAposAgendamento
-          ? ajusteTipo === "juros" ? ajusteConclusao : ajusteTipo === "desconto" ? -ajusteConclusao : 0
-          : 0),
+        + (ajusteTipo === "juros" ? ajusteConclusao : ajusteTipo === "desconto" ? -ajusteConclusao : 0),
     )
     : 0;
   const saldoRestanteConclusao = Math.max(
@@ -1735,11 +1729,6 @@ export default function TransacoesScreen() {
   const atualizarDataRealizacao = (novaData: Date) => {
     setMostrarDataRealizacao(false);
     setDataRealizacao(novaData);
-    if (transacaoConfirmar && chaveDataLocal(novaData) <= transacaoConfirmar.data_vencimento) {
-      setAjusteTipo("nenhum");
-      setAjusteValor("");
-      setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacaoConfirmar.valor) * 100))));
-    }
   };
 
   return (
@@ -2166,6 +2155,9 @@ export default function TransacoesScreen() {
                       )}
                       {isPendente && <View style={[styles.pendentePill, { backgroundColor: `${corStatus}22` }]}>
                         <Text style={[styles.pendenteText, { color: corStatus }]}>{textoStatus}</Text>
+                      </View>}
+                      {transacoesConciliadas.has(t.id) && <View style={[styles.pendentePill, { backgroundColor: "#457B9D22" }]}>
+                        <Text style={[styles.pendenteText, { color: "#457B9D" }]}>Conciliado</Text>
                       </View>}
                     </View>
                   </View>
@@ -2611,14 +2603,14 @@ export default function TransacoesScreen() {
                   }}
                 />
               )}
-              {realizacaoAposAgendamento && (
+              {permiteValorParcial && (
                 <View style={{ marginTop: 14, padding: 14, borderRadius: 12, backgroundColor: isDark ? "#2A2418" : "#FFF7E6", borderWidth: 1, borderColor: isDark ? "#5A4722" : "#F4D79A" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                    <MaterialIcons name="schedule" size={19} color="#D89014" />
-                    <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", flex: 1 }}>Realização após a data agendada</Text>
+                    <MaterialIcons name="price-change" size={19} color="#D89014" />
+                    <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", flex: 1 }}>Juros ou desconto</Text>
                   </View>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 12, lineHeight: 18, marginBottom: 10 }}>
-                    Se desejar, ajuste o valor final com juros ou desconto.
+                    Se desejar, ajuste o valor final desta realização.
                   </Text>
                   <View style={{ flexDirection: "row", gap: 6 }}>
                     {(["nenhum", "juros", "desconto"] as const).map((tipo) => (

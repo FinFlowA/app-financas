@@ -15,7 +15,7 @@ export type ReconciliationCandidate = {
   description: string;
   dueDate: string;
   remainingValue: number;
-  kind: "standard" | "transfer";
+  kind: "standard" | "transfer" | "goal";
   status: "pendente" | "paga";
 };
 
@@ -23,6 +23,7 @@ type ImportedEntry = StatementEntry & { fingerprint: string };
 type Draft = {
   mode: "existing" | "new";
   transactionId: number | null;
+  transactionIds: number[];
   categoryId: number | null;
   description: string;
   requestId: string;
@@ -79,8 +80,7 @@ function dayDistance(a: string, b: string): number {
 }
 
 function rankedCandidates(entry: StatementEntry, accountId: number, candidates: ReconciliationCandidate[]): ReconciliationCandidate[] {
-  return candidates.filter((candidate) => candidate.accountId === accountId && candidate.type === entry.type
-      && (candidate.status === "pendente" || Math.round(candidate.remainingValue * 100) === Math.round(entry.amount * 100)))
+  return candidates.filter((candidate) => candidate.accountId === accountId && candidate.type === entry.type)
     .sort((a, b) => {
       const exactA = Math.round(a.remainingValue * 100) === Math.round(entry.amount * 100) ? 1 : 0;
       const exactB = Math.round(b.remainingValue * 100) === Math.round(entry.amount * 100) ? 1 : 0;
@@ -107,16 +107,21 @@ function CandidatePicker({ entry, draft, candidates, onChange }: {
       <span className="mb-2 block">Pesquisar lançamento</span>
       <span className="relative block"><span aria-hidden="true" className="pointer-events-none absolute inset-y-0 left-4 grid place-items-center text-foreground-muted">⌕</span><input type="search" value={draft.search} onChange={(event) => onChange({ search: event.target.value })} placeholder={`Buscar ${entry.type === "receita" ? "receitas" : "despesas"} ou transferências`} className="ff-focus min-h-12 w-full rounded-xl border border-border bg-surface py-3 pl-11 pr-4 font-normal outline-none transition placeholder:text-foreground-muted/65 hover:border-primary/35 focus:border-primary" /></span>
     </label>
-    <div className="mt-3" role="listbox" aria-label="Lançamentos existentes">
+    <div className="mt-3" role="listbox" aria-multiselectable="true" aria-label="Lançamentos existentes">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><p className="text-xs font-extrabold uppercase tracking-[.1em] text-foreground-muted">Selecione o lançamento</p>{search ? <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-primary">Todos os meses</span> : <div className="flex items-center rounded-full border border-primary/25 bg-primary/10 p-1"><button type="button" aria-label="Mês anterior" onClick={() => onChange({ month: shiftMonth(statementMonth, -1) })} className="ff-focus grid h-8 w-8 place-items-center rounded-full text-primary transition hover:bg-primary/15">‹</button><span className="min-w-32 px-2 text-center text-[10px] font-extrabold uppercase text-primary">{new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${statementMonth}-15T12:00:00Z`))}</span><button type="button" aria-label="Próximo mês" onClick={() => onChange({ month: shiftMonth(statementMonth, 1) })} className="ff-focus grid h-8 w-8 place-items-center rounded-full text-primary transition hover:bg-primary/15">›</button></div>}</div>
       <div className="grid max-h-64 gap-2 overflow-y-auto pr-1">
         {visible.map((candidate) => {
-          const selected = draft.transactionId === candidate.id;
+          const selectedIds = draft.transactionIds?.length ? draft.transactionIds : draft.transactionId ? [draft.transactionId] : [];
+          const selected = selectedIds.includes(candidate.id);
           const exact = Math.round(candidate.remainingValue * 100) === Math.round(entry.amount * 100);
-          return <button key={`${candidate.id}:${candidate.accountId}:${candidate.type}`} type="button" role="option" aria-selected={selected} onClick={() => onChange({ transactionId: candidate.id })} className={`ff-focus flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${selected ? "border-primary bg-primary/10 shadow-[0_8px_22px_rgba(22,150,110,.12)]" : "border-border bg-surface hover:border-primary/35 hover:bg-primary/5"}`}><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{candidate.description}</strong><small className="mt-1 block text-xs text-foreground-muted">{candidate.kind === "transfer" ? "Transferência · " : ""}{formatDate(candidate.dueDate)}</small>{candidate.status === "paga" && <small className="mt-1 block text-[10px] font-extrabold uppercase text-primary">Já concluído · somente vincular</small>}</span><span className="shrink-0 text-right"><strong className={exact ? "text-primary" : "text-orange"}>{formatarReais(candidate.remainingValue)}</strong>{exact && <small className="block text-[10px] font-extrabold uppercase text-primary">valor exato</small>}</span></button>;
+          return <button key={`${candidate.id}:${candidate.accountId}:${candidate.type}`} type="button" role="option" aria-selected={selected} onClick={() => {
+            const nextIds = selected ? selectedIds.filter((id) => id !== candidate.id) : [...selectedIds, candidate.id];
+            onChange({ transactionIds: nextIds, transactionId: nextIds[0] ?? null });
+          }} className={`ff-focus flex w-full items-center justify-between gap-3 rounded-xl border p-3 text-left transition ${selected ? "border-primary bg-primary/10 shadow-[0_8px_22px_rgba(22,150,110,.12)]" : "border-border bg-surface hover:border-primary/35 hover:bg-primary/5"}`}><span className="flex min-w-0 items-center gap-3"><span aria-hidden="true" className={`grid h-6 w-6 shrink-0 place-items-center rounded-md border text-xs font-black ${selected ? "border-primary bg-primary text-white" : "border-border"}`}>{selected ? "✓" : ""}</span><span className="min-w-0"><strong className="block truncate text-sm text-foreground">{candidate.description}</strong><small className="mt-1 block text-xs text-foreground-muted">{candidate.kind === "transfer" ? "Transferência · " : ""}{formatDate(candidate.dueDate)}</small>{candidate.status === "paga" && <small className="mt-1 block text-[10px] font-extrabold uppercase text-primary">Já concluído · somente vincular</small>}</span></span><span className="shrink-0 text-right"><strong className={exact ? "text-primary" : "text-orange"}>{formatarReais(candidate.remainingValue)}</strong>{exact && <small className="block text-[10px] font-extrabold uppercase text-primary">valor exato</small>}</span></button>;
         })}
         {visible.length === 0 && <p className="rounded-xl border border-dashed border-border bg-surface p-4 text-center text-sm text-foreground-muted">Nenhum lançamento compatível encontrado.</p>}
       </div>
+      {(() => { const ids = draft.transactionIds?.length ? draft.transactionIds : draft.transactionId ? [draft.transactionId] : []; const total = candidates.filter((candidate) => ids.includes(candidate.id)).reduce((sum, candidate) => sum + candidate.remainingValue, 0); const difference = Math.round((entry.amount - total) * 100) / 100; return ids.length > 0 && <div className={`mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border p-3 text-sm font-bold ${difference === 0 ? "border-primary/35 bg-primary/10 text-primary" : "border-orange/35 bg-orange/10 text-orange"}`}><span>{ids.length} {ids.length === 1 ? "lançamento selecionado" : "lançamentos selecionados"}</span><span>{formatarReais(total)} de {formatarReais(entry.amount)}{difference > 0 ? ` · faltam ${formatarReais(difference)}` : difference < 0 ? ` · excede ${formatarReais(-difference)}` : " · valor exato"}</span></div>; })()}
     </div>
   </div>;
 }
@@ -160,7 +165,7 @@ export default function ReconciliationWorkspace({
           if (accounts.some((account) => account.id === stored.accountId)) {
             setAccountId(stored.accountId);
             setEntries(Array.isArray(stored.entries) ? stored.entries : []);
-            setDrafts(stored.drafts && typeof stored.drafts === "object" ? Object.fromEntries(Object.entries(stored.drafts).map(([id, draft]) => [id, { ...draft, busy: false, error: null, search: draft.search ?? "", month: draft.month ?? "" }])) : {});
+            setDrafts(stored.drafts && typeof stored.drafts === "object" ? Object.fromEntries(Object.entries(stored.drafts).map(([id, draft]) => [id, { ...draft, transactionIds: Array.isArray(draft.transactionIds) ? draft.transactionIds : draft.transactionId ? [draft.transactionId] : [], busy: false, error: null, search: draft.search ?? "", month: draft.month ?? "" }])) : {});
             setFileName(typeof stored.fileName === "string" ? stored.fileName : "");
             setIgnoredCount(Number.isFinite(stored.ignoredCount) ? stored.ignoredCount : 0);
           }
@@ -202,6 +207,7 @@ export default function ReconciliationWorkspace({
         nextDrafts[entry.id] = {
           mode: exact ? "existing" : "new",
           transactionId: exact?.id ?? sameMonth[0]?.id ?? null,
+          transactionIds: exact?.id ? [exact.id] : sameMonth[0]?.id ? [sameMonth[0].id] : [],
           categoryId: exact?.categoryId ?? compatibleCategories[0]?.id ?? null,
           description: entry.description.slice(0, 100),
           requestId: crypto.randomUUID(), busy: false, error: null, search: "", month: exact?.dueDate.slice(0, 7) ?? entry.date.slice(0, 7),
@@ -231,9 +237,18 @@ export default function ReconciliationWorkspace({
   async function reconcile(entry: ImportedEntry, confirmation?: "interest" | "partial") {
     const draft = drafts[entry.id];
     if (!draft || draft.busy) return;
-    const selected = candidates.find((candidate) => candidate.id === draft.transactionId && candidate.accountId === accountId && candidate.type === entry.type);
-    const excess = draft.mode === "existing" && selected && selected.status !== "paga" ? Math.round((entry.amount - selected.remainingValue) * 100) / 100 : 0;
-    const remainingAfterPartial = selected?.status !== "paga" ? Math.round(((selected?.remainingValue ?? 0) - entry.amount) * 100) / 100 : 0;
+    const selectedIds = draft.transactionIds?.length ? draft.transactionIds : draft.transactionId ? [draft.transactionId] : [];
+    const selectedCandidates = candidates.filter((candidate) => selectedIds.includes(candidate.id) && candidate.accountId === accountId && candidate.type === entry.type);
+    const selected = selectedCandidates[0];
+    const selectedTotal = Math.round(selectedCandidates.reduce((sum, candidate) => sum + candidate.remainingValue, 0) * 100) / 100;
+    if (selectedIds.length > 1 && (selectedCandidates.length !== selectedIds.length
+      || selectedCandidates.some((candidate) => candidate.kind === "transfer")
+      || Math.round(selectedTotal * 100) !== Math.round(entry.amount * 100))) {
+      setDrafts((current) => ({ ...current, [entry.id]: { ...draft, error: "Selecione lançamentos ou movimentos de caixinha cuja soma seja exatamente igual ao valor do extrato." } }));
+      return;
+    }
+    const excess = draft.mode === "existing" && selectedIds.length === 1 && selected && selected.status !== "paga" ? Math.round((entry.amount - selected.remainingValue) * 100) / 100 : 0;
+    const remainingAfterPartial = selectedIds.length === 1 && selected?.status !== "paga" ? Math.round(((selected?.remainingValue ?? 0) - entry.amount) * 100) / 100 : 0;
     if (excess > 0 && confirmation !== "interest") {
       setInterestEntryId(entry.id);
       return;
@@ -248,6 +263,7 @@ export default function ReconciliationWorkspace({
     const result = await reconcileStatementEntry({
       accountId, fingerprint: entry.fingerprint, date: entry.date, type: entry.type, amount: entry.amount,
       mode: draft.mode, transactionId: draft.transactionId, categoryId: draft.categoryId,
+      transactionIds: selectedIds,
       description: draft.description, requestId: draft.requestId, excessAsInterest: excess > 0,
       existingKind: selected?.kind,
       existingStatus: selected?.status,

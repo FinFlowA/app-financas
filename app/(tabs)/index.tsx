@@ -1009,7 +1009,12 @@ export default function Dashboard() {
         });
         setLoadingCat(false);
         if (resultado.state === "rejected") {
-          return Alert.alert("Não foi possível salvar", "A categoria foi recusada pelo servidor. Revise os dados e tente novamente.");
+          const mensagem = /AI_CATEGORY_LIMIT|AI_PLAN_LIMIT/u.test(resultado.errorCode)
+            ? "O limite de categorias do seu plano foi atingido."
+            : /AUTH|SESSION/u.test(resultado.errorCode)
+              ? "Sua sessão expirou. Entre novamente e tente criar a categoria."
+              : `A categoria foi recusada pelo servidor (${resultado.errorCode}). Revise os dados e tente novamente.`;
+          return Alert.alert("Não foi possível salvar", mensagem);
         }
         if (resultado.state === "uncertain") {
           return Alert.alert("Sessão alterada", "Não foi possível confirmar a categoria. Entre novamente e confira seus dados antes de reenviar.");

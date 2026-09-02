@@ -28,6 +28,10 @@ const atomicTransferStatus = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260901000100_atomic_transfer_status.sql"),
   "utf8",
 );
+const unrestrictedAdjustments = fs.readFileSync(
+  path.join(root, "supabase", "migrations", "20260902000100_allow_transaction_adjustments_on_any_date.sql"),
+  "utf8",
+);
 const partnershipDissolution = fs.readFileSync(
   path.join(root, "supabase", "migrations", "20260731000400_partnership_dissolution_summary.sql"),
   "utf8",
@@ -78,11 +82,7 @@ includes(sql, "transaction_completion_receipts_active_transaction_idx", "Indice 
 includes(sql, "existing.reopened_at is not null", "Replay de conclusao reaberta nao e invalidado.");
 includes(sql, "TRANSACTION_COMPLETION_STATE_CONFLICT", "Replay nao valida o estado financeiro atual.");
 includes(sql, "child.descricao is not distinct from existing.remaining_description", "Replay nao valida integralmente o saldo restante.");
-matches(
-  sql,
-  /p_realization_date <= transaction_row\.data_vencimento[\s\S]*adjustment_type <> 'none'/,
-  "Servidor nao limita juros/desconto a realizacoes posteriores ao vencimento.",
-);
+includes(unrestrictedAdjustments, "definição SQL explícita", "Migração de compatibilidade não documenta a atualização segura pendente.");
 includes(sql, "restored_value := completion.expected_value", "Reabertura nao restaura o valor originalmente agendado.");
 includes(sql, "transaction_row.conta_id is distinct from completion.account_id", "Reabertura nao detecta troca concorrente de conta.");
 includes(sql, "delete from public.transacoes\n      where id = completion.remaining_transaction_id", "Saldo parcial nao e removido atomicamente.");
@@ -111,11 +111,10 @@ includes(screen, "contentContainerStyle={styles.realizationModalScrollContent}",
 matches(screen, /realizationModalScrollContent:\s*\{[\s\S]*?flexGrow:\s*1[\s\S]*?justifyContent:\s*"center"/, "Conteudo do modal de realizacao pode ficar fora da tela com o teclado aberto.");
 matches(screen, /Platform\.OS === "web"[\s\S]*?React\.createElement\("input", \{[\s\S]*?type: "date"/, "Web nao oferece um seletor de data HTML acessivel no modal de realizacao.");
 matches(screen, /Platform\.OS !== "web" && mostrarDataRealizacao[\s\S]*?<DateTimePicker/, "Seletor nativo de data nao foi preservado no Android e iOS.");
-matches(
-  screen,
-  /chaveDataLocal\(novaData\) <= transacaoConfirmar\.data_vencimento[\s\S]*setAjusteTipo\("nenhum"\)[\s\S]*setAjusteValor\(""\)/,
-  "Alterar a data para antes do vencimento nao limpa o ajuste antigo.",
-);
+includes(screen, "{permiteValorParcial && (", "App não exibe juros/desconto em toda baixa comum.");
+expect(!screen.includes("const ajusteAplicavel = realizada > agendada"), "App ainda limita juros/desconto por data.");
+includes(screen, "isTransferencia(transacao.descricao) && !isMovimentoObjetivo(transacao.descricao)", "Movimento de objetivo ainda usa a RPC exclusiva de transferência entre contas.");
+includes(webTransactionManager, "const adjustmentAllowed = common;", "Site ainda limita juros/desconto por data.");
 
 includes(aiCore, "'transaction_id','realization_date','expected_value','realized_value','interest_value','interest_percent'", "Prepare da IA nao aceita realized_value.");
 includes(aiCore, "required:=array['transaction_id','realization_date','expected_value','realized_value']", "Prepare da IA nao exige realized_value.");

@@ -284,10 +284,6 @@ export function createLocalDemoSupabaseClient() {
       }
       const account = (database.contas ?? []).find((row) => row.id === root.conta_id);
       if (!account || account.arquivado === true) return failure("TRANSACTION_ACCOUNT_ARCHIVED", "Reative a conta antes de concluir.");
-      if (realizationDate <= String(root.data_vencimento)
-        && (adjustmentType !== "none" || adjustmentValue !== 0)) {
-        return failure("TRANSACTION_ADJUSTMENT_NOT_ALLOWED_BEFORE_DUE_DATE", "Juros ou desconto só se aplicam após o vencimento.");
-      }
       if (realizedValue > totalDue) return failure("TRANSACTION_REALIZED_VALUE_TOO_HIGH", "O valor realizado supera o total devido.");
 
       const remainingValue = money(totalDue - realizedValue);

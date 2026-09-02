@@ -62,6 +62,7 @@ type Props = {
   transactions: TransactionRow[];
   financialEvents: TransactionRow[];
   paymentSummaryRows: unknown[];
+  reconciledTransactionIds: number[];
 };
 
 type HistoryKind = TransactionKind | "fatura";
@@ -305,7 +306,7 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<TransactionActionState | null>(null);
   const common = transaction.categoria_id !== null && transactionKind(transaction) !== "transferencia" && !/\[(?:Objetivo:|PagFatura:)/.test(transaction.descricao);
-  const adjustmentAllowed = common && realizationDate > transaction.data_vencimento;
+  const adjustmentAllowed = common;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -325,11 +326,11 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
   return <Modal title="Concluir lançamento" subtitle={`Agendado para ${formatarData(transaction.data_vencimento)}.`} onClose={onClose}>
     <form onSubmit={submit} className="grid gap-4">
       <input type="hidden" name="transaction_id" value={transaction.id} /><input type="hidden" name="expected_value" value={Number(transaction.valor)} />
-      <Field label="Data da realização"><input name="realization_date" type="date" required max={today} value={realizationDate} onChange={(event) => { setRealizationDate(event.target.value); if (event.target.value <= transaction.data_vencimento) setAdjustmentType("none"); }} className={INPUT} /></Field>
+      <Field label="Data da realização"><input name="realization_date" type="date" required max={today} value={realizationDate} onChange={(event) => setRealizationDate(event.target.value)} className={INPUT} /></Field>
       {common ? <>
         <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput name="realized_value" defaultValue={Number(transaction.valor)} required /></Field>
         <p className="rounded-ff-sm bg-primary-soft p-3 text-xs font-semibold text-primary-dark">Se o valor for menor, a baixa fica registrada e o restante continua pendente neste mesmo agendamento.</p>
-        {adjustmentAllowed ? <Field label="Ajuste depois do vencimento"><select name="adjustment_type" value={adjustmentType} onChange={(event) => setAdjustmentType(event.target.value as typeof adjustmentType)} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
+        {adjustmentAllowed ? <Field label="Juros ou desconto"><select name="adjustment_type" value={adjustmentType} onChange={(event) => setAdjustmentType(event.target.value as typeof adjustmentType)} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
         {adjustmentAllowed && adjustmentType !== "none" && <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required /></Field>}
       </> : <><input type="hidden" name="realized_value" value={Number(transaction.valor)} /><input type="hidden" name="adjustment_type" value="none" /><p className="rounded-ff-sm bg-blue/10 p-3 text-xs font-semibold text-blue">Transferências e movimentos internos são concluídos integralmente e não aceitam pagamento parcial, juros ou desconto.</p></>}
       <Feedback state={feedback} />
@@ -394,12 +395,13 @@ function FilterOption({ checked, label, color, onChange }: { checked: boolean; l
   return <label className="flex cursor-pointer items-center gap-3 rounded-xl px-2.5 py-2.5 transition hover:bg-surface-muted"><input type="checkbox" checked={checked} onChange={onChange} className="h-4 w-4 shrink-0 accent-primary" /><span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color ?? "var(--color-primary)" }} /><span className="min-w-0 flex-1 break-words text-sm font-semibold leading-tight">{label}</span></label>;
 }
 
-function TransactionCard({ transaction, summary, accounts, categories, today, onOpen }: {
+function TransactionCard({ transaction, summary, accounts, categories, today, reconciled, onOpen }: {
   transaction: TransactionRow;
   summary: PaymentSummary;
   accounts: Conta[];
   categories: Categoria[];
   today: string;
+  reconciled: boolean;
   onOpen: () => void;
 }) {
   const kind = transactionKind(transaction);
@@ -416,7 +418,7 @@ function TransactionCard({ transaction, summary, accounts, categories, today, on
   return <article className="ff-card group overflow-hidden border-white/5 shadow-[0_12px_34px_rgba(0,0,0,0.07)] transition duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-[0_18px_44px_rgba(0,0,0,0.13)]"><button type="button" onClick={onOpen} className="ff-focus grid w-full gap-3 p-4 text-left sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:items-center">
     <div className="hidden h-14 w-14 place-content-center rounded-2xl border border-border/60 bg-surface-muted/75 text-center transition group-hover:border-primary/25 sm:grid"><span className="text-lg font-black text-foreground">{effectiveDate.slice(8, 10)}</span><span className="text-[10px] font-bold uppercase text-foreground-muted">{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${effectiveDate}T12:00:00Z`)).replace(".", "")}</span></div>
     <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${kind === "receita" ? "bg-primary-soft text-primary-dark" : kind === "despesa" ? "bg-red/10 text-red" : "bg-blue/10 text-blue"}`}>{kind === "transferencia" ? "Transferência" : kind}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${statusClass}`}>{status}</span>{recurrence && <span className="rounded-full bg-purple/10 px-2.5 py-1 text-[10px] font-bold text-purple">{recurrence}</span>}</div><h2 className="mt-2 truncate font-extrabold text-foreground">{descricaoVisivel(transaction.descricao)}</h2><div className="mt-1 flex flex-wrap gap-x-2 text-xs font-semibold text-foreground-muted"><span className="sm:hidden">{formatarData(effectiveDate)}</span>{account && <span style={{ color: account.cor }}>{account.nome}</span>}{destination && <span>→ {destination.nome}</span>}{category && <span style={{ color: category.cor }}>{category.nome}</span>}</div>{partial && <p data-private-value="true" className="mt-2 text-xs font-semibold text-orange">Realizado {formatarReais(summary.paidTotal)} · falta {formatarReais(summary.remainingValue)}</p>}</div>
-    <div className="flex items-center justify-between gap-3 sm:block sm:text-right"><span className="text-xs font-semibold text-primary sm:hidden">Ver detalhes</span><p data-private-value="true" className={`text-lg font-black ${valueClass}`}>{kind === "receita" ? "+ " : kind === "despesa" ? "- " : "↔ "}{formatarReais(summary.totalValue)}</p><p className="mt-1 hidden text-xs font-semibold text-primary sm:block">Ver detalhes ›</p></div>
+    <div className="flex items-center justify-between gap-3 sm:block sm:text-right"><span className="text-xs font-semibold text-primary sm:hidden">Ver detalhes</span><div><p data-private-value="true" className={`text-lg font-black ${valueClass}`}>{kind === "receita" ? "+ " : kind === "despesa" ? "- " : "↔ "}{formatarReais(summary.totalValue)}</p>{reconciled && <span className="mt-1 inline-block rounded-full bg-blue/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-blue">Conciliado</span>}<p className="mt-1 hidden text-xs font-semibold text-primary sm:block">Ver detalhes ›</p></div></div>
   </button></article>;
 }
 
@@ -445,8 +447,9 @@ function InvoiceCard({ invoice, today }: { invoice: InvoiceHistoryGroup; today: 
   </article>;
 }
 
-export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows }: Props) {
+export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds }: Props) {
   const router = useRouter();
+  const reconciledIds = useMemo(() => new Set(reconciledTransactionIds), [reconciledTransactionIds]);
   const [month, setMonth] = useState(initialMonth);
   const [period, setPeriod] = useState<PeriodFilter>(initialQuick ?? "all");
   const [search, setSearch] = useState("");
@@ -703,7 +706,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Linha do tempo</h2><span className="text-xs font-semibold text-foreground-muted">Mais recentes primeiro</span></div>
     <div className="grid gap-3">{filtered.slice(0, limit).map((item) => item.kind === "invoice"
       ? <InvoiceCard key={item.key} invoice={item.invoice} today={today} />
-      : <div key={item.key} className={focusedTransactionId === item.transaction.id ? "rounded-[22px] ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}><TransactionCard transaction={item.transaction} summary={summaryFor(item.transaction)} accounts={accounts} categories={categories} today={today} onOpen={() => { void openDetails(item.transaction); }} /></div>)}</div>
+      : <div key={item.key} className={focusedTransactionId === item.transaction.id ? "rounded-[22px] ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}><TransactionCard transaction={item.transaction} summary={summaryFor(item.transaction)} accounts={accounts} categories={categories} today={today} reconciled={reconciledIds.has(item.transaction.id)} onOpen={() => { void openDetails(item.transaction); }} /></div>)}</div>
     {filtered.length === 0 && <section className="ff-card grid min-h-48 place-content-center p-6 text-center"><p className="text-3xl">⌕</p><h2 className="mt-2 font-extrabold">Nenhum lançamento encontrado</h2><p className="mt-1 text-sm text-foreground-muted">Ajuste o período, a busca ou os filtros.</p></section>}
     {limit < filtered.length && <button type="button" onClick={() => setLimit((value) => value + PAGE_SIZE)} className="mx-auto mt-5 block rounded-full border border-primary px-5 py-2.5 text-sm font-extrabold text-primary">Mostrar mais {Math.min(PAGE_SIZE, filtered.length - limit)}</button>}
 

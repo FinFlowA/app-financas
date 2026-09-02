@@ -38,8 +38,17 @@ jobs:
       - name: Configurar Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
+
+      - name: Validar credencial do Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo '::error::O segredo EXPO_TOKEN não está configurado. Crie um token em expo.dev e salve-o em Settings > Secrets and variables > Actions.'
+            exit 1
+          fi
 
       - name: Instalar dependencias
         run: npm ci

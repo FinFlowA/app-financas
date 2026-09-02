@@ -6,26 +6,28 @@ import ReconciliationWorkspace, { type ReconciliationCandidate } from "./reconci
 
 type SummaryRow = { root_transaction_id: number; remaining_value: number };
 type FingerprintRow = { account_id: number; entry_fingerprint: string };
+type ReconciledTransactionRow = { transaction_id: number };
 type TransferCounterpartRow = { transaction_id: number; account_id: number; entry_type: "receita" | "despesa"; description: string; due_date: string; amount: number };
 
 const PAYMENT_SUMMARY_BATCH_SIZE = 500;
 
 export default async function ReconciliationPage() {
   const supabase = await createClient();
-  const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, fingerprintsResult, counterpartsResult] = await Promise.all([
+  const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult] = await Promise.all([
     supabase.auth.getClaims(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome"),
     fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
     supabase.rpc("list_bank_reconciliation_fingerprints"),
     supabase.rpc("list_pending_bank_transfer_counterparts"),
+    supabase.rpc("list_bank_reconciled_transaction_ids"),
   ]);
   if (accountsResult.error || categoriesResult.error || transactionsResult.error) throw new Error("Não foi possível preparar a conciliação agora.");
   if (typeof auth?.claims.sub !== "string") throw new Error("Sua sessão expirou. Entre novamente.");
   const accounts = (accountsResult.data ?? []) as Conta[];
   const categories = ((categoriesResult.data ?? []) as Categoria[]).filter((category) => category.ativa === true || category.ativa === 1);
   const transactions = ((transactionsResult.data ?? []) as Transacao[]).filter((transaction) => (transaction.categoria_id !== null || isTransferencia(transaction.descricao))
-    && !isMovimentoObjetivo(transaction.descricao) && !isPagamentoFatura(transaction.descricao));
+    && !isPagamentoFatura(transaction.descricao));
   const ids = transactions.filter((transaction) => transaction.status === "pendente").map((transaction) => transaction.id);
   const summaryBatches = await Promise.all(Array.from(
     { length: Math.ceil(ids.length / PAYMENT_SUMMARY_BATCH_SIZE) },
@@ -36,7 +38,8 @@ export default async function ReconciliationPage() {
   if (summaryBatches.some((result) => result.error)) throw new Error("Não foi possível calcular os saldos pendentes.");
   const summaries = summaryBatches.flatMap((result) => (result.data ?? []) as SummaryRow[]);
   const remainingById = new Map(summaries.map((row) => [Number(row.root_transaction_id), Number(row.remaining_value)]));
-  const candidates: ReconciliationCandidate[] = transactions.flatMap<ReconciliationCandidate>((transaction) => {
+  const reconciledTransactionIds = new Set(((reconciledTransactionsResult.data ?? []) as ReconciledTransactionRow[]).map((row) => Number(row.transaction_id)));
+  const candidates: ReconciliationCandidate[] = transactions.filter((transaction) => !reconciledTransactionIds.has(transaction.id)).flatMap<ReconciliationCandidate>((transaction) => {
     const base = {
       id: transaction.id,
       categoryId: transaction.categoria_id,
@@ -45,6 +48,7 @@ export default async function ReconciliationPage() {
       remainingValue: transaction.status === "paga" ? Number(transaction.valor) : remainingById.get(transaction.id) ?? Number(transaction.valor),
       status: transaction.status === "paga" ? "paga" as const : "pendente" as const,
     };
+    if (isMovimentoObjetivo(transaction.descricao)) return [{ ...base, accountId: transaction.conta_id, type: transaction.tipo, kind: "goal" as const }];
     if (!isTransferencia(transaction.descricao)) return [{ ...base, accountId: transaction.conta_id, type: transaction.tipo, kind: "standard" as const }];
     const destinationId = getContaDestinoTransferencia(transaction.descricao);
     return [

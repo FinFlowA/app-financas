@@ -108,6 +108,11 @@ export default async function TransactionsPage({
   } catch {
     throw new Error("Não foi possível carregar os resumos de pagamentos do Histórico agora.");
   }
+  const reconciledResult = await supabase.rpc("list_bank_reconciled_transaction_ids");
+  if (reconciledResult.error && reconciledResult.error.code !== "PGRST202") {
+    throw new Error("Não foi possível carregar o estado de conciliação do Histórico agora.");
+  }
+  const reconciledTransactionIds = (reconciledResult.data ?? []).map((row: { transaction_id: number }) => Number(row.transaction_id));
 
   return (
     <div className="mx-auto max-w-7xl">
@@ -127,6 +132,7 @@ export default async function TransactionsPage({
         transactions={rootTransactions}
         financialEvents={transactions}
         paymentSummaryRows={paymentSummaries}
+        reconciledTransactionIds={reconciledTransactionIds}
       />
     </div>
   );

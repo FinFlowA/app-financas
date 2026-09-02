@@ -316,7 +316,6 @@ export async function completeTransaction(formData: FormData): Promise<Transacti
   if (commonTransaction) {
     if (!Number.isFinite(realizedValue) || realizedValue <= 0) return { erro: "Informe quanto foi efetivamente pago ou recebido." };
     if (adjustmentType !== "none" && (!Number.isFinite(adjustmentValue) || adjustmentValue <= 0)) return { erro: "Informe o valor do ajuste." };
-    if (realizationDate <= current.data_vencimento && adjustmentType !== "none") return { erro: "Juros e desconto só podem ser informados depois da data agendada." };
     const totalDue = adjustmentType === "interest"
       ? expectedValue + adjustmentValue
       : adjustmentType === "discount" ? expectedValue - adjustmentValue : expectedValue;
