@@ -68,7 +68,7 @@ function NewAccount({ partnerName }: { partnerName: string | null }) {
   </section>;
 }
 
-function AccountCard({ account, balance, own, partnerName }: { account: Conta; balance: number; own: boolean; partnerName: string | null }) {
+function AccountCard({ account, balance, own, hasTransactions, partnerName }: { account: Conta; balance: number; own: boolean; hasTransactions: boolean; partnerName: string | null }) {
   const canUseDOM = useSyncExternalStore(subscribeToNothing, getClientSnapshot, getServerSnapshot);
   const [color, setColor] = useState<string>(account.cor || ACCOUNT_COLORS[0]);
   const [editOpen, setEditOpen] = useState(false);
@@ -88,7 +88,9 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
   const [state, stateAction, changing] = useActionState(alterarEstadoConta, INITIAL);
   const [sharingState, sharingAction, sharing] = useActionState(alterarCompartilhamentoConta, INITIAL);
   const [deleteBaseline, setDeleteBaseline] = useState<ContaActionState | null>(null);
+  const [archiveBaseline, setArchiveBaseline] = useState<ContaActionState | null>(null);
   const confirmDelete = deleteBaseline !== null && !(state !== deleteBaseline && state.sucesso);
+  const confirmArchive = archiveBaseline !== null && !(state !== archiveBaseline && state.sucesso);
   return <article className={`ff-card group relative overflow-hidden border-white/5 shadow-[0_16px_44px_rgba(0,0,0,0.1)] transition duration-300 ${editOpen ? "" : "hover:-translate-y-1 hover:border-primary/25 hover:shadow-[0_22px_56px_rgba(0,0,0,0.16)]"}`}>
     <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: account.cor || ACCOUNT_COLORS[0] }} />
     <div aria-hidden="true" className="absolute -right-16 -top-16 h-40 w-40 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.14]" style={{ backgroundColor: account.cor || ACCOUNT_COLORS[0] }} />
@@ -125,6 +127,10 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
           >
             <RequestId state={editState} /><input type="hidden" name="account_id" value={account.id} /><input type="hidden" name="expected_version" value={account.version ?? 1} />
             <label className="text-xs font-bold uppercase text-foreground-muted">Nome<input name="name" required defaultValue={account.nome} maxLength={100} className="mt-1 w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-sm normal-case text-foreground outline-none focus:border-primary" /></label>
+            <div role="note" className="rounded-xl border border-orange/35 bg-orange/10 px-4 py-3 text-sm leading-5 text-orange">
+              <strong className="block">Atenção ao saldo inicial</strong>
+              <span className="mt-1 block text-xs font-semibold text-foreground-muted">Alterar este valor também mudará o saldo atual da conta e recalculará os relatórios financeiros.</span>
+            </div>
             <label className="text-xs font-bold uppercase text-foreground-muted">
               Saldo inicial
               <CurrencyInput
@@ -155,9 +161,20 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
         </section>
       </div>, document.body)}
       {own && <form action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="account_id" value={account.id} />
-        {account.arquivado ? <button name="operation" value="reactivate_account" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button> : <button name="operation" value="archive_account" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button>}
-        <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>
-        {confirmDelete && <ConfirmationDialog
+        {account.arquivado ? <button name="operation" value="reactivate_account" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button> : <button type="button" disabled={changing} onClick={() => setArchiveBaseline(state)} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button>}
+        {confirmArchive && <ConfirmationDialog
+          title={`Arquivar ${account.nome}?`}
+          description="A conta deixará de aparecer nos lançamentos novos e nos totais ativos, mas todo o histórico financeiro será preservado. Você poderá reativá-la depois."
+          confirmLabel="Confirmar arquivamento"
+          confirmName="operation"
+          confirmValue="archive_account"
+          pending={changing}
+          onClose={() => setArchiveBaseline(null)}
+        >
+          {state !== archiveBaseline && state.erro && <p role="alert" className="mt-4 rounded-xl bg-red/10 p-3 text-sm font-semibold text-red">{state.erro}</p>}
+        </ConfirmationDialog>}
+        {!hasTransactions && <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>}
+        {!hasTransactions && confirmDelete && <ConfirmationDialog
           title={`Excluir ${account.nome}?`}
           description="Se houver lançamentos, a conta será apenas arquivada para preservar todo o histórico financeiro. Uma conta vazia será excluída definitivamente."
           confirmLabel="Confirmar exclusão"
@@ -174,6 +191,9 @@ function AccountCard({ account, balance, own, partnerName }: { account: Conta; b
   </article>;
 }
 
-export default function AccountManager({ accounts, balances, userId, partnerName }: { accounts: Conta[]; balances: Record<number, number>; userId: string; partnerName: string | null }) {
-  return <><NewAccount partnerName={partnerName} /><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Todas as contas</h2><span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-bold text-foreground-muted">{accounts.length} {accounts.length === 1 ? "conta" : "contas"}</span></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{accounts.map((account) => <AccountCard key={account.id} account={account} balance={balances[account.id] ?? Number(account.saldo_inicial)} own={account.user_id === userId} partnerName={partnerName} />)}</div>{accounts.length === 0 && <section className="ff-card grid min-h-48 place-content-center border-dashed p-8 text-center"><span className="text-3xl text-primary">＋</span><h2 className="mt-2 font-extrabold text-foreground">Nenhuma conta cadastrada</h2><p className="mt-1 text-sm text-foreground-muted">Use o botão acima para criar sua primeira conta.</p></section>}</>;
+export default function AccountManager({ accounts, balances, linkedAccountIds, userId, partnerName }: { accounts: Conta[]; balances: Record<number, number>; linkedAccountIds: number[]; userId: string; partnerName: string | null }) {
+  const activeAccounts = accounts.filter((account) => !account.arquivado);
+  const archivedAccounts = accounts.filter((account) => account.arquivado);
+  const linked = new Set(linkedAccountIds);
+  return <><NewAccount partnerName={partnerName} /><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Contas ativas</h2><span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-bold text-foreground-muted">{activeAccounts.length}</span></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{activeAccounts.map((account) => <AccountCard key={account.id} account={account} balance={balances[account.id] ?? Number(account.saldo_inicial)} hasTransactions={linked.has(account.id)} own={account.user_id === userId} partnerName={partnerName} />)}</div>{activeAccounts.length === 0 && <section className="ff-card grid min-h-48 place-content-center border-dashed p-8 text-center"><span className="text-3xl text-primary">＋</span><h2 className="mt-2 font-extrabold text-foreground">Nenhuma conta ativa</h2><p className="mt-1 text-sm text-foreground-muted">Crie uma conta nova ou reative uma conta arquivada.</p></section>}{archivedAccounts.length > 0 && <section className="mt-7"><div className="mb-3 flex items-center justify-between"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-foreground-muted">Histórico preservado</p><h2 className="mt-1 text-lg font-extrabold text-foreground">Contas arquivadas</h2></div><span className="rounded-full bg-surface-muted px-3 py-1 text-xs font-bold text-foreground-muted">{archivedAccounts.length}</span></div><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{archivedAccounts.map((account) => <AccountCard key={account.id} account={account} balance={balances[account.id] ?? Number(account.saldo_inicial)} hasTransactions={linked.has(account.id)} own={account.user_id === userId} partnerName={partnerName} />)}</div></section>}</>;
 }

@@ -139,6 +139,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
   const scheduledDate = formString(formData, "scheduled_date");
   const accountId = formInteger(formData, "account_id");
   const destinationAccountId = formInteger(formData, "destination_account_id");
+  const destinationGoalId = formInteger(formData, "destination_goal_id");
   const categoryId = formInteger(formData, "category_id");
   const installments = formInteger(formData, "installments");
   const valueMode = formString(formData, "value_mode");
@@ -178,10 +179,23 @@ export async function createTransaction(formData: FormData): Promise<Transaction
 
   const actionId = requestId(formData);
   if (kind === "transferencia") {
-    if (!validId(destinationAccountId) || destinationAccountId === accountId) return { erro: "Escolha uma conta de destino diferente da origem." };
-    payload.destination_account_id = destinationAccountId;
-    const result = await executeManualFinancialAction("transfer_between_accounts", payload, actionId);
-    if (result.erro) return { erro: result.erro };
+    if (validId(destinationGoalId)) {
+      if (frequency === "parcelada") return { erro: "Transferências para objetivos podem ser únicas ou recorrentes." };
+      if (frequency === "unica" && status !== "paga") return { erro: "Uma transferência única para objetivo deve ser concluída na data." };
+      const goalPayload: Record<string, unknown> = { operation: "guardar", goal_id: destinationGoalId, account_id: accountId, value: totalValue, description, frequency };
+      if (frequency === "unica") goalPayload.realization_date = scheduledDate;
+      else {
+        goalPayload.scheduled_date = scheduledDate;
+        goalPayload.recurrence_count = frequency === "semanal" ? 260 : frequency === "mensal" ? 60 : 5;
+      }
+      const result = await executeManualFinancialAction("move_goal", goalPayload, actionId);
+      if (result.erro) return { erro: result.erro };
+    } else {
+      if (!validId(destinationAccountId) || destinationAccountId === accountId) return { erro: "Escolha uma conta ou objetivo de destino." };
+      payload.destination_account_id = destinationAccountId;
+      const result = await executeManualFinancialAction("transfer_between_accounts", payload, actionId);
+      if (result.erro) return { erro: result.erro };
+    }
   } else {
     if (!validId(categoryId)) return { erro: "Escolha uma categoria compatível." };
     payload.type = kind;

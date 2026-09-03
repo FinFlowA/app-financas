@@ -208,7 +208,7 @@ export async function pagarFatura(formData: FormData): Promise<ResultadoCartao> 
   if (!["full", "keep_open", "carry"].includes(remainderMode)) return { erro: "Escolha o destino do saldo restante." };
   if (remainderMode === "full" && Math.abs(paymentAmount - invoiceAmount) > 0.005) return { erro: "Para pagamento integral, informe o total da fatura." };
   if (remainderMode !== "full" && paymentAmount >= invoiceAmount - 0.005) return { erro: "Pagamento parcial deve ser menor que a fatura." };
-  if (remainderMode === "carry" && Number.isFinite(interestValue)) {
+  if (remainderMode !== "full" && Number.isFinite(interestValue)) {
     if (interestValue < 0) return { erro: "Os juros não podem ser negativos." };
     if (!["valor", "percentual"].includes(interestMode)) return { erro: "Escolha como os juros foram informados." };
     if (interestMode === "percentual" && interestValue > 1000) return { erro: "O percentual de juros é inválido." };
@@ -225,7 +225,7 @@ export async function pagarFatura(formData: FormData): Promise<ResultadoCartao> 
     card_id: cardId, invoice_month: invoiceMonth, account_id: accountId,
     payment_amount: paymentAmount, remainder_mode: remainderMode,
   };
-  if (remainderMode === "carry" && Number.isFinite(interestValue) && interestValue >= 0) {
+  if (remainderMode !== "full" && Number.isFinite(interestValue) && interestValue >= 0) {
     if (interestMode === "percentual") payload.interest_percent = interestValue;
     else payload.interest_value = interestValue;
   }

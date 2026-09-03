@@ -37,6 +37,7 @@ export default async function ContasPage() {
   const accounts = (contasResult.data ?? []) as Conta[];
   const transactions = (transacoesResult.data ?? []) as Transacao[];
   const balances = Object.fromEntries(calcularSaldosPorConta(accounts, transactions));
+  const linkedAccountIds = [...new Set(transactions.map((transaction) => transaction.conta_id))];
   const activeAccounts = accounts.filter((account) => !account.arquivado);
   const totalBalance = activeAccounts.reduce((total, account) => total + (balances[account.id] ?? Number(account.saldo_inicial)), 0);
 
@@ -63,7 +64,7 @@ export default async function ContasPage() {
           </div>
         </div>
       </header>
-      <AccountManager accounts={accounts} balances={balances} userId={authData.user.id} partnerName={partnerName} />
+      <AccountManager accounts={accounts} balances={balances} linkedAccountIds={linkedAccountIds} userId={authData.user.id} partnerName={partnerName} />
     </div>
   );
 }

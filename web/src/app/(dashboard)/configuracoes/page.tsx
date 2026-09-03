@@ -16,7 +16,6 @@ import {
 } from "./settings-forms";
 import {
   confirmDissolutionSummaryAction,
-  markSystemNotificationAction,
 } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -24,15 +23,6 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Configurações",
   description: "Perfil, preferências, parceria, avisos e privacidade da conta FinFlow.",
-};
-
-type SystemNotification = {
-  id: number;
-  tipo: string;
-  titulo: string;
-  mensagem: string;
-  criada_em: string;
-  lida_em: string | null;
 };
 
 type DissolutionItem = {
@@ -95,7 +85,6 @@ export default async function SettingsPage() {
 
   const [
     partnershipResult,
-    notificationsResult,
     accountDecisionsResult,
     goalDecisionsResult,
     summaryResult,
@@ -104,11 +93,6 @@ export default async function SettingsPage() {
       .select("id,solicitante_id,convidado_id,convidado_email,status")
       .in("status", ["pendente", "aceito"])
       .order("id", { ascending: false }),
-    supabase.from("notificacoes_sistema")
-      .select("id,tipo,titulo,mensagem,criada_em,lida_em")
-      .eq("destinatario_id", user.id)
-      .order("criada_em", { ascending: false })
-      .limit(30),
     supabase.rpc("get_minhas_decisoes_conta_dissolucao"),
     supabase.rpc("get_minhas_decisoes_caixinha"),
     supabase.rpc("get_meu_resumo_dissolucao"),
@@ -131,7 +115,6 @@ export default async function SettingsPage() {
   const partnerName = typeof partnerNameResult?.data === "string"
     ? partnerNameResult.data
     : null;
-  const notifications = (notificationsResult.data ?? []) as SystemNotification[];
   const accountDecisions = (accountDecisionsResult.data ?? []) as AccountDecision[];
   const goalDecisions = (goalDecisionsResult.data ?? []) as GoalDecision[];
   const summaryRaw = Array.isArray(summaryResult.data) ? summaryResult.data[0] : summaryResult.data;
@@ -179,7 +162,7 @@ export default async function SettingsPage() {
 
       <DissolutionDecisions accounts={accountDecisions} goals={goalDecisions} />
 
-      <div className="grid items-start gap-6 xl:grid-cols-[1.1fr_.9fr]">
+      <div className="grid items-stretch gap-6 xl:grid-cols-[1.1fr_.9fr]">
         <div className="grid gap-6"><section className="ff-card self-start p-5 sm:p-6" data-interactive="true">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -191,7 +174,7 @@ export default async function SettingsPage() {
           <ProfileForm name={name} />
         </section><PreferencesPanel userId={user.id} section="permission" /></div>
 
-        <section className="ff-card p-5 sm:p-6" data-interactive="true">
+        <section className="ff-card h-full p-5 sm:p-6" data-interactive="true">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="text-lg font-extrabold text-foreground">Dados de acesso</h2>
@@ -215,37 +198,7 @@ export default async function SettingsPage() {
 
       <PreferencesPanel userId={user.id} section="alerts" />
 
-      <PartnershipPanel partnerships={partnerships} userId={user.id} userEmail={email} partnerName={partnerName} />
-
-      <section className="ff-card p-5 sm:p-6">
-        <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-          <div>
-            <h2 className="text-lg font-extrabold text-foreground">Central de avisos</h2>
-            <p className="mt-1 text-sm text-foreground-muted">Eventos recentes da parceria ficam disponíveis aqui por até cinco dias.</p>
-          </div>
-          <span className="rounded-full bg-primary-soft px-3 py-1.5 text-xs font-bold text-primary-dark">{notifications.filter((item) => !item.lida_em).length} não lidos</span>
-        </div>
-        <div className="mt-5 space-y-3">
-          {notifications.map((item) => (
-            <article key={item.id} className={`rounded-ff-md border p-4 ${item.lida_em ? "border-border bg-surface-muted/50" : "border-primary/30 bg-primary-soft"}`}>
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2"><p className="font-extrabold text-foreground">{item.titulo}</p>{!item.lida_em && <span className="h-2 w-2 rounded-full bg-primary" aria-label="Não lida" />}</div>
-                  <p className="mt-1 text-sm leading-6 text-foreground-muted">{item.mensagem}</p>
-                  <p className="mt-2 text-xs text-foreground-muted">{dateTime(item.criada_em)}</p>
-                </div>
-                {!item.lida_em && (
-                  <form action={markSystemNotificationAction}>
-                    <input type="hidden" name="notification_id" value={item.id} />
-                    <button className="ff-focus rounded-ff-sm border border-primary/30 bg-surface px-3 py-2 text-xs font-bold text-primary-dark">Marcar como lida</button>
-                  </form>
-                )}
-              </div>
-            </article>
-          ))}
-          {notifications.length === 0 && <p className="rounded-ff-md bg-surface-muted p-5 text-sm text-foreground-muted">Nenhum aviso de sistema por enquanto.</p>}
-        </div>
-      </section>
+      <div className="pt-2"><PartnershipPanel partnerships={partnerships} userId={user.id} userEmail={email} partnerName={partnerName} /></div>
 
       <div className="grid gap-6 xl:grid-cols-2">
         <section className="ff-card p-5 sm:p-6">

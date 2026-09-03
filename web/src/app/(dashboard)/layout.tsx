@@ -7,6 +7,7 @@ import RouteFrame from "@/components/layout/route-frame";
 import ProfileAndTutorial from "@/components/onboarding/profile-and-tutorial";
 import CategoryBootstrap from "@/components/onboarding/category-bootstrap";
 import FinancialNotificationLoader from "@/components/notifications/financial-notification-loader";
+import PartnershipNotificationPopup, { type PartnershipNotification } from "@/components/notifications/partnership-notification-popup";
 import ContextualHelp from "@/components/layout/contextual-help";
 import { LEGAL_DOCUMENT_VERSION } from "@/lib/auth/constants";
 import { ageFromIsoDate } from "@/lib/auth/validation";
@@ -33,6 +34,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const missingTerms = typeof metadata?.termos_aceitos_em !== "string" || metadata?.termos_versao !== LEGAL_DOCUMENT_VERSION;
   const tutorialPending = metadata?.tutorial_pendente === true;
   const categoriesInitialized = metadata?.categorias_padrao_versao === 1;
+  const partnershipNotifications = typeof data?.claims.sub === "string"
+    ? await supabase.from("notificacoes_sistema")
+      .select("id,tipo,titulo,mensagem,criada_em")
+      .eq("destinatario_id", data.claims.sub)
+      .is("lida_em", null)
+      .in("tipo", ["convite_parceria", "parceria_aceita", "parceria_recusada", "parceria_encerrada"])
+      .order("criada_em")
+      .limit(10)
+    : { data: [] };
 
   return (
     <div className="ff-app-shell">
@@ -64,6 +74,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
       <ProfileAndTutorial missingBirth={missingBirth} missingTerms={missingTerms} tutorialPending={tutorialPending} />
       {typeof data?.claims.sub === "string" && <CategoryBootstrap userId={data.claims.sub} initialized={categoriesInitialized} />}
       {typeof data?.claims.sub === "string" && <FinancialNotificationLoader userId={data.claims.sub} />}
+      <PartnershipNotificationPopup notifications={(partnershipNotifications.data ?? []) as PartnershipNotification[]} />
     </div>
   );
 }

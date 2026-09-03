@@ -67,7 +67,6 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
       if (
         stopped
         || expectedGeneration !== sessionGeneration
-        || document.visibilityState !== "visible"
         || !navigator.onLine
         || !notificationsAreAvailable()
       ) {
@@ -77,7 +76,6 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
       return !stopped
         && expectedGeneration === sessionGeneration
         && data.session?.user.id === userId
-        && document.visibilityState === "visible"
         && navigator.onLine
         && notificationsAreAvailable();
     }
@@ -193,7 +191,7 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
     }
 
     function requestEvaluation() {
-      if (stopped || document.visibilityState !== "visible") return;
+      if (stopped) return;
       if (running) {
         rerunRequested = true;
         return;
@@ -210,14 +208,7 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
     }
 
     function handleVisibilityChange() {
-      if (document.visibilityState === "visible") {
-        requestEvaluation();
-        return;
-      }
-      // Invalida com segurança uma avaliação que estava em andamento. Ao
-      // voltar para a aba, uma nova geração consulta apenas dados atuais.
-      sessionGeneration += 1;
-      rerunRequested = false;
+      if (document.visibilityState === "visible") requestEvaluation();
     }
 
     function handlePreferenceChange(event: Event) {

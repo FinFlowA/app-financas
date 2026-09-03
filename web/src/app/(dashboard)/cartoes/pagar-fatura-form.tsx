@@ -119,7 +119,7 @@ export default function PagarFaturaForm({
           </label>
         )}
 
-        {tipoPagamento === "partial" && destinoSaldo === "carry" && (
+        {tipoPagamento === "partial" && (
           <>
             <label>
               <span className={styles.fieldLabel}>Juros (opcional)</span>

@@ -506,8 +506,8 @@
 .flowEmpty { width: 100%; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--foreground-muted) 12%, transparent), transparent); }
 
 .progressLegend {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   gap: .65rem 1.3rem;
   margin-top: .9rem;
@@ -516,10 +516,11 @@
 }
 
 .progressLegend > span { display: inline-flex; align-items: center; gap: .45rem; }
+.progressLegend > span:nth-child(2) { justify-self: center; text-align: center; }
 .progressLegend i { display: inline-block; width: 1rem; height: .16rem; border-radius: 99px; }
 .realizedLegend { background: var(--ff-mint); }
 .expectedLegend { background: repeating-linear-gradient(90deg, var(--foreground-muted) 0 4px, transparent 4px 7px); }
-.progressLegend strong { margin-left: auto; color: var(--foreground-muted); font-weight: 700; }
+.progressLegend strong { justify-self: end; color: var(--foreground-muted); font-weight: 700; text-align: right; }
 
 .accountsHeader {
   display: flex;
@@ -789,8 +790,9 @@
   .summaryValue { padding: .25rem .45rem; }
   .summaryLabel { font-size: .61rem; }
   .summaryAmount { font-size: .86rem; }
-  .progressLegend { gap: .55rem .85rem; }
-  .progressLegend strong { width: 100%; margin-left: 0; }
+  .progressLegend { grid-template-columns: 1fr; gap: .55rem .85rem; }
+  .progressLegend > span:nth-child(2),
+  .progressLegend strong { justify-self: start; text-align: left; }
   .categoryContent { grid-template-columns: 1fr; }
   .donut { width: 7.2rem; height: 7.2rem; }
   .categoryRow { grid-template-columns: minmax(5rem, 1fr) minmax(3.5rem, 1fr) auto; }

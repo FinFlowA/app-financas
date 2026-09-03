@@ -11,7 +11,7 @@ import { formatarData, formatarReais } from "@/lib/format";
 import { historyFinancialTotals } from "@/lib/history-totals";
 import { filterInvoiceGroupItems, groupInvoiceItems, type InvoiceHistoryGroup } from "@/lib/invoices";
 import { descricaoVisivel, isPagamentoFatura } from "@/lib/transacoes";
-import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
+import type { Caixinha, Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
 import { useRequestId } from "@/lib/use-request-id";
 import {
   completeTransaction,
@@ -56,6 +56,7 @@ type Props = {
   returnHomeAfterCreate: boolean;
   today: string;
   accounts: Conta[];
+  goals: Caixinha[];
   categories: Categoria[];
   cards: Cartao[];
   invoiceItems: FaturaItem[];
@@ -170,11 +171,13 @@ function Field({ label, children, className = "" }: { label: string; children: R
   return <label className={`text-sm font-bold text-foreground ${className}`}>{label}{children}</label>;
 }
 
-function NewTransactionDialog({ accounts, categories, today, initialKind, onClose, onChanged }: {
+export function NewTransactionDialog({ accounts, goals = [], categories, today, initialKind, initialDate, onClose, onChanged }: {
   accounts: Conta[];
+  goals?: Caixinha[];
   categories: Categoria[];
   today: string;
   initialKind: TransactionKind;
+  initialDate?: string;
   onClose: () => void;
   onChanged: (message: string) => void;
 }) {
@@ -183,6 +186,7 @@ function NewTransactionDialog({ accounts, categories, today, initialKind, onClos
   const [valueMode, setValueMode] = useState("total");
   const [status, setStatus] = useState("paga");
   const [accountId, setAccountId] = useState("");
+  const [destination, setDestination] = useState("");
   // A mesma chave precisa sobreviver a uma resposta perdida: se a primeira
   // tentativa chegou ao banco, reenviar o formulário reproduz o recibo em vez
   // de criar um segundo lançamento. O modal desmonta após o sucesso e, então,
@@ -219,7 +223,7 @@ function NewTransactionDialog({ accounts, categories, today, initialKind, onClos
         </div></fieldset>
         <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} placeholder={kind === "transferencia" ? "Ex.: Reserva para outra conta" : "Ex.: Mercado"} className={INPUT} /></Field>
         <Field label={frequency === "parcelada" && valueMode === "parcela" ? "Valor de cada parcela" : frequency === "parcelada" ? "Valor total" : "Valor"}><CurrencyInput name="value" required /></Field>
-        <Field label="Data"><input type="date" name="scheduled_date" required defaultValue={today} className={INPUT} /></Field>
+        <Field label="Data"><input type="date" name="scheduled_date" required defaultValue={initialDate ?? today} className={INPUT} /></Field>
         <Field label="Frequência"><select name="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value)} className={INPUT}>
           <option value="unica">Única</option><option value="parcelada">Parcelada</option><option value="semanal">Fixa semanal</option><option value="mensal">Fixa mensal</option><option value="anual">Fixa anual</option>
         </select></Field>
@@ -231,13 +235,13 @@ function NewTransactionDialog({ accounts, categories, today, initialKind, onClos
         {frequency !== "parcelada" && <input type="hidden" name="value_mode" value="total" />}
         {recurring && frequency !== "parcelada" && <p className="sm:col-span-2 text-xs text-foreground-muted">O FinFlow mantém automaticamente os próximos cinco anos desta recorrência.</p>}
         <Field label="Conta de origem"><select name="account_id" required value={accountId} onChange={(event) => setAccountId(event.target.value)} className={INPUT}><option value="" disabled>Selecione</option>{activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.nome}</option>)}</select></Field>
-        {kind === "transferencia" ? <Field label="Conta de destino"><select name="destination_account_id" required defaultValue="" className={INPUT}><option value="" disabled>Selecione</option>{activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => <option key={account.id} value={account.id}>{account.nome}</option>)}</select></Field> : <Field label="Categoria"><select key={kind} name="category_id" required defaultValue="" className={INPUT}><option value="" disabled>Selecione</option>{compatibleCategories.map((category) => <option key={category.id} value={category.id}>{category.nome}</option>)}</select></Field>}
+        {kind === "transferencia" ? <Field label="Destino"><select required value={destination} onChange={(event) => setDestination(event.target.value)} className={INPUT}><option value="" disabled>Selecione uma conta ou objetivo</option><optgroup label="Contas">{activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => <option key={account.id} value={`account:${account.id}`}>{account.nome}</option>)}</optgroup>{goals.some((goal) => !goal.arquivado) && <optgroup label="Objetivos">{goals.filter((goal) => !goal.arquivado).map((goal) => <option key={goal.id} value={`goal:${goal.id}`}>{goal.nome}</option>)}</optgroup>}</select><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><select key={kind} name="category_id" required defaultValue="" className={INPUT}><option value="" disabled>Selecione</option>{compatibleCategories.map((category) => <option key={category.id} value={category.id}>{category.nome}</option>)}</select></Field>}
         {kind === "transferencia" && <input type="hidden" name="category_id" value="0" />}
         {recurring ? <input type="hidden" name="status" value="pendente" /> : <Field label="Status"><select name="status" value={status} onChange={(event) => setStatus(event.target.value)} className={INPUT}><option value="paga">Concluído na data</option><option value="pendente">Pendente</option></select></Field>}
         {!recurring && <div className="hidden sm:block" />}
         {activeAccounts.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie ou reative uma conta antes de lançar.</p>}
         {kind !== "transferencia" && compatibleCategories.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie uma categoria ativa compatível antes de lançar.</p>}
-        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy || activeAccounts.length < (kind === "transferencia" ? 2 : 1) || (kind !== "transferencia" && compatibleCategories.length === 0)} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Criar lançamento"}</button></div>
+        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy || activeAccounts.length < 1 || (kind === "transferencia" && !destination) || (kind !== "transferencia" && compatibleCategories.length === 0)} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Criar lançamento"}</button></div>
       </form>
     </Modal>
   );
@@ -452,11 +456,11 @@ function InvoiceCard({ invoice, today }: { invoice: InvoiceHistoryGroup; today: 
   </article>;
 }
 
-export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds }: Props) {
+export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, goals, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds }: Props) {
   const router = useRouter();
   const reconciledIds = useMemo(() => new Set(reconciledTransactionIds), [reconciledTransactionIds]);
   const [month, setMonth] = useState(initialMonth);
-  const [period, setPeriod] = useState<PeriodFilter>(initialQuick ?? "all");
+  const [period, setPeriod] = useState<PeriodFilter>(initialQuick ?? "pending");
   const [search, setSearch] = useState("");
   const [types, setTypes] = useState<HistoryKind[]>([]);
   const [accountIds, setAccountIds] = useState<number[]>([]);
@@ -600,15 +604,15 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
   function choosePeriod(value: PeriodFilter) { setPeriod(value); setLimit(PAGE_SIZE); syncUrl(value); }
-  function changeMonth(delta: number) { const next = shiftMonth(month, delta); setMonth(next); setPeriod("all"); setLimit(PAGE_SIZE); syncUrl("all", next); }
+  function changeMonth(delta: number) { const next = shiftMonth(month, delta); setMonth(next); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", next); }
   function clearFilters() {
     setSearch("");
-    setPeriod("all");
+    setPeriod("pending");
     setTypes([]);
     setAccountIds([]);
     setCategoryIds([]);
     setLimit(PAGE_SIZE);
-    syncUrl("all");
+    syncUrl("pending");
   }
   function toggle<T>(value: T, values: T[], setter: (next: T[]) => void) { setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]); setLimit(PAGE_SIZE); }
   function toggleType(value: HistoryKind) {
@@ -665,7 +669,6 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     finally { setOperationBusy(false); }
   }
 
-  const typeSummary = types.length ? types.map((value) => value === "transferencia" ? "Transferências" : value === "fatura" ? "Faturas" : `${value.charAt(0).toUpperCase()}${value.slice(1)}s`).join(", ") : "Todos";
   const accountSummary = accountIds.length === 0 ? "Todas" : accountIds.length === 1 ? accounts.find((account) => account.id === accountIds[0])?.nome ?? "1 conta" : `${accountIds.length} contas`;
   const categoryDisabled = types.length > 0 && types.every((type) => type === "transferencia");
   const categorySummary = categoryDisabled ? "Não se aplica" : categoryIds.length === 0 ? "Todas" : categoryIds.length === 1 ? categories.find((category) => category.id === categoryIds[0])?.nome ?? "1 categoria" : `${categoryIds.length} categorias`;
@@ -675,7 +678,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   const revenueCategories = activeCategories.filter((category) => category.tipo === "receita" || category.tipo === "ambos");
   const expenseCategories = activeCategories.filter((category) => category.tipo === "despesa" || category.tipo === "ambos");
   const hasActiveFilters = search.trim().length > 0
-    || period !== "all"
+    || period !== "pending"
     || types.length > 0
     || accountIds.length > 0
     || categoryIds.length > 0;
@@ -694,13 +697,20 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     {flash && <p role="status" className="mb-4 rounded-ff-md border border-primary/25 bg-primary-soft px-4 py-3 text-sm font-bold text-primary-dark">{flash}</p>}
     <section className="ff-card mb-4 border-white/5 p-4 shadow-[0_14px_40px_rgba(0,0,0,0.08)] sm:p-5">
       <label className="relative block w-full"><span className="sr-only">Buscar no Histórico</span><span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-foreground-muted">⌕</span><input value={search} onChange={(event) => { setSearch(event.target.value); setLimit(PAGE_SIZE); }} placeholder="Buscar descrição, conta, categoria ou item da fatura" className="ff-focus w-full rounded-full border border-border bg-surface-muted py-3.5 pl-11 pr-4 text-sm outline-none transition focus:border-primary" /></label>
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex min-w-0 gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{periods.map((item) => <button key={item.value} type="button" onClick={() => choosePeriod(item.value)} className={`ff-focus shrink-0 rounded-full border px-4 py-2 text-xs font-extrabold transition ${period === item.value ? "border-primary bg-primary text-white shadow-[0_8px_18px_rgba(22,150,110,0.2)]" : "border-border bg-surface text-foreground-muted hover:border-primary/35 hover:text-foreground"}`}>{item.label}</button>)}</div>
+      <div className="mt-4 grid gap-3 rounded-2xl border border-border/70 bg-surface-muted/35 p-3 sm:p-4">
+        <div className="flex items-center justify-between gap-3"><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-foreground-muted">Situação</p>
         <button type="button" onClick={clearFilters} disabled={!hasActiveFilters} className="ff-focus shrink-0 rounded-full border border-border bg-surface px-4 py-2 text-xs font-extrabold text-primary transition hover:border-primary/40 hover:bg-primary-soft disabled:cursor-not-allowed disabled:opacity-40">Limpar filtros</button>
+        </div><div className="flex min-w-0 gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{periods.map((item) => <button key={item.value} type="button" onClick={() => choosePeriod(item.value)} className={`ff-focus shrink-0 rounded-full border px-4 py-2 text-xs font-extrabold transition ${period === item.value ? "border-primary bg-primary text-white shadow-[0_8px_18px_rgba(22,150,110,0.2)]" : "border-border bg-surface text-foreground-muted hover:border-primary/35 hover:text-foreground"}`}>{item.label}</button>)}</div>
       </div>
+      <div className="mt-3 rounded-2xl border border-border/70 bg-surface-muted/35 p-3 sm:p-4"><p className="mb-2 text-[10px] font-extrabold uppercase tracking-[.14em] text-foreground-muted">Tipos de lançamento · selecione um ou mais</p><div className="flex min-w-0 gap-2 overflow-x-auto pb-1 [scrollbar-width:none]" role="group" aria-label="Filtrar por tipos de lançamento">
+        {(["receita", "despesa", "transferencia", "fatura"] as HistoryKind[]).map((value) => {
+          const active = types.includes(value);
+          const label = value === "transferencia" ? "Transferências" : value === "fatura" ? "Faturas" : `${value.charAt(0).toUpperCase()}${value.slice(1)}s`;
+          return <button key={value} type="button" aria-pressed={active} onClick={() => toggleType(value)} className={`ff-focus shrink-0 rounded-full border px-4 py-2 text-xs font-extrabold transition ${active ? "border-primary bg-primary text-white shadow-[0_8px_18px_rgba(22,150,110,0.2)]" : "border-border bg-surface text-foreground-muted hover:border-primary/35 hover:text-foreground"}`}>{label}</button>;
+        })}
+      </div></div>
       {(period === "attention" || period === "overdue" || period === "today" || period === "next7") && <p className="mt-3 text-xs font-semibold text-orange">Este filtro rápido atravessa meses. Use as setas para voltar à visão mensal.</p>}
-      <div className="mt-4 grid gap-2 sm:grid-cols-3">
-        <MultiFilter label="Tipo" summary={typeSummary} onClear={() => { setTypes([]); setLimit(PAGE_SIZE); }}>{(["receita", "despesa", "transferencia", "fatura"] as HistoryKind[]).map((value) => <FilterOption key={value} checked={types.includes(value)} label={value === "transferencia" ? "Transferências" : value === "fatura" ? "Faturas" : `${value.charAt(0).toUpperCase()}${value.slice(1)}s`} color={value === "receita" ? "#34A164" : value === "despesa" ? "#C0392E" : value === "fatura" ? "#805AD5" : "#457B9D"} onChange={() => toggleType(value)} />)}</MultiFilter>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2">
         <MultiFilter label="Conta" summary={accountSummary} onClear={() => { setAccountIds([]); setLimit(PAGE_SIZE); }}>{accounts.map((account) => <FilterOption key={account.id} checked={accountIds.includes(account.id)} label={`${account.nome}${account.arquivado ? " (arquivada)" : ""}`} color={account.cor} onChange={() => toggle(account.id, accountIds, setAccountIds)} />)}</MultiFilter>
         <MultiFilter label="Categoria" summary={categorySummary} disabled={categoryDisabled} onClear={() => { setCategoryIds([]); setLimit(PAGE_SIZE); }}>
           {expenseCategories.length > 0 && <><p className="px-2 pb-1 pt-2 text-[10px] font-extrabold uppercase tracking-[.12em] text-red">Despesas</p>{expenseCategories.map((category) => <FilterOption key={`expense-${category.id}`} checked={categoryIds.includes(category.id)} label={category.nome} color={category.cor} onChange={() => toggle(category.id, categoryIds, setCategoryIds)} />)}</>}
@@ -715,7 +725,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     {filtered.length === 0 && <section className="ff-card grid min-h-48 place-content-center p-6 text-center"><p className="text-3xl">⌕</p><h2 className="mt-2 font-extrabold">Nenhum lançamento encontrado</h2><p className="mt-1 text-sm text-foreground-muted">Ajuste o período, a busca ou os filtros.</p></section>}
     {limit < filtered.length && <button type="button" onClick={() => setLimit((value) => value + PAGE_SIZE)} className="mx-auto mt-5 block rounded-full border border-primary px-5 py-2.5 text-sm font-extrabold text-primary">Mostrar mais {Math.min(PAGE_SIZE, filtered.length - limit)}</button>}
 
-    {newOpen && <NewTransactionDialog accounts={accounts} categories={categories} today={today} initialKind={initialKind} onClose={() => setNewOpen(false)} onChanged={created} />}
+    {newOpen && <NewTransactionDialog accounts={accounts} goals={goals} categories={categories} today={today} initialKind={initialKind} onClose={() => setNewOpen(false)} onChanged={created} />}
     {editing && <EditTransactionDialog transaction={editing} summary={summaryFor(editing)} accounts={accounts} categories={categories} userId={userId} onClose={() => setEditing(null)} onChanged={changed} />}
     {completing && <CompleteTransactionDialog transaction={completing} today={today} onClose={() => setCompleting(null)} onChanged={changed} />}
     {deleting && <DeleteTransactionDialog transaction={deleting} summary={summaryFor(deleting)} onClose={() => setDeleting(null)} onChanged={changed} />}

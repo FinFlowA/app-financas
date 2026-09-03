@@ -138,7 +138,7 @@ export default function ReconciliationWorkspace({
   reconciledFingerprints: string[];
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [accountId, setAccountId] = useState(accounts[0]?.id ?? 0);
+  const [accountId, setAccountId] = useState(0);
   const [entries, setEntries] = useState<ImportedEntry[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
   const [fileName, setFileName] = useState("");

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-type IconName = "home" | "history" | "goals" | "cards" | "flow" | "ai" | "settings" | "accounts" | "reconciliation" | "categories" | "plans" | "security" | "menu" | "close";
+type IconName = "home" | "history" | "goals" | "cards" | "flow" | "calendar" | "ai" | "settings" | "accounts" | "reconciliation" | "categories" | "plans" | "security" | "menu" | "close";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Início", icon: "home", exact: true },
@@ -15,6 +15,7 @@ export const NAV_ITEMS = [
   { href: "/objetivos", label: "Objetivos", icon: "goals" },
   { href: "/cartoes", label: "Cartões", icon: "cards" },
   { href: "/relatorios", label: "Fluxo de caixa", shortLabel: "Fluxo", icon: "flow" },
+  { href: "/calendario", label: "Calendário", icon: "calendar" },
   { href: "/assistente", label: "Assistente IA", shortLabel: "IA", icon: "ai" },
   { href: "/planos", label: "Planos", icon: "plans" },
   { href: "/configuracoes", label: "Configurações", shortLabel: "Ajustes", icon: "settings" },
@@ -46,6 +47,7 @@ export function NavIcon({ name, className = "" }: { name: IconName; className?: 
     goals: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><path d="M12 2v3M22 12h-3" /></>,
     cards: <><rect x="2.5" y="5" width="19" height="14" rx="2.5" /><path d="M2.5 9h19M6 15h4" /></>,
     flow: <><path d="M4 19V9M10 19V4M16 19v-7M22 19V7" /><path d="M2 19h22" /></>,
+    calendar: <><rect x="3" y="5" width="18" height="16" rx="3" /><path d="M8 3v4M16 3v4M3 10h18" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01" /></>,
     ai: <><path d="m12 2 1.2 3.8L17 7l-3.8 1.2L12 12l-1.2-3.8L7 7l3.8-1.2L12 2Z" /><path d="m19 13 .8 2.2L22 16l-2.2.8L19 19l-.8-2.2L16 16l2.2-.8L19 13ZM5 12l.8 2.2L8 15l-2.2.8L5 18l-.8-2.2L2 15l2.2-.8L5 12Z" /></>,
     settings: <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6 1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>,
     accounts: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M16 10h5v5h-5a2.5 2.5 0 0 1 0-5ZM7 9h4" /></>,

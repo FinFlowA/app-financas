@@ -10,7 +10,8 @@ mobile. A interface usa Next.js 16, React 19, TypeScript e `@supabase/ssr`.
 - Início com seleção independente de contas, saldos, visão mensal e alertas.
 - Contas e categorias: criar, editar, arquivar, reativar e excluir com segurança.
 - Histórico completo com busca, mês, status, tipos, contas e categorias.
-- Receitas, despesas e transferências únicas, parceladas ou recorrentes.
+- Calendário com filtros de situação, agenda diária e criação na data escolhida.
+- Receitas, despesas e transferências únicas, parceladas ou recorrentes, entre contas ou de uma conta para um objetivo.
 - Conclusão integral ou parcial, histórico de baixas, reabertura e séries.
 - Objetivos: criar, editar, guardar, resgatar, recorrências, projeções e histórico.
 - Cartões, compras, parcelas, faturas, pagamentos parciais, juros e estornos.

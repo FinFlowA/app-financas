@@ -10,7 +10,7 @@ import DisplayControls from "@/components/layout/display-controls";
 import { formatarReais } from "@/lib/format";
 import { listUpcomingTransactions } from "@/lib/home-agenda";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
-import { homeTransactionCreationHref } from "@/lib/transaction-entry";
+import { homeTransactionCreationHref, type HomeTransactionKind } from "@/lib/transaction-entry";
 import { calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import {
   calcularSaldosPorConta,
@@ -22,7 +22,8 @@ import {
   resumirFluxoMensal,
   transacoesNoEscopo,
 } from "@/lib/transacoes";
-import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
+import type { Caixinha, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
+import { NewTransactionDialog } from "./transacoes/transaction-manager";
 import styles from "./home-dashboard.module.css";
 
 type Props = {
@@ -32,6 +33,7 @@ type Props = {
   month: string;
   today: string;
   accounts: Conta[];
+  goals: Caixinha[];
   transactions: Transacao[];
   categories: Categoria[];
   invoiceItems: FaturaItem[];
@@ -90,9 +92,10 @@ function SummaryValue({ label, value, tone = "neutral" }: { label: string; value
   </div>;
 }
 
-export default function HomeDashboard({ userId, displayName, greeting, month, today, accounts, transactions, categories, invoiceItems }: Props) {
+export default function HomeDashboard({ userId, displayName, greeting, month, today, accounts, goals, transactions, categories, invoiceItems }: Props) {
   const router = useRouter();
   const [monthPending, startMonthTransition] = useTransition();
+  const [newTransactionKind, setNewTransactionKind] = useState<HomeTransactionKind | null>(null);
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.arquivado), [accounts]);
   const activeIds = useMemo(() => new Set(activeAccounts.map((account) => account.id)), [activeAccounts]);
   const [selectedIds, setSelectedIds] = useState<number[]>(() => activeAccounts.map((account) => account.id));
@@ -440,9 +443,9 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       </div>
 
       <div className={styles.heroActions}>
-        <Link href={homeTransactionCreationHref("transferencia")} className={styles.actionLink}><span><Icon name="arrow-left-right" size={27}/></span><strong>Transferir</strong></Link>
-        <Link href={homeTransactionCreationHref("despesa")} className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></Link>
-        <Link href={homeTransactionCreationHref("receita")} className={styles.actionLink}><span><Icon name="plus" size={29}/></span><strong>Receber</strong></Link>
+        <button type="button" onClick={() => setNewTransactionKind("transferencia")} className={styles.actionLink}><span><Icon name="arrow-left-right" size={27}/></span><strong>Transferir</strong></button>
+        <button type="button" onClick={() => setNewTransactionKind("despesa")} className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></button>
+        <button type="button" onClick={() => setNewTransactionKind("receita")} className={styles.actionLink}><span><Icon name="plus" size={29}/></span><strong>Receber</strong></button>
       </div>
     </section>
 
@@ -542,5 +545,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
         </div>
       </section>
     </div>, document.body)}
+    {newTransactionKind && <NewTransactionDialog accounts={accounts} goals={goals} categories={categories} today={today} initialKind={newTransactionKind} onClose={() => setNewTransactionKind(null)} onChanged={() => { setNewTransactionKind(null); router.refresh(); }} />}
   </div>;
 }

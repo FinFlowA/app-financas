@@ -29,7 +29,7 @@ O histórico técnico permanece disponível em [commits](https://github.com/FinF
 - Cadastro, confirmação de e-mail, login e recuperação de acesso.
 - Perfil obrigatório, aceite dos termos e tutorial inicial pulável.
 - Contas ativas e arquivadas, seleção independente e compartilhamento controlado.
-- Receitas, despesas e transferências únicas, parceladas ou recorrentes.
+- Receitas, despesas e transferências únicas, parceladas ou recorrentes, inclusive de contas para objetivos.
 - Recorrências semanais, mensais e anuais, preservando itens já concluídos.
 - Conclusão integral ou parcial com data e histórico das baixas.
 - Categorias de receita e despesa sincronizadas entre aplicativo e site.
@@ -37,6 +37,7 @@ O histórico técnico permanece disponível em [commits](https://github.com/FinF
 - Cartões, compras únicas, parceladas ou fixas, faturas e estornos.
 - Pagamento integral ou parcial de fatura, com saldo remanescente e juros opcionais.
 - Histórico com busca e filtros por período, status, tipo, conta e categoria.
+- Calendário web com agendamentos por dia, filtros de situação e criação direta na data selecionada.
 - Fluxo de caixa realizado e previsto, com seleção de múltiplas contas.
 - Relatórios por categoria; cada parcela de cartão aparece no mês da sua fatura.
 - Assistente restrito a finanças, com prévia e confirmação explícita antes de alterar dados.
@@ -45,7 +46,7 @@ O histórico técnico permanece disponível em [commits](https://github.com/FinF
 
 ## Regras financeiras importantes
 
-- Uma transferência entre contas é uma única movimentação: debita a origem e credita o destino.
+- Uma transferência entre contas é uma única movimentação: debita a origem e credita o destino. Transferências para objetivos usam a operação atômica de guardar dinheiro, sem virar despesa.
 - Guardar ou resgatar dinheiro de um objetivo é movimento interno e não vira receita ou despesa.
 - Movimentações concluídas usam `data_realizacao`; pendentes usam `data_vencimento`.
 - O pagamento bancário de uma fatura afeta o saldo da conta, mas não duplica a despesa nos relatórios por categoria.

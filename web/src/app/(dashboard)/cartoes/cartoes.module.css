@@ -212,7 +212,7 @@
 
 .cardsGrid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 440px));
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 560px));
   gap: 18px;
 }
 

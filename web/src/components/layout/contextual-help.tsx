@@ -112,6 +112,18 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
     },
   },
   {
+    route: "/calendario",
+    content: {
+      title: "Calendário",
+      description: "Organize os agendamentos financeiros pela data prevista.",
+      items: [
+        "Navegue entre os meses e selecione um dia para ver seus lançamentos.",
+        "Receitas e despesas aparecem identificadas por cor e situação.",
+        "Use Agendar nesta data para criar um lançamento já no dia escolhido.",
+      ],
+    },
+  },
+  {
     route: "/assistente",
     content: {
       title: "Assistente IA",

@@ -2,7 +2,7 @@ import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { collectPaymentSummaryRows } from "@/lib/payment-summaries";
 import { createClient } from "@/lib/supabase/server";
 import { shouldReturnHomeAfterCreation } from "@/lib/transaction-entry";
-import type { Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
+import type { Caixinha, Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
 import TransactionManager from "./transaction-manager";
 import type { QuickFilter, TransactionKind, TransactionRow } from "./transaction-model";
 
@@ -43,13 +43,16 @@ export default async function TransactionsPage({
   const returnHomeAfterCreate = shouldReturnHomeAfterCreation(first(parameters.source));
   const supabase = await createClient();
 
-  const [{ data: authData, error: authError }, accountsResult, categoriesResult, cardsResult] = await Promise.all([
+  const [{ data: authData, error: authError }, accountsResult, goalsResult, categoriesResult, cardsResult] = await Promise.all([
     supabase.auth.getUser(),
     supabase
       .from("contas")
       .select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version")
       .order("arquivado")
       .order("nome"),
+    supabase.from("caixinhas")
+      .select("id,user_id,nome,meta_valor,saldo_atual,cor,icone,compartilhado,data_prazo,arquivado,version")
+      .order("arquivado").order("nome"),
     supabase
       .from("categorias")
       .select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version")
@@ -60,7 +63,7 @@ export default async function TransactionsPage({
       .order("nome"),
   ]);
   if (authError || !authData.user) throw new Error("Sessão inválida.");
-  if (accountsResult.error || categoriesResult.error || cardsResult.error) throw new Error("Não foi possível carregar contas, categorias e cartões agora.");
+  if (accountsResult.error || goalsResult.error || categoriesResult.error || cardsResult.error) throw new Error("Não foi possível carregar contas, objetivos, categorias e cartões agora.");
 
   // O Histórico precisa atravessar meses nos filtros rápidos. Buscamos em
   // páginas para não perder itens no limite padrão de linhas do PostgREST.
@@ -126,6 +129,7 @@ export default async function TransactionsPage({
         returnHomeAfterCreate={returnHomeAfterCreate}
         today={today}
         accounts={(accountsResult.data ?? []) as Conta[]}
+        goals={(goalsResult.data ?? []) as Caixinha[]}
         categories={(categoriesResult.data ?? []) as Categoria[]}
         cards={(cardsResult.data ?? []) as Cartao[]}
         invoiceItems={invoiceItems}
