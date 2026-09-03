@@ -56,6 +56,51 @@ export interface ProjecaoMensal {
   projetado: boolean;
 }
 
+export interface ProjecaoDiaria {
+  dia: number;
+  saldo: number;
+  projetado: boolean;
+}
+
+export function calcularSaldoProjetadoPorDia(
+  saldoInicialTotal: number,
+  transacoes: TransacaoParaSaldo[],
+  ano: number,
+  mesIdx: number,
+  hoje: Date = new Date(),
+): ProjecaoDiaria[] {
+  const eventosRealizados: EventoSaldo[] = [];
+  const eventosPendentes: EventoSaldo[] = [];
+  let saldoAtual = saldoInicialTotal;
+
+  for (const transacao of transacoes) {
+    const valor = Number(transacao.valor);
+    if (!Number.isFinite(valor)) continue;
+    const delta = transacao.tipo === "receita" ? valor : -valor;
+    if (transacao.status === "paga") {
+      saldoAtual += delta;
+      eventosRealizados.push({ data: transacao.data_realizacao ?? transacao.data_vencimento, valor: delta });
+    } else {
+      eventosPendentes.push({ data: transacao.data_vencimento || "", valor: delta });
+    }
+  }
+
+  const realizados = ordenarEventosComAcumulado(eventosRealizados);
+  const pendentes = ordenarEventosComAcumulado(eventosPendentes);
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  const quantidadeDias = new Date(ano, mesIdx + 1, 0).getDate();
+
+  return Array.from({ length: quantidadeDias }, (_, indice) => {
+    const dia = indice + 1;
+    const data = `${ano}-${String(mesIdx + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+    if (data < hojeIso) {
+      return { dia, saldo: saldoInicialTotal + totalAcumuladoAte(realizados, data), projetado: false };
+    }
+    const pendenteAteODia = totalAcumuladoAte(pendentes, data);
+    return { dia, saldo: saldoAtual + pendenteAteODia, projetado: pendenteAteODia !== 0 || data > hojeIso };
+  });
+}
+
 /**
  * Calcula o saldo acumulado por mês de um ano, usando o mesmo modelo do app:
  * meses passados = realizado; mês atual sem pendências = saldo atual real;

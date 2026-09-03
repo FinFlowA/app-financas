@@ -8,7 +8,7 @@ import {
 } from "../invoice-status";
 import { isStrongPassword, normalizeBrazilPhone } from "../auth/validation";
 import { parseMoney, moneyIsPositive } from "../money";
-import { calcularSaldoProjetadoPorMes } from "../saldo-projetado";
+import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "../saldo-projetado";
 import { fetchAllRows } from "../supabase/pagination";
 import { historyFinancialTotals } from "../history-totals";
 import { collectPaymentSummaryRows } from "../payment-summaries";
@@ -130,6 +130,16 @@ describe("datas realizadas e projeção", () => {
     expect(result[0]).toMatchObject({ saldo: 80, projetado: false });
     expect(result[1]).toMatchObject({ saldo: 130, projetado: true });
     expect(result[2]).toMatchObject({ saldo: 130, projetado: true });
+  });
+
+  it("calcula o saldo diário usando realização no passado e vencimentos no futuro", () => {
+    const result = calcularSaldoProjetadoPorDia(100, [
+      { tipo: "despesa", valor: 20, status: "paga", data_vencimento: "2026-09-01", data_realizacao: "2026-09-02" },
+      { tipo: "receita", valor: 50, status: "pendente", data_vencimento: "2026-09-05", data_realizacao: null },
+    ], 2026, 8, new Date("2026-09-03T12:00:00-03:00"));
+    expect(result[0]).toMatchObject({ dia: 1, saldo: 100, projetado: false });
+    expect(result[1]).toMatchObject({ dia: 2, saldo: 80, projetado: false });
+    expect(result[4]).toMatchObject({ dia: 5, saldo: 130, projetado: true });
   });
 });
 

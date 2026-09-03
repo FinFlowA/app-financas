@@ -12,11 +12,13 @@ export default function ReportFilters({
   month,
   selected,
   accounts,
+  view = "monthly",
 }: {
   year: number;
   month: number;
   selected: number[];
   accounts: AccountOption[];
+  view?: "monthly" | "daily";
 }) {
   const router = useRouter();
   const [draftAccounts, setDraftAccounts] = useState(selected);
@@ -24,13 +26,19 @@ export default function ReportFilters({
   const minimumYear = currentYear - 10;
   const maximumYear = currentYear + 10;
 
-  function urlFor(nextYear: number, accountIds: number[]) {
+  function urlFor(nextYear: number, nextMonth: number, accountIds: number[]) {
     const params = new URLSearchParams({
       year: String(nextYear),
-      month: String(month + 1),
+      month: String(nextMonth + 1),
       accounts: accountIds.join(","),
     });
+    if (view === "daily") params.set("view", "daily");
     return `/relatorios?${params.toString()}`;
+  }
+
+  function moveMonth(offset: number) {
+    const date = new Date(year, month + offset, 1);
+    router.push(urlFor(date.getFullYear(), date.getMonth(), selected));
   }
 
   function toggleAccount(accountId: number) {
@@ -48,25 +56,26 @@ export default function ReportFilters({
       <input type="hidden" name="year" value={year} />
       <input type="hidden" name="month" value={month + 1} />
       <input type="hidden" name="accounts" value={draftAccounts.join(",")} />
+      {view === "daily" && <input type="hidden" name="view" value="daily" />}
       <div className={styles.filtersRow}>
         <div className={styles.yearFilter}>
-          <span className={styles.filterLabel}>Ano</span>
-          <div className={styles.yearStepper} aria-label={`Ano analisado: ${year}`}>
+          <span className={styles.filterLabel}>{view === "daily" ? "Mês" : "Ano"}</span>
+          <div className={styles.yearStepper} aria-label={view === "daily" ? `Mês analisado: ${month + 1} de ${year}` : `Ano analisado: ${year}`}>
             <button
               type="button"
               aria-label="Ver ano anterior"
-              disabled={year <= minimumYear}
-              onClick={() => router.push(urlFor(year - 1, selected))}
+              disabled={view === "monthly" ? year <= minimumYear : year === minimumYear && month === 0}
+              onClick={() => view === "daily" ? moveMonth(-1) : router.push(urlFor(year - 1, month, selected))}
               className={styles.yearArrow}
             >
               <span aria-hidden>‹</span>
             </button>
-            <strong aria-live="polite">{year}</strong>
+            <strong aria-live="polite">{view === "daily" ? `${["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"][month]} ${year}` : year}</strong>
             <button
               type="button"
               aria-label="Ver próximo ano"
-              disabled={year >= maximumYear}
-              onClick={() => router.push(urlFor(year + 1, selected))}
+              disabled={view === "monthly" ? year >= maximumYear : year === maximumYear && month === 11}
+              onClick={() => view === "daily" ? moveMonth(1) : router.push(urlFor(year + 1, month, selected))}
               className={styles.yearArrow}
             >
               <span aria-hidden>›</span>

@@ -1,6 +1,6 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
-import { calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
+import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
@@ -24,7 +24,7 @@ function validMonth(value: string | undefined, fallbackIndex: number) {
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 12 ? parsed - 1 : fallbackIndex;
 }
 
-export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ year?: string; month?: string; accounts?: string | string[] }> }) {
+export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ year?: string; month?: string; accounts?: string | string[]; view?: string }> }) {
   const params = await searchParams;
   const year = validYear(params.year);
   const today = hojeEmSaoPaulo();
@@ -32,6 +32,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const currentMonthIndex = Number(today.slice(5, 7)) - 1;
   const detailMonthIndex = validMonth(params.month, year === currentYear ? currentMonthIndex : 11);
   const detailMonth = `${year}-${String(detailMonthIndex + 1).padStart(2, "0")}`;
+  const view = params.view === "daily" ? "daily" : "monthly";
   const supabase = await createClient();
   const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult] = await Promise.all([
     fetchAllRows((from, to) => supabase
@@ -78,6 +79,18 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     guardarObjetivosPrevisto: 0,
     resgatarObjetivosPrevisto: 0,
   }));
+  const daysInDetailMonth = new Date(year, detailMonthIndex + 1, 0).getDate();
+  const dailyFlow: MesFluxo[] = Array.from({ length: daysInDetailMonth }, (_, index) => ({
+    label: `${String(index + 1).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`,
+    receitas: 0,
+    despesas: 0,
+    receitasPrevistas: 0,
+    despesasPrevistas: 0,
+    guardadoObjetivos: 0,
+    resgatadoObjetivos: 0,
+    guardarObjetivosPrevisto: 0,
+    resgatarObjetivosPrevisto: 0,
+  }));
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const expenseCategoryTotals = new Map<number | null, number>();
   const revenueCategoryTotals = new Map<number | null, number>();
@@ -94,14 +107,23 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     const monthIndex = Number(date.slice(5, 7)) - 1;
     const month = months[monthIndex];
     if (!month) continue;
+    const daily = monthIndex === detailMonthIndex ? dailyFlow[Number(date.slice(8, 10)) - 1] : undefined;
     if (isMovimentoObjetivo(transaction.descricao)) {
       const operation = getOperacaoObjetivo(transaction.descricao);
       if (operation === "guardar") {
         if (transaction.status === "paga") month.guardadoObjetivos = (month.guardadoObjetivos ?? 0) + value;
         else month.guardarObjetivosPrevisto = (month.guardarObjetivosPrevisto ?? 0) + value;
+        if (daily) {
+          if (transaction.status === "paga") daily.guardadoObjetivos = (daily.guardadoObjetivos ?? 0) + value;
+          else daily.guardarObjetivosPrevisto = (daily.guardarObjetivosPrevisto ?? 0) + value;
+        }
       } else if (operation === "resgatar") {
         if (transaction.status === "paga") month.resgatadoObjetivos = (month.resgatadoObjetivos ?? 0) + value;
         else month.resgatarObjetivosPrevisto = (month.resgatarObjetivosPrevisto ?? 0) + value;
+        if (daily) {
+          if (transaction.status === "paga") daily.resgatadoObjetivos = (daily.resgatadoObjetivos ?? 0) + value;
+          else daily.resgatarObjetivosPrevisto = (daily.resgatarObjetivosPrevisto ?? 0) + value;
+        }
       }
       continue;
     }
@@ -109,6 +131,10 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     const pendingKey = transaction.tipo === "receita" ? "receitasPrevistas" : "despesasPrevistas";
     if (transaction.status === "paga") month[key] += value;
     else month[pendingKey] = (month[pendingKey] ?? 0) + value;
+    if (daily) {
+      if (transaction.status === "paga") daily[key] += value;
+      else daily[pendingKey] = (daily[pendingKey] ?? 0) + value;
+    }
     if (monthIndex === detailMonthIndex && transaction.status === "paga") {
       if (transaction.tipo === "receita") {
         detailRevenue += value;
@@ -153,6 +179,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const saldoFimMes = balances[overviewMonthIndex]?.saldo ?? initialBalance;
   const revenueDistribution = distributionItems(revenueCategoryTotals, revenueCategoryDetails, detailRevenue, "receita");
   const expenseDistribution = distributionItems(expenseCategoryTotals, expenseCategoryDetails, detailExpense, "despesa");
+  const dailyBalances: PontoSaldo[] = calcularSaldoProjetadoPorDia(initialBalance, scoped, year, detailMonthIndex, referenceDate)
+    .map((point) => ({ label: `${String(point.dia).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`, saldo: point.saldo, projetado: point.projetado }));
 
   return (
     <div className={styles.page}>
@@ -173,6 +201,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
         ]}
         selectedAccountIds={selectedIds}
         accounts={accounts.map((account) => ({ id: account.id, name: account.nome, color: account.cor }))}
+        dailyFlow={dailyFlow}
+        dailyBalances={dailyBalances}
+        view={view}
       />
 
       <div className={styles.analysisGrid}>

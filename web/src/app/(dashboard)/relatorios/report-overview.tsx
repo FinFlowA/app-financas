@@ -27,6 +27,9 @@ export default function ReportOverview({
   metrics,
   selectedAccountIds,
   accounts,
+  dailyFlow,
+  dailyBalances,
+  view,
 }: {
   year: number;
   currentYear: number;
@@ -39,6 +42,9 @@ export default function ReportOverview({
   metrics: Metric[];
   selectedAccountIds: number[];
   accounts: AccountOption[];
+  dailyFlow: MesFluxo[];
+  dailyBalances: PontoSaldo[];
+  view: "monthly" | "daily";
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -50,6 +56,17 @@ export default function ReportOverview({
   const activeMonthIndex = selection.sourceYear === year && selection.sourceMonthIndex === selectedMonthIndex
     ? selection.activeMonthIndex
     : selectedMonthIndex;
+  const defaultDayIndex = year === currentYear && selectedMonthIndex === currentMonthIndex
+    ? Math.min(new Date().getDate() - 1, Math.max(0, dailyFlow.length - 1))
+    : Math.max(0, dailyFlow.length - 1);
+  const [daySelection, setDaySelection] = useState({
+    sourceYear: year,
+    sourceMonthIndex: selectedMonthIndex,
+    activeDayIndex: defaultDayIndex,
+  });
+  const activeDayIndex = daySelection.sourceYear === year && daySelection.sourceMonthIndex === selectedMonthIndex
+    ? Math.min(daySelection.activeDayIndex, Math.max(0, dailyFlow.length - 1))
+    : defaultDayIndex;
 
   const activePoint = balances[activeMonthIndex];
   const isCurrentMonth = year === currentYear && activeMonthIndex === currentMonthIndex;
@@ -68,6 +85,17 @@ export default function ReportOverview({
       month: String(index + 1),
       accounts: selectedAccountIds.join(","),
     });
+    startTransition(() => router.replace(`/relatorios?${params.toString()}`, { scroll: false }));
+  }
+
+  function changeView(nextView: "monthly" | "daily") {
+    if (nextView === view) return;
+    const params = new URLSearchParams({
+      year: String(year),
+      month: String(activeMonthIndex + 1),
+      accounts: selectedAccountIds.join(","),
+    });
+    if (nextView === "daily") params.set("view", "daily");
     startTransition(() => router.replace(`/relatorios?${params.toString()}`, { scroll: false }));
   }
 
@@ -98,14 +126,30 @@ export default function ReportOverview({
         </div>
       </header>
 
+      <div className={styles.viewToggle} role="group" aria-label="Período do fluxo de caixa">
+        <button type="button" data-active={view === "monthly"} aria-pressed={view === "monthly"} onClick={() => changeView("monthly")}>Mensal</button>
+        <button type="button" data-active={view === "daily"} aria-pressed={view === "daily"} onClick={() => changeView("daily")}>Diário</button>
+      </div>
+
       <ReportFilters
         key={`${year}:${activeMonthIndex}:${selectedAccountIds.join(",")}`}
         year={year}
         month={activeMonthIndex}
         selected={selectedAccountIds}
         accounts={accounts}
+        view={view}
       />
-      <FluxoSaldoChart meses={months} saldos={balances} selectedIndex={activeMonthIndex} onSelect={selectMonth} />
+      {view === "monthly" ? (
+        <FluxoSaldoChart meses={months} saldos={balances} selectedIndex={activeMonthIndex} onSelect={selectMonth} />
+      ) : (
+        <FluxoSaldoChart
+          meses={dailyFlow}
+          saldos={dailyBalances}
+          selectedIndex={activeDayIndex}
+          onSelect={(index) => setDaySelection({ sourceYear: year, sourceMonthIndex: selectedMonthIndex, activeDayIndex: index })}
+          period="day"
+        />
+      )}
     </>
   );
 }

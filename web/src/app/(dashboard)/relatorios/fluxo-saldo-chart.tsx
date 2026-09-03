@@ -29,11 +29,13 @@ export default function FluxoSaldoChart({
   saldos,
   selectedIndex,
   onSelect,
+  period = "month",
 }: {
   meses: MesFluxo[];
   saldos: PontoSaldo[];
   selectedIndex: number;
   onSelect: (index: number) => void;
+  period?: "month" | "day";
 }) {
   const [ativo, setAtivo] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
@@ -41,6 +43,8 @@ export default function FluxoSaldoChart({
   const maiorBarra = Math.max(1, ...meses.map((m) => Math.max(
     m.receitas + (m.receitasPrevistas ?? 0),
     m.despesas + (m.despesasPrevistas ?? 0),
+    period === "day" ? (m.guardadoObjetivos ?? 0) + (m.guardarObjetivosPrevisto ?? 0) : 0,
+    period === "day" ? (m.resgatadoObjetivos ?? 0) + (m.resgatarObjetivosPrevisto ?? 0) : 0,
   )));
   const saldoValores = saldos.map((p) => p.saldo);
   const maxValor = Math.max(maiorBarra, ...saldoValores, 0);
@@ -50,7 +54,7 @@ export default function FluxoSaldoChart({
   const range = tetoEixo - pisoEixo || 1;
 
   // Gráfico mais largo: mais respiro por mês para as duas barras + a linha.
-  const largura = 1080;
+  const largura = period === "day" ? Math.max(1080, meses.length * 46) : 1080;
   const altura = 320;
   const margemEsquerda = 64;
   const margemDireita = 20;
@@ -59,7 +63,9 @@ export default function FluxoSaldoChart({
   const areaAltura = altura - margemBaixo - margemTopo;
   const areaLargura = largura - margemEsquerda - margemDireita;
   const larguraGrupo = areaLargura / meses.length;
-  const larguraBarra = Math.min(22, larguraGrupo / 2 - 6);
+  const larguraBarra = period === "day"
+    ? Math.max(5, Math.min(9, (larguraGrupo - 9) / 4))
+    : Math.min(22, larguraGrupo / 2 - 6);
 
   // Mesma escala e o mesmo ponto de 0 para as barras e para a linha — as
   // barras crescem a partir de y(0), exatamente onde a linha cruza o zero.
@@ -86,8 +92,8 @@ export default function FluxoSaldoChart({
     <section className={styles.chartPanel}>
       <div className={styles.chartHeader}>
         <div>
-          <h2 className={styles.chartTitle}>Evolução mensal</h2>
-          <p className={styles.chartSubtitle}>Receitas, despesas e saldo acumulado no mesmo eixo.</p>
+          <h2 className={styles.chartTitle}>Evolução {period === "day" ? "diária" : "mensal"}</h2>
+          <p className={styles.chartSubtitle}>Receitas, despesas e saldo acumulado {period === "day" ? "por dia" : "no mesmo eixo"}.</p>
         </div>
         <div className={styles.legend} aria-label="Legenda do gráfico">
         <span className={styles.legendItem}>
@@ -100,6 +106,8 @@ export default function FluxoSaldoChart({
         </span>
         <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-primary)" }} /> Receitas</span>
         <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-red)" }} /> Despesas</span>
+        {period === "day" && <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-orange)" }} /> Guardado em objetivos</span>}
+        {period === "day" && <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-blue)" }} /> Resgatado de objetivos</span>}
         </div>
       </div>
 
@@ -108,7 +116,7 @@ export default function FluxoSaldoChart({
           viewBox={`0 0 ${largura} ${altura}`}
           className={styles.chartSvg}
           role="group"
-          aria-label="Receitas, despesas e saldo acumulado por mês, no mesmo eixo com 0 compartilhado"
+          aria-label={`Receitas, despesas e saldo acumulado por ${period === "day" ? "dia" : "mês"}, no mesmo eixo com 0 compartilhado`}
         >
           {[0, 0.25, 0.5, 0.75, 1].map((fracao) => {
             const valor = pisoEixo + range * fracao;
@@ -129,6 +137,10 @@ export default function FluxoSaldoChart({
             const centro = xCentro(indice);
             const grupoX = margemEsquerda + indice * larguraGrupo;
             const destacado = ativo === indice || selectedIndex === indice;
+            const receitaX = period === "day" ? centro - larguraBarra * 2 - 3 : centro - larguraBarra - 1;
+            const despesaX = period === "day" ? centro - larguraBarra - 1 : centro + 1;
+            const guardarX = centro + 1;
+            const resgatarX = centro + larguraBarra + 3;
             return (
               <g
                 key={mes.label}
@@ -166,12 +178,12 @@ export default function FluxoSaldoChart({
                 tabIndex={0}
                 role="button"
                 aria-pressed={selectedIndex === indice}
-                aria-label={`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
+                aria-label={`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, guardado em objetivos ${formatarReais(mes.guardadoObjetivos ?? 0)}, resgatado de objetivos ${formatarReais(mes.resgatadoObjetivos ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
                 style={{ cursor: "pointer" }}
               >
                 <rect className={styles.chartMonthHitArea} x={grupoX} y={margemTopo} width={larguraGrupo} height={areaAltura} fill="transparent" />
                 <rect
-                  x={centro - larguraBarra - 1}
+                  x={receitaX}
                   y={y(mes.receitas + (mes.receitasPrevistas ?? 0))}
                   width={larguraBarra}
                   height={Math.max(0, y(0) - y(mes.receitas + (mes.receitasPrevistas ?? 0)))}
@@ -180,7 +192,7 @@ export default function FluxoSaldoChart({
                   opacity={destacado || ativo === null ? 0.3 : 0.15}
                 />
                 <rect
-                  x={centro - larguraBarra - 1}
+                  x={receitaX}
                   y={y(mes.receitas)}
                   width={larguraBarra}
                   height={Math.max(0, y(0) - y(mes.receitas))}
@@ -189,7 +201,7 @@ export default function FluxoSaldoChart({
                   opacity={destacado || ativo === null ? 1 : 0.4}
                 />
                 <rect
-                  x={centro + 1}
+                  x={despesaX}
                   y={y(mes.despesas + (mes.despesasPrevistas ?? 0))}
                   width={larguraBarra}
                   height={Math.max(0, y(0) - y(mes.despesas + (mes.despesasPrevistas ?? 0)))}
@@ -198,7 +210,7 @@ export default function FluxoSaldoChart({
                   opacity={destacado || ativo === null ? 0.3 : 0.15}
                 />
                 <rect
-                  x={centro + 1}
+                  x={despesaX}
                   y={y(mes.despesas)}
                   width={larguraBarra}
                   height={Math.max(0, y(0) - y(mes.despesas))}
@@ -206,8 +218,46 @@ export default function FluxoSaldoChart({
                   fill="var(--color-red)"
                   opacity={destacado || ativo === null ? 1 : 0.4}
                 />
+                {period === "day" && <>
+                  <rect
+                    x={guardarX}
+                    y={y((mes.guardadoObjetivos ?? 0) + (mes.guardarObjetivosPrevisto ?? 0))}
+                    width={larguraBarra}
+                    height={Math.max(0, y(0) - y((mes.guardadoObjetivos ?? 0) + (mes.guardarObjetivosPrevisto ?? 0)))}
+                    rx={3}
+                    fill="var(--color-orange)"
+                    opacity={destacado || ativo === null ? 0.3 : 0.15}
+                  />
+                  <rect
+                    x={guardarX}
+                    y={y(mes.guardadoObjetivos ?? 0)}
+                    width={larguraBarra}
+                    height={Math.max(0, y(0) - y(mes.guardadoObjetivos ?? 0))}
+                    rx={3}
+                    fill="var(--color-orange)"
+                    opacity={destacado || ativo === null ? 1 : 0.4}
+                  />
+                  <rect
+                    x={resgatarX}
+                    y={y((mes.resgatadoObjetivos ?? 0) + (mes.resgatarObjetivosPrevisto ?? 0))}
+                    width={larguraBarra}
+                    height={Math.max(0, y(0) - y((mes.resgatadoObjetivos ?? 0) + (mes.resgatarObjetivosPrevisto ?? 0)))}
+                    rx={3}
+                    fill="var(--color-blue)"
+                    opacity={destacado || ativo === null ? 0.3 : 0.15}
+                  />
+                  <rect
+                    x={resgatarX}
+                    y={y(mes.resgatadoObjetivos ?? 0)}
+                    width={larguraBarra}
+                    height={Math.max(0, y(0) - y(mes.resgatadoObjetivos ?? 0))}
+                    rx={3}
+                    fill="var(--color-blue)"
+                    opacity={destacado || ativo === null ? 1 : 0.4}
+                  />
+                </>}
                 <text x={centro} y={altura - 8} textAnchor="middle" fontSize={10} fill="var(--color-foreground-muted)">
-                  {mes.label.slice(0, 3)}
+                  {period === "day" ? mes.label.slice(0, 2) : mes.label.slice(0, 3)}
                 </text>
               </g>
             );
@@ -271,7 +321,7 @@ export default function FluxoSaldoChart({
         <section className={styles.monthDetails} aria-live="polite" aria-label={`Resumo de ${mesSelecionado.label}`}>
           <div className={styles.monthDetailsHeader}>
             <div>
-              <p className={styles.monthDetailsEyebrow}>Mês selecionado</p>
+              <p className={styles.monthDetailsEyebrow}>{period === "day" ? "Dia selecionado" : "Mês selecionado"}</p>
               <h3>{mesSelecionado.label}</h3>
             </div>
             <span className={styles.monthDetailsStatus} data-projected={saldoSelecionado.projetado}>
