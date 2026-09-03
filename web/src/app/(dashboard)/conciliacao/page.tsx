@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
-import { descricaoVisivel, getContaDestinoTransferencia, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
+import { dataEfetivaTransacao, descricaoVisivel, getContaDestinoTransferencia, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import type { Categoria, Conta, Transacao } from "@/lib/types";
 import ReconciliationWorkspace, { type ReconciliationCandidate } from "./reconciliation-workspace";
 
@@ -44,7 +44,9 @@ export default async function ReconciliationPage() {
       id: transaction.id,
       categoryId: transaction.categoria_id,
       description: descricaoVisivel(transaction.descricao),
-      dueDate: transaction.data_vencimento,
+      // Concluídos pertencem ao período em que realmente ocorreram. Usar o
+      // vencimento aqui fazia uma baixa antecipada reaparecer no mês agendado.
+      dueDate: dataEfetivaTransacao(transaction),
       remainingValue: transaction.status === "paga" ? Number(transaction.valor) : remainingById.get(transaction.id) ?? Number(transaction.valor),
       status: transaction.status === "paga" ? "paga" as const : "pendente" as const,
     };

@@ -280,6 +280,7 @@ export default function TransacoesScreen() {
     `${anoAtualNum}-${String(hoje.getMonth() + 1).padStart(2, "0")}`
   );
   const paginaScrollRef = useRef<any>(null);
+  const realizationScrollRef = useRef<ScrollView>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
@@ -1730,6 +1731,10 @@ export default function TransacoesScreen() {
     setMostrarDataRealizacao(false);
     setDataRealizacao(novaData);
   };
+  const mostrarCampoRealizacaoAcimaDoTeclado = () => {
+    if (Platform.OS === "web") return;
+    setTimeout(() => realizationScrollRef.current?.scrollToEnd({ animated: true }), 280);
+  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -2531,6 +2536,7 @@ export default function TransacoesScreen() {
               behavior={Platform.OS === "ios" ? "padding" : "height"}
             >
               <ScrollView
+                ref={realizationScrollRef}
                 style={styles.realizationModalScroll}
                 contentContainerStyle={styles.realizationModalScrollContent}
                 keyboardShouldPersistTaps="handled"
@@ -2634,7 +2640,7 @@ export default function TransacoesScreen() {
                           ? Number(transacaoConfirmar.valor) + ajusteNumerico
                           : Math.max(0.01, Number(transacaoConfirmar.valor) - ajusteNumerico);
                         setValorRealizado(formatarEntradaMoeda(String(Math.round(novoValor * 100))));
-                      }} keyboardType="numeric" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
+                      }} onFocus={mostrarCampoRealizacaoAcimaDoTeclado} keyboardType="numeric" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
                     </View>
                     <View style={{ marginTop: 10, borderRadius: 10, padding: 11, backgroundColor: isDark ? "#15352F" : "#E3F7F0", borderWidth: 1, borderColor: "#2A9D8F" }}>
                       <Text style={{ color: Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>Valor final do lançamento</Text>
@@ -2653,6 +2659,7 @@ export default function TransacoesScreen() {
                     <TextInput
                       value={valorRealizado}
                       onChangeText={(texto) => setValorRealizado(formatarEntradaMoeda(texto))}
+                      onFocus={mostrarCampoRealizacaoAcimaDoTeclado}
                       keyboardType="numeric"
                       placeholder="0,00"
                       placeholderTextColor={Cores.textoSecundario}
