@@ -313,6 +313,16 @@ export default function Dashboard() {
   const [transactionKeyboardVisivel, setTransactionKeyboardVisivel] = useState(false);
   const transactionFormRef = useRef<ScrollView>(null);
   const transactionValueYRef = useRef(0);
+  const transactionValueFocusedRef = useRef(false);
+
+  const mostrarValorAcimaDoTeclado = useCallback((delay = 80) => {
+    setTimeout(() => {
+      transactionFormRef.current?.scrollTo({
+        y: Math.max(0, transactionValueYRef.current - 72),
+        animated: true,
+      });
+    }, delay);
+  }, []);
 
   React.useEffect(() => {
     if (!modalTransVisivel) return;
@@ -322,6 +332,7 @@ export default function Dashboard() {
     // rolagem volte ao topo independente de como ele foi fechado.
     const subShow = Keyboard.addListener("keyboardDidShow", () => {
       setTransactionKeyboardVisivel(true);
+      if (transactionValueFocusedRef.current) mostrarValorAcimaDoTeclado();
     });
     const subHide = Keyboard.addListener("keyboardDidHide", () => {
       setTransactionKeyboardVisivel(false);
@@ -331,7 +342,7 @@ export default function Dashboard() {
       subShow.remove();
       subHide.remove();
     };
-  }, [modalTransVisivel]);
+  }, [modalTransVisivel, mostrarValorAcimaDoTeclado]);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
   const [tipoTransacao, setTipoTransacao] = useState<"receita" | "despesa" | "transferencia">("despesa");
@@ -3034,17 +3045,13 @@ export default function Dashboard() {
                     onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))}
                     keyboardType="number-pad"
                     onFocus={() => {
-                      // 260ms: no Android o teclado pode demorar mais que 180ms
-                      // para abrir; rolar cedo demais usa uma altura de tela
-                      // que ainda não refletia o teclado.
-                      setTimeout(() => {
-                        transactionFormRef.current?.scrollTo({
-                          y: Math.max(0, transactionValueYRef.current - 72),
-                          animated: true,
-                        });
-                      }, 260);
+                      transactionValueFocusedRef.current = true;
+                      // Segunda tentativa para aparelhos em que o evento do
+                      // teclado chega antes de o modal terminar o novo layout.
+                      mostrarValorAcimaDoTeclado(320);
                     }}
                     onBlur={() => {
+                      transactionValueFocusedRef.current = false;
                       // Sem isso, o formulário fica preso na posição rolada
                       // pro campo de Valor depois que o usuário termina de
                       // digitar, escondendo Tipo/Repetição/Status.
