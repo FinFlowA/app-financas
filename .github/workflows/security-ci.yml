@@ -120,6 +120,7 @@ jobs:
       cancel-in-progress: true
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - label: runtime atual
@@ -155,10 +156,20 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           UPDATE_MESSAGE: ${{ github.event.head_commit.message }} (${{ matrix.label }})
-        run: >-
-          npx eas-cli@23.1.0 update
-          --branch preview
-          --platform ${{ matrix.platform }}
-          --environment preview
-          --message "$UPDATE_MESSAGE"
-          --non-interactive
+        run: |
+          for attempt in 1 2 3; do
+            if npx eas-cli@23.1.0 update \
+              --branch preview \
+              --platform "${{ matrix.platform }}" \
+              --environment preview \
+              --message "$UPDATE_MESSAGE" \
+              --non-interactive; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "::warning::A API do Expo falhou na tentativa $attempt. Nova tentativa em 20 segundos."
+              sleep 20
+            fi
+          done
+          echo "::error::Não foi possível publicar no Expo após 3 tentativas."
+          exit 1
