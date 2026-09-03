@@ -107,3 +107,58 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder-anon-key
       - name: npm audit (informativo — não bloqueia o merge)
         run: npm audit --audit-level=high || true
+
+  eas-update:
+    name: EAS Update / ${{ matrix.label }}
+    needs: [secret-scan, mobile, web]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: eas-update-preview-${{ matrix.runtime }}
+      cancel-in-progress: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: runtime atual
+            runtime: 2.0.0-r2
+            platform: all
+          - label: APK original
+            runtime: 2.0.0
+            platform: android
+    steps:
+      - name: Baixar o commit validado
+        uses: actions/checkout@v4
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Validar credencial do Expo
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          if [ -z "$EXPO_TOKEN" ]; then
+            echo '::error::O segredo EXPO_TOKEN não está configurado em Settings > Secrets and variables > Actions.'
+            exit 1
+          fi
+      - name: Instalar dependências
+        run: npm ci
+      - name: Selecionar runtime do aplicativo
+        env:
+          TARGET_RUNTIME: ${{ matrix.runtime }}
+        run: |
+          node -e "const fs=require('fs'); const p='app.json'; const c=JSON.parse(fs.readFileSync(p,'utf8')); c.expo.runtimeVersion=process.env.TARGET_RUNTIME; fs.writeFileSync(p, JSON.stringify(c, null, 2)+'\n');"
+      - name: Publicar no canal preview
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          UPDATE_MESSAGE: ${{ github.event.head_commit.message }} (${{ matrix.label }})
+        run: >-
+          npx eas-cli@23.1.0 update
+          --branch preview
+          --platform ${{ matrix.platform }}
+          --environment preview
+          --message "$UPDATE_MESSAGE"
+          --non-interactive
