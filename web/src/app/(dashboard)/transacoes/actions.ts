@@ -230,7 +230,7 @@ export async function updateTransaction(formData: FormData): Promise<Transaction
   const current = snapshot.transacao;
   if (current.transacao_pai_id !== null) return { erro: "Abra o lançamento principal para editar." };
   if (isPagamentoFatura(current.descricao)) return { erro: "Pagamentos de fatura devem ser estornados pela tela do cartão." };
-  if (scope !== "one" && current.status === "paga") return { erro: "Um item concluído só pode ser editado individualmente." };
+  if (current.status === "paga") return { erro: "Reabra o lançamento antes de editar. Um item concluído não pode ser alterado." };
   if (scope !== "one" && current.version !== expectedVersion) return { erro: "Este lançamento mudou em outro dispositivo. Atualize a página e tente novamente." };
 
   const transfer = isTransferencia(current.descricao);
@@ -377,7 +377,7 @@ export async function reopenTransaction(formData: FormData): Promise<Transaction
   }, requestId(formData));
   if (result.erro) return { erro: result.erro };
   refreshTransactions();
-  return { erro: null, sucesso: "O pagamento mais recente foi reaberto." };
+  return { erro: null, sucesso: "O lançamento foi reaberto e voltou a ficar pendente." };
 }
 
 export async function getTransactionPaymentHistory(transactionId: number): Promise<TransactionActionState<unknown>> {

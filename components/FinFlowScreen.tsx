@@ -17,7 +17,7 @@ import React, {
 import { StyleSheet, View, type ModalProps } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { finFlowTheme } from "../constants/finflow-design";
-import { useTheme } from "@react-navigation/native";
+import { useIsFocused, useTheme } from "@react-navigation/native";
 
 type FlowEntry = {
   content: ReactNode;
@@ -111,6 +111,7 @@ export function FinFlowScreenPage() {
   const { id } = useLocalSearchParams<{ id?: string }>();
   const registry = useContext(FlowScreenContext);
   const router = useRouter();
+  const isFocused = useIsFocused();
   const { dark: isDark } = useTheme();
   const theme = finFlowTheme(isDark);
   const entry = id ? registry?.entries.get(id) : undefined;
@@ -119,9 +120,14 @@ export function FinFlowScreenPage() {
 
   useEffect(() => {
     if (!id || !registry || entry) return;
+    // Quando um fluxo abre outro fechando o primeiro no mesmo evento, a rota
+    // antiga fica orfã por baixo da nova. Só voltamos quando esta rota está de
+    // fato no topo; do contrário o router.back() removeria a tela recém-aberta
+    // e a navegação cascatearia até a Início ("a tela pisca e volta").
+    if (!isFocused) return;
     const timeout = setTimeout(() => router.back(), 80);
     return () => clearTimeout(timeout);
-  }, [entry, id, registry, router]);
+  }, [entry, id, registry, router, isFocused]);
 
   useEffect(() => () => {
     lastEntryRef.current?.onRequestClose?.();
