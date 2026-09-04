@@ -23,15 +23,12 @@
   border-radius: 23px;
 }
 
-.routeLoadingGrid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(276px, 1fr));
-  gap: 16px;
-}
-
-.routeLoadingCard {
-  height: 168px;
-  border-radius: 20px;
+/* Linhas de largura total: aproximam listas, tabelas e formulários — a
+   maioria das telas do painel — melhor do que uma grade de cartões iguais,
+   que só se parece com uma tela específica e destoa das demais. */
+.routeLoadingRow {
+  height: 64px;
+  border-radius: 16px;
 }
 
 @media (max-width: 560px) {
@@ -40,9 +37,9 @@
     border-radius: 20px;
   }
 
-  .routeLoadingCard {
-    height: 128px;
-    border-radius: 16px;
+  .routeLoadingRow {
+    height: 54px;
+    border-radius: 14px;
   }
 }
 
