@@ -867,6 +867,13 @@ export default function TransacoesScreen() {
       showToast("Pagamentos de fatura só podem ser estornados.", "info");
       return;
     }
+    if (resumoPagamentoDaTransacao(t).isFullyPaid) {
+      Alert.alert(
+        "Reabra antes de editar",
+        "Este lançamento já foi concluído. Reabra-o pelo histórico antes de alterar os dados.",
+      );
+      return;
+    }
     setTransacaoEditando(t);
     setEditDescricao(isRecorrente(t) ? descricaoBase(t.descricao) : descricaoVisivel(t.descricao));
     setEditValor(formatarEntradaMoeda(String(Math.round(Number(t.valor) * 100))));
@@ -990,6 +997,13 @@ export default function TransacoesScreen() {
 
   const salvarEdicaoTransacao = async () => {
     if (!transacaoEditando) return;
+    if (resumoPagamentoDaTransacao(transacaoEditando).isFullyPaid) {
+      Alert.alert(
+        "Reabra antes de editar",
+        "Este lançamento já foi concluído. Reabra-o pelo histórico antes de alterar os dados.",
+      );
+      return;
+    }
     if (!validarCategoriaEdicao()) return;
     const valorNum = valorDaEntradaMoeda(editValor);
     if (!Number.isFinite(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
@@ -1133,39 +1147,41 @@ export default function TransacoesScreen() {
         if (!data) throw new Error("A data de realização é obrigatória.");
 
         const dataFormatada = `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
-        let valorDevido = Number(transacao.valor);
-        const ajuste = valorDaEntradaMoeda(ajusteValor);
-        if (ajusteTipo === "juros" && ajuste > valorDevido) {
+        const agendadoConclusao = Math.round(Number(transacao.valor) * 100) / 100;
+        const ajuste = Math.round(valorDaEntradaMoeda(ajusteValor) * 100) / 100;
+        if (ajusteTipo === "juros" && ajuste > agendadoConclusao) {
           Alert.alert("Juros inválidos", "O ajuste de juros não pode ser maior que o valor original do lançamento.");
           return;
         }
-        if (ajusteTipo === "desconto" && ajuste >= valorDevido) {
+        if (ajusteTipo === "desconto" && ajuste >= agendadoConclusao) {
           Alert.alert("Desconto inválido", "O desconto precisa ser menor que o valor original do lançamento.");
           return;
         }
-        if (ajusteTipo !== "nenhum" && ajuste > 0) {
-          valorDevido = ajusteTipo === "juros"
-            ? valorDevido + ajuste
-            : Math.max(0.01, valorDevido - ajuste);
-        }
-        valorDevido = Math.round(valorDevido * 100) / 100;
+        const jurosConclusao = ajusteTipo === "juros" ? Math.max(0, ajuste) : 0;
+        const descontoConclusao = ajusteTipo === "desconto" ? Math.max(0, ajuste) : 0;
+        // Principal que ainda abate a dívida: valor agendado já sem o desconto.
+        const principalDaConta = Math.round((agendadoConclusao - descontoConclusao) * 100) / 100;
 
         const permiteParcial = (transacao.tipo === "receita" || transacao.tipo === "despesa")
           && !ehMovimentoInternoSemCategoria(transacao);
-        const valorInformado = permiteParcial ? valorDaEntradaMoeda(valorRealizado) : valorDevido;
-        if (!Number.isFinite(valorInformado) || valorInformado <= 0) {
-          Alert.alert("Valor inválido", "Informe quanto foi efetivamente pago ou recebido.");
+        // O campo "Quanto foi recebido/pago?" traz só o principal, sem os juros.
+        const principalInformado = permiteParcial
+          ? Math.round(valorDaEntradaMoeda(valorRealizado) * 100) / 100
+          : principalDaConta;
+        if (!Number.isFinite(principalInformado) || principalInformado <= 0) {
+          Alert.alert("Valor inválido", "Informe quanto foi efetivamente pago ou recebido, sem somar os juros.");
           return;
         }
-        if (valorInformado > valorDevido) {
+        if (principalInformado > principalDaConta + 0.001) {
           Alert.alert(
-            "Valor acima do previsto",
-            "O valor realizado não pode superar o valor devido. Se houve juros, informe o ajuste antes de confirmar.",
+            "Valor acima da conta",
+            "O valor recebido não pode superar o valor da conta. Se entrou mais dinheiro por causa de juros, informe o juros no campo próprio.",
           );
           return;
         }
 
-        const valorEfetivo = Math.round(valorInformado * 100) / 100;
+        // O que efetivamente entrou ou saiu da conta: principal + juros.
+        const valorEfetivo = Math.round((principalInformado + jurosConclusao) * 100) / 100;
         if (isTransferencia(transacao.descricao) && !isMovimentoObjetivo(transacao.descricao)) {
           const assinaturaConclusao = ["transfer", transacao.id, transacao.status, dataFormatada].join(":");
           let requestId = conclusaoRequestIdsRef.current.get(assinaturaConclusao);
@@ -1716,16 +1732,20 @@ export default function TransacoesScreen() {
     && !ehMovimentoInternoSemCategoria(transacaoConfirmar),
   );
   const ajusteConclusao = valorDaEntradaMoeda(ajusteValor);
+  const jurosConclusaoView = ajusteTipo === "juros" ? Math.max(0, ajusteConclusao) : 0;
+  const descontoConclusaoView = ajusteTipo === "desconto" ? Math.max(0, ajusteConclusao) : 0;
+  const agendadoConclusaoView = transacaoConfirmar ? Number(transacaoConfirmar.valor) : 0;
+  const principalRecebidoConclusao = valorDaEntradaMoeda(valorRealizado);
+  // Total da conta (com juros / abatido o desconto) = o quanto se deve no fim.
   const valorDevidoConclusao = transacaoConfirmar
-    ? Math.max(
-      0.01,
-      Number(transacaoConfirmar.valor)
-        + (ajusteTipo === "juros" ? ajusteConclusao : ajusteTipo === "desconto" ? -ajusteConclusao : 0),
-    )
+    ? Math.max(0.01, Math.round((agendadoConclusaoView + jurosConclusaoView - descontoConclusaoView) * 100) / 100)
     : 0;
+  // O que entra/sai da conta nesta baixa: principal informado + juros.
+  const entrouNaContaConclusao = Math.round((principalRecebidoConclusao + jurosConclusaoView) * 100) / 100;
+  // Continua em aberto = valor agendado - desconto - principal recebido.
   const saldoRestanteConclusao = Math.max(
     0,
-    Math.round((valorDevidoConclusao - valorDaEntradaMoeda(valorRealizado)) * 100) / 100,
+    Math.round((valorDevidoConclusao - entrouNaContaConclusao) * 100) / 100,
   );
   const atualizarDataRealizacao = (novaData: Date) => {
     setMostrarDataRealizacao(false);
@@ -2365,9 +2385,11 @@ export default function TransacoesScreen() {
                     </TouchableOpacity>
                   ) : (
                     <>
-                      <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#457B9D22" }]} onPress={() => { fecharDetalheTransacao(); abrirEditarTransacao(t); }}>
-                        <MaterialIcons name="edit" size={20} color="#457B9D" /><Text style={{ color: "#457B9D", fontWeight: "700" }}>Editar</Text>
-                      </TouchableOpacity>
+                      {!concluida && (
+                        <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#457B9D22" }]} onPress={() => { fecharDetalheTransacao(); abrirEditarTransacao(t); }}>
+                          <MaterialIcons name="edit" size={20} color="#457B9D" /><Text style={{ color: "#457B9D", fontWeight: "700" }}>Editar</Text>
+                        </TouchableOpacity>
+                      )}
                       {!concluida && (
                         <TouchableOpacity style={[styles.detalheAcao, { backgroundColor: "#2A9D8F22" }]} onPress={() => concluirDepoisDeFecharDetalhe(transacaoPendenteAtual)}>
                           <MaterialIcons name="check-circle" size={20} color="#2A9D8F" /><Text style={{ color: "#2A9D8F", fontWeight: "700" }}>Concluir restante</Text>
@@ -2616,43 +2638,35 @@ export default function TransacoesScreen() {
                     <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", flex: 1 }}>Juros ou desconto</Text>
                   </View>
                   <Text style={{ color: Cores.textoSecundario, fontSize: 12, lineHeight: 18, marginBottom: 10 }}>
-                    Se desejar, ajuste o valor final desta realização.
+                    Registre aqui se além do valor da conta entrou (juros) ou foi abatido (desconto) algum valor.
                   </Text>
                   <View style={{ flexDirection: "row", gap: 6 }}>
                     {(["nenhum", "juros", "desconto"] as const).map((tipo) => (
                       <TouchableOpacity key={tipo} onPress={() => {
                         setAjusteTipo(tipo);
                         setAjusteValor("");
-                        if (transacaoConfirmar) setValorRealizado(formatarEntradaMoeda(String(Math.round(Number(transacaoConfirmar.valor) * 100))));
                       }} style={{ flex: 1, paddingVertical: 9, borderRadius: 9, alignItems: "center", backgroundColor: ajusteTipo === tipo ? (tipo === "desconto" ? "#2A9D8F" : tipo === "juros" ? "#E76F51" : "#68727D") : Cores.cardFundo }}>
                         <Text style={{ color: ajusteTipo === tipo ? "#FFF" : Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>{tipo === "nenhum" ? "Sem ajuste" : tipo === "juros" ? "Juros" : "Desconto"}</Text>
                       </TouchableOpacity>
                     ))}
                   </View>
                   {ajusteTipo !== "nenhum" && (
-                    <><View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                    <View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                       <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
                       <TextInput value={ajusteValor} onChangeText={(texto) => {
-                        const formatado = formatarEntradaMoeda(texto);
-                        setAjusteValor(formatado);
-                        const ajusteNumerico = valorDaEntradaMoeda(formatado);
-                        const novoValor = ajusteTipo === "juros"
-                          ? Number(transacaoConfirmar.valor) + ajusteNumerico
-                          : Math.max(0.01, Number(transacaoConfirmar.valor) - ajusteNumerico);
-                        setValorRealizado(formatarEntradaMoeda(String(Math.round(novoValor * 100))));
-                      }} onFocus={mostrarCampoRealizacaoAcimaDoTeclado} keyboardType="numeric" placeholder="0,00" placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
+                        setAjusteValor(formatarEntradaMoeda(texto));
+                      }} onFocus={mostrarCampoRealizacaoAcimaDoTeclado} keyboardType="numeric" placeholder={`Valor do ${ajusteTipo === "juros" ? "juros" : "desconto"}`} placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
                     </View>
-                    <View style={{ marginTop: 10, borderRadius: 10, padding: 11, backgroundColor: isDark ? "#15352F" : "#E3F7F0", borderWidth: 1, borderColor: "#2A9D8F" }}>
-                      <Text style={{ color: Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>Valor final do lançamento</Text>
-                      <Text style={{ color: "#2A9D8F", fontSize: 18, fontWeight: "900", marginTop: 2 }}>{fmtReais(valorDevidoConclusao)}</Text>
-                    </View></>
                   )}
                 </View>
               )}
               {permiteValorParcial && (
                 <View style={{ marginTop: 14 }}>
-                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", marginBottom: 6 }}>
+                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", marginBottom: 4 }}>
                     Quanto foi {transacaoConfirmar.tipo === "receita" ? "recebido" : "pago"}?
+                  </Text>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, lineHeight: 17, marginBottom: 6 }}>
+                    Informe só o valor da conta, sem somar os juros.
                   </Text>
                   <View style={[styles.editInput, { marginBottom: 6, backgroundColor: Cores.blocoData, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                     <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
@@ -2666,11 +2680,42 @@ export default function TransacoesScreen() {
                       style={{ color: Cores.textoPrincipal, flex: 1, fontWeight: "700" }}
                     />
                   </View>
-                  <Text style={{ color: saldoRestanteConclusao > 0 ? "#F59E0B" : Cores.textoSecundario, fontSize: 12, lineHeight: 17 }}>
-                      {saldoRestanteConclusao > 0
-                        ? `O saldo de ${fmtReais(saldoRestanteConclusao)} continuará pendente neste mesmo agendamento. O pagamento realizado ficará registrado no detalhe.`
-                        : `Valor previsto: ${fmtReais(valorDevidoConclusao)}.`}
-                  </Text>
+                  <View style={{ marginTop: 6, borderRadius: 10, padding: 12, backgroundColor: Cores.blocoData, borderWidth: 1, borderColor: Cores.borda }}>
+                    {jurosConclusaoView > 0 && (
+                      <View style={styles.detalheLinha}>
+                        <Text style={{ color: Cores.textoSecundario }}>Juros</Text>
+                        <Text style={{ color: "#E76F51", fontWeight: "800" }}>+ {fmtReais(jurosConclusaoView)}</Text>
+                      </View>
+                    )}
+                    {descontoConclusaoView > 0 && (
+                      <View style={styles.detalheLinha}>
+                        <Text style={{ color: Cores.textoSecundario }}>Desconto</Text>
+                        <Text style={{ color: "#2A9D8F", fontWeight: "800" }}>- {fmtReais(descontoConclusaoView)}</Text>
+                      </View>
+                    )}
+                    <View style={styles.detalheLinha}>
+                      <Text style={{ color: Cores.textoSecundario }}>{transacaoConfirmar.tipo === "receita" ? "Entrou na conta" : "Saiu da conta"}</Text>
+                      <Text style={{ color: Cores.textoPrincipal, fontWeight: "800" }}>{fmtReais(entrouNaContaConclusao)}</Text>
+                    </View>
+                    <View style={styles.detalheLinha}>
+                      <Text style={{ color: Cores.textoSecundario }}>Valor total da conta</Text>
+                      <Text style={{ color: Cores.textoPrincipal, fontWeight: "800" }}>{fmtReais(valorDevidoConclusao)}</Text>
+                    </View>
+                    <View style={styles.detalheLinha}>
+                      <Text style={{ color: Cores.textoSecundario }}>Continua em aberto</Text>
+                      <Text style={{ color: saldoRestanteConclusao > 0 ? "#F59E0B" : "#2A9D8F", fontWeight: "800" }}>{fmtReais(saldoRestanteConclusao)}</Text>
+                    </View>
+                  </View>
+                  {principalRecebidoConclusao > agendadoConclusaoView - descontoConclusaoView + 0.001 && (
+                    <Text style={{ color: "#E76F51", fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+                      O valor recebido está acima do valor da conta. Se entrou mais dinheiro por juros, registre no campo de juros.
+                    </Text>
+                  )}
+                  {saldoRestanteConclusao > 0 && principalRecebidoConclusao <= agendadoConclusaoView - descontoConclusaoView + 0.001 && (
+                    <Text style={{ color: "#F59E0B", fontSize: 12, lineHeight: 17, marginTop: 6 }}>
+                      O saldo de {fmtReais(saldoRestanteConclusao)} continuará pendente neste mesmo agendamento.
+                    </Text>
+                  )}
                 </View>
               )}
               <View style={{ flexDirection: "row", gap: 10, marginTop: 10 }}>

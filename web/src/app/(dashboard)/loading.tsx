@@ -1,22 +1,17 @@
-import Image from "next/image";
-import authStyles from "@/components/auth/auth.module.css";
 import styles from "../app-states.module.css";
 
+// Trocar de área no painel não deve reabrir a splash do FinFlow: um esqueleto
+// leve (cabeçalho + cartões) mantém a barra lateral visível e sinaliza que o
+// conteúdo da seção está a caminho, sem o peso do carregamento inicial.
 export default function DashboardLoading() {
   return (
-    <div className={styles.dashboardSplash} role="status" aria-live="polite" aria-busy="true" aria-label="Carregando seu painel financeiro">
-      <div className={authStyles.splashMark} aria-hidden="true">
-        <span className={`${authStyles.splashHalo} ${styles.dashboardSplashHalo}`} />
-        <span className={`${authStyles.splashOrbit} ${styles.dashboardSplashOrbit}`} />
-        <Image className={authStyles.splashLogo} src="/finflow-logo.png" alt="" width={144} height={144} priority unoptimized />
-      </div>
-      <div className={authStyles.splashTexts}>
-        <span className={`${authStyles.splashBrand} ${styles.dashboardSplashBrand}`}>FinFlow</span>
-        <span className={`${authStyles.splashLabel} ${styles.dashboardSplashLabel}`}>Carregando seu painel financeiro</span>
-      </div>
-      <div className={`${authStyles.splashTrack} ${styles.dashboardSplashTrack}`} aria-hidden="true">
-        <div className={`${authStyles.splashFill} ${styles.dashboardSplashFill}`} />
-        <span className={authStyles.splashShine} />
+    <div className={styles.routeLoading} role="status" aria-live="polite" aria-busy="true" aria-label="Carregando a seção">
+      <span className={styles.srOnly}>Carregando a seção...</span>
+      <div className={`${styles.skeleton} ${styles.routeLoadingHero}`} aria-hidden="true" />
+      <div className={styles.routeLoadingGrid} aria-hidden="true">
+        {[0, 1, 2, 3, 4, 5].map((item) => (
+          <span key={item} className={`${styles.skeleton} ${styles.routeLoadingCard}`} />
+        ))}
       </div>
     </div>
   );

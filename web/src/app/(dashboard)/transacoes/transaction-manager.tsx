@@ -266,6 +266,7 @@ function EditTransactionDialog({ transaction, summary, accounts, categories, use
     && (category.tipo === transaction.tipo || category.tipo === "ambos"));
   const editableAccounts = accounts.filter((account) => !account.arquivado || account.id === transaction.conta_id);
   const destination = destinationAccount(transaction, accounts);
+  const concluded = transaction.status === "paga";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -282,7 +283,14 @@ function EditTransactionDialog({ transaction, summary, accounts, categories, use
     finally { setBusy(false); }
   }
 
-  return <Modal title="Editar lançamento" subtitle={transaction.status === "paga" ? "O status é alterado apenas pelos fluxos Concluir e Reabrir." : "Altere os dados do agendamento com validação de concorrência."} onClose={onClose} wide>
+  if (concluded) return <Modal title="Editar lançamento" subtitle="Este lançamento já foi concluído." onClose={onClose}>
+    <div className="grid gap-4">
+      <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Um item concluído não pode ser editado. Reabra o lançamento primeiro; ele volta a ficar pendente e então os dados podem ser alterados.</p>
+      <div className="flex justify-end"><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted">Fechar</button></div>
+    </div>
+  </Modal>;
+
+  return <Modal title="Editar lançamento" subtitle="Altere os dados do agendamento com validação de concorrência." onClose={onClose} wide>
     <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
       <input type="hidden" name="transaction_id" value={transaction.id} /><input type="hidden" name="expected_version" value={transaction.version} /><input type="hidden" name="series_scope" value={scope} />
       <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} defaultValue={visibleBaseDescription(transaction.descricao)} className={INPUT} /></Field>
@@ -308,15 +316,32 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
   const [realizationDate, setRealizationDate] = useState(today);
   const [adjustmentType, setAdjustmentType] = useState<"none" | "interest" | "discount">("none");
   const [adjustmentValue, setAdjustmentValue] = useState(0);
+  const [principal, setPrincipal] = useState(Number(transaction.valor));
   const [busy, setBusy] = useState(false);
   const [feedback, setFeedback] = useState<TransactionActionState | null>(null);
   const common = transaction.categoria_id !== null && transactionKind(transaction) !== "transferencia" && !/\[(?:Objetivo:|PagFatura:)/.test(transaction.descricao);
   const adjustmentAllowed = common;
-  const finalValue = Math.max(0.01, Number(transaction.valor) + (adjustmentType === "interest" ? adjustmentValue : adjustmentType === "discount" ? -adjustmentValue : 0));
+  const scheduled = Number(transaction.valor);
+  const interest = adjustmentType === "interest" ? adjustmentValue : 0;
+  const discount = adjustmentType === "discount" ? adjustmentValue : 0;
+  // Principal que ainda abate a conta (já sem o desconto) e total devido no fim.
+  const principalDue = Math.max(0.01, Math.round((scheduled - discount) * 100) / 100);
+  const totalConta = Math.max(0.01, Math.round((scheduled + interest - discount) * 100) / 100);
+  // O que entra ou sai da conta nesta baixa: principal informado + juros.
+  const enteredAccount = Math.round((principal + interest) * 100) / 100;
+  const remaining = Math.max(0, Math.round((totalConta - enteredAccount) * 100) / 100);
+  const principalTooHigh = principal > principalDue + 0.001;
+  const principalInvalid = !Number.isFinite(principal) || principal <= 0 || principalTooHigh;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
+    if (common && principalInvalid) {
+      setFeedback({ erro: principalTooHigh
+        ? "O valor recebido não pode superar o valor da conta. Se entrou mais dinheiro por juros, informe o juros no campo próprio."
+        : "Informe quanto foi efetivamente pago ou recebido, sem somar os juros." });
+      return;
+    }
     setBusy(true);
     setFeedback(null);
     const formData = new FormData(event.currentTarget);
@@ -329,21 +354,29 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
     finally { setBusy(false); }
   }
 
+  const recapLabel = transaction.tipo === "receita" ? "Entrou na conta" : "Saiu da conta";
+
   return <Modal title="Concluir lançamento" subtitle={`Agendado para ${formatarData(transaction.data_vencimento)}.`} onClose={onClose}>
     <form onSubmit={submit} className="grid gap-4">
-      <input type="hidden" name="transaction_id" value={transaction.id} /><input type="hidden" name="expected_value" value={Number(transaction.valor)} />
+      <input type="hidden" name="transaction_id" value={transaction.id} /><input type="hidden" name="expected_value" value={scheduled} />
       <Field label="Data da realização"><input name="realization_date" type="date" required max={today} value={realizationDate} onChange={(event) => setRealizationDate(event.target.value)} className={INPUT} /></Field>
       {common ? <>
-        <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput name="realized_value" defaultValue={Number(transaction.valor)} required /></Field>
-        <p className="rounded-ff-sm bg-primary-soft p-3 text-xs font-semibold text-primary-dark">Se o valor for menor, a baixa fica registrada e o restante continua pendente neste mesmo agendamento.</p>
         {adjustmentAllowed ? <Field label="Juros ou desconto"><select name="adjustment_type" value={adjustmentType} onChange={(event) => { setAdjustmentType(event.target.value as typeof adjustmentType); setAdjustmentValue(0); }} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
-        {adjustmentAllowed && adjustmentType !== "none" && <>
-          <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required onValueChange={(formatted) => setAdjustmentValue(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>
-          <div className="rounded-ff-sm border border-primary/25 bg-primary-soft p-3" aria-live="polite"><p className="text-xs font-bold text-primary-dark">Valor final do lançamento</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-primary-dark">{formatarReais(finalValue)}</strong></div>
-        </>}
-      </> : <><input type="hidden" name="realized_value" value={Number(transaction.valor)} /><input type="hidden" name="adjustment_type" value="none" /><p className="rounded-ff-sm bg-blue/10 p-3 text-xs font-semibold text-blue">Transferências e movimentos internos são concluídos integralmente e não aceitam pagamento parcial, juros ou desconto.</p></>}
+        {adjustmentAllowed && adjustmentType !== "none" && <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required onValueChange={(formatted) => setAdjustmentValue(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>}
+        <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput name="principal_display" defaultValue={scheduled} onValueChange={(formatted) => setPrincipal(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>
+        <input type="hidden" name="realized_value" value={enteredAccount} />
+        <p className="rounded-ff-sm bg-primary-soft p-3 text-xs font-semibold text-primary-dark">Informe só o valor da conta, sem somar os juros. Se for menor, a baixa fica registrada e o restante continua pendente neste mesmo agendamento.</p>
+        <div className="rounded-ff-sm border border-border bg-surface-muted p-3 text-sm" aria-live="polite">
+          {interest > 0 && <div className="flex justify-between"><span className="text-foreground-muted">Juros</span><strong data-private-value="true" className="text-orange">+ {formatarReais(interest)}</strong></div>}
+          {discount > 0 && <div className="flex justify-between"><span className="text-foreground-muted">Desconto</span><strong data-private-value="true" className="text-primary">- {formatarReais(discount)}</strong></div>}
+          <div className="flex justify-between"><span className="text-foreground-muted">{recapLabel}</span><strong data-private-value="true">{formatarReais(enteredAccount)}</strong></div>
+          <div className="flex justify-between"><span className="text-foreground-muted">Valor total da conta</span><strong data-private-value="true">{formatarReais(totalConta)}</strong></div>
+          <div className="flex justify-between"><span className="text-foreground-muted">Continua em aberto</span><strong data-private-value="true" className={remaining > 0 ? "text-orange" : "text-primary"}>{formatarReais(remaining)}</strong></div>
+        </div>
+        {principalTooHigh && <p role="alert" className="text-xs font-semibold text-red">O valor recebido está acima do valor da conta. Se entrou mais dinheiro por juros, registre no campo de juros.</p>}
+      </> : <><input type="hidden" name="realized_value" value={scheduled} /><input type="hidden" name="adjustment_type" value="none" /><p className="rounded-ff-sm bg-blue/10 p-3 text-xs font-semibold text-blue">Transferências e movimentos internos são concluídos integralmente e não aceitam pagamento parcial, juros ou desconto.</p></>}
       <Feedback state={feedback} />
-      <div className="grid grid-cols-2 gap-3"><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-4 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted">Cancelar</button><button disabled={busy} className="ff-focus rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50">{busy ? "Concluindo..." : "Confirmar"}</button></div>
+      <div className="grid grid-cols-2 gap-3"><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-4 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted">Cancelar</button><button disabled={busy || (common && principalInvalid)} className="ff-focus rounded-full bg-primary px-4 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50">{busy ? "Concluindo..." : "Confirmar"}</button></div>
     </form>
   </Modal>;
 }
@@ -749,7 +782,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
           {detailHistory?.reconciliationAdjustment && <div className="mt-3 grid gap-2 rounded-ff-sm border border-orange/25 bg-orange/5 p-3 sm:grid-cols-3"><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">Valor agendado</p><p data-private-value="true" className="mt-1 font-black text-foreground">{formatarReais(detailHistory.reconciliationAdjustment.scheduledAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-orange">Juros</p><p data-private-value="true" className="mt-1 font-black text-orange">+ {formatarReais(detailHistory.reconciliationAdjustment.interestAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-primary">Total realizado</p><p data-private-value="true" className="mt-1 font-black text-primary">{formatarReais(detailHistory.reconciliationAdjustment.totalAmount)}</p></div></div>}{detailLoading && <p className="mt-3 text-sm text-foreground-muted">Carregando pagamentos...</p>}{detailError && <p role="alert" className="mt-3 text-sm font-semibold text-red">{detailError}</p>}{detailHistory && detailHistory.payments.length > 0 && <div className="mt-3 space-y-2">{detailHistory.payments.map((payment) => <div key={payment.paymentId} className={`flex items-center justify-between gap-3 rounded-ff-sm border border-border px-3 py-2 text-sm ${payment.active ? "" : "opacity-55"}`}><div><p className="font-bold">{payment.active ? `Pagamento ${payment.paymentSequence}` : `Pagamento ${payment.paymentSequence} reaberto`}</p><p className="text-xs text-foreground-muted">{formatarData(payment.realizationDate)}{payment.adjustmentType !== "none" ? ` · ${payment.adjustmentType === "interest" ? "juros" : "desconto"} ${formatarReais(payment.adjustmentValue)}` : ""}</p></div><strong data-private-value="true" className={payment.active ? "text-primary" : "line-through"}>{formatarReais(payment.value)}</strong></div>)}</div>}
         </div>
         <Feedback state={operationFeedback} />
-        {!isPagamentoFatura(detail.descricao) ? <div className="flex flex-wrap justify-center gap-2"><button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="w-full rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue sm:w-52">Editar</button>{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="w-full rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white sm:w-52">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(); setReopening(selected); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="w-full rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red sm:w-52">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
+        {!isPagamentoFatura(detail.descricao) ? <div className="flex flex-wrap justify-center gap-2">{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="w-full rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue sm:w-52">Editar</button>}{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="w-full rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white sm:w-52">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(); setReopening(selected); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="w-full rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red sm:w-52">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
         <div className="flex justify-end"><button type="button" onClick={closeDetails} className="rounded-ff-sm border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Fechar</button></div>
       </div>
     </Modal>}

@@ -203,7 +203,11 @@ export default function RootLayout() {
   const router = useRouter();
   const segments = useSegments();
 
-  const [isDark, setIsDark] = useState(systemTheme === "dark");
+  // null = acompanhar o tema do aparelho; true/false = escolha manual salva.
+  // Sem isso o app fica preso no tema em que abriu e ignora o aparelho trocar
+  // de claro para escuro (ou o contrário) enquanto está aberto.
+  const [temaManual, setTemaManual] = useState<boolean | null>(null);
+  const isDark = temaManual ?? (systemTheme === "dark");
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [autenticandoBiometria, setAutenticandoBiometria] = useState(false);
@@ -357,7 +361,9 @@ export default function RootLayout() {
   const carregarConfiguracoes = useCallback(async () => {
     try {
       const temaSalvo = await AsyncStorage.getItem("@dark_mode");
-      if (temaSalvo !== null) setIsDark(temaSalvo === "true");
+      // Só existe valor salvo quando a pessoa escolheu manualmente; caso
+      // contrário o app continua acompanhando o aparelho.
+      setTemaManual(temaSalvo === null ? null : temaSalvo === "true");
 
       const biometriaSalva = await AsyncStorage.getItem("@biometric_enabled");
       const biometriaAtiva = biometriaSalva === "true";
@@ -1208,9 +1214,16 @@ export default function RootLayout() {
 
   const toggleTheme = useCallback(async () => {
     const newValue = !isDark;
-    setIsDark(newValue);
+    if (newValue === (systemTheme === "dark")) {
+      // A escolha ficou igual ao aparelho: volta a acompanhar o sistema,
+      // então uma futura troca de claro/escuro no aparelho volta a valer.
+      setTemaManual(null);
+      await AsyncStorage.removeItem("@dark_mode");
+      return;
+    }
+    setTemaManual(newValue);
     await AsyncStorage.setItem("@dark_mode", newValue ? "true" : "false");
-  }, [isDark]);
+  }, [isDark, systemTheme]);
 
   const toggleBiometric = useCallback(async (value: boolean) => {
     setIsBiometricEnabled(value);
