@@ -202,7 +202,10 @@ export default function ReconciliationWorkspace({
       for (const entry of pending) {
         const ranked = rankedCandidates(entry, accountId, candidates);
         const sameMonth = ranked.filter((candidate) => candidate.dueDate.startsWith(entry.date.slice(0, 7)));
-        const exact = ranked.find((candidate) => Math.round(candidate.remainingValue * 100) === Math.round(entry.amount * 100));
+        // Restrito ao mês do próprio extrato: um agendamento de outro mês com o
+        // mesmo valor não deve ser pré-selecionado nem "puxar" o seletor pra
+        // aquele mês sozinho — só aparece se o usuário mudar o mês ou buscar.
+        const exact = sameMonth.find((candidate) => Math.round(candidate.remainingValue * 100) === Math.round(entry.amount * 100));
         const compatibleCategories = categories.filter((category) => category.tipo === entry.type || category.tipo === "ambos");
         nextDrafts[entry.id] = {
           mode: exact ? "existing" : "new",

@@ -31,7 +31,15 @@ self.addEventListener("fetch", (event) => {
   // Dados financeiros e HTML autenticado nunca vão para Cache Storage.
   if (!url.pathname.startsWith("/_next/static/") && !STATIC_PATHS.includes(url.pathname)) return;
   event.respondWith(caches.match(request).then((cached) => cached || fetch(request).then((response) => {
-    if (response.ok) caches.open(STATIC_CACHE).then((cache) => cache.put(request, response.clone()));
+    // clone() precisa acontecer no mesmo tick, antes de qualquer `await`/`.then()`:
+    // caches.open() é assíncrono, e enquanto ele resolve o `return response` abaixo
+    // já entrega a resposta pro navegador consumir. Se o clone só é feito depois
+    // (dentro do .then de caches.open), o corpo já foi lido e o clone falha com
+    // "Response body is already used".
+    if (response.ok) {
+      const responseToCache = response.clone();
+      caches.open(STATIC_CACHE).then((cache) => cache.put(request, responseToCache));
+    }
     return response;
   })));
 });

@@ -327,6 +327,18 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
   // Principal que ainda abate a conta (já sem o desconto) e total devido no fim.
   const principalDue = Math.max(0.01, Math.round((scheduled - discount) * 100) / 100);
   const totalConta = Math.max(0.01, Math.round((scheduled + interest - discount) * 100) / 100);
+
+  // O usuário não deve calcular manualmente quanto sobra após um desconto
+  // (nem somar juros, que entram à parte): sempre que o ajuste mudar, o campo
+  // "quanto foi recebido/pago" acompanha o novo valor devido automaticamente.
+  // Ajustar o estado durante a renderização (em vez de um useEffect) evita um
+  // re-render extra — https://react.dev/learn/you-might-not-need-an-effect
+  const [lastPrincipalDue, setLastPrincipalDue] = useState(principalDue);
+  if (principalDue !== lastPrincipalDue) {
+    setLastPrincipalDue(principalDue);
+    setPrincipal(principalDue);
+  }
+
   // O que entra ou sai da conta nesta baixa: principal informado + juros.
   const enteredAccount = Math.round((principal + interest) * 100) / 100;
   const remaining = Math.max(0, Math.round((totalConta - enteredAccount) * 100) / 100);
@@ -363,7 +375,7 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
       {common ? <>
         {adjustmentAllowed ? <Field label="Juros ou desconto"><select name="adjustment_type" value={adjustmentType} onChange={(event) => { setAdjustmentType(event.target.value as typeof adjustmentType); setAdjustmentValue(0); }} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
         {adjustmentAllowed && adjustmentType !== "none" && <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required onValueChange={(formatted) => setAdjustmentValue(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>}
-        <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput name="principal_display" defaultValue={scheduled} onValueChange={(formatted) => setPrincipal(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>
+        <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput key={principalDue} name="principal_display" defaultValue={principalDue} onValueChange={(formatted) => setPrincipal(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>
         <input type="hidden" name="realized_value" value={enteredAccount} />
         <p className="rounded-ff-sm bg-primary-soft p-3 text-xs font-semibold text-primary-dark">Informe só o valor da conta, sem somar os juros. Se for menor, a baixa fica registrada e o restante continua pendente neste mesmo agendamento.</p>
         <div className="rounded-ff-sm border border-border bg-surface-muted p-3 text-sm" aria-live="polite">

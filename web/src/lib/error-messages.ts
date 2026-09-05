@@ -38,6 +38,14 @@ const MENSAGENS: Record<string, string> = {
   AI_INVALID_REALIZED_VALUE: "O valor realizado não atende às regras deste lançamento.",
   AI_SAME_ACCOUNT: "Escolha contas diferentes para realizar a transferência.",
   AI_PARTIAL_PAYMENT_MISMATCH: "Para pagamento parcial, informe um valor menor que o saldo da fatura.",
+  // Séries recorrentes antigas (criadas antes do identificador [Serie:N])
+  // nunca são agrupadas automaticamente: duas parcelas idênticas e
+  // adjacentes são matematicamente indistinguíveis, então qualquer operação
+  // em massa nelas falha de propósito, item por item.
+  AI_LEGACY_RECURRING_SERIES_REQUIRES_INDIVIDUAL: "Esta é uma série recorrente antiga e não pode ser excluída ou editada em massa com segurança. Repita a ação escolhendo \"Somente este item\" em cada lançamento pendente.",
+  AI_LEGACY_SERIES_AMBIGUOUS: "Não foi possível identificar com segurança quais lançamentos pertencem a esta série (pode haver uma edição ou exclusão anterior no meio dela). Exclua ou edite os itens pendentes individualmente.",
+  AI_TRANSACTION_NOT_IN_SERIES: "Este lançamento não faz parte de uma série reconhecida. Repita a ação escolhendo \"Somente este item\".",
+  AI_NO_OPEN_SERIES_ITEMS: "Não há itens pendentes desta série para excluir ou editar.",
 };
 
 export function traduzirErro(codigo: string): string {

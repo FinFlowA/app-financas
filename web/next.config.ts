@@ -8,6 +8,12 @@ const nextConfig: NextConfig = {
     root: path.resolve(__dirname, ".."),
   },
   outputFileTracingRoot: path.resolve(__dirname, ".."),
+  // O logo e o ícone do app usam quality={100} de propósito (peças pequenas
+  // e importantes de marca); o Next 16 exige listar explicitamente
+  // qualidades além do padrão [75].
+  images: {
+    qualities: [100, 75],
+  },
   async headers() {
     return [{
       source: "/(.*)",
