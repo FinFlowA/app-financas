@@ -636,6 +636,8 @@ html.dark .ff-sidebar {
   border: 1px solid color-mix(in srgb, var(--ff-primary) 35%, transparent);
   border-radius: 11px;
   background: var(--ff-primary-soft);
+  background-position: center;
+  background-size: cover;
   color: var(--ff-primary-dark);
   font-size: 0.85rem;
   font-weight: 900;

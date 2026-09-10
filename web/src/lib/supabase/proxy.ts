@@ -7,6 +7,7 @@ const PUBLIC_ROUTES = new Set([
   "/esqueci-senha",
   "/redefinir-senha",
   "/auth/callback",
+  "/auth/oauth",
   "/termos",
   "/privacidade",
   "/manifest.webmanifest",
@@ -21,6 +22,7 @@ const AUTH_ENTRY_ROUTES = new Set(["/login", "/cadastro", "/esqueci-senha"]);
 // recursos estáticos usados logo na primeira abertura do site/PWA.
 const PUBLIC_PASSTHROUGH_ROUTES = new Set([
   "/auth/callback",
+  "/auth/oauth",
   "/redefinir-senha",
   "/termos",
   "/privacidade",

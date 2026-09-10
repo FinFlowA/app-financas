@@ -12,6 +12,20 @@ function subscribe(callback: () => void) {
 export default function WebPlatform() {
   const online = useSyncExternalStore(subscribe, () => navigator.onLine, () => true);
   useEffect(() => {
+    const localDevelopment = location.hostname === "localhost" || location.hostname === "127.0.0.1";
+    if (localDevelopment) {
+      // O cache-first do PWA nÃ£o pode conservar chunks do servidor Next local:
+      // no modo dev os nomes dos chunks podem ser reutilizados apÃ³s o HMR.
+      if ("serviceWorker" in navigator) {
+        void navigator.serviceWorker.getRegistrations().then((registrations) =>
+          Promise.all(registrations.map((registration) => registration.unregister()))
+        ).catch(() => undefined);
+      }
+      if ("caches" in window) {
+        void caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))).catch(() => undefined);
+      }
+      return;
+    }
     const secureOrigin = location.protocol === "https:"
       || location.hostname === "localhost"
       || location.hostname === "127.0.0.1";

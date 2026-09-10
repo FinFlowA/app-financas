@@ -150,9 +150,6 @@ export default function ReconciliationWorkspace({
   const [dragging, setDragging] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [ignoredCount, setIgnoredCount] = useState(0);
-  const [reconciled, setReconciled] = useState(() => new Set(reconciliationProgress
-    .filter((row) => Number(row.reconciled_amount) >= Number(row.entry_amount))
-    .map((row) => `${row.account_id}:${row.entry_fingerprint}`)));
   const [sessionRestored, setSessionRestored] = useState(false);
   const [interestEntryId, setInterestEntryId] = useState<string | null>(null);
   const [ignoreEntryId, setIgnoreEntryId] = useState<string | null>(null);
@@ -292,7 +289,6 @@ export default function ReconciliationWorkspace({
       setDrafts((current) => ({ ...current, [entry.id]: { ...current[entry.id], busy: false, error: result.erro } }));
       return;
     }
-    setReconciled((current) => new Set(current).add(`${accountId}:${entry.fingerprint}`));
     setEntries((current) => current.filter((item) => item.id !== entry.id));
     setDrafts((current) => { const next = { ...current }; delete next[entry.id]; return next; });
   }
@@ -308,7 +304,6 @@ export default function ReconciliationWorkspace({
       return;
     }
     setIgnoreEntryId(null);
-    setReconciled((current) => new Set(current).add(`${accountId}:${entry.fingerprint}`));
     setEntries((current) => current.filter((item) => item.id !== entry.id));
     setDrafts((current) => { const next = { ...current }; delete next[entry.id]; return next; });
   }
@@ -327,7 +322,6 @@ export default function ReconciliationWorkspace({
     })));
     if (result.erro) { setBulkError(result.erro); setBulkIgnoring(false); return; }
     const removed = new Set(selected.map((entry) => entry.id));
-    setReconciled((current) => { const next = new Set(current); for (const entry of selected) next.add(`${accountId}:${entry.fingerprint}`); return next; });
     setEntries((current) => current.filter((entry) => !removed.has(entry.id)));
     setDrafts((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !removed.has(id))));
     setSelectedEntryIds(new Set()); setBulkIgnoreOpen(false); setBulkIgnoring(false);

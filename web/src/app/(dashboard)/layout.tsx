@@ -34,6 +34,13 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const nome = nameCandidates.find((value): value is string => typeof value === "string" && value.trim().length > 0)?.trim()
     ?? email?.split("@")[0]
     ?? "Usuário";
+  const providers = userData.user?.app_metadata?.providers;
+  const googleLogin = userData.user?.app_metadata?.provider === "google"
+    || (Array.isArray(providers) && providers.includes("google"));
+  const avatarCandidate = metadata?.avatar_url ?? metadata?.picture;
+  const avatarUrl = googleLogin && typeof avatarCandidate === "string" && /^https:\/\//i.test(avatarCandidate)
+    ? avatarCandidate
+    : null;
   const birthDate = typeof metadata?.data_nascimento === "string" ? metadata.data_nascimento : "";
   const age = ageFromIsoDate(birthDate);
   // Uma string preenchida, mas inválida, não pode contornar a pendência.
@@ -63,7 +70,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
         <div className="ff-sidebar__footer">
           <div className="ff-sidebar-profile">
-            <span className="ff-sidebar-profile__avatar" aria-hidden="true">{nome.slice(0, 1).toLocaleUpperCase("pt-BR")}</span>
+            <span className="ff-sidebar-profile__avatar" aria-hidden="true" style={avatarUrl ? { backgroundImage: `url("${avatarUrl}")` } : undefined}>{avatarUrl ? null : nome.slice(0, 1).toLocaleUpperCase("pt-BR")}</span>
             <span className="min-w-0"><strong>{nome}</strong><small>{email}</small></span>
           </div>
           <SignOutButton />

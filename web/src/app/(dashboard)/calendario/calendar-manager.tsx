@@ -6,7 +6,8 @@ import FinancialIcon from "@/components/ui/financial-icon";
 import { formatarReais } from "@/lib/format";
 import { descricaoVisivel, isMovimentoObjetivo, isPagamentoFatura } from "@/lib/transacoes";
 import type { Caixinha, Categoria, Conta, Transacao } from "@/lib/types";
-import { NewTransactionDialog } from "../transacoes/transaction-manager";
+import TransactionManager, { NewTransactionDialog } from "../transacoes/transaction-manager";
+import type { Cartao, FaturaItem } from "@/lib/types";
 
 function shiftMonth(month: string, delta: number) {
   const [year, number] = month.split("-").map(Number);
@@ -20,13 +21,14 @@ function monthLabel(month: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
-export default function CalendarManager({ today, accounts, goals, categories, transactions }: { today: string; accounts: Conta[]; goals: Caixinha[]; categories: Categoria[]; transactions: Transacao[] }) {
+export default function CalendarManager({ userId, today, accounts, goals, categories, cards, invoiceItems, transactions, paymentSummaryRows, reconciledTransactionIds }: { userId: string; today: string; accounts: Conta[]; goals: Caixinha[]; categories: Categoria[]; cards: Cartao[]; invoiceItems: FaturaItem[]; transactions: Transacao[]; paymentSummaryRows: unknown[]; reconciledTransactionIds: number[] }) {
   const router = useRouter();
   const [month, setMonth] = useState(today.slice(0, 7));
   // null = nenhum dia escolhido neste mês. Trocar de mês nunca deve manter um
   // dia marcado como se fosse "hoje" ou como selecionado por engano.
   const [selectedDate, setSelectedDate] = useState<string | null>(today);
   const [creating, setCreating] = useState(false);
+  const [detailId, setDetailId] = useState<number | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "pending" | "completed">("all");
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories]);
   const visibleTransactions = useMemo(() => transactions.filter((transaction) => !isMovimentoObjetivo(transaction.descricao) && !isPagamentoFatura(transaction.descricao) && (statusFilter === "all" || (statusFilter === "pending" ? transaction.status === "pendente" : transaction.status === "paga"))), [transactions, statusFilter]);
@@ -66,8 +68,9 @@ export default function CalendarManager({ today, accounts, goals, categories, tr
       })}</div>
     </section>
     <section className="ff-card mt-5 p-4 sm:p-6"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Dia selecionado</p><h2 className="mt-1 text-xl font-black">{selectedDate ? new Intl.DateTimeFormat("pt-BR", { dateStyle: "long", timeZone: "UTC" }).format(new Date(`${selectedDate}T12:00:00Z`)) : "Nenhum dia selecionado"}</h2></div><button type="button" onClick={() => selectedDate && setCreating(true)} disabled={!selectedDate} className="ff-focus rounded-full bg-primary px-5 py-3 text-sm font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-50">+ Agendar nesta data</button></div>
-      <div className="mt-4 grid gap-2">{selected.map((transaction) => { const category = transaction.categoria_id ? categoryById.get(transaction.categoria_id) : null; return <article key={transaction.id} className="flex items-center gap-3 rounded-xl border border-border bg-surface-muted p-3"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${transaction.tipo === "receita" ? "bg-primary/10 text-primary" : "bg-red/10 text-red"}`}>{category?.icone ? <FinancialIcon name={category.icone} /> : transaction.tipo === "receita" ? "+" : "−"}</span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{descricaoVisivel(transaction.descricao)}</strong><small className="text-xs text-foreground-muted">{category?.nome ?? "Sem categoria"} · {transaction.status === "paga" ? "Concluído" : "Pendente"}</small></span><strong data-private-value="true" className={transaction.tipo === "receita" ? "text-primary" : "text-red"}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong></article>; })}{selected.length === 0 && <p className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-foreground-muted">{selectedDate ? "Nenhum agendamento nesta data." : "Selecione um dia do calendário para ver os agendamentos."}</p>}</div>
+      <div className="mt-4 grid gap-2">{selected.map((transaction) => { const category = transaction.categoria_id ? categoryById.get(transaction.categoria_id) : null; return <button key={transaction.id} type="button" onClick={() => setDetailId(transaction.id)} aria-label={`Abrir detalhes de ${descricaoVisivel(transaction.descricao)}`} className="ff-focus flex w-full items-center gap-3 rounded-xl border border-border bg-surface-muted p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"><span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${transaction.tipo === "receita" ? "bg-primary/10 text-primary" : "bg-red/10 text-red"}`}>{category?.icone ? <FinancialIcon name={category.icone} /> : transaction.tipo === "receita" ? "+" : "−"}</span><span className="min-w-0 flex-1"><strong className="block truncate text-sm">{descricaoVisivel(transaction.descricao)}</strong><small className="text-xs text-foreground-muted">{category?.nome ?? "Sem categoria"} · {transaction.status === "paga" ? "Concluído" : "Pendente"}</small></span><strong data-private-value="true" className={transaction.tipo === "receita" ? "text-primary" : "text-red"}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong><span className="text-lg text-foreground-muted" aria-hidden="true">›</span></button>; })}{selected.length === 0 && <p className="rounded-xl border border-dashed border-border p-5 text-center text-sm text-foreground-muted">{selectedDate ? "Nenhum agendamento nesta data." : "Selecione um dia do calendário para ver os agendamentos."}</p>}</div>
     </section>
     {creating && <NewTransactionDialog accounts={accounts} goals={goals} categories={categories} today={today} initialDate={selectedDate ?? today} initialKind="despesa" onClose={() => setCreating(false)} onChanged={() => { setCreating(false); router.refresh(); }} />}
+    {detailId && <TransactionManager key={detailId} userId={userId} initialMonth={month} initialQuick={null} initialOpenNew={false} initialKind="despesa" initialFocusId={detailId} returnHomeAfterCreate={false} today={today} accounts={accounts} goals={goals} categories={categories} cards={cards} invoiceItems={invoiceItems} transactions={transactions} financialEvents={transactions} paymentSummaryRows={paymentSummaryRows} reconciledTransactionIds={reconciledTransactionIds} detailOnly onDetailClosed={() => setDetailId(null)} />}
   </div>;
 }

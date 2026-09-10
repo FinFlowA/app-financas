@@ -29,7 +29,17 @@ export async function getAppOrigin(): Promise<string> {
   const requestOrigin = asHttpOrigin(requestHeaders.get("origin"));
   if (requestOrigin) return requestOrigin;
 
-  return "http://localhost:3100";
+  // Server Actions podem chegar sem o header Origin. Nesse caso, durante o
+  // desenvolvimento, derive a origem da própria requisição para que o OAuth
+  // volte à porta em que o Next realmente está rodando.
+  const forwardedHost = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host");
+  const forwardedProtocol = requestHeaders.get("x-forwarded-proto") === "https" ? "https" : "http";
+  const requestHostOrigin = forwardedHost && !/[\r\n/\\]/.test(forwardedHost)
+    ? asHttpOrigin(`${forwardedProtocol}://${forwardedHost}`)
+    : null;
+  if (requestHostOrigin) return requestHostOrigin;
+
+  return "http://localhost:3000";
 }
 
 export function callbackUrl(origin: string, flow: "signup" | "recovery" | "oauth"): string {

@@ -1,4 +1,5 @@
-const STATIC_CACHE = "finflow-static-v3";
+const STATIC_CACHE = "finflow-static-v4";
+const LOCAL_DEVELOPMENT = self.location.hostname === "localhost" || self.location.hostname === "127.0.0.1";
 const STATIC_PATHS = ["/manifest.webmanifest", "/icon.png", "/apple-icon.png"];
 const NOTIFICATION_PATHS = new Set([
   "/", "/transacoes", "/objetivos", "/cartoes", "/relatorios",
@@ -16,15 +17,28 @@ function safeNotificationRoute(value) {
 }
 
 self.addEventListener("install", (event) => {
+  if (LOCAL_DEVELOPMENT) {
+    self.skipWaiting();
+    return;
+  }
   event.waitUntil(caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_PATHS)).catch(() => undefined));
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
+  if (LOCAL_DEVELOPMENT) {
+    event.waitUntil(Promise.all([
+      caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key)))),
+      self.registration.unregister(),
+    ]).then(() => self.clients.matchAll({ type: "window", includeUncontrolled: true }))
+      .then((clients) => Promise.all(clients.map((client) => client.navigate(client.url)))));
+    return;
+  }
   event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key)))).then(() => self.clients.claim()));
 });
 
 self.addEventListener("fetch", (event) => {
+  if (LOCAL_DEVELOPMENT) return;
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET" || url.origin !== self.location.origin) return;

@@ -64,6 +64,8 @@ type Props = {
   financialEvents: TransactionRow[];
   paymentSummaryRows: unknown[];
   reconciledTransactionIds: number[];
+  detailOnly?: boolean;
+  onDetailClosed?: () => void;
 };
 
 type HistoryKind = TransactionKind | "fatura";
@@ -501,7 +503,7 @@ function InvoiceCard({ invoice, today }: { invoice: InvoiceHistoryGroup; today: 
   </article>;
 }
 
-export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, goals, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds }: Props) {
+export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, goals, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds, detailOnly = false, onDetailClosed }: Props) {
   const router = useRouter();
   const reconciledIds = useMemo(() => new Set(reconciledTransactionIds), [reconciledTransactionIds]);
   const [month, setMonth] = useState(initialMonth);
@@ -666,7 +668,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     if (next.length > 0 && next.every((type) => type === "transferencia")) setCategoryIds([]);
     setLimit(PAGE_SIZE);
   }
-  function closeDetails() { detailRequest.current += 1; setDetail(null); setDetailHistory(null); setDetailError(null); setDetailLoading(false); }
+  function closeDetails(notifyParent = true) { detailRequest.current += 1; setDetail(null); setDetailHistory(null); setDetailError(null); setDetailLoading(false); if (notifyParent) onDetailClosed?.(); }
   function changed(message: string) { setNewOpen(false); setEditing(null); setCompleting(null); setDeleting(null); setReopening(null); closeDetails(); setFlash(message); router.refresh(); }
   function created(message: string) {
     setNewOpen(false);
@@ -729,6 +731,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     || categoryIds.length > 0;
 
   return <>
+    <div className={detailOnly ? "hidden" : undefined}>
     <header className="ff-page-hero mb-5 px-5 py-6 sm:px-7 sm:py-7">
       <div aria-hidden="true" className="absolute -right-20 -top-24 h-64 w-64 rounded-full border border-white/10" />
       <div className="relative flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
@@ -769,11 +772,12 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
       : <div key={item.key} className={focusedTransactionId === item.transaction.id ? "rounded-[22px] ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}><TransactionCard transaction={item.transaction} summary={summaryFor(item.transaction)} accounts={accounts} categories={categories} today={today} reconciled={reconciledIds.has(item.transaction.id)} onOpen={() => { void openDetails(item.transaction); }} /></div>)}</div>
     {filtered.length === 0 && <section className="ff-card grid min-h-48 place-content-center p-6 text-center"><p className="text-3xl">⌕</p><h2 className="mt-2 font-extrabold">Nenhum lançamento encontrado</h2><p className="mt-1 text-sm text-foreground-muted">Ajuste o período, a busca ou os filtros.</p></section>}
     {limit < filtered.length && <button type="button" onClick={() => setLimit((value) => value + PAGE_SIZE)} className="mx-auto mt-5 block rounded-full border border-primary px-5 py-2.5 text-sm font-extrabold text-primary">Mostrar mais {Math.min(PAGE_SIZE, filtered.length - limit)}</button>}
+    </div>
 
     {newOpen && <NewTransactionDialog accounts={accounts} goals={goals} categories={categories} today={today} initialKind={initialKind} onClose={() => setNewOpen(false)} onChanged={created} />}
-    {editing && <EditTransactionDialog transaction={editing} summary={summaryFor(editing)} accounts={accounts} categories={categories} userId={userId} onClose={() => setEditing(null)} onChanged={changed} />}
-    {completing && <CompleteTransactionDialog transaction={completing} today={today} onClose={() => setCompleting(null)} onChanged={changed} />}
-    {deleting && <DeleteTransactionDialog transaction={deleting} summary={summaryFor(deleting)} onClose={() => setDeleting(null)} onChanged={changed} />}
+    {editing && <EditTransactionDialog transaction={editing} summary={summaryFor(editing)} accounts={accounts} categories={categories} userId={userId} onClose={() => { setEditing(null); if (detailOnly) onDetailClosed?.(); }} onChanged={changed} />}
+    {completing && <CompleteTransactionDialog transaction={completing} today={today} onClose={() => { setCompleting(null); if (detailOnly) onDetailClosed?.(); }} onChanged={changed} />}
+    {deleting && <DeleteTransactionDialog transaction={deleting} summary={summaryFor(deleting)} onClose={() => { setDeleting(null); if (detailOnly) onDetailClosed?.(); }} onChanged={changed} />}
     {reopening && <ConfirmationDialog
       title={summaryFor(reopening).paymentCount > 0 ? "Reabrir o último pagamento?" : "Reabrir este lançamento?"}
       description={summaryFor(reopening).paymentCount > 0
@@ -781,7 +785,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
         : "O lançamento voltará a ficar pendente e deixará de compor os valores realizados."}
       confirmLabel={summaryFor(reopening).paymentCount > 0 ? "Reabrir último" : "Reabrir lançamento"}
       pending={operationBusy}
-      onClose={() => { if (!operationBusy) { setReopening(null); setOperationFeedback(null); } }}
+      onClose={() => { if (!operationBusy) { setReopening(null); setOperationFeedback(null); if (detailOnly) onDetailClosed?.(); } }}
       onConfirm={() => { void reopen(reopening); }}
     >
       <Feedback state={operationFeedback} />
@@ -794,10 +798,10 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
           {detailHistory?.reconciliationAdjustment && <div className="mt-3 grid gap-2 rounded-ff-sm border border-orange/25 bg-orange/5 p-3 sm:grid-cols-3"><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">Valor agendado</p><p data-private-value="true" className="mt-1 font-black text-foreground">{formatarReais(detailHistory.reconciliationAdjustment.scheduledAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-orange">Juros</p><p data-private-value="true" className="mt-1 font-black text-orange">+ {formatarReais(detailHistory.reconciliationAdjustment.interestAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-primary">Total realizado</p><p data-private-value="true" className="mt-1 font-black text-primary">{formatarReais(detailHistory.reconciliationAdjustment.totalAmount)}</p></div></div>}{detailLoading && <p className="mt-3 text-sm text-foreground-muted">Carregando pagamentos...</p>}{detailError && <p role="alert" className="mt-3 text-sm font-semibold text-red">{detailError}</p>}{detailHistory && detailHistory.payments.length > 0 && <div className="mt-3 space-y-2">{detailHistory.payments.map((payment) => <div key={payment.paymentId} className={`flex items-center justify-between gap-3 rounded-ff-sm border border-border px-3 py-2 text-sm ${payment.active ? "" : "opacity-55"}`}><div><p className="font-bold">{payment.active ? `Pagamento ${payment.paymentSequence}` : `Pagamento ${payment.paymentSequence} reaberto`}</p><p className="text-xs text-foreground-muted">{formatarData(payment.realizationDate)}{payment.adjustmentType !== "none" ? ` · ${payment.adjustmentType === "interest" ? "juros" : "desconto"} ${formatarReais(payment.adjustmentValue)}` : ""}</p></div><strong data-private-value="true" className={payment.active ? "text-primary" : "line-through"}>{formatarReais(payment.value)}</strong></div>)}</div>}
         </div>
         <Feedback state={operationFeedback} />
-        {!isPagamentoFatura(detail.descricao) ? <div className="flex flex-wrap justify-center gap-2">{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="w-full rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue sm:w-52">Editar</button>}{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="w-full rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white sm:w-52">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(); setReopening(selected); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="w-full rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red sm:w-52">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
-        <div className="flex justify-end"><button type="button" onClick={closeDetails} className="rounded-ff-sm border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Fechar</button></div>
+        {!isPagamentoFatura(detail.descricao) ? <div className="flex flex-wrap justify-center gap-2">{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(false); setEditing(selected); }} className="w-full rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue sm:w-52">Editar</button>}{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(false); setCompleting(selected); }} className="w-full rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white sm:w-52">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(false); setReopening(selected); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(false); setDeleting(selected); }} className="w-full rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red sm:w-52">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
+        <div className="flex justify-end"><button type="button" onClick={() => closeDetails()} className="rounded-ff-sm border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Fechar</button></div>
       </div>
     </Modal>}
-    <p className="mt-6 text-center text-xs text-foreground-muted">Precisa organizar contas ou categorias? <Link href="/contas" className="font-bold text-primary">Contas</Link> · <Link href="/categorias" className="font-bold text-primary">Categorias</Link></p>
+    {!detailOnly && <p className="mt-6 text-center text-xs text-foreground-muted">Precisa organizar contas ou categorias? <Link href="/contas" className="font-bold text-primary">Contas</Link> · <Link href="/categorias" className="font-bold text-primary">Categorias</Link></p>}
   </>;
 }

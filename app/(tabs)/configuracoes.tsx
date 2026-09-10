@@ -8,6 +8,7 @@ import {
   Alert,
   Animated,
   DeviceEventEmitter,
+  Image,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -672,6 +673,13 @@ export default function ConfiguracoesScreen() {
     "Usuário";
 
   const nomePlano = plano === "free" ? "Free" : plano === "smart" ? "Smart" : "Premium";
+  const provedoresLogin = session?.user?.app_metadata?.providers;
+  const loginGoogle = session?.user?.app_metadata?.provider === "google"
+    || (Array.isArray(provedoresLogin) && provedoresLogin.includes("google"));
+  const fotoGoogleCandidata = session?.user?.user_metadata?.avatar_url ?? session?.user?.user_metadata?.picture;
+  const fotoGoogle = loginGoogle && typeof fotoGoogleCandidata === "string" && /^https:\/\//i.test(fotoGoogleCandidata)
+    ? fotoGoogleCandidata
+    : null;
   const alturaCabecalho = scrollY.interpolate({
     inputRange: [0, SETTINGS_HEADER_COLLAPSE_DISTANCE],
     outputRange: [FinFlowTabHeader.expandedHeight, FinFlowTabHeader.compactHeight],
@@ -768,7 +776,7 @@ export default function ConfiguracoesScreen() {
             ]}
           >
             <View style={styles.compactProfileAvatar}>
-              <Text style={styles.compactProfileAvatarText}>{nomeUsuario.charAt(0).toUpperCase()}</Text>
+              {fotoGoogle ? <Image source={{ uri: fotoGoogle }} style={styles.profileAvatarImage} /> : <Text style={styles.compactProfileAvatarText}>{nomeUsuario.charAt(0).toUpperCase()}</Text>}
             </View>
             <View style={styles.compactProfileInfo}>
               <Text style={styles.compactHeaderTitle}>Configurações</Text>
@@ -829,7 +837,7 @@ export default function ConfiguracoesScreen() {
             activeOpacity={0.8}
           >
             <View style={styles.perfilAvatar}>
-              <Text style={styles.perfilAvatarLetra}>{nomeUsuario.charAt(0).toUpperCase()}</Text>
+              {fotoGoogle ? <Image source={{ uri: fotoGoogle }} style={styles.profileAvatarImage} /> : <Text style={styles.perfilAvatarLetra}>{nomeUsuario.charAt(0).toUpperCase()}</Text>}
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.perfilNome, { color: Cores.texto }]}>{nomeUsuario}</Text>
@@ -1472,6 +1480,7 @@ const styles = StyleSheet.create({
 
   perfilCard: { flexDirection: "row", alignItems: "center", padding: 16, borderRadius: 20, borderWidth: 1, marginBottom: 5, elevation: 5 },
   perfilAvatar: { width: 48, height: 48, borderRadius: 24, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginRight: 14 },
+  profileAvatarImage: { width: "100%", height: "100%", borderRadius: 999 },
   perfilAvatarLetra: { color: "#FFF", fontSize: 22, fontWeight: "bold" },
   perfilNome: { fontSize: 17, fontWeight: "bold" },
   perfilEmail: { fontSize: 13, marginTop: 2 },
