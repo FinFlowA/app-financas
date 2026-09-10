@@ -13,6 +13,9 @@ export async function GET(request: NextRequest) {
     provider: "google",
     options: {
       redirectTo: callbackUrl(origin, "oauth"),
+      queryParams: {
+        prompt: "select_account",
+      },
     },
   });
 

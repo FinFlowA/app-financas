@@ -133,18 +133,19 @@ export function LoginForm({ initialFeedback }: LoginFormProps) {
 
       <div className={styles.divider} aria-hidden="true">ou continue com</div>
 
-      <form action="/auth/oauth" method="get">
-        <input type="hidden" name="provider" value="google" />
-        <button type="submit" className={styles.socialButton}>
-          <svg className={styles.socialIcon} viewBox="0 0 48 48" aria-hidden="true">
+      <a
+        href="/auth/oauth?provider=google"
+        className={styles.socialButton}
+        aria-label="Continuar com Google"
+      >
+        <svg className={styles.socialIcon} viewBox="0 0 48 48" aria-hidden="true">
           <path fill="#FFC107" d="M43.6 20.5H42V20.4H24v7.2h11.3c-1.6 4.7-6.1 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.8 1.1 7.9 3l5.1-5.1C33.5 6.1 29 4.4 24 4.4 13.2 4.4 4.4 13.2 4.4 24S13.2 43.6 24 43.6 43.6 34.8 43.6 24c0-1.2-.1-2.4-.4-3.5z" />
           <path fill="#FF3D00" d="M6.3 14.7l5.9 4.3C13.9 15.5 18.6 12.4 24 12.4c3 0 5.8 1.1 7.9 3l5.1-5.1C33.5 6.1 29 4.4 24 4.4c-7.5 0-14 4.2-17.7 10.3z" />
           <path fill="#4CAF50" d="M24 43.6c4.9 0 9.4-1.9 12.7-4.9l-5.9-5c-1.9 1.5-4.4 2.4-6.8 2.4-5.2 0-9.6-3.3-11.3-7.9l-5.9 4.5c3.6 6.1 10.1 10.9 17.2 10.9z" />
           <path fill="#1976D2" d="M43.6 20.5H42V20.4H24v7.2h11.3c-.8 2.3-2.2 4.2-4.1 5.6l5.9 5c-.4.4 6.3-4.6 6.3-14.2 0-1.2-.1-2.4-.4-3.5z" />
-          </svg>
-          Continuar com Google
-        </button>
-      </form>
+        </svg>
+        Continuar com Google
+      </a>
 
       {state.canResendConfirmation && state.values?.email ? (
         <ResendConfirmationForm email={state.values.email} />

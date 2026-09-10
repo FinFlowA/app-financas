@@ -104,6 +104,9 @@ export async function signInWithOAuthAction(provider: OAuthProvider): Promise<vo
       provider,
       options: {
         redirectTo: callbackUrl(origin, "oauth"),
+        ...(provider === "google"
+          ? { queryParams: { prompt: "select_account" } }
+          : {}),
       },
     });
     if (!error && data.url) destination = data.url;
