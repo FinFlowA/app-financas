@@ -13,6 +13,7 @@ const nextConfig: NextConfig = {
   // qualidades além do padrão [75].
   images: {
     qualities: [100, 75],
+    remotePatterns: [{ protocol: "https", hostname: "**.googleusercontent.com" }],
   },
   async headers() {
     return [{

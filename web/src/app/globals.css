@@ -628,6 +628,7 @@ html.dark .ff-sidebar {
 }
 
 .ff-sidebar-profile__avatar {
+  position: relative;
   display: grid;
   width: 36px;
   height: 36px;
@@ -635,12 +636,17 @@ html.dark .ff-sidebar {
   place-items: center;
   border: 1px solid color-mix(in srgb, var(--ff-primary) 35%, transparent);
   border-radius: 11px;
+  overflow: hidden;
   background: var(--ff-primary-soft);
   background-position: center;
   background-size: cover;
   color: var(--ff-primary-dark);
   font-size: 0.85rem;
   font-weight: 900;
+}
+
+.ff-sidebar-profile__avatar-image {
+  object-fit: cover;
 }
 
 .ff-sidebar-profile strong,
