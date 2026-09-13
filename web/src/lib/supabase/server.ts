@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
+import { hardenAuthCookie } from "@/lib/auth/pkce-cookies";
 
 /** Cliente Supabase para Server Components, Server Actions e Route Handlers.
  * Crie uma instância nova a cada requisição — nunca reutilize entre requests. */
@@ -17,7 +18,7 @@ export async function createClient() {
         setAll(cookiesToSet) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options),
+              cookieStore.set(name, value, hardenAuthCookie(name, options)),
             );
           } catch {
             // Chamado a partir de um Server Component: o proxy.ts já cuida

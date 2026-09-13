@@ -2755,7 +2755,7 @@ export default function Dashboard() {
       {modalCatVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalCatVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, styles.categoryModalContent, { backgroundColor: Cores.cardFundo }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Criar Categoria</Text>
             <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
               <TouchableOpacity style={[styles.typeButton, tipoNovaCategoria === "despesa" && styles.expenseSelected]} onPress={() => setTipoNovaCategoria("despesa")}>
@@ -2773,26 +2773,36 @@ export default function Dashboard() {
               onChangeText={setNomeCategoria}
             />
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-            <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
+            <View style={styles.categoryOptionsGrid}>
               {PALETA_CORES.map((cor) => (
-                <TouchableOpacity key={cor} style={[styles.colorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]} onPress={() => setCorSelecionada(cor)} />
+                <TouchableOpacity
+                  key={cor}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: corSelecionada === cor }}
+                  accessibilityLabel={`Selecionar cor ${cor}`}
+                  style={[styles.colorOption, styles.categoryColorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
+                  onPress={() => setCorSelecionada(cor)}
+                />
               ))}
-            </ScrollView>
+            </View>
             <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 20 }}>
+            <View style={styles.categoryOptionsGrid}>
               {LISTA_ICONES.map((icone) => (
                 <TouchableOpacity
                   key={icone}
-                  style={[styles.iconeOpcao, { backgroundColor: iconeSelecionado === icone ? corSelecionada : Cores.pillFundo, marginRight: 8 }]}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: iconeSelecionado === icone }}
+                  accessibilityLabel={`Selecionar ícone ${icone}`}
+                  style={[styles.iconeOpcao, styles.categoryIconOption, { backgroundColor: iconeSelecionado === icone ? corSelecionada : Cores.pillFundo }]}
                   onPress={() => setIconeSelecionado(icone)}
                 >
-                  <MaterialIcons name={icone as any} size={20} color={iconeSelecionado === icone ? "#FFF" : Cores.textoSecundario} />
+                  <MaterialIcons name={icone as any} size={24} color={iconeSelecionado === icone ? "#FFF" : Cores.textoSecundario} />
                 </TouchableOpacity>
               ))}
-            </ScrollView>
-            <View style={styles.modalButtons}>
-              <Button title="Cancelar" color="#999" onPress={() => setModalCatVisivel(false)} />
-              <Button title={loadingCat ? "Salvando..." : "Salvar"} color="#2A9D8F" onPress={salvarCategoria} disabled={loadingCat} />
+            </View>
+            <View style={[styles.modalButtons, styles.categoryModalButtons]}>
+              <Button title="Cancelar" color="#59636A" onPress={() => setModalCatVisivel(false)} style={styles.categoryActionButton} />
+              <Button title={loadingCat ? "Salvando..." : "Salvar"} color="#2A9D8F" onPress={salvarCategoria} disabled={loadingCat} style={styles.categoryActionButton} />
             </View>
           </View>
         </View>
@@ -3363,6 +3373,12 @@ const styles = StyleSheet.create({
   colorPalette: { flexDirection: "row", gap: 8, paddingRight: 12, marginBottom: 20 },
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  categoryModalContent: { justifyContent: "flex-start" },
+  categoryOptionsGrid: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10, marginBottom: 20 },
+  categoryColorOption: { width: 40, height: 40, borderRadius: 20 },
+  categoryIconOption: { width: 46, height: 46, borderRadius: 12 },
+  categoryModalButtons: { justifyContent: "space-between", gap: 12, marginTop: 4 },
+  categoryActionButton: { flex: 1, minWidth: 0 },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
   typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   typeButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, alignItems: "center", justifyContent: "center" },

@@ -52,6 +52,13 @@ if (!flowScreen.includes('edges={["top", "right", "bottom", "left"]}')) {
 if (!home.includes('transactionForm: { flexGrow: 1') || !home.includes('marginTop: "auto"')) {
   throw new Error("A acao da tela de transacao precisa permanecer alinhada ao rodape.");
 }
+if (!home.includes('categoryOptionsGrid: { flexDirection: "row", flexWrap: "wrap"')) {
+  throw new Error("As cores e os icones da nova categoria precisam quebrar linha em telas estreitas.");
+}
+const newCategoryFlow = home.match(/\{\/\* MODAL NOVA CATEGORIA \*\/\}([\s\S]*?)\{\/\* MODAL RESUMO DO MÊS \*\/\}/)?.[1] ?? "";
+if (!newCategoryFlow.includes("styles.categoryOptionsGrid") || /<ScrollView\s+horizontal/.test(newCategoryFlow)) {
+  throw new Error("A tela de nova categoria nao pode cortar opcoes em uma lista horizontal.");
+}
 if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includes('offlineQueueList: { flex: 1')) {
   throw new Error("As acoes de notificacao e sincronizacao precisam permanecer alinhadas ao rodape.");
 }

@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { hardenAuthCookie } from "@/lib/auth/pkce-cookies";
 
 const PUBLIC_ROUTES = new Set([
   "/login",
@@ -34,13 +35,13 @@ const PUBLIC_PASSTHROUGH_ROUTES = new Set([
 
 /** Renova a sessão do Supabase a cada navegação e protege as rotas
  * autenticadas. Chamado pelo proxy.ts na raiz do projeto. */
-export async function updateSession(request: NextRequest) {
+export async function updateSession(request: NextRequest, requestHeaders = request.headers) {
   const pathname = request.nextUrl.pathname;
   if (PUBLIC_PASSTHROUGH_ROUTES.has(pathname)) {
-    return NextResponse.next({ request });
+    return NextResponse.next({ request: { headers: requestHeaders } });
   }
 
-  let supabaseResponse = NextResponse.next({ request });
+  let supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -52,9 +53,9 @@ export async function updateSession(request: NextRequest) {
         },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
-          supabaseResponse = NextResponse.next({ request });
+          supabaseResponse = NextResponse.next({ request: { headers: requestHeaders } });
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options),
+            supabaseResponse.cookies.set(name, value, hardenAuthCookie(name, options)),
           );
         },
       },

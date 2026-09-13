@@ -7,6 +7,10 @@ const loginForm = readFileSync(
   "utf8",
 );
 const nextConfig = readFileSync(resolve(process.cwd(), "next.config.ts"), "utf8");
+const cspPolicy = readFileSync(
+  resolve(process.cwd(), "src/lib/security/content-security-policy.ts"),
+  "utf8",
+);
 const oauthRoute = readFileSync(
   resolve(process.cwd(), "src/app/auth/oauth/route.ts"),
   "utf8",
@@ -19,7 +23,8 @@ describe("navegacao do login OAuth", () => {
   });
 
   it("mantem formularios restritos ao proprio site", () => {
-    expect(nextConfig).toContain('"form-action \'self\'"');
+    expect(cspPolicy).toContain('"form-action \'self\'"');
+    expect(nextConfig).toContain("poweredByHeader: false");
   });
 
   it("forca uma selecao nova para nao reutilizar sessao Google inconsistente", () => {
