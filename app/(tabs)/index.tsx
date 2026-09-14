@@ -2756,6 +2756,12 @@ export default function Dashboard() {
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalCatVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, styles.categoryModalContent, { backgroundColor: Cores.cardFundo }]}>
+            <ScrollView
+              style={styles.categoryModalScroll}
+              contentContainerStyle={styles.categoryModalBody}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Criar Categoria</Text>
             <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
               <TouchableOpacity style={[styles.typeButton, tipoNovaCategoria === "despesa" && styles.expenseSelected]} onPress={() => setTipoNovaCategoria("despesa")}>
@@ -2800,6 +2806,7 @@ export default function Dashboard() {
                 </TouchableOpacity>
               ))}
             </View>
+            </ScrollView>
             <View style={[styles.modalButtons, styles.categoryModalButtons]}>
               <Button title="Cancelar" color="#59636A" onPress={() => setModalCatVisivel(false)} style={styles.categoryActionButton} />
               <Button title={loadingCat ? "Salvando..." : "Salvar"} color="#2A9D8F" onPress={salvarCategoria} disabled={loadingCat} style={styles.categoryActionButton} />
@@ -3373,11 +3380,13 @@ const styles = StyleSheet.create({
   colorPalette: { flexDirection: "row", gap: 8, paddingRight: 12, marginBottom: 20 },
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  categoryModalContent: { justifyContent: "flex-start" },
+  categoryModalContent: { justifyContent: "flex-start", overflow: "hidden" },
+  categoryModalScroll: { flex: 1, minHeight: 0 },
+  categoryModalBody: { flexGrow: 1, paddingBottom: 8 },
   categoryOptionsGrid: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10, marginBottom: 20 },
   categoryColorOption: { width: 40, height: 40, borderRadius: 20 },
   categoryIconOption: { width: 46, height: 46, borderRadius: 12 },
-  categoryModalButtons: { justifyContent: "space-between", gap: 12, marginTop: 4 },
+  categoryModalButtons: { justifyContent: "space-between", gap: 12, marginTop: 8, paddingBottom: Platform.OS === "android" ? 24 : 12 },
   categoryActionButton: { flex: 1, minWidth: 0 },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
   typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
