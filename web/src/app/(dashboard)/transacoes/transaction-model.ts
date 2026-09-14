@@ -4,6 +4,7 @@ import {
   descricaoVisivel,
   getContaDestinoTransferencia,
   getIdSerie,
+  isMovimentoObjetivo,
 } from "@/lib/transacoes";
 
 export type TransactionRow = Transacao & {
@@ -175,7 +176,7 @@ export function normalizePaymentHistory(value: unknown, transaction: Transaction
 }
 
 export function transactionKind(transaction: TransactionRow): TransactionKind {
-  return transaction.descricao.includes("[Transf.]") ? "transferencia" : transaction.tipo;
+  return transaction.descricao.includes("[Transf.]") || isMovimentoObjetivo(transaction.descricao) ? "transferencia" : transaction.tipo;
 }
 
 export function visibleBaseDescription(description: string): string {

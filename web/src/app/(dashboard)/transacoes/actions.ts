@@ -366,26 +366,39 @@ export async function completeTransaction(formData: FormData): Promise<Transacti
 
 export async function reopenTransaction(formData: FormData): Promise<TransactionActionState> {
   const transactionId = formInteger(formData, "transaction_id");
+  const paymentId = formString(formData, "payment_id");
   if (!validId(transactionId)) return { erro: "Lançamento inválido." };
   const snapshot = await transactionSnapshot(transactionId);
   if (snapshot.erro || !snapshot.transacao) return { erro: snapshot.erro ?? "Lançamento inválido." };
   if (snapshot.transacao.transacao_pai_id !== null) return { erro: "Abra o lançamento principal para reabrir." };
   if (isPagamentoFatura(snapshot.transacao.descricao)) return { erro: "Estorne este pagamento pela tela do cartão." };
 
-  const result = await executeManualFinancialAction("reopen_transaction", {
-    transaction_id: transactionId,
-  }, requestId(formData));
-  if (result.erro) return { erro: result.erro };
+  if (paymentId) {
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(paymentId)) return { erro: "Pagamento inválido." };
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("reverse_selected_transaction_payment", {
+      p_transaction_id: transactionId,
+      p_payment_id: paymentId,
+      p_idempotency_key: requestId(formData),
+    });
+    if (error) return { erro: transactionError(error.message) };
+    if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) return { erro: "O servidor não confirmou a reabertura." };
+  } else {
+    const result = await executeManualFinancialAction("reopen_transaction", { transaction_id: transactionId }, requestId(formData));
+    if (result.erro) return { erro: result.erro };
+  }
   refreshTransactions();
-  return { erro: null, sucesso: "O lançamento foi reaberto e voltou a ficar pendente." };
+  return { erro: null, sucesso: paymentId ? "Pagamento reaberto." : "O lançamento foi reaberto e voltou a ficar pendente." };
 }
 
-export async function getTransactionPaymentHistory(transactionId: number): Promise<TransactionActionState<unknown>> {
+export async function getTransactionPaymentHistory(transactionId: number, includeReconciliationAdjustment = false): Promise<TransactionActionState<unknown>> {
   if (!validId(transactionId)) return { erro: "Lançamento inválido." };
   const supabase = await createClient();
   const [{ data, error }, adjustmentResult] = await Promise.all([
     supabase.rpc("get_transaction_payment_history", { p_transaction_id: transactionId }),
-    supabase.rpc("get_bank_reconciliation_adjustment", { p_transaction_id: transactionId }),
+    includeReconciliationAdjustment
+      ? supabase.rpc("get_bank_reconciliation_adjustment", { p_transaction_id: transactionId })
+      : Promise.resolve({ data: null, error: null }),
   ]);
   if (error) {
     if (error.code === "PGRST202") return { erro: null, dados: null };

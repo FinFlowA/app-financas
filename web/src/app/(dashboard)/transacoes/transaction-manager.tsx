@@ -6,6 +6,8 @@ import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useRef
 import { createPortal } from "react-dom";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import CurrencyInput from "@/components/ui/currency-input";
+import FinFlowDatePicker from "@/components/ui/finflow-date-picker";
+import FinFlowSelect from "@/components/ui/finflow-select";
 import { isAttentionDueDate } from "@/lib/date";
 import { formatarData, formatarReais } from "@/lib/format";
 import { historyFinancialTotals } from "@/lib/history-totals";
@@ -189,6 +191,7 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
   const [status, setStatus] = useState("paga");
   const [accountId, setAccountId] = useState("");
   const [destination, setDestination] = useState("");
+  const [categoryId, setCategoryId] = useState("");
   // A mesma chave precisa sobreviver a uma resposta perdida: se a primeira
   // tentativa chegou ao banco, reenviar o formulário reproduz o recibo em vez
   // de criar um segundo lançamento. O modal desmonta após o sucesso e, então,
@@ -221,14 +224,12 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
       <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
         <input type="hidden" name="kind" value={kind} />
         <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Tipo</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
-          {(["receita", "despesa", "transferencia"] as const).map((value) => <button key={value} type="button" aria-pressed={kind === value} onClick={() => setKind(value)} className={`ff-focus rounded-xl border px-2 py-3 text-xs font-extrabold transition sm:text-sm ${kind === value ? value === "receita" ? "border-primary bg-primary text-white shadow-sm" : value === "despesa" ? "border-red bg-red text-white shadow-sm" : "border-blue bg-blue text-white shadow-sm" : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "transferencia" ? "Transferência" : value.charAt(0).toUpperCase() + value.slice(1)}</button>)}
+          {(["receita", "despesa", "transferencia"] as const).map((value) => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setCategoryId(""); setDestination(""); }} className={`ff-focus rounded-xl border px-2 py-3 text-xs font-extrabold transition sm:text-sm ${kind === value ? value === "receita" ? "border-primary bg-primary text-white shadow-sm" : value === "despesa" ? "border-red bg-red text-white shadow-sm" : "border-blue bg-blue text-white shadow-sm" : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "transferencia" ? "Transferência" : value.charAt(0).toUpperCase() + value.slice(1)}</button>)}
         </div></fieldset>
         <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} placeholder={kind === "transferencia" ? "Ex.: Reserva para outra conta" : "Ex.: Mercado"} className={INPUT} /></Field>
         <Field label={frequency === "parcelada" && valueMode === "parcela" ? "Valor de cada parcela" : frequency === "parcelada" ? "Valor total" : "Valor"}><CurrencyInput name="value" required /></Field>
-        <Field label="Data"><input type="date" name="scheduled_date" required defaultValue={initialDate ?? today} className={INPUT} /></Field>
-        <Field label="Frequência"><select name="frequency" value={frequency} onChange={(event) => setFrequency(event.target.value)} className={INPUT}>
-          <option value="unica">Única</option><option value="parcelada">Parcelada</option><option value="semanal">Fixa semanal</option><option value="mensal">Fixa mensal</option><option value="anual">Fixa anual</option>
-        </select></Field>
+        <Field label="Data"><FinFlowDatePicker name="scheduled_date" required defaultValue={initialDate ?? today} /></Field>
+        <Field label="Frequência"><FinFlowSelect name="frequency" value={frequency} onChange={setFrequency} options={[{ value: "unica", label: "Única" }, { value: "parcelada", label: "Parcelada" }, { value: "semanal", label: "Fixa semanal" }, { value: "mensal", label: "Fixa mensal" }, { value: "anual", label: "Fixa anual" }]} /></Field>
         {frequency === "parcelada" ? <Field label="Parcelas"><input name="installments" type="number" min={2} max={120} defaultValue={2} required className={INPUT} /></Field> : <input type="hidden" name="installments" value="2" />}
         {frequency === "parcelada" && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">O valor informado é</legend><div className="grid grid-cols-2 gap-2">
           {[["total", "Total da série"], ["parcela", "De cada parcela"]].map(([value, label]) => <button key={value} type="button" onClick={() => setValueMode(value)} className={`rounded-ff-sm border px-3 py-2 text-sm font-bold ${valueMode === value ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted"}`}>{label}</button>)}
@@ -236,10 +237,10 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
         </div></fieldset>}
         {frequency !== "parcelada" && <input type="hidden" name="value_mode" value="total" />}
         {recurring && frequency !== "parcelada" && <p className="sm:col-span-2 text-xs text-foreground-muted">O FinFlow mantém automaticamente os próximos cinco anos desta recorrência.</p>}
-        <Field label="Conta de origem"><select name="account_id" required value={accountId} onChange={(event) => setAccountId(event.target.value)} className={INPUT}><option value="" disabled>Selecione</option>{activeAccounts.map((account) => <option key={account.id} value={account.id}>{account.nome}</option>)}</select></Field>
-        {kind === "transferencia" ? <Field label="Destino"><select required value={destination} onChange={(event) => setDestination(event.target.value)} className={INPUT}><option value="" disabled>Selecione uma conta ou objetivo</option><optgroup label="Contas">{activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => <option key={account.id} value={`account:${account.id}`}>{account.nome}</option>)}</optgroup>{goals.some((goal) => !goal.arquivado) && <optgroup label="Objetivos">{goals.filter((goal) => !goal.arquivado).map((goal) => <option key={goal.id} value={`goal:${goal.id}`}>{goal.nome}</option>)}</optgroup>}</select><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><select key={kind} name="category_id" required defaultValue="" className={INPUT}><option value="" disabled>Selecione</option>{compatibleCategories.map((category) => <option key={category.id} value={category.id}>{category.nome}</option>)}</select></Field>}
+        <Field label="Conta de origem"><FinFlowSelect name="account_id" required value={accountId} onChange={setAccountId} options={activeAccounts.map((account) => ({ value: String(account.id), label: account.nome }))} /></Field>
+        {kind === "transferencia" ? <Field label="Destino"><FinFlowSelect required value={destination} onChange={setDestination} placeholder="Selecione uma conta ou objetivo" options={[...activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => ({ value: `account:${account.id}`, label: account.nome, group: "Contas" })), ...goals.filter((goal) => !goal.arquivado).map((goal) => ({ value: `goal:${goal.id}`, label: goal.nome, group: "Objetivos" }))]} /><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><FinFlowSelect key={kind} name="category_id" required value={categoryId} onChange={setCategoryId} options={compatibleCategories.map((category) => ({ value: String(category.id), label: category.nome }))} /></Field>}
         {kind === "transferencia" && <input type="hidden" name="category_id" value="0" />}
-        {recurring ? <input type="hidden" name="status" value="pendente" /> : <Field label="Status"><select name="status" value={status} onChange={(event) => setStatus(event.target.value)} className={INPUT}><option value="paga">Concluído na data</option><option value="pendente">Pendente</option></select></Field>}
+        {recurring ? <input type="hidden" name="status" value="pendente" /> : <Field label="Status"><FinFlowSelect name="status" value={status} onChange={setStatus} options={[{ value: "paga", label: "Concluído na data" }, { value: "pendente", label: "Pendente" }]} /></Field>}
         {!recurring && <div className="hidden sm:block" />}
         {activeAccounts.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie ou reative uma conta antes de lançar.</p>}
         {kind !== "transferencia" && compatibleCategories.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie uma categoria ativa compatível antes de lançar.</p>}
@@ -297,9 +298,9 @@ function EditTransactionDialog({ transaction, summary, accounts, categories, use
       <input type="hidden" name="transaction_id" value={transaction.id} /><input type="hidden" name="expected_version" value={transaction.version} /><input type="hidden" name="series_scope" value={scope} />
       <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} defaultValue={visibleBaseDescription(transaction.descricao)} className={INPUT} /></Field>
       <Field label="Valor"><CurrencyInput name="value" defaultValue={Number(transaction.valor)} required /></Field>
-      <Field label="Data agendada"><input name="scheduled_date" type="date" required defaultValue={transaction.data_vencimento} className={INPUT} /></Field>
-      <Field label="Conta"><select name="account_id" required defaultValue={transaction.conta_id} className={INPUT}>{editableAccounts.map((account) => <option key={account.id} value={account.id}>{account.nome}{account.arquivado ? " (arquivada)" : ""}</option>)}</select></Field>
-      {transfer ? <div className="rounded-ff-sm bg-blue/10 p-3 text-xs text-blue"><strong>Destino preservado:</strong> {destination?.nome ?? "conta vinculada"}. Para trocar origem e destino, exclua os itens pendentes e crie outra transferência.</div> : <Field label="Categoria"><select name="category_id" required defaultValue={transaction.categoria_id ?? ""} className={INPUT}>{compatibleCategories.map((category) => <option key={category.id} value={category.id}>{category.nome}{!isActiveCategory(category) ? " (arquivada)" : ""}</option>)}</select></Field>}
+      <Field label="Data agendada"><FinFlowDatePicker name="scheduled_date" required defaultValue={transaction.data_vencimento} /></Field>
+      <Field label="Conta"><FinFlowSelect name="account_id" required defaultValue={String(transaction.conta_id)} options={editableAccounts.map((account) => ({ value: String(account.id), label: `${account.nome}${account.arquivado ? " (arquivada)" : ""}` }))} /></Field>
+      {transfer ? <div className="rounded-ff-sm bg-blue/10 p-3 text-xs text-blue"><strong>Destino preservado:</strong> {destination?.nome ?? "conta vinculada"}. Para trocar origem e destino, exclua os itens pendentes e crie outra transferência.</div> : <Field label="Categoria"><FinFlowSelect name="category_id" required defaultValue={String(transaction.categoria_id ?? "")} options={compatibleCategories.map((category) => ({ value: String(category.id), label: `${category.nome}${!isActiveCategory(category) ? " (arquivada)" : ""}` }))} /></Field>}
       {transfer && <input type="hidden" name="category_id" value="0" />}
       {canEditSeries && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Aplicar a</legend><div className="grid gap-2 sm:grid-cols-2">{[["one", "Somente este item"], ["open_series", "Todos os itens pendentes da série"]].map(([value, label]) => <button key={value} type="button" onClick={() => setScope(value as typeof scope)} className={`rounded-ff-sm border px-3 py-2.5 text-sm font-bold ${scope === value ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted"}`}>{label}</button>)}</div></fieldset>}
       {summary.paymentCount > 0 && <p className="sm:col-span-2 rounded-ff-sm bg-orange/10 p-3 text-xs font-semibold text-orange">Como existem pagamentos registrados, somente o saldo deste item pode ser editado. As baixas anteriores permanecem no detalhe.</p>}
@@ -373,9 +374,9 @@ function CompleteTransactionDialog({ transaction, today, onClose, onChanged }: {
   return <Modal title="Concluir lançamento" subtitle={`Agendado para ${formatarData(transaction.data_vencimento)}.`} onClose={onClose}>
     <form onSubmit={submit} className="grid gap-4">
       <input type="hidden" name="transaction_id" value={transaction.id} /><input type="hidden" name="expected_value" value={scheduled} />
-      <Field label="Data da realização"><input name="realization_date" type="date" required max={today} value={realizationDate} onChange={(event) => setRealizationDate(event.target.value)} className={INPUT} /></Field>
+      <Field label="Data da realização"><FinFlowDatePicker name="realization_date" required max={today} value={realizationDate} defaultValue={today} onChange={setRealizationDate} /></Field>
       {common ? <>
-        {adjustmentAllowed ? <Field label="Juros ou desconto"><select name="adjustment_type" value={adjustmentType} onChange={(event) => { setAdjustmentType(event.target.value as typeof adjustmentType); setAdjustmentValue(0); }} className={INPUT}><option value="none">Sem ajuste</option><option value="interest">Juros</option><option value="discount">Desconto</option></select></Field> : <input type="hidden" name="adjustment_type" value="none" />}
+        {adjustmentAllowed ? <Field label="Juros ou desconto"><FinFlowSelect name="adjustment_type" value={adjustmentType} onChange={(next) => { setAdjustmentType(next as typeof adjustmentType); setAdjustmentValue(0); }} options={[{ value: "none", label: "Sem ajuste" }, { value: "interest", label: "Juros" }, { value: "discount", label: "Desconto" }]} /></Field> : <input type="hidden" name="adjustment_type" value="none" />}
         {adjustmentAllowed && adjustmentType !== "none" && <Field label={`Valor do ${adjustmentType === "interest" ? "juros" : "desconto"}`}><CurrencyInput name="adjustment_value" required onValueChange={(formatted) => setAdjustmentValue(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>}
         <Field label={transaction.tipo === "receita" ? "Quanto foi recebido?" : "Quanto foi pago?"}><CurrencyInput key={principalDue} name="principal_display" defaultValue={principalDue} onValueChange={(formatted) => setPrincipal(Number(formatted.replace(/\./g, "").replace(",", ".")) || 0)} /></Field>
         <input type="hidden" name="realized_value" value={enteredAccount} />
@@ -466,6 +467,7 @@ function TransactionCard({ transaction, summary, accounts, categories, today, re
   const category = categories.find((item) => item.id === transaction.categoria_id);
   const effectiveDate = effectiveTransactionDate(transaction, summary);
   const partial = summary.paymentCount > 0 && summary.remainingValue > 0;
+  const displayValue = partial ? summary.remainingValue : summary.totalValue;
   const status = summary.isFullyPaid ? "Concluído" : partial ? "Parcial" : transaction.data_vencimento < today ? "Atrasado" : transaction.data_vencimento === today ? "Hoje" : "Pendente";
   const statusClass = summary.isFullyPaid ? "bg-primary-soft text-primary-dark" : status === "Atrasado" ? "bg-red/10 text-red" : "bg-orange/10 text-orange";
   const valueClass = kind === "receita" ? "text-primary" : kind === "despesa" ? "text-red" : "text-blue";
@@ -474,7 +476,7 @@ function TransactionCard({ transaction, summary, accounts, categories, today, re
   return <article className="ff-card group overflow-hidden border-white/5 shadow-[0_12px_34px_rgba(0,0,0,0.07)] transition duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-[0_18px_44px_rgba(0,0,0,0.13)]"><button type="button" onClick={onOpen} className="ff-focus grid w-full gap-3 p-4 text-left sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:items-center">
     <div className="hidden h-14 w-14 place-content-center rounded-2xl border border-border/60 bg-surface-muted/75 text-center transition group-hover:border-primary/25 sm:grid"><span className="text-lg font-black text-foreground">{effectiveDate.slice(8, 10)}</span><span className="text-[10px] font-bold uppercase text-foreground-muted">{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${effectiveDate}T12:00:00Z`)).replace(".", "")}</span></div>
     <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${kind === "receita" ? "bg-primary-soft text-primary-dark" : kind === "despesa" ? "bg-red/10 text-red" : "bg-blue/10 text-blue"}`}>{kind === "transferencia" ? "Transferência" : kind}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${statusClass}`}>{status}</span>{recurrence && <span className="rounded-full bg-purple/10 px-2.5 py-1 text-[10px] font-bold text-purple">{recurrence}</span>}</div><h2 className="mt-2 truncate font-extrabold text-foreground">{descricaoVisivel(transaction.descricao)}</h2><div className="mt-1 flex flex-wrap gap-x-2 text-xs font-semibold text-foreground-muted"><span className="sm:hidden">{formatarData(effectiveDate)}</span>{account && <span style={{ color: account.cor }}>{account.nome}</span>}{destination && <span>→ {destination.nome}</span>}{category && <span style={{ color: category.cor }}>{category.nome}</span>}</div>{partial && <p data-private-value="true" className="mt-2 text-xs font-semibold text-orange">Realizado {formatarReais(summary.paidTotal)} · falta {formatarReais(summary.remainingValue)}</p>}</div>
-    <div className="flex items-center justify-between gap-3 sm:block sm:text-right"><span className="text-xs font-semibold text-primary sm:hidden">Ver detalhes</span><div><p data-private-value="true" className={`text-lg font-black ${valueClass}`}>{kind === "receita" ? "+ " : kind === "despesa" ? "- " : "↔ "}{formatarReais(summary.totalValue)}</p>{reconciled && <span className="mt-1 inline-block rounded-full bg-blue/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-blue">Conciliado</span>}<p className="mt-1 hidden text-xs font-semibold text-primary sm:block">Ver detalhes ›</p></div></div>
+    <div className="flex items-center justify-between gap-3 sm:block sm:text-right"><span className="text-xs font-semibold text-primary sm:hidden">Ver detalhes</span><div><p data-private-value="true" className={`text-lg font-black ${valueClass}`}>{kind === "receita" ? "+ " : kind === "despesa" ? "- " : "↔ "}{formatarReais(displayValue)}</p>{reconciled && <span className="mt-1 inline-block rounded-full bg-blue/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-blue">Conciliado</span>}<p className="mt-1 hidden text-xs font-semibold text-primary sm:block">Ver detalhes ›</p></div></div>
   </button></article>;
 }
 
@@ -516,8 +518,10 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   const [newOpen, setNewOpen] = useState(initialOpenNew);
   const [detail, setDetail] = useState<TransactionRow | null>(null);
   const [detailHistory, setDetailHistory] = useState<PaymentHistory | null>(null);
+  const [detailHistoryReady, setDetailHistoryReady] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
+  const [selectedPaymentIds, setSelectedPaymentIds] = useState<string[]>([]);
   const [editing, setEditing] = useState<TransactionRow | null>(null);
   const [completing, setCompleting] = useState<TransactionRow | null>(null);
   const [deleting, setDeleting] = useState<TransactionRow | null>(null);
@@ -526,6 +530,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   const [operationFeedback, setOperationFeedback] = useState<TransactionActionState | null>(null);
   const [flash, setFlash] = useState<string | null>(null);
   const detailRequest = useRef(0);
+  const paymentHistoryCache = useRef(new Map<number, PaymentHistory>());
   const focusedFromShortcut = useRef<number | null>(null);
 
   useEffect(() => {
@@ -574,7 +579,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   }
 
   function matchesPeriod(transaction: TransactionRow, candidate: PeriodFilter): boolean {
-    const summary = summaryFor(transaction);
+    const summary = summaryById.get(transaction.id) ?? normalizePaymentSummary(null, transaction);
     const date = effectiveTransactionDate(transaction, summary);
     if (candidate === "attention") return !summary.isFullyPaid && isAttentionDueDate(transaction.data_vencimento, today);
     if (candidate === "overdue") return !summary.isFullyPaid && transaction.data_vencimento < today;
@@ -668,7 +673,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     if (next.length > 0 && next.every((type) => type === "transferencia")) setCategoryIds([]);
     setLimit(PAGE_SIZE);
   }
-  function closeDetails() { detailRequest.current += 1; setDetail(null); setDetailHistory(null); setDetailError(null); setDetailLoading(false); }
+  function closeDetails() { detailRequest.current += 1; setDetail(null); setDetailHistory(null); setDetailHistoryReady(false); setDetailError(null); setDetailLoading(false); setSelectedPaymentIds([]); }
   function dismissDetails() { closeDetails(); onDetailClosed?.(); }
   function changed(message: string) { setNewOpen(false); setEditing(null); setCompleting(null); setDeleting(null); setReopening(null); dismissDetails(); setFlash(message); router.refresh(); }
   function created(message: string) {
@@ -684,17 +689,39 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   const openDetails = useCallback(async (transaction: TransactionRow) => {
     const requestNumber = detailRequest.current + 1;
     detailRequest.current = requestNumber;
-    setDetail(transaction); setDetailHistory(null); setDetailError(null); setDetailLoading(true); setOperationFeedback(null);
+    const cached = paymentHistoryCache.current.get(transaction.id) ?? null;
+    const summary = summaryById.get(transaction.id) ?? normalizePaymentSummary(null, transaction);
+    const childPayments = financialEvents
+      .filter((item) => item.transacao_pai_id === transaction.id && item.status === "paga")
+      .sort((first, second) => first.id - second.id);
+    const previewPayments = childPayments.map((item, index) => ({ paymentId: `preview-${item.id}`, paymentSequence: index + 1, transactionId: item.id, value: Number(item.valor), realizationDate: item.data_realizacao ?? item.data_vencimento, adjustmentType: "none" as const, adjustmentValue: 0, active: true, reopenedAt: null, createdAt: null }));
+    if (transaction.status === "paga" && summary.paymentCount > previewPayments.length) previewPayments.push({ paymentId: `preview-${transaction.id}`, paymentSequence: summary.paymentCount, transactionId: transaction.id, value: Number(transaction.valor), realizationDate: transaction.data_realizacao ?? transaction.data_vencimento, adjustmentType: "none", adjustmentValue: 0, active: true, reopenedAt: null, createdAt: null });
+    const preview: PaymentHistory | null = previewPayments.length > 0 ? { summary, payments: previewPayments.reverse(), reconciliationAdjustment: null } : null;
+    setDetail(transaction); setDetailHistory(cached ?? preview); setDetailHistoryReady(Boolean(cached)); setDetailError(null); setDetailLoading(!cached && !preview); setSelectedPaymentIds([]); setOperationFeedback(null);
+    if (cached) return;
     try {
-      const result = await getTransactionPaymentHistory(transaction.id);
+      const result = await getTransactionPaymentHistory(transaction.id, reconciledIds.has(transaction.id));
       if (detailRequest.current !== requestNumber) return;
       setDetailLoading(false);
       if (result.erro) return setDetailError(result.erro);
-      if (result.dados) setDetailHistory(normalizePaymentHistory(result.dados, transaction));
+      if (result.dados) {
+        const normalized = normalizePaymentHistory(result.dados, transaction);
+        paymentHistoryCache.current.set(transaction.id, normalized);
+        setDetailHistory(normalized);
+        setDetailHistoryReady(true);
+      }
     } catch {
       if (detailRequest.current === requestNumber) { setDetailLoading(false); setDetailError(UNEXPECTED_ACTION_ERROR.erro); }
     }
-  }, []);
+  }, [financialEvents, reconciledIds, summaryById]);
+
+  const prefetchDetails = useCallback(async (transaction: TransactionRow) => {
+    if (paymentHistoryCache.current.has(transaction.id)) return;
+    try {
+      const result = await getTransactionPaymentHistory(transaction.id, reconciledIds.has(transaction.id));
+      if (result.dados) paymentHistoryCache.current.set(transaction.id, normalizePaymentHistory(result.dados, transaction));
+    } catch { /* A abertura do modal fará nova tentativa e exibirá o erro. */ }
+  }, [reconciledIds]);
 
   useEffect(() => {
     if (!initialFocusId || !focusedTransaction || focusedFromShortcut.current === initialFocusId) return;
@@ -715,6 +742,33 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
       changed(result.sucesso ?? "Lançamento reaberto.");
     } catch { setOperationFeedback(UNEXPECTED_ACTION_ERROR); }
     finally { setOperationBusy(false); }
+  }
+
+  async function reopenSelectedPayments(transaction: TransactionRow) {
+    if (operationBusy || !detailHistory || selectedPaymentIds.length === 0) return;
+    const active = detailHistory.payments.filter((payment) => payment.active);
+    const selected = active.filter((payment) => selectedPaymentIds.includes(payment.paymentId));
+    setOperationBusy(true); setOperationFeedback(null);
+    try {
+      for (const payment of selected) {
+        const formData = new FormData();
+        formData.set("transaction_id", String(transaction.id));
+        formData.set("payment_id", payment.paymentId);
+        formData.set("request_id", crypto.randomUUID());
+        const result = await reopenTransaction(formData);
+        if (result.erro) return setOperationFeedback(result);
+      }
+      changed(selected.length === 1 ? "Pagamento reaberto." : `${selected.length} pagamentos reabertos.`);
+    } catch { setOperationFeedback(UNEXPECTED_ACTION_ERROR); }
+    finally { setOperationBusy(false); }
+  }
+
+  function togglePayment(paymentId: string) {
+    if (!detailHistory || !detailHistoryReady) return;
+    setSelectedPaymentIds((current) => current.includes(paymentId)
+      ? current.filter((id) => id !== paymentId)
+      : [...current, paymentId]);
+    setOperationFeedback(null);
   }
 
   const accountSummary = accountIds.length === 0 ? "Todas" : accountIds.length === 1 ? accounts.find((account) => account.id === accountIds[0])?.nome ?? "1 conta" : `${accountIds.length} contas`;
@@ -770,7 +824,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     <div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-extrabold text-foreground">Linha do tempo</h2><span className="text-xs font-semibold text-foreground-muted">Mais recentes primeiro</span></div>
     <div className="grid gap-3">{filtered.slice(0, limit).map((item) => item.kind === "invoice"
       ? <InvoiceCard key={item.key} invoice={item.invoice} today={today} />
-      : <div key={item.key} className={focusedTransactionId === item.transaction.id ? "rounded-[22px] ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}><TransactionCard transaction={item.transaction} summary={summaryFor(item.transaction)} accounts={accounts} categories={categories} today={today} reconciled={reconciledIds.has(item.transaction.id)} onOpen={() => { void openDetails(item.transaction); }} /></div>)}</div>
+      : <div key={item.key} onPointerEnter={() => { void prefetchDetails(item.transaction); }} onFocus={() => { void prefetchDetails(item.transaction); }} className={focusedTransactionId === item.transaction.id ? "rounded-[22px] ring-2 ring-primary ring-offset-2 ring-offset-background" : ""}><TransactionCard transaction={item.transaction} summary={summaryFor(item.transaction)} accounts={accounts} categories={categories} today={today} reconciled={reconciledIds.has(item.transaction.id)} onOpen={() => { void openDetails(item.transaction); }} /></div>)}</div>
     {filtered.length === 0 && <section className="ff-card grid min-h-48 place-content-center p-6 text-center"><p className="text-3xl">⌕</p><h2 className="mt-2 font-extrabold">Nenhum lançamento encontrado</h2><p className="mt-1 text-sm text-foreground-muted">Ajuste o período, a busca ou os filtros.</p></section>}
     {limit < filtered.length && <button type="button" onClick={() => setLimit((value) => value + PAGE_SIZE)} className="mx-auto mt-5 block rounded-full border border-primary px-5 py-2.5 text-sm font-extrabold text-primary">Mostrar mais {Math.min(PAGE_SIZE, filtered.length - limit)}</button>}
     </div>
@@ -794,12 +848,12 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
 
     {detail && detailSummary && <Modal title="Detalhes do lançamento" subtitle={recurrenceLabel(detail.descricao) ?? undefined} onClose={dismissDetails} wide>
       <div className="grid gap-5">
-        <div className="rounded-ff-md bg-surface-muted p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-foreground-muted">{transactionKind(detail) === "transferencia" ? "Transferência" : detail.tipo}</p><h3 className="mt-1 text-lg font-extrabold">{descricaoVisivel(detail.descricao)}</h3></div><p data-private-value="true" className={`text-xl font-black ${transactionKind(detail) === "receita" ? "text-primary" : transactionKind(detail) === "despesa" ? "text-red" : "text-blue"}`}>{formatarReais(detailSummary.totalValue)}</p></div><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-foreground-muted">Conta</dt><dd className="font-bold">{accounts.find((account) => account.id === detail.conta_id)?.nome ?? "Conta indisponível"}{destinationAccount(detail, accounts) ? ` → ${destinationAccount(detail, accounts)?.nome}` : ""}</dd></div><div><dt className="text-xs text-foreground-muted">Categoria</dt><dd className="font-bold">{categories.find((category) => category.id === detail.categoria_id)?.nome ?? "Não se aplica"}</dd></div><div><dt className="text-xs text-foreground-muted">Agendado</dt><dd className="font-bold">{formatarData(detail.data_vencimento)}</dd></div><div><dt className="text-xs text-foreground-muted">Última realização</dt><dd className="font-bold">{detailSummary.lastRealizationDate ? formatarData(detailSummary.lastRealizationDate) : "Ainda não realizada"}</dd></div></dl></div>
+        <div className="rounded-ff-md bg-surface-muted p-4"><div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold uppercase text-foreground-muted">{transactionKind(detail) === "transferencia" ? "Transferência" : detail.tipo}</p><h3 className="mt-1 text-lg font-extrabold">{descricaoVisivel(detail.descricao)}</h3></div><div className="text-right"><p className="text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">{detailSummary.remainingValue > 0 ? "Valor em aberto" : "Valor do lançamento"}</p><p data-private-value="true" className={`text-xl font-black ${transactionKind(detail) === "receita" ? "text-primary" : transactionKind(detail) === "despesa" ? "text-red" : "text-blue"}`}>{formatarReais(detailSummary.remainingValue > 0 ? detailSummary.remainingValue : detailSummary.totalValue)}</p></div></div><dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2"><div><dt className="text-xs text-foreground-muted">Conta</dt><dd className="font-bold">{accounts.find((account) => account.id === detail.conta_id)?.nome ?? "Conta indisponível"}{destinationAccount(detail, accounts) ? ` → ${destinationAccount(detail, accounts)?.nome}` : ""}</dd></div><div><dt className="text-xs text-foreground-muted">Categoria</dt><dd className="font-bold">{categories.find((category) => category.id === detail.categoria_id)?.nome ?? "Não se aplica"}</dd></div><div><dt className="text-xs text-foreground-muted">Agendado</dt><dd className="font-bold">{formatarData(detail.data_vencimento)}</dd></div><div><dt className="text-xs text-foreground-muted">Última realização</dt><dd className="font-bold">{detailSummary.lastRealizationDate ? formatarData(detailSummary.lastRealizationDate) : "Ainda não realizada"}</dd></div></dl></div>
         <div><div className="flex items-center justify-between"><h3 className="font-extrabold">Pagamentos</h3>{detailSummary.paymentCount > 0 && <span className="rounded-full bg-orange/10 px-2.5 py-1 text-xs font-bold text-orange">{detailSummary.paymentCount} {detailSummary.paymentCount === 1 ? "baixa" : "baixas"}</span>}</div><div className="mt-3 grid grid-cols-3 gap-2"><div className="rounded-ff-sm bg-surface-muted p-3"><p className="text-[10px] font-bold uppercase text-foreground-muted">Total</p><p data-private-value="true" className="mt-1 text-sm font-black">{formatarReais(detailSummary.totalValue)}</p></div><div className="rounded-ff-sm bg-primary-soft p-3"><p className="text-[10px] font-bold uppercase text-primary-dark">Realizado</p><p data-private-value="true" className="mt-1 text-sm font-black text-primary-dark">{formatarReais(detailSummary.paidTotal)}</p></div><div className="rounded-ff-sm bg-orange/10 p-3"><p className="text-[10px] font-bold uppercase text-orange">Restante</p><p data-private-value="true" className="mt-1 text-sm font-black text-orange">{formatarReais(detailSummary.remainingValue)}</p></div></div>
-          {detailHistory?.reconciliationAdjustment && <div className="mt-3 grid gap-2 rounded-ff-sm border border-orange/25 bg-orange/5 p-3 sm:grid-cols-3"><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">Valor agendado</p><p data-private-value="true" className="mt-1 font-black text-foreground">{formatarReais(detailHistory.reconciliationAdjustment.scheduledAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-orange">Juros</p><p data-private-value="true" className="mt-1 font-black text-orange">+ {formatarReais(detailHistory.reconciliationAdjustment.interestAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-primary">Total realizado</p><p data-private-value="true" className="mt-1 font-black text-primary">{formatarReais(detailHistory.reconciliationAdjustment.totalAmount)}</p></div></div>}{detailLoading && <p className="mt-3 text-sm text-foreground-muted">Carregando pagamentos...</p>}{detailError && <p role="alert" className="mt-3 text-sm font-semibold text-red">{detailError}</p>}{detailHistory && detailHistory.payments.length > 0 && <div className="mt-3 space-y-2">{detailHistory.payments.map((payment) => <div key={payment.paymentId} className={`flex items-center justify-between gap-3 rounded-ff-sm border border-border px-3 py-2 text-sm ${payment.active ? "" : "opacity-55"}`}><div><p className="font-bold">{payment.active ? `Pagamento ${payment.paymentSequence}` : `Pagamento ${payment.paymentSequence} reaberto`}</p><p className="text-xs text-foreground-muted">{formatarData(payment.realizationDate)}{payment.adjustmentType !== "none" ? ` · ${payment.adjustmentType === "interest" ? "juros" : "desconto"} ${formatarReais(payment.adjustmentValue)}` : ""}</p></div><strong data-private-value="true" className={payment.active ? "text-primary" : "line-through"}>{formatarReais(payment.value)}</strong></div>)}</div>}
+          {detailHistory?.reconciliationAdjustment && <div className="mt-3 grid gap-2 rounded-ff-sm border border-orange/25 bg-orange/5 p-3 sm:grid-cols-3"><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">Valor agendado</p><p data-private-value="true" className="mt-1 font-black text-foreground">{formatarReais(detailHistory.reconciliationAdjustment.scheduledAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-orange">Juros</p><p data-private-value="true" className="mt-1 font-black text-orange">+ {formatarReais(detailHistory.reconciliationAdjustment.interestAmount)}</p></div><div><p className="text-[10px] font-extrabold uppercase tracking-wide text-primary">Total realizado</p><p data-private-value="true" className="mt-1 font-black text-primary">{formatarReais(detailHistory.reconciliationAdjustment.totalAmount)}</p></div></div>}{detailLoading && <div role="status" className="mt-3 h-14 animate-pulse rounded-ff-sm bg-surface-muted" aria-label="Carregando pagamentos" />}{detailError && <p role="alert" className="mt-3 text-sm font-semibold text-red">{detailError}</p>}{detailHistory && detailHistory.payments.length > 0 && <div className="mt-3 space-y-2"><p className="text-xs text-foreground-muted">Marque uma ou mais baixas. Cada pagamento será reaberto de forma independente e seu valor voltará ao saldo em aberto.</p>{detailHistory.payments.map((payment) => <label key={payment.paymentId} className={`flex min-h-14 cursor-pointer items-center gap-3 rounded-ff-sm border px-3 py-2 text-sm transition ${selectedPaymentIds.includes(payment.paymentId) ? "border-orange bg-orange/10" : "border-border hover:border-orange/40"} ${payment.active ? "" : "pointer-events-none opacity-55"}`}><input type="checkbox" disabled={!payment.active} checked={selectedPaymentIds.includes(payment.paymentId)} onChange={() => togglePayment(payment.paymentId)} className="h-5 w-5 shrink-0 accent-primary" /><div className="min-w-0 flex-1"><p className="font-bold">{payment.active ? `Pagamento ${payment.paymentSequence}` : `Pagamento ${payment.paymentSequence} reaberto`}</p><p className="text-xs text-foreground-muted">{formatarData(payment.realizationDate)}{payment.adjustmentType !== "none" ? ` · ${payment.adjustmentType === "interest" ? "juros" : "desconto"} ${formatarReais(payment.adjustmentValue)}` : ""}</p></div><strong data-private-value="true" className={payment.active ? "text-primary" : "line-through"}>{formatarReais(payment.value)}</strong></label>)}</div>}
         </div>
         <Feedback state={operationFeedback} />
-        {!isPagamentoFatura(detail.descricao) ? <div className="flex flex-wrap justify-center gap-2">{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="w-full rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue sm:w-52">Editar</button>}{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="w-full rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white sm:w-52">Concluir</button>}{(detailSummary.isFullyPaid || detailSummary.paymentCount > 0) && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(); setReopening(selected); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">{detailSummary.paymentCount > 0 ? "Reabrir último" : "Reabrir"}</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="w-full rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red sm:w-52">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
+        {!isPagamentoFatura(detail.descricao) ? <div className="flex flex-wrap justify-center gap-2">{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setEditing(selected); }} className="w-full rounded-ff-sm border border-blue/35 bg-blue/10 px-3 py-2.5 text-sm font-bold text-blue sm:w-52">Editar</button>}{!detailSummary.isFullyPaid && <button type="button" onClick={() => { const selected = detail; closeDetails(); setCompleting(selected); }} className="w-full rounded-ff-sm bg-primary px-3 py-2.5 text-sm font-bold text-white sm:w-52">Concluir</button>}{detailSummary.paymentCount > 0 ? <button type="button" disabled={operationBusy || selectedPaymentIds.length === 0} onClick={() => { void reopenSelectedPayments(detail); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">{operationBusy ? "Reabrindo..." : selectedPaymentIds.length > 1 ? `Reabrir ${selectedPaymentIds.length} pagamentos` : "Reabrir pagamento"}</button> : detailSummary.isFullyPaid && <button type="button" disabled={operationBusy} onClick={() => { const selected = detail; setOperationFeedback(null); closeDetails(); setReopening(selected); }} className="w-full rounded-ff-sm border border-orange/40 bg-orange/10 px-3 py-2.5 text-sm font-bold text-orange disabled:opacity-50 sm:w-52">Reabrir</button>}{detailSummary.paymentCount === 0 && <button type="button" onClick={() => { const selected = detail; closeDetails(); setDeleting(selected); }} className="w-full rounded-ff-sm border border-red/40 bg-red/10 px-3 py-2.5 text-sm font-bold text-red sm:w-52">Excluir</button>}</div> : <p className="rounded-ff-sm bg-orange/10 p-3 text-sm font-semibold text-orange">Este item pertence a um pagamento de fatura. Use a tela do cartão para estornar com segurança.</p>}
         <div className="flex justify-end"><button type="button" onClick={dismissDetails} className="rounded-ff-sm border border-border px-5 py-2.5 text-sm font-bold text-foreground-muted">Fechar</button></div>
       </div>
     </Modal>}
