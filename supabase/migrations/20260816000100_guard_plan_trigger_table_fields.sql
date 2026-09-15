@@ -130,6 +130,11 @@ begin
     if new.transacao_pai_id is not null then
       return new;
     end if;
+    -- Pagamentos de fatura sao linhas tecnicas; as compras da fatura ja
+    -- consomem sua propria competencia mensal.
+    if coalesce(new.descricao, '') like '%[PagFatura:%' then
+      return new;
+    end if;
   elsif not privileged_execution
      and new.user_id is distinct from actor_id then
     -- As demais tabelas do trigger possuem user_id, mas nao os campos de
@@ -193,8 +198,11 @@ begin
     allowed_count := case current_plan when 'smart' then 5 else 2 end;
     select count(*) into used_count
     from public.contas
-    where user_id = new.user_id
-      and not coalesce(arquivado, false);
+    where not coalesce(arquivado, false)
+      and (
+        user_id = new.user_id
+        or (coalesce(compartilhado, false) and public.is_parceiro(user_id, new.user_id))
+      );
   elsif tg_table_name = 'cartoes' then
     allowed_count := case current_plan when 'smart' then 3 else 1 end;
     select count(*) into used_count
@@ -202,7 +210,7 @@ begin
     where user_id = new.user_id
       and coalesce(ativo, true);
   elsif tg_table_name = 'caixinhas' then
-    allowed_count := case current_plan when 'smart' then 5 else 1 end;
+    allowed_count := case current_plan when 'smart' then 3 else 1 end;
     select count(*) into used_count
     from public.caixinhas
     where user_id = new.user_id
@@ -215,7 +223,7 @@ begin
       and tipo = new.tipo
       and coalesce(ativa::text, 'true') not in ('0', 'false', 'f');
   elsif tg_table_name = 'transacoes' then
-    allowed_count := case current_plan when 'smart' then 300 else 40 end;
+    allowed_count := case current_plan when 'smart' then 150 else 40 end;
     if tg_op = 'UPDATE' then
       select count(*) into used_count
       from public.transacoes
@@ -232,6 +240,11 @@ begin
         and pg_catalog.date_trunc('month', data_vencimento::date)
           = pg_catalog.date_trunc('month', new.data_vencimento::date);
     end if;
+    select used_count + pg_catalog.count(*) into used_count
+    from public.fatura_itens
+    where user_id = new.user_id
+      and mes_fatura = pg_catalog.to_char(new.data_vencimento::date, 'YYYY-MM')
+      and categoria_id is not null;
   else
     return new;
   end if;

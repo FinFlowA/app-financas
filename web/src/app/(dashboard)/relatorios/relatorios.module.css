@@ -564,6 +564,7 @@
 
 .distributionLegendButton:hover { color: var(--ff-primary-dark); transform: translateX(2px); }
 .distributionLegendButton:focus-visible { border-radius: 8px; outline: 2px solid var(--ff-primary); outline-offset: 3px; }
+.distributionLegendButton:disabled { cursor: not-allowed; opacity: .72; transform: none; }
 
 .categoryDetailBackdrop {
   position: fixed;

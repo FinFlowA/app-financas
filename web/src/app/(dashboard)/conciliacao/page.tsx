@@ -5,6 +5,8 @@ import type { Categoria, Conta, Transacao } from "@/lib/types";
 import type { Cartao, FaturaItem } from "@/lib/types";
 import { groupInvoiceItems } from "@/lib/invoices";
 import ReconciliationWorkspace, { type ReconciliationCandidate, type ReconciliationProgress } from "./reconciliation-workspace";
+import FeatureGate from "@/components/plans/feature-gate";
+import { normalizePlan, planHasFeature } from "@/lib/plan-entitlements";
 
 type SummaryRow = { root_transaction_id: number; remaining_value: number };
 type ReconciledTransactionRow = { transaction_id: number };
@@ -14,7 +16,7 @@ const PAYMENT_SUMMARY_BATCH_SIZE = 500;
 
 export default async function ReconciliationPage() {
   const supabase = await createClient();
-  const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, cardsResult, invoiceItemsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult] = await Promise.all([
+  const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, cardsResult, invoiceItemsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult, entitlementResult] = await Promise.all([
     supabase.auth.getClaims(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome"),
@@ -24,9 +26,15 @@ export default async function ReconciliationPage() {
     supabase.rpc("list_bank_reconciliation_progress"),
     supabase.rpc("list_pending_bank_transfer_counterparts"),
     supabase.rpc("list_bank_reconciled_transaction_ids"),
+    supabase.rpc("get_my_entitlement"),
   ]);
   if (accountsResult.error || categoriesResult.error || transactionsResult.error || cardsResult.error || invoiceItemsResult.error) throw new Error("Não foi possível preparar a conciliação agora.");
   if (typeof auth?.claims.sub !== "string") throw new Error("Sua sessão expirou. Entre novamente.");
+  const entitlementRaw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
+  const entitlement = entitlementRaw && typeof entitlementRaw === "object" ? entitlementRaw as Record<string, unknown> : {};
+  if (!planHasFeature(normalizePlan(entitlement.plan), "bank_reconciliation", entitlement.limits_enabled === true)) {
+    return <FeatureGate title="Extrato e conciliação" description="Importe seu extrato e vincule cada movimentação aos lançamentos do FinFlow com o plano Pro ou Plus." />;
+  }
   const accounts = (accountsResult.data ?? []) as Conta[];
   const categories = ((categoriesResult.data ?? []) as Categoria[]).filter((category) => category.ativa === true || category.ativa === 1);
   const transactions = ((transactionsResult.data ?? []) as Transacao[]).filter((transaction) => (transaction.categoria_id !== null || isTransferencia(transaction.descricao))

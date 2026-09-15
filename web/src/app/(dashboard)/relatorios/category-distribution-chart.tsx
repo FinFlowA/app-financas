@@ -21,10 +21,12 @@ export default function CategoryDistributionChart({
   items,
   total,
   kind,
+  detailsEnabled = true,
 }: {
   items: CategoryDistributionItem[];
   total: number;
   kind: "receitas" | "despesas";
+  detailsEnabled?: boolean;
 }) {
   const [selected, setSelected] = useState<CategoryDistributionItem | null>(null);
   if (!items.length || total <= 0) {
@@ -68,9 +70,9 @@ export default function CategoryDistributionChart({
         </div>
       </div>
       <div className={styles.distributionLegend}>
-        <p className={styles.categoryClickHint}>Clique em uma categoria para ver os lançamentos</p>
+        <p className={styles.categoryClickHint}>{detailsEnabled ? "Clique em uma categoria para ver os lançamentos" : "Resumo por categoria · detalhes disponíveis no Pro"}</p>
         {items.map((item) => (
-          <button type="button" key={item.id} onClick={() => setSelected(item)} className={`${styles.distributionLegendItem} ${styles.distributionLegendButton}`}>
+          <button type="button" key={item.id} disabled={!detailsEnabled} aria-label={detailsEnabled ? `Ver lançamentos de ${item.name}` : `${item.name}: detalhamento disponível no plano Pro`} onClick={() => setSelected(item)} className={`${styles.distributionLegendItem} ${styles.distributionLegendButton}`}>
             <span className={styles.categoryName}>
               <span className={styles.legendDot} style={{ background: item.color }} />
               <span>{item.name}</span>

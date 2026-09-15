@@ -30,6 +30,7 @@ export default function ReportOverview({
   dailyFlow,
   dailyBalances,
   view,
+  dailyEnabled = true,
 }: {
   year: number;
   currentYear: number;
@@ -45,6 +46,7 @@ export default function ReportOverview({
   dailyFlow: MesFluxo[];
   dailyBalances: PontoSaldo[];
   view: "monthly" | "daily";
+  dailyEnabled?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -89,6 +91,10 @@ export default function ReportOverview({
   }
 
   function changeView(nextView: "monthly" | "daily") {
+    if (nextView === "daily" && !dailyEnabled) {
+      router.push("/planos");
+      return;
+    }
     if (nextView === view) return;
     const params = new URLSearchParams({
       year: String(year),
@@ -128,7 +134,7 @@ export default function ReportOverview({
 
       <div className={styles.viewToggle} role="group" aria-label="Período do fluxo de caixa">
         <button type="button" data-active={view === "monthly"} aria-pressed={view === "monthly"} onClick={() => changeView("monthly")}>Mensal</button>
-        <button type="button" data-active={view === "daily"} aria-pressed={view === "daily"} onClick={() => changeView("daily")}>Diário</button>
+        <button type="button" data-active={view === "daily"} aria-pressed={view === "daily"} aria-label={dailyEnabled ? "Fluxo de caixa diário" : "Fluxo diário, disponível no plano Pro"} onClick={() => changeView("daily")}>Diário{!dailyEnabled ? " · Pro" : ""}</button>
       </div>
 
       <ReportFilters

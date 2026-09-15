@@ -9,10 +9,11 @@ import {
   type PlanActionState,
 } from "./actions";
 import styles from "./plans.module.css";
+import { PLAN_DEFINITIONS, type PlanId } from "@/lib/plan-entitlements";
 
 const INITIAL_PLAN_STATE: PlanActionState = { status: "idle", message: "" };
 
-export type PlanId = "free" | "smart" | "premium";
+export type { PlanId } from "@/lib/plan-entitlements";
 export type BillingCycle = "monthly" | "annual";
 
 export type BillingProduct = {
@@ -41,7 +42,7 @@ type PlanDefinition = {
   features: string[];
 };
 
-const PLANS: PlanDefinition[] = [
+const LEGACY_PLANS: PlanDefinition[] = [
   {
     id: "free",
     name: "Free",
@@ -81,6 +82,15 @@ const PLANS: PlanDefinition[] = [
     ],
   },
 ];
+void LEGACY_PLANS;
+
+const PLANS: PlanDefinition[] = (["free", "smart", "premium"] as const).map((id) => ({
+  id,
+  name: PLAN_DEFINITIONS[id].name,
+  description: PLAN_DEFINITIONS[id].description,
+  badge: PLAN_DEFINITIONS[id].badge,
+  features: [...PLAN_DEFINITIONS[id].features],
+}));
 
 const STATUS_LABELS: Record<string, string> = {
   none: "Sem assinatura",

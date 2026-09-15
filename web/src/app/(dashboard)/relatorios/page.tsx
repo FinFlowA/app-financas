@@ -10,6 +10,7 @@ import CategoryDistributionChart, { type CategoryDistributionItem } from "./cate
 import type { MesFluxo, PontoSaldo } from "./fluxo-saldo-chart";
 import ReportOverview from "./report-overview";
 import styles from "./relatorios.module.css";
+import { normalizePlan, planHasFeature } from "@/lib/plan-entitlements";
 
 const MONTHS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
@@ -32,9 +33,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const currentMonthIndex = Number(today.slice(5, 7)) - 1;
   const detailMonthIndex = validMonth(params.month, year === currentYear ? currentMonthIndex : 11);
   const detailMonth = `${year}-${String(detailMonthIndex + 1).padStart(2, "0")}`;
-  const view = params.view === "daily" ? "daily" : "monthly";
   const supabase = await createClient();
-  const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult] = await Promise.all([
+  const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult, entitlementResult] = await Promise.all([
     fetchAllRows((from, to) => supabase
       .from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
@@ -48,7 +48,13 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       .eq("mes_fatura", detailMonth)
       .order("id")
       .range(from, to)),
+    supabase.rpc("get_my_entitlement"),
   ]);
+  const entitlementRaw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
+  const entitlement = entitlementRaw && typeof entitlementRaw === "object" ? entitlementRaw as Record<string, unknown> : {};
+  const dailyEnabled = planHasFeature(normalizePlan(entitlement.plan), "daily_cash_flow", entitlement.limits_enabled === true);
+  const categoryDetailsEnabled = planHasFeature(normalizePlan(entitlement.plan), "full_category_reports", entitlement.limits_enabled === true);
+  const view = params.view === "daily" && dailyEnabled ? "daily" : "monthly";
   if (transactionsResult.error || categoriesResult.error || accountsResult.error || invoiceItemsResult.error) throw new Error("Não foi possível calcular seu fluxo agora.");
   const transactions = (transactionsResult.data ?? []) as Transacao[];
   const categories = (categoriesResult.data ?? []) as Categoria[];
@@ -204,18 +210,19 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
         dailyFlow={dailyFlow}
         dailyBalances={dailyBalances}
         view={view}
+        dailyEnabled={dailyEnabled}
       />
 
       <div className={styles.analysisGrid}>
         <section className={styles.distributionPanel}>
           <h2 className={styles.sectionTitle}>Receitas por categoria</h2>
           <p className={styles.chartSubtitle}>Distribuição das receitas realizadas em {MONTHS[detailMonthIndex].toLocaleLowerCase("pt-BR")}.</p>
-          <CategoryDistributionChart items={revenueDistribution} total={detailRevenue} kind="receitas" />
+          <CategoryDistributionChart items={revenueDistribution} total={detailRevenue} kind="receitas" detailsEnabled={categoryDetailsEnabled} />
         </section>
         <section className={styles.rankingPanel}>
           <h2 className={styles.sectionTitle}>Despesas por categoria</h2>
           <p className={styles.chartSubtitle}>Distribuição das despesas realizadas em {MONTHS[detailMonthIndex].toLocaleLowerCase("pt-BR")}.</p>
-          <CategoryDistributionChart items={expenseDistribution} total={detailExpense} kind="despesas" />
+          <CategoryDistributionChart items={expenseDistribution} total={detailExpense} kind="despesas" detailsEnabled={categoryDetailsEnabled} />
         </section>
       </div>
     </div>
