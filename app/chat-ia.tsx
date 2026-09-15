@@ -285,7 +285,38 @@ function isTerminalConfirmationError(error: unknown): boolean {
     || error.code === "PENDING_ACTION_NOT_FOUND";
 }
 
-export default function ChatIAScreen() {
+export default function ChatIAMaintenanceScreen() {
+  const router = useRouter();
+  const { isDark } = useAppTheme();
+  const theme = finFlowTheme(isDark);
+
+  return (
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>
+      <View style={[styles.lockedHeader, { backgroundColor: theme.header }]}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityLabel="Voltar">
+          <MaterialIcons name="arrow-back" size={23} color="#FFF" />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Assistente IA</Text>
+        <View style={styles.headerIconPlaceholder} />
+      </View>
+
+      <View style={styles.lockedContent}>
+        <View style={[styles.lockedIcon, { backgroundColor: theme.primarySoft }]}>
+          <MaterialIcons name="build" size={34} color={theme.primary} />
+        </View>
+        <Text style={[styles.lockedEyebrow, { color: theme.primary }]}>FINFLOW</Text>
+        <Text style={[styles.lockedTitle, { color: theme.text }]}>Assistente em manutenção</Text>
+        <Text style={[styles.lockedText, { color: theme.textMuted }]}>Estamos aprimorando a inteligência financeira do FinFlow para oferecer respostas mais rápidas, seguras e úteis.</Text>
+        <View style={[styles.maintenanceNotice, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <MaterialIcons name="verified-user" size={19} color={theme.primary} />
+          <Text style={[styles.maintenanceNoticeText, { color: theme.textMuted }]}>Nenhum dado financeiro será alterado enquanto o assistente estiver indisponível.</Text>
+        </View>
+      </View>
+    </SafeAreaView>
+  );
+}
+
+export function LegacyChatIAScreen() {
   const router = useRouter();
   const { isDark, session, limites, limitsEnabled, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
@@ -1020,10 +1051,14 @@ const styles = StyleSheet.create({
   clearModalConfirm: { flex: 1.15, minHeight: 48, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7 },
   clearModalConfirmText: { color: "#FFF", fontSize: 13, fontWeight: "900" },
   lockedHeader: { minHeight: 74, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, borderBottomLeftRadius: 22, borderBottomRightRadius: 22 },
+  headerIconPlaceholder: { width: 42, height: 42 },
   lockedContent: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 32, paddingBottom: 65 },
   lockedIcon: { width: 76, height: 76, borderRadius: 26, alignItems: "center", justifyContent: "center", marginBottom: 18 },
+  lockedEyebrow: { marginBottom: 8, fontSize: 11, fontWeight: "900", letterSpacing: 1.5 },
   lockedTitle: { fontSize: 23, fontWeight: "900", textAlign: "center" },
   lockedText: { fontSize: 14, lineHeight: 21, textAlign: "center", marginTop: 8, maxWidth: 310 },
+  maintenanceNotice: { maxWidth: 340, marginTop: 22, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 14, paddingVertical: 13, flexDirection: "row", alignItems: "center", gap: 10 },
+  maintenanceNoticeText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
   upgradeButton: { minWidth: 180, minHeight: 50, borderRadius: FinFlowRadius.medium, alignItems: "center", justifyContent: "center", marginTop: 22 },
   upgradeButtonText: { color: "#FFF", fontSize: 14, fontWeight: "900" },
 });
