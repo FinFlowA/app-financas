@@ -7,6 +7,8 @@ import {
   Alert,
   AppState,
   DeviceEventEmitter,
+  findNodeHandle,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   RefreshControl,
@@ -281,6 +283,10 @@ export default function TransacoesScreen() {
   );
   const paginaScrollRef = useRef<any>(null);
   const realizationScrollRef = useRef<ScrollView>(null);
+  const realizationAdjustmentInputRef = useRef<TextInput>(null);
+  const realizationPrincipalInputRef = useRef<TextInput>(null);
+  const realizationFocusedInputRef = useRef<TextInput | null>(null);
+  const [realizationKeyboardVisible, setRealizationKeyboardVisible] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
@@ -1751,10 +1757,33 @@ export default function TransacoesScreen() {
     setMostrarDataRealizacao(false);
     setDataRealizacao(novaData);
   };
-  const mostrarCampoRealizacaoAcimaDoTeclado = () => {
+  const mostrarCampoRealizacaoAcimaDoTeclado = (delay = 80) => {
     if (Platform.OS === "web") return;
-    setTimeout(() => realizationScrollRef.current?.scrollToEnd({ animated: true }), 280);
+    setTimeout(() => {
+      const inputHandle = findNodeHandle(realizationFocusedInputRef.current);
+      if (inputHandle == null) return;
+      realizationScrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+        inputHandle,
+        28,
+        true,
+      );
+    }, delay);
   };
+
+  React.useEffect(() => {
+    if (!transacaoConfirmar || Platform.OS === "web") return;
+    const subShow = Keyboard.addListener("keyboardDidShow", () => {
+      setRealizationKeyboardVisible(true);
+      mostrarCampoRealizacaoAcimaDoTeclado(60);
+    });
+    const subHide = Keyboard.addListener("keyboardDidHide", () => {
+      setRealizationKeyboardVisible(false);
+    });
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, [transacaoConfirmar]);
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -2560,7 +2589,10 @@ export default function TransacoesScreen() {
               <ScrollView
                 ref={realizationScrollRef}
                 style={styles.realizationModalScroll}
-                contentContainerStyle={styles.realizationModalScrollContent}
+                contentContainerStyle={[
+                  styles.realizationModalScrollContent,
+                  realizationKeyboardVisible && styles.realizationModalScrollContentKeyboard,
+                ]}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
                 showsVerticalScrollIndicator={false}
@@ -2653,9 +2685,12 @@ export default function TransacoesScreen() {
                   {ajusteTipo !== "nenhum" && (
                     <View style={[styles.editInput, { marginTop: 10, marginBottom: 0, backgroundColor: Cores.cardFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                       <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
-                      <TextInput value={ajusteValor} onChangeText={(texto) => {
+                      <TextInput ref={realizationAdjustmentInputRef} value={ajusteValor} onChangeText={(texto) => {
                         setAjusteValor(formatarEntradaMoeda(texto));
-                      }} onFocus={mostrarCampoRealizacaoAcimaDoTeclado} keyboardType="numeric" placeholder={`Valor do ${ajusteTipo === "juros" ? "juros" : "desconto"}`} placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
+                      }} onFocus={() => {
+                        realizationFocusedInputRef.current = realizationAdjustmentInputRef.current;
+                        mostrarCampoRealizacaoAcimaDoTeclado(320);
+                      }} keyboardType="numeric" placeholder={`Valor do ${ajusteTipo === "juros" ? "juros" : "desconto"}`} placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
                     </View>
                   )}
                 </View>
@@ -2671,9 +2706,13 @@ export default function TransacoesScreen() {
                   <View style={[styles.editInput, { marginBottom: 6, backgroundColor: Cores.blocoData, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
                     <Text style={{ color: Cores.textoSecundario, marginRight: 6 }}>R$</Text>
                     <TextInput
+                      ref={realizationPrincipalInputRef}
                       value={valorRealizado}
                       onChangeText={(texto) => setValorRealizado(formatarEntradaMoeda(texto))}
-                      onFocus={mostrarCampoRealizacaoAcimaDoTeclado}
+                      onFocus={() => {
+                        realizationFocusedInputRef.current = realizationPrincipalInputRef.current;
+                        mostrarCampoRealizacaoAcimaDoTeclado(320);
+                      }}
                       keyboardType="numeric"
                       placeholder="0,00"
                       placeholderTextColor={Cores.textoSecundario}
@@ -3328,6 +3367,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
+  realizationModalScrollContentKeyboard: { paddingBottom: 260, justifyContent: "flex-start" },
   realizationModalContent: { paddingHorizontal: 20, paddingVertical: 20 },
   modalTitle: { fontSize: 18, fontWeight: "bold", marginBottom: 20, textAlign: "center" },
   wrapContainer: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 25, justifyContent: "center" },

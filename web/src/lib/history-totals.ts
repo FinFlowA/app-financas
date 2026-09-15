@@ -14,12 +14,16 @@ export type HistoryFinancialEvent = {
 export function historyFinancialTotals(
   events: HistoryFinancialEvent[],
   visibleInvoices: InvoiceHistoryGroup[],
-): { receita: number; despesa: number } {
+): { receita: number; despesa: number; transferencia: number } {
   const visibleInvoiceKeys = new Set(visibleInvoices.map((invoice) => `${invoice.cardId}:${invoice.invoiceMonth}`));
-  const result = { receita: 0, despesa: 0 };
+  const result = { receita: 0, despesa: 0, transferencia: 0 };
 
   for (const transaction of events) {
-    if (isTransferencia(transaction.descricao) || isMovimentoObjetivo(transaction.descricao)) continue;
+    if (isTransferencia(transaction.descricao) || isMovimentoObjetivo(transaction.descricao)) {
+      const value = Number(transaction.valor);
+      if (Number.isFinite(value)) result.transferencia += value;
+      continue;
+    }
     const invoicePayment = getReferenciaPagamentoFatura(transaction.descricao);
     if (invoicePayment && visibleInvoiceKeys.has(`${invoicePayment.cartaoId}:${invoicePayment.mes}`)) continue;
     const value = Number(transaction.valor);

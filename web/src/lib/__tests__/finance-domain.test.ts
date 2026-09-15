@@ -319,9 +319,11 @@ describe("compras e faturas", () => {
       valor: 20,
       descricao: "Padaria",
     };
+    const transfer = { ...ordinaryExpense, id: 42, valor: 125, descricao: "[Transf.] Reserva [Destino:2]" };
     expect(getReferenciaPagamentoFatura(payment.descricao)).toEqual({ cartaoId: 5, mes: "2026-02" });
-    expect(historyFinancialTotals([payment, ordinaryExpense], [invoice])).toEqual({ receita: 0, despesa: 270 });
-    expect(historyFinancialTotals([], [invoice])).toEqual({ receita: 0, despesa: 250 });
+    expect(historyFinancialTotals([payment, ordinaryExpense], [invoice])).toEqual({ receita: 0, despesa: 270, transferencia: 0 });
+    expect(historyFinancialTotals([], [invoice])).toEqual({ receita: 0, despesa: 250, transferencia: 0 });
+    expect(historyFinancialTotals([transfer], [])).toEqual({ receita: 0, despesa: 0, transferencia: 125 });
   });
 });
 

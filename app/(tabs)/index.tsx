@@ -3075,7 +3075,6 @@ export default function Dashboard() {
                       transactionFormRef.current?.scrollTo({ y: 0, animated: true });
                     }}
                     selectTextOnFocus={false}
-                    selection={{ start: valorTransacao.length, end: valorTransacao.length }}
                   />
                 </View>
               </View>
