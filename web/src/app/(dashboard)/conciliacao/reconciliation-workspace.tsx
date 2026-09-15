@@ -133,7 +133,7 @@ function CandidatePicker({ entry, draft, candidates, onChange }: {
 export default function ReconciliationWorkspace({
   accounts,
   categories,
-  candidates,
+  candidates: initialCandidates,
   reconciliationProgress,
 }: {
   accounts: Conta[];
@@ -158,6 +158,7 @@ export default function ReconciliationWorkspace({
   const [bulkIgnoreOpen, setBulkIgnoreOpen] = useState(false);
   const [bulkIgnoring, setBulkIgnoring] = useState(false);
   const [bulkError, setBulkError] = useState<string | null>(null);
+  const [candidates, setCandidates] = useState(initialCandidates);
 
   useEffect(() => {
     const restoreTimer = window.setTimeout(() => {
@@ -288,6 +289,17 @@ export default function ReconciliationWorkspace({
     if (result.erro) {
       setDrafts((current) => ({ ...current, [entry.id]: { ...current[entry.id], busy: false, error: result.erro } }));
       return;
+    }
+    if (draft.mode === "existing") {
+      const selectedSet = new Set(selectedIds);
+      setCandidates((current) => current.flatMap((candidate) => {
+        if (!selectedSet.has(candidate.id)) return [candidate];
+        if (selectedIds.length === 1 && candidate.status !== "paga" && candidate.kind !== "transfer") {
+          const remainingValue = Math.round(Math.max(0, candidate.remainingValue - entry.amount) * 100) / 100;
+          return remainingValue > 0 ? [{ ...candidate, remainingValue }] : [];
+        }
+        return [];
+      }));
     }
     setEntries((current) => current.filter((item) => item.id !== entry.id));
     setDrafts((current) => { const next = { ...current }; delete next[entry.id]; return next; });

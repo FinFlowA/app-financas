@@ -42,7 +42,7 @@ export default async function ReconciliationPage() {
   const summaries = summaryBatches.flatMap((result) => (result.data ?? []) as SummaryRow[]);
   const remainingById = new Map(summaries.map((row) => [Number(row.root_transaction_id), Number(row.remaining_value)]));
   const reconciledTransactionIds = new Set(((reconciledTransactionsResult.data ?? []) as ReconciledTransactionRow[]).map((row) => Number(row.transaction_id)));
-  const candidates: ReconciliationCandidate[] = transactions.filter((transaction) => !reconciledTransactionIds.has(transaction.id)).flatMap<ReconciliationCandidate>((transaction) => {
+  const candidates: ReconciliationCandidate[] = transactions.filter((transaction) => transaction.status === "pendente" || !reconciledTransactionIds.has(transaction.id)).flatMap<ReconciliationCandidate>((transaction) => {
     const base = {
       id: transaction.id,
       categoryId: transaction.categoria_id,

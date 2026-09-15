@@ -36,6 +36,7 @@ export type PaymentHistoryItem = {
   adjustmentType: "none" | "interest" | "discount";
   adjustmentValue: number;
   active: boolean;
+  reconciled: boolean;
   reopenedAt: string | null;
   createdAt: string | null;
 };
@@ -153,6 +154,7 @@ export function normalizePaymentHistory(value: unknown, transaction: Transaction
         adjustmentType: adjustment === "interest" || adjustment === "discount" ? adjustment : "none",
         adjustmentValue: nonNegativeMoney(item.adjustment_value) ?? 0,
         active: item.active === undefined ? item.reopened_at == null : booleanValue(item.active),
+        reconciled: booleanValue(item.reconciled) && (item.active === undefined ? item.reopened_at == null : booleanValue(item.active)),
         reopenedAt: typeof item.reopened_at === "string" ? item.reopened_at : null,
         createdAt: typeof item.created_at === "string" ? item.created_at : null,
       });
