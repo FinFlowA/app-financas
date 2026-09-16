@@ -13,17 +13,63 @@ const CONTEXT = JSON.stringify({
   current_date: "2026-08-08",
   accounts: [{ id: 1, name: "Principal" }, { id: 2, name: "Carteira" }],
   categories: [{ id: 10, name: "Moradia", type: "despesa", active: true }],
-  goals: [{ id: 20, name: "Notebook", active: true, can_move_money: true }],
+  goals: [{ id: 20, name: "Notebook", active: true, can_move_money: true, balance: 2000 }],
   cards: [{ id: 30, name: "Visa", active: true }],
   relevant_transactions: [{ id: 40, description: "Aluguel", value: 1450, status: "pendente", category_id: 10, internal_transfer: false }],
-  relevant_invoice_items: [{ id: 50, description: "Mercado", value: 200 }],
+  relevant_invoice_items: [{ id: 50, description: "Mercado", value: 200, installment: "1/1" }],
+  invoice_summaries: [{ card_id: 30, invoice_month: "2026-08", open: 500 }],
 });
+
+const COMPLETE_ACTION_FIXTURES: Record<(typeof DIRECT_ACTIONS)[number], ModelField[]> = {
+  create_account: [{ key: "name", value: "Reserva" }, { key: "initial_balance", value: "0" }, { key: "color", value: "#457B9D" }],
+  update_account: [{ key: "account_id", value: "1" }, { key: "field", value: "name" }, { key: "new_value", value: "Principal nova" }],
+  archive_account: [{ key: "account_id", value: "1" }],
+  delete_account: [{ key: "account_id", value: "1" }],
+  reactivate_account: [{ key: "account_id", value: "1" }],
+  create_category: [{ key: "type", value: "despesa" }, { key: "name", value: "Casa" }, { key: "color", value: "#2A9D8F" }, { key: "icon", value: "home" }],
+  update_category: [{ key: "category_id", value: "10" }, { key: "field", value: "name" }, { key: "new_value", value: "Moradia fixa" }],
+  archive_category: [{ key: "category_id", value: "10" }],
+  delete_category: [{ key: "category_id", value: "10" }],
+  reactivate_category: [{ key: "category_id", value: "10" }],
+  create_goal: [{ key: "name", value: "Viagem" }, { key: "target_amount", value: "5000" }, { key: "initial_balance", value: "0" }, { key: "target_date", value: "2027-01-10" }, { key: "color", value: "#2A9D8F" }, { key: "icon", value: "savings" }],
+  update_goal: [{ key: "goal_id", value: "20" }, { key: "field", value: "target_amount" }, { key: "new_value", value: "6000" }],
+  archive_goal: [{ key: "goal_id", value: "20" }],
+  delete_goal: [{ key: "goal_id", value: "20" }],
+  reactivate_goal: [{ key: "goal_id", value: "20" }],
+  move_goal: [{ key: "operation", value: "resgatar" }, { key: "goal_id", value: "20" }, { key: "value", value: "100" }, { key: "account_id", value: "1" }],
+  create_transaction: [{ key: "type", value: "despesa" }, { key: "frequency", value: "unica" }, { key: "status", value: "pendente" }, { key: "scheduled_date", value: "2026-08-10" }, { key: "description", value: "Energia" }, { key: "value", value: "180" }, { key: "account_id", value: "1" }, { key: "category_id", value: "10" }],
+  update_transaction: [{ key: "transaction_id", value: "40" }, { key: "field", value: "description" }, { key: "new_value", value: "Aluguel casa" }],
+  delete_transaction: [{ key: "transaction_id", value: "40" }],
+  complete_transaction: [{ key: "transaction_id", value: "40" }, { key: "realization_date", value: "2026-08-08" }, { key: "realized_value", value: "1450" }],
+  reopen_transaction: [{ key: "transaction_id", value: "40" }],
+  transfer_between_accounts: [{ key: "frequency", value: "unica" }, { key: "status", value: "pendente" }, { key: "scheduled_date", value: "2026-08-10" }, { key: "description", value: "Reserva" }, { key: "value", value: "100" }, { key: "account_id", value: "1" }, { key: "destination_account_id", value: "2" }],
+  create_card: [{ key: "name", value: "Master" }, { key: "value", value: "4000" }, { key: "due_day", value: "10" }, { key: "closing_day", value: "3" }, { key: "color", value: "#457B9D" }],
+  update_card: [{ key: "card_id", value: "30" }, { key: "field", value: "value" }, { key: "new_value", value: "6000" }],
+  archive_card: [{ key: "card_id", value: "30" }],
+  delete_card: [{ key: "card_id", value: "30" }],
+  reactivate_card: [{ key: "card_id", value: "30" }],
+  create_card_purchase: [{ key: "card_id", value: "30" }, { key: "category_id", value: "10" }, { key: "description", value: "Mercado" }, { key: "value", value: "200" }, { key: "purchase_date", value: "2026-08-08" }, { key: "frequency", value: "unica" }],
+  update_card_purchase: [{ key: "purchase_id", value: "50" }, { key: "field", value: "description" }, { key: "new_value", value: "Mercado mensal" }],
+  delete_card_purchase: [{ key: "purchase_id", value: "50" }],
+  pay_invoice: [{ key: "card_id", value: "30" }, { key: "invoice_month", value: "2026-08" }, { key: "account_id", value: "1" }, { key: "payment_amount", value: "500" }],
+  reverse_invoice_payment: [{ key: "transaction_id", value: "40" }],
+};
 
 Deno.test("todas as acoes financeiras exigem coleta antes da proposta", () => {
   for (const intent of DIRECT_ACTIONS) {
     const output = enforceActionWorkflow(proposal(intent, []), {}, CONTEXT);
     assert(output.kind === "clarify", `${intent} nao pode pular a coleta de dados`);
     assert(output.missing_fields.length === 1, `${intent} deve perguntar somente um campo por vez`);
+  }
+});
+
+Deno.test("simula as 32 funcionalidades de escrita ate a previa sem executar dados reais", () => {
+  assert(Object.keys(COMPLETE_ACTION_FIXTURES).length === DIRECT_ACTIONS.length, "a matriz precisa cobrir todas as acoes");
+  for (const intent of DIRECT_ACTIONS) {
+    const output = enforceActionWorkflow(proposal(intent, COMPLETE_ACTION_FIXTURES[intent]), {}, CONTEXT);
+    assert(output.kind === "propose_action", `${intent} deveria chegar a previa, mas retornou ${output.kind}: ${output.missing_fields.join(",")}`);
+    assert(output.intent === intent, `${intent} nao pode mudar de intencao`);
+    assert(output.missing_fields.length === 0, `${intent} nao pode manter campo ausente na previa`);
   }
 });
 
@@ -37,6 +83,42 @@ Deno.test("modelo nao pode propor acao com identificador inventado", () => {
   assert(output.kind === "clarify", "ID fora do contexto deve voltar para esclarecimento");
   assert(output.missing_fields[0] === "goal_id", "deve pedir novamente o objetivo");
   assert(!output.data.some((field) => field.key === "goal_id"), "ID inventado nao pode permanecer no rascunho");
+});
+
+Deno.test("resolve nomes naturais unicos sem expor ou inventar identificadores", () => {
+  const output = enforceActionWorkflow(proposal("create_transaction", [
+    { key: "type", value: "despesa" }, { key: "frequency", value: "unica" },
+    { key: "status", value: "pendente" }, { key: "scheduled_date", value: "2026-08-10" },
+    { key: "description", value: "Almoço" }, { key: "value", value: "50" },
+    { key: "account_id", value: "Carteira" }, { key: "category_id", value: "Moradia" },
+  ]), {}, CONTEXT);
+  assert(output.kind === "propose_action", "nomes unicos deveriam resolver a proposta");
+  assert(output.data.some((field) => field.key === "account_id" && field.value === "2"), "conta deveria ser resolvida pelo nome");
+  assert(output.data.some((field) => field.key === "category_id" && field.value === "10"), "categoria deveria ser resolvida pelo nome");
+});
+
+Deno.test("modelo nao pode escolher categoria conta frequencia ou status pelo usuario", () => {
+  const output = enforceActionWorkflow(proposal("create_transaction", [
+    { key: "type", value: "despesa" }, { key: "frequency", value: "unica" },
+    { key: "status", value: "paga" }, { key: "scheduled_date", value: "2026-08-08" },
+    { key: "description", value: "Almoço" }, { key: "value", value: "50" },
+    { key: "account_id", value: "2" }, { key: "category_id", value: "10" },
+  ]), {}, CONTEXT, "Crie uma despesa de 50 reais de almoço para hoje");
+  assert(output.kind === "clarify", "escolhas omitidas precisam ser perguntadas");
+  assert(output.missing_fields[0] === "frequency", "frequencia deve ser a primeira escolha explicita pendente");
+  for (const key of ["frequency", "status", "account_id", "category_id"]) {
+    assert(!output.data.some((field) => field.key === key), `${key} inventado nao pode persistir no rascunho`);
+  }
+});
+
+Deno.test("categoria explicitamente nomeada pelo usuario pode ser resolvida", () => {
+  const output = enforceActionWorkflow(proposal("create_transaction", [
+    { key: "type", value: "despesa" }, { key: "frequency", value: "unica" },
+    { key: "status", value: "pendente" }, { key: "scheduled_date", value: "2026-08-10" },
+    { key: "description", value: "Aluguel" }, { key: "value", value: "1450" },
+    { key: "account_id", value: "Carteira" }, { key: "category_id", value: "Moradia" },
+  ]), {}, CONTEXT, "Despesa unica pendente de aluguel na Carteira, categoria Moradia");
+  assert(output.kind === "propose_action", "escolhas expressas devem chegar a previa");
 });
 
 Deno.test("fluxo completo exige um unico campo por vez e preserva dados validos", () => {

@@ -70,7 +70,7 @@ const STEPS: TutorialStep[] = [
   },
   {
     icon: "auto-awesome",
-    eyebrow: "IA FinFlow",
+    eyebrow: "Flô · FinFlow",
     title: "Peça ajuda em linguagem natural",
     description:
       "Consulte seus dados financeiros ou peça para a IA preparar ações, como criar lançamentos, contas, categorias e objetivos.",

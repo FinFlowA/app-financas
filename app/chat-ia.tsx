@@ -1,5 +1,6 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -87,7 +88,7 @@ class FinanceAiRequestError extends Error {
   }
 }
 
-const WELCOME_MESSAGE = "Olá! Sou a IA financeira do FinFlow. Posso consultar seus dados e preparar ações financeiras para você revisar. Nenhuma alteração é feita sem você tocar em Confirmar.";
+const WELCOME_MESSAGE = "Olá! Eu sou a Flô, sua assistente financeira no FinFlow. Posso conversar, explicar seus números e preparar ações para você revisar. Nenhuma alteração é feita sem você tocar em Confirmar.";
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -257,7 +258,8 @@ async function invokeFinanceAi(body: Record<string, unknown>, accessToken?: stri
         // Mantém a mensagem segura; nunca exibe detalhes internos do servidor.
       }
     }
-    throw new FinanceAiRequestError(message, code, status);
+    const diagnosticMessage = __DEV__ && code ? `${message} [${code}]` : message;
+    throw new FinanceAiRequestError(diagnosticMessage, code, status);
   }
   const validation = parseFinanceAiHttpResponse(data);
   if (!validation.ok) throw new Error("A IA retornou uma resposta inválida. Nenhuma ação foi realizada.");
@@ -285,38 +287,7 @@ function isTerminalConfirmationError(error: unknown): boolean {
     || error.code === "PENDING_ACTION_NOT_FOUND";
 }
 
-export default function ChatIAMaintenanceScreen() {
-  const router = useRouter();
-  const { isDark } = useAppTheme();
-  const theme = finFlowTheme(isDark);
-
-  return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>
-      <View style={[styles.lockedHeader, { backgroundColor: theme.header }]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityLabel="Voltar">
-          <MaterialIcons name="arrow-back" size={23} color="#FFF" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Assistente IA</Text>
-        <View style={styles.headerIconPlaceholder} />
-      </View>
-
-      <View style={styles.lockedContent}>
-        <View style={[styles.lockedIcon, { backgroundColor: theme.primarySoft }]}>
-          <MaterialIcons name="build" size={34} color={theme.primary} />
-        </View>
-        <Text style={[styles.lockedEyebrow, { color: theme.primary }]}>FINFLOW</Text>
-        <Text style={[styles.lockedTitle, { color: theme.text }]}>Assistente em manutenção</Text>
-        <Text style={[styles.lockedText, { color: theme.textMuted }]}>Estamos aprimorando a inteligência financeira do FinFlow para oferecer respostas mais rápidas, seguras e úteis.</Text>
-        <View style={[styles.maintenanceNotice, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-          <MaterialIcons name="verified-user" size={19} color={theme.primary} />
-          <Text style={[styles.maintenanceNoticeText, { color: theme.textMuted }]}>Nenhum dado financeiro será alterado enquanto o assistente estiver indisponível.</Text>
-        </View>
-      </View>
-    </SafeAreaView>
-  );
-}
-
-export function LegacyChatIAScreen() {
+export default function ChatIAScreen() {
   const router = useRouter();
   const { isDark, session, limites, limitsEnabled, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
@@ -728,7 +699,7 @@ export function LegacyChatIAScreen() {
                 <MaterialIcons name="auto-awesome" size={20} color="#FFF" />
               </View>
               <View>
-                <Text style={styles.headerTitle}>IA FinFlow</Text>
+                <Text style={styles.headerTitle}>Flô</Text>
                 <Text style={styles.headerSubtitle}>Controle financeiro protegido</Text>
               </View>
             </View>
@@ -744,7 +715,7 @@ export function LegacyChatIAScreen() {
           <View style={styles.statusRow}>
             <View style={styles.statusPill}>
               <View style={styles.onlineDot} />
-              <Text style={styles.statusText}>Somente finanças</Text>
+              <Text style={styles.statusText}>Assistente financeira</Text>
             </View>
             <View style={styles.statusPill}>
               <MaterialIcons name="verified-user" size={14} color="#D9FFF1" />
@@ -783,7 +754,7 @@ export function LegacyChatIAScreen() {
               <View key={message.id} style={[styles.messageRow, isUser && styles.messageRowUser]}>
                 {!isUser && (
                   <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
-                    <MaterialIcons name="auto-awesome" size={17} color={theme.primary} />
+                    <Image source={require("../assets/images/icon-square-v2.png")} style={styles.avatarLogo} contentFit="contain" accessibilityIgnoresInvertColors />
                   </View>
                 )}
                 <View
@@ -1002,6 +973,7 @@ const styles = StyleSheet.create({
   messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginBottom: 13, paddingRight: 36 },
   messageRowUser: { justifyContent: "flex-end", paddingRight: 0, paddingLeft: 52 },
   avatar: { width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  avatarLogo: { width: 21, height: 21 },
   bubble: { maxWidth: "88%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 11 },
   assistantBubble: { borderWidth: 1 },
   messageText: { fontSize: 14, lineHeight: 20.5, fontWeight: "500" },

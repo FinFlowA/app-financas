@@ -1,27 +1,23 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import styles from "./assistente.module.css";
+import AssistantChat from "./assistant-chat";
 
-export default async function AssistentePage() {
+const HOME_INSIGHT_PROMPT = "Analise meus dados financeiros atuais e me dê um insight objetivo sobre receitas, despesas, saldo e próximos compromissos, sem criar ou alterar nenhum registro.";
+
+export default async function AssistentePage({ searchParams }: { searchParams: Promise<{ prompt?: string }> }) {
+  const params = await searchParams;
+  const initialPrompt = params.prompt === "insight-financeiro" ? HOME_INSIGHT_PROMPT : null;
   const supabase = await createClient();
-  const { data: authData } = await supabase.auth.getUser();
+  const [{ data: authData }, entitlementResult] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.rpc("get_my_entitlement"),
+  ]);
   if (!authData.user) redirect("/login");
-
-  return (
-    <main className={styles.page}>
-      <section className={styles.locked} aria-labelledby="assistant-maintenance-title">
-        <div className={styles.lockedIcon} aria-hidden="true">
-          <span className="material-icons">build</span>
-        </div>
-        <p className={styles.eyebrow}>FinFlow</p>
-        <h1 id="assistant-maintenance-title">Assistente em manutenção</h1>
-        <p className={styles.lockedDescription}>
-          Estamos aprimorando a inteligência financeira do FinFlow para oferecer respostas mais rápidas, seguras e úteis.
-        </p>
-        <p className={styles.lockedDescription}>
-          Seus dados e lançamentos permanecem seguros. Nenhuma informação financeira será alterada enquanto o assistente estiver indisponível.
-        </p>
-      </section>
-    </main>
-  );
+  const raw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
+  const entitlement = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+  const plan = entitlement.plan === "smart" || entitlement.plan === "premium" ? String(entitlement.plan) : "free";
+  const limitsEnabled = Boolean(entitlement.limits_enabled);
+  const entitlementAvailable = !entitlementResult.error && raw !== null && typeof raw === "object";
+  const hasAccess = entitlementAvailable && (!limitsEnabled || plan === "smart" || plan === "premium");
+  return <AssistantChat userId={authData.user.id} hasAccess={hasAccess} plan={plan} initialPrompt={initialPrompt} />;
 }

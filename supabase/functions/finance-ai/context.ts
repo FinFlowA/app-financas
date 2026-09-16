@@ -8,6 +8,18 @@ type DetailResult = {
   queryScope: "not_requested" | "bounded_relevance";
 };
 
+type DailyCashFlowRow = {
+  date: string;
+  realized_income: number;
+  realized_expense: number;
+  pending_income: number;
+  pending_expense: number;
+  saved_to_goals: number;
+  withdrawn_from_goals: number;
+  account_balance: number;
+  balance_is_projection: boolean;
+};
+
 const TRANSACTION_DETAIL_LIMIT = 60;
 const PERIOD_DETAIL_LIMIT = 80;
 const SEARCH_DETAIL_LIMIT = 24;
@@ -30,7 +42,9 @@ const STOP_WORDS = new Set([
   "me", "meu", "minha", "no", "nos", "na", "nas", "o", "os", "ou", "para", "por", "que",
   "quero", "se", "um", "uma", "valor", "conta", "categoria", "objetivo", "cartao", "fatura",
   "lancamento", "transacao", "despesa", "receita", "transferencia", "editar", "excluir", "apagar",
-  "criar", "mostrar", "listar", "qual", "quanto", "quando",
+  "criar", "mostrar", "listar", "qual", "quanto", "quando", "vou", "ter", "terei", "sera",
+  "dia", "mes", "ano", "hoje", "amanha", "ontem", "gastar", "pagar", "receber", "nao", "sem",
+  "agendamento", "agendado", "agendada", "semanal", "mensal", "fixa", "recorrente",
 ]);
 const MONTHS_PT: Record<string, string> = {
   janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
@@ -122,6 +136,19 @@ function selectedMonth(request: string, fallback: string): string {
   return fallback;
 }
 
+function selectedDate(request: string, focusMonth: string): string | null {
+  const normalized = normalize(request);
+  const iso = normalized.match(/\b((?:19|20)\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+  const brazilian = normalized.match(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/((?:19|20)\d{2}))?\b/);
+  if (brazilian) {
+    const year = brazilian[3] ?? focusMonth.slice(0, 4);
+    return `${year}-${String(Number(brazilian[2])).padStart(2, "0")}-${String(Number(brazilian[1])).padStart(2, "0")}`;
+  }
+  const day = normalized.match(/\bdia\s+(0?[1-9]|[12]\d|3[01])\b/)?.[1];
+  return day ? `${focusMonth}-${String(Number(day)).padStart(2, "0")}` : null;
+}
+
 async function selectOrThrow<T = FinancialRow[]>(
   query: PromiseLike<{ data: T | null; error: { message: string } | null }>,
 ): Promise<T> {
@@ -151,7 +178,10 @@ function safeSearchTerms(request: string): string[] {
   for (const word of words) {
     const key = normalize(word, 80);
     if (!STOP_WORDS.has(key) && !unique.has(key)) unique.set(key, word.slice(0, 80));
-    if (unique.size >= 3) break;
+    // Frases de cenário costumam começar com termos genéricos e terminar
+    // com o nome do lançamento (ex.: "se eu não gastar com refrigerante").
+    // Um limite maior garante que o recurso citado seja realmente consultado.
+    if (unique.size >= 8) break;
   }
   return [...unique.values()];
 }
@@ -208,6 +238,23 @@ async function fetchTransactionDetails(
     rows: mergeRows(groups, 320),
     queryScope: "bounded_relevance",
   };
+}
+
+async function fetchAllCashFlowTransactions(
+  client: SupabaseClient,
+  enabled: boolean,
+): Promise<FinancialRow[]> {
+  if (!enabled) return [];
+  const pageSize = 1_000;
+  const maximum = 20_000;
+  const rows: FinancialRow[] = [];
+  for (let from = 0; from < maximum; from += pageSize) {
+    const page = await selectOrThrow(client.from("transacoes").select(TRANSACTION_FIELDS)
+      .order("id").range(from, from + pageSize - 1));
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+  throw new Error("FINANCIAL_CONTEXT_TOO_LARGE");
 }
 
 async function fetchInvoiceDetails(
@@ -307,8 +354,9 @@ export function selectRelevantRows(
 
 function informationalRequest(request: string): boolean {
   const normalized = normalize(request);
-  return /\b(o que e|como funciona|explique|qual a diferenca|para que serve)\b/.test(normalized)
-    && !/\b(meu|minha|meus|minhas|saldo|lanc|gasto|recebi|paguei|crie|criar|edite|exclua|apague)\b/.test(normalized);
+  const casual = /^(oi|ola|bom dia|boa tarde|boa noite|obrigad[oa]|valeu|tudo bem|como voce esta|quem e voce|qual e o seu nome|me conte uma piada)[?!.\s]*$/.test(normalized);
+  return casual || (/\b(o que e|como funciona|explique|qual a diferenca|para que serve)\b/.test(normalized)
+    && !/\b(meu|minha|meus|minhas|saldo|lanc|gasto|recebi|paguei|crie|criar|edite|exclua|apague)\b/.test(normalized));
 }
 
 function goalsByNormalizedName(goals: FinancialRow[]): Map<string, number> {
@@ -508,6 +556,45 @@ export function buildScopedBalanceEvents(
     }));
   }
   return events;
+}
+
+export function calculateDailyCashFlow(
+  transactions: FinancialRow[],
+  accountIds: Iterable<number>,
+  goals: FinancialRow[],
+  currentBalance: number,
+  currentDate: string,
+  focusMonth: string,
+): DailyCashFlowRow[] {
+  const events = buildScopedBalanceEvents(transactions, accountIds, goals);
+  const paidEvents = events.filter((event) => event.status === "paga" && validDate(event.date));
+  const pendingEvents = events.filter((event) => event.status !== "paga" && validDate(event.date));
+  const initialBalance = currentBalance - paidEvents.reduce((sum, event) => sum + event.delta, 0);
+  const days = new Date(Date.UTC(Number(focusMonth.slice(0, 4)), Number(focusMonth.slice(5, 7)), 0)).getUTCDate();
+
+  return Array.from({ length: days }, (_, index) => {
+    const date = `${focusMonth}-${String(index + 1).padStart(2, "0")}`;
+    const dayEvents = events.filter((event) => event.date === date);
+    const past = date < currentDate;
+    const pendingThroughDay = pendingEvents.filter((event) => event.date <= date);
+    const accountBalance = past
+      ? initialBalance + paidEvents.filter((event) => event.date <= date).reduce((sum, event) => sum + event.delta, 0)
+      : currentBalance + pendingThroughDay.reduce((sum, event) => sum + event.delta, 0);
+    const sum = (predicate: (event: ScopedEvent) => boolean) => number(dayEvents
+      .filter(predicate)
+      .reduce((total, event) => total + event.value, 0));
+    return {
+      date,
+      realized_income: sum((event) => event.status === "paga" && event.type === "receita" && !event.goalTransfer),
+      realized_expense: sum((event) => event.status === "paga" && event.type === "despesa" && !event.goalTransfer),
+      pending_income: sum((event) => event.status !== "paga" && event.type === "receita" && !event.goalTransfer),
+      pending_expense: sum((event) => event.status !== "paga" && event.type === "despesa" && !event.goalTransfer),
+      saved_to_goals: sum((event) => event.goalTransfer && event.goalOperation === "guardar"),
+      withdrawn_from_goals: sum((event) => event.goalTransfer && event.goalOperation === "resgatar"),
+      account_balance: number(accountBalance),
+      balance_is_projection: !past && (pendingThroughDay.length > 0 || date > currentDate),
+    };
+  });
 }
 
 export function calculateAccountBalances(
@@ -1080,11 +1167,12 @@ export type FinancialContext = {
 };
 
 type ContextNeeds = {
-  route: "summary" | "history" | "cash_flow" | "categories" | "goals" | "cards" | "mutation";
+  route: "summary" | "history" | "calendar" | "cash_flow" | "categories" | "goals" | "cards" | "mutation";
   invoiceData: boolean;
   invoiceDetails: boolean;
   transactionDetails: boolean;
   monthlyCashFlow: boolean;
+  dailyCashFlow: boolean;
   categoryAnalytics: boolean;
   categories: boolean;
   goals: boolean;
@@ -1098,6 +1186,7 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
   const goalDomain = /(objetiv|caixinha|guardar|resgatar|meta)/.test(normalized);
   const categoryDomain = /(categoria|gasto|despesa|receita|orcament|analis|econom)/.test(normalized);
   const cashFlowDomain = /(fluxo|projec|previs|cenario|fim do ano|quanto vou|quanto terei)/.test(normalized);
+  const calendarDomain = /(calendario|agenda|agendad|programad|dia\s+\d{1,2}|data\s+\d{1,2})/.test(normalized);
   const historyDomain = /(histor|extrato|lanc|transa|penden|atras|venc|recebi|paguei|gastei)/.test(normalized);
   const summaryDomain = /(resumo|balanco|resultado|como estao|minha situacao|visao geral)/.test(normalized);
   const transactionMutation = mutation && /(lanc|transa|receita|despesa|transfer|concl|reabr|pague|pagamento)/.test(normalized);
@@ -1108,6 +1197,8 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
       ? "cards"
       : goalDomain
         ? "goals"
+        : calendarDomain
+          ? "calendar"
         : cashFlowDomain
           ? "cash_flow"
           : categoryDomain
@@ -1119,8 +1210,9 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
     route,
     invoiceData: cardDomain || spendingDomain || (analyticsAllowed && categoryDomain),
     invoiceDetails: cardDomain,
-    transactionDetails: historyDomain || transactionMutation || goalDomain || cardDomain,
+    transactionDetails: historyDomain || transactionMutation || goalDomain || cardDomain || cashFlowDomain || calendarDomain,
     monthlyCashFlow: cashFlowDomain,
+    dailyCashFlow: cashFlowDomain || calendarDomain,
     categoryAnalytics: analyticsAllowed && (categoryDomain || summaryDomain),
     categories: categoryDomain || transactionMutation || cardDomain || summaryDomain,
     goals: goalDomain || summaryDomain,
@@ -1159,6 +1251,7 @@ export function serializeContextWithinBudget(
   // Detalhes podem ser reconsultados. Totais e séries agregadas têm prioridade.
   trimArray("relevant_invoice_items", 0, "invoice_items", "invoice_items_in_context");
   trimArray("relevant_transactions", 12, "transactions", "transactions_in_context");
+  trimArray("daily_cash_flow", 7, "daily_cash_flow_in_context");
 
   const categoryYears = Array.isArray(compact.categories_by_year)
     ? compact.categories_by_year as Record<string, any>[]
@@ -1233,11 +1326,14 @@ export function serializeContextWithinBudget(
         cards_in_context: false,
         category_analytics_in_context: false,
         monthly_cash_flow_in_context: false,
+        daily_cash_flow_in_context: Array.isArray(compact.daily_cash_flow) && compact.daily_cash_flow.length <= 1,
       },
       month_summary: compact.month_summary,
       monthly_cash_flow: Array.isArray(compact.monthly_cash_flow)
         ? compact.monthly_cash_flow.filter((row: Record<string, unknown>) => row.month === compact.focus_month)
         : [],
+      daily_cash_flow: Array.isArray(compact.daily_cash_flow) ? compact.daily_cash_flow.slice(0, 1) : [],
+      scenario_candidates: Array.isArray(compact.scenario_candidates) ? compact.scenario_candidates.slice(0, 12) : [],
       accounts: [],
       categories: [],
       goals: [],
@@ -1299,7 +1395,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1312,11 +1408,23 @@ export async function buildFinancialContext(
     })),
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
+    fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
   const transactions = transactionPage.rows;
   const invoiceItems = invoicePage.rows;
+  const requestedDate = selectedDate(requestContext, focusMonth);
+  const dailyCashFlow = needs.dailyCashFlow
+    ? calculateDailyCashFlow(
+      cashFlowTransactions,
+      snapshot.scopeAccountIds,
+      goals,
+      snapshot.currentBalance,
+      currentDate,
+      focusMonth,
+    ).filter((row) => !requestedDate || row.date === requestedDate)
+    : [];
   const transactionDetailsComplete = aggregate.sourceCounts.transactions === transactions.length;
   const invoiceDetailsComplete = aggregate.sourceCounts.invoiceItems === invoiceItems.length;
 
@@ -1415,10 +1523,67 @@ export async function buildFinancialContext(
 
   const currentFlow = snapshot.dashboardFlow;
   const focusCardPurchases = number(snapshot.cardPurchasesByMonth.get(focusMonth) ?? 0);
+  const compactTransaction = (row: FinancialRow) => {
+    const description = text(row.descricao, 500);
+    const destinationId = Number(description.match(ACCOUNT_TRANSFER_DESTINATION)?.[1] ?? 0) || null;
+    const movement = parseGoalMovement(description);
+    const movementGoalId = movement?.goalId
+      ?? (movement?.legacyName ? goalByName.get(normalize(movement.legacyName)) ?? null : null);
+    const payment = parseInvoicePayment(description);
+    return {
+      id: number(row.id),
+      type: text(row.tipo, 20),
+      value: number(row.valor),
+      description: visibleDescription(description),
+      status: text(row.status, 20),
+      scheduled_date: text(row.data_vencimento, 10),
+      realization_date: row.data_realizacao ? text(row.data_realizacao, 10) : null,
+      account: accountById.get(number(row.conta_id)) ?? "",
+      account_id: number(row.conta_id),
+      category: categoryById.get(number(row.categoria_id)) ?? null,
+      category_id: row.categoria_id == null ? null : number(row.categoria_id),
+      internal_transfer: isInternalTransfer(description),
+      destination_account_id: destinationId,
+      destination_account: destinationId ? accountById.get(destinationId) ?? null : null,
+      goal_id: movementGoalId,
+      goal: movementGoalId ? goalById.get(movementGoalId) ?? movement?.legacyName ?? null : movement?.legacyName ?? null,
+      goal_operation: movement?.operation ?? null,
+      series_id: description.match(SERIES_METADATA)?.[1] ?? null,
+      invoice_payment: payment !== null,
+      invoice_payment_card_id: payment?.cardId ?? null,
+      invoice_payment_month: payment?.invoiceMonth ?? null,
+      invoice_payment_mode: payment?.mode ?? null,
+    };
+  };
+  // Cenários precisam consultar a mesma base completa que alimenta o fluxo
+  // de caixa. Usar somente a amostra de detalhes fazia uma recorrência citada
+  // desaparecer e encaminhava desnecessariamente a pergunta ao provedor.
+  const scenarioSourceRows = needs.dailyCashFlow ? cashFlowTransactions : selectedTransactionRows;
+  const scenarioCandidates = scenarioSourceRows
+    .filter((row) => matchesRequest(row, tokens, requestContext, transactionRelatedText(row)))
+    .sort(relevanceComparator)
+    .slice(0, 12)
+    .map((row) => {
+      const item = compactTransaction(row);
+      return {
+        id: item.id,
+        type: item.type,
+        value: item.value,
+        description: item.description,
+        status: item.status,
+        scheduled_date: item.scheduled_date,
+        realization_date: item.realization_date,
+      };
+    });
   const compact = {
     current_date: currentDate,
     focus_month: focusMonth,
     timezone: "America/Sao_Paulo",
+    value_policy: {
+      source: "finflow_product_read_model",
+      values_are_authoritative: true,
+      model_must_not_recalculate_explicit_values: true,
+    },
     plan: text(plan, 40),
     analytics_allowed: analyticsAllowed,
     personal_data_included: true,
@@ -1455,6 +1620,7 @@ export async function buildFinancialContext(
         entry.income.length <= 20 && entry.expenses.length <= 20
       ))),
       monthly_cash_flow_in_context: aggregate.aggregateComplete && needs.monthlyCashFlow,
+      daily_cash_flow_in_context: needs.dailyCashFlow,
       accounts_fetched_complete: accounts.length < ACCOUNT_LIMIT,
       categories_fetched_complete: categories.length < CATEGORY_LIMIT,
       goals_fetched_complete: goals.length < GOAL_LIMIT,
@@ -1476,6 +1642,8 @@ export async function buildFinancialContext(
       predicted_end_balance: snapshot.predictedEndBalance,
     },
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
+    daily_cash_flow: dailyCashFlow,
+    scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;
       return {
@@ -1544,38 +1712,7 @@ export async function buildFinancialContext(
         due_day: number(row.dia_vencimento),
       };
     }),
-    relevant_transactions: selectedTransactionRows.map((row) => {
-      const description = text(row.descricao, 500);
-      const destinationId = Number(description.match(ACCOUNT_TRANSFER_DESTINATION)?.[1] ?? 0) || null;
-      const movement = parseGoalMovement(description);
-      const movementGoalId = movement?.goalId
-        ?? (movement?.legacyName ? goalByName.get(normalize(movement.legacyName)) ?? null : null);
-      const payment = parseInvoicePayment(description);
-      return {
-        id: number(row.id),
-        type: text(row.tipo, 20),
-        value: number(row.valor),
-        description: visibleDescription(description),
-        status: text(row.status, 20),
-        scheduled_date: text(row.data_vencimento, 10),
-        realization_date: row.data_realizacao ? text(row.data_realizacao, 10) : null,
-        account: accountById.get(number(row.conta_id)) ?? "",
-        account_id: number(row.conta_id),
-        category: categoryById.get(number(row.categoria_id)) ?? null,
-        category_id: row.categoria_id == null ? null : number(row.categoria_id),
-        internal_transfer: isInternalTransfer(description),
-        destination_account_id: destinationId,
-        destination_account: destinationId ? accountById.get(destinationId) ?? null : null,
-        goal_id: movementGoalId,
-        goal: movementGoalId ? goalById.get(movementGoalId) ?? movement?.legacyName ?? null : movement?.legacyName ?? null,
-        goal_operation: movement?.operation ?? null,
-        series_id: description.match(SERIES_METADATA)?.[1] ?? null,
-        invoice_payment: payment !== null,
-        invoice_payment_card_id: payment?.cardId ?? null,
-        invoice_payment_month: payment?.invoiceMonth ?? null,
-        invoice_payment_mode: payment?.mode ?? null,
-      };
-    }),
+    relevant_transactions: selectedTransactionRows.map(compactTransaction),
     relevant_invoice_items: selectedInvoiceRows.map((row) => ({
       id: number(row.id),
       card_id: number(row.cartao_id),

@@ -17,7 +17,7 @@ import {
   redactSensitiveText,
   safeAssistantMessage,
 } from "./guard.ts";
-import { buildSystemPrompt } from "./prompt.ts";
+import { buildReadOnlySystemPrompt, buildSystemPrompt } from "./prompt.ts";
 import {
   estimateModelTokenBudget,
   MODEL_MAX_OUTPUT_TOKENS,
@@ -35,7 +35,7 @@ type AdminClient = ReturnType<typeof adminClient>;
 
 const MAX_REQUEST_BYTES = 24_000;
 const MAX_MESSAGE_CHARS = 2_000;
-const OUT_OF_SCOPE_MESSAGE = "Posso ajudar exclusivamente com o controle financeiro no FinFlow: contas, lançamentos, categorias, objetivos, cartões, faturas, orçamento e fluxo de caixa.";
+const OUT_OF_SCOPE_MESSAGE = "Posso conversar um pouco com você, mas não consigo orientar esse assunto com a profundidade necessária. Meu foco é ajudar com organização financeira e com os recursos do FinFlow.";
 const ANALYTIC_INTENTS = new Set(["category_analysis", "budget_analysis", "financial_projection"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{8,100}$/;
@@ -43,6 +43,24 @@ const PRE_CONTEXT_MODEL_BUDGET: ModelTokenBudget = {
   estimatedInputTokens: 1,
   maxOutputTokens: 1,
 };
+const CHAT_RETENTION_MS = 24 * 60 * 60 * 1_000;
+
+function chatRetentionCutoff(): string {
+  return new Date(Date.now() - CHAT_RETENTION_MS).toISOString();
+}
+
+async function purgeExpiredChat(admin: AdminClient, userId: string): Promise<void> {
+  const cutoff = chatRetentionCutoff();
+  const { error: messagesError } = await admin.from("ai_messages").delete()
+    .eq("user_id", userId)
+    .lt("created_at", cutoff);
+  if (messagesError) throw new Error("AI_HISTORY_FAILED");
+
+  const { error: conversationsError } = await admin.from("ai_conversations").delete()
+    .eq("user_id", userId)
+    .lt("updated_at", cutoff);
+  if (conversationsError) throw new Error("AI_HISTORY_FAILED");
+}
 
 const NAVIGATION_ROUTES: Record<NavigationIntent, string> = {
   open_home: "/",
@@ -67,6 +85,155 @@ function optionalSecret(name: string): string {
 
 function asObject(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+function operationalContext(compactJson: string, maximum = 2_000): string {
+  let source: JsonRecord;
+  try {
+    source = asObject(JSON.parse(compactJson));
+  } catch {
+    throw new Error("AI_CONTEXT_INVALID");
+  }
+  const take = (key: string, limit: number) => Array.isArray(source[key])
+    ? (source[key] as unknown[]).slice(0, limit)
+    : [];
+  const compact: JsonRecord = {
+    current_date: source.current_date,
+    timezone: source.timezone,
+    plan: source.plan,
+    accounts: take("accounts", 8),
+    categories: take("categories", 8),
+    goals: take("goals", 6),
+    cards: take("cards", 6),
+    relevant_transactions: take("relevant_transactions", 8),
+    relevant_invoice_items: take("relevant_invoice_items", 6),
+    invoice_summaries: take("invoice_summaries", 4),
+  };
+  const keys = [
+    "relevant_transactions", "relevant_invoice_items", "invoice_summaries",
+    "categories", "accounts", "goals", "cards",
+  ];
+  let encoded = JSON.stringify(compact);
+  while (encoded.length > maximum) {
+    const candidate = keys
+      .map((key) => ({ key, rows: compact[key] as unknown[] }))
+      .filter(({ rows }) => Array.isArray(rows) && rows.length > 1)
+      .sort((left, right) => right.rows.length - left.rows.length)[0];
+    if (!candidate) break;
+    candidate.rows.pop();
+    encoded = JSON.stringify(compact);
+  }
+  if (encoded.length > maximum) throw new Error("AI_CONTEXT_TOO_LARGE");
+  return encoded;
+}
+
+function deterministicDatedAnswer(message: string, compactJson: string): { message: string; intent: "cash_flow" | "list_transactions" } | null {
+  let context: JsonRecord;
+  try {
+    context = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const normalized = normalizeText(message);
+  const daily = Array.isArray(context.daily_cash_flow) ? context.daily_cash_flow.map(asObject) : [];
+  const monthNames: Record<string, string> = {
+    janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
+    julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12",
+  };
+  const explicitIso = normalized.match(/\b((?:19|20)\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+  const explicitBr = normalized.match(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/((?:19|20)\d{2}))?\b/);
+  const namedDay = normalized.match(/\bdia\s+(0?[1-9]|[12]\d|3[01])(?:\s+de\s+([a-z]+))?/);
+  const contextYear = String(context.focus_month ?? context.current_date ?? "").slice(0, 4);
+  let requestedDate = "";
+  if (explicitIso) requestedDate = `${explicitIso[1]}-${explicitIso[2]}-${explicitIso[3]}`;
+  else if (explicitBr) requestedDate = `${explicitBr[3] ?? contextYear}-${String(Number(explicitBr[2])).padStart(2, "0")}-${String(Number(explicitBr[1])).padStart(2, "0")}`;
+  else if (namedDay) {
+    const month = monthNames[namedDay[2] ?? ""] ?? String(context.focus_month ?? "").slice(5, 7);
+    if (contextYear && month) requestedDate = `${contextYear}-${month}-${String(Number(namedDay[1])).padStart(2, "0")}`;
+  }
+  const row = (requestedDate ? daily.find((item) => String(item.date ?? "") === requestedDate) : null)
+    ?? (daily.length === 1 ? daily[0] : null);
+  if (!row) return null;
+  const date = String(row.date ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const displayDate = `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
+  const money = (value: unknown) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
+  const conditionalExclusion = /(nao\s+(?:vou\s+)?(?:gastar|pagar|receber)|\bsem\b|desconsider|retir|exclu)/.test(normalized);
+  if (conditionalExclusion) {
+    const ignoredWords = new Set([
+      "quanto", "conta", "saldo", "sera", "terei", "gastar", "pagar", "receber", "dia", "mes",
+      "ano", "nao", "sem", "com", "para", "meu", "minha", "vou", "ter", "de", "do", "da", "em", "e",
+    ]);
+    const requestTokens = new Set((normalized.match(/[a-z0-9]{3,}/g) ?? []).filter((token) => !ignoredWords.has(token)));
+    const sourceCandidates = [...new Map([
+      ...(Array.isArray(context.scenario_candidates) ? context.scenario_candidates : []),
+      ...(Array.isArray(context.relevant_transactions) ? context.relevant_transactions : []),
+    ].map((item) => {
+      const row = asObject(item);
+      return [String(row.id ?? `${row.description}:${row.scheduled_date}`), row] as const;
+    })).values()];
+    const candidates = sourceCandidates
+      .map(asObject)
+      .map((transaction) => {
+        const description = normalizeText(String(transaction.description ?? ""));
+        const descriptionTokens = new Set(description.match(/[a-z0-9]{3,}/g) ?? []);
+        const score = [...requestTokens].filter((token) => descriptionTokens.has(token)).length;
+        return { transaction, description, score };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score);
+    const best = candidates[0];
+    if (best) {
+      const bestTokens = new Set(best.description.match(/[a-z0-9]{3,}/g) ?? []);
+      const matched = candidates.filter((candidate) => (
+        candidate.score === best.score
+        || [...bestTokens].some((token) => token.length >= 4 && candidate.description.includes(token))
+      )).map((candidate) => candidate.transaction)
+        .filter((transaction) => String(transaction.status ?? "") !== "paga")
+        .filter((transaction) => String(transaction.scheduled_date ?? "") <= date);
+      const projectedDelta = matched.reduce((total, transaction) => {
+        const value = Number(transaction.value) || 0;
+        return total + (String(transaction.type ?? "") === "receita" ? value : -value);
+      }, 0);
+      if (matched.length > 0) {
+        const baseline = Number(row.account_balance) || 0;
+        const scenarioBalance = baseline - projectedDelta;
+        const label = String(best.transaction.description ?? "lançamento citado");
+        const totalRemoved = Math.abs(projectedDelta);
+        return {
+          message: `Sem ${label}, seu saldo projetado em ${displayDate} seria ${money(scenarioBalance)}. Considerei ${matched.length} ${matched.length === 1 ? "ocorrência pendente" : "ocorrências pendentes"}, somando ${money(totalRemoved)}, que entrariam na projeção até essa data.`,
+          intent: "cash_flow",
+        };
+      }
+    }
+    return null;
+  }
+  const asksItems = /(o que|quais|lancamento|agend|programad|calendario|agenda)/.test(normalized);
+
+  if (asksItems) {
+    const transactions = (Array.isArray(context.relevant_transactions) ? context.relevant_transactions : [])
+      .map(asObject)
+      .filter((transaction) => String(transaction.scheduled_date ?? "") === date);
+    if (transactions.length === 0) {
+      return { message: `Você não possui lançamentos agendados para ${displayDate}.`, intent: "list_transactions" };
+    }
+    const details = transactions.slice(0, 8).map((transaction) => {
+      const type = String(transaction.type ?? "") === "receita" ? "Receita" : "Despesa";
+      const status = String(transaction.status ?? "") === "paga" ? "realizada" : "pendente";
+      return `${type}: ${String(transaction.description ?? "Lançamento")} — ${money(transaction.value)} (${status})`;
+    });
+    const suffix = transactions.length > details.length ? ` Além desses, há mais ${transactions.length - details.length}.` : "";
+    return { message: `Em ${displayDate}: ${details.join("; ")}.${suffix}`, intent: "list_transactions" };
+  }
+
+  if (/(saldo|quanto terei|quanto vou ter|previs)/.test(normalized)) {
+    const projected = Boolean(row.balance_is_projection);
+    return {
+      message: `Em ${displayDate}, seu saldo ${projected ? "projetado" : "realizado"} é ${money(row.account_balance)}.`,
+      intent: "cash_flow",
+    };
+  }
+  return null;
 }
 
 function normalizeRpcObject(value: unknown): JsonRecord {
@@ -126,7 +293,7 @@ function isAnalyticalRequest(message: string): boolean {
 }
 
 function isDraftCancellation(message: string): boolean {
-  return /^(cancelar?|cancela|desistir|desisto|deixa pra la|esquece|nao quero)(?:[.!\s]|$)/.test(normalizeText(message));
+  return /^(cancelar?|cancela|desistir|desisto|deixa pra la|esquece|nao quero|vamos falar de outra coisa|quero mudar de assunto)(?:[.!\s]|$)/.test(normalizeText(message));
 }
 
 function isLikelyMutationRequest(message: string): boolean {
@@ -253,7 +420,8 @@ async function adjustModelRequest(
 }
 
 async function findConversation(admin: AdminClient, userId: string, requestedId?: unknown): Promise<{ id: string; state: Record<string, string> } | null> {
-  let query = admin.from("ai_conversations").select("id,state").eq("user_id", userId);
+  let query = admin.from("ai_conversations").select("id,state").eq("user_id", userId)
+    .gte("updated_at", chatRetentionCutoff());
   if (requestedId == null) {
     query = query.order("updated_at", { ascending: false }).order("id", { ascending: false }).limit(1);
   } else {
@@ -278,6 +446,7 @@ async function recentMessages(admin: AdminClient, userId: string, conversationId
     .select("role,content")
     .eq("user_id", userId)
     .eq("conversation_id", conversationId)
+    .gte("created_at", chatRetentionCutoff())
     .in("role", ["user", "assistant"])
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -369,6 +538,7 @@ async function handleHistory(admin: AdminClient, userId: string, requestedId?: u
   if (!conversation) return { conversationId: null, messages: [] };
   const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent")
     .eq("user_id", userId).eq("conversation_id", conversation.id)
+    .gte("created_at", chatRetentionCutoff())
     .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(200);
   if (error) throw new Error("AI_HISTORY_FAILED");
   return {
@@ -428,6 +598,7 @@ Deno.serve(async (req) => {
     const mode = requestMode(body.mode);
     validateRequestFields(body, mode);
     const admin = adminClient();
+    await purgeExpiredChat(admin, user.id);
 
     // Histórico e limpeza são direitos de privacidade. Cancelar uma proposta
     // também continua disponível após downgrade, encerramento do rollout ou
@@ -506,8 +677,13 @@ Deno.serve(async (req) => {
     }
 
     const analyticsRequested = isAnalyticalRequest(message);
+    // Respostas curtas como "Carteira", "Alimentação" ou "pendente" não
+    // repetem o verbo da solicitação original. Enquanto houver um rascunho
+    // de escrita ativo, a conversa precisa continuar no prompt operacional.
+    const mutationRequested = isLikelyMutationRequest(message)
+      || isDirectAction(existingState.__intent);
     if (analyticsRequested && Boolean(quota.limits_enabled) && quota.plan !== "premium") throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
-    if (isLikelyMutationRequest(message) && !hasRemainingActionQuota(quota.remaining)) {
+    if (mutationRequested && !hasRemainingActionQuota(quota.remaining)) {
       throw new Error("AI_DAILY_QUOTA_EXCEEDED");
     }
 
@@ -520,6 +696,7 @@ Deno.serve(async (req) => {
     let modelResult: Awaited<ReturnType<typeof requestModel>>;
     let financialContext: Awaited<ReturnType<typeof buildFinancialContext>>;
     let prompt: string;
+    let workflowContextJson: string;
     let history: ConversationMessage[];
     let safetyId: string;
     const outputCanary = crypto.randomUUID().replaceAll("-", "");
@@ -535,7 +712,12 @@ Deno.serve(async (req) => {
         ...storedHistory.map((item) => ({ ...item, content: redactSensitiveText(item.content) })),
         { role: "user" as const, content: safeMessage },
       ];
-      const contextRequest = `${safeMessage}\n${JSON.stringify(safeState)}`.slice(0, 3_000);
+      const recentUserContext = storedHistory
+        .filter((item) => item.role === "user")
+        .slice(-3)
+        .map((item) => redactSensitiveText(item.content));
+      const semanticMessage = [...recentUserContext, safeMessage].join("\nContinuação do usuário: ");
+      const contextRequest = `${semanticMessage}\n${JSON.stringify(safeState)}`.slice(-3_000);
       financialContext = await buildFinancialContext(
         client,
         String(quota.plan ?? "free"),
@@ -543,14 +725,56 @@ Deno.serve(async (req) => {
         contextRequest,
         user.id,
       );
+      workflowContextJson = mutationRequested
+        ? operationalContext(financialContext.compactJson)
+        : financialContext.compactJson;
       if (analyticsRequested && !financialContext.analyticsAllowed) throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
 
-      prompt = buildSystemPrompt({
-        financialContext: financialContext.compactJson,
-        conversationState: safeState,
-        analyticsAllowed: financialContext.analyticsAllowed,
-        outputCanary,
-      });
+      const deterministicAnswer = deterministicDatedAnswer(semanticMessage, financialContext.compactJson);
+      if (deterministicAnswer) {
+        conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
+        await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
+        await finalizeModelRequest(admin, {
+          usageId,
+          provider: "not_called",
+          model: "not_called",
+          inputTokens: 0,
+          outputTokens: 0,
+          status: "failed",
+          latencyMs: monitoringLatencyMs(requestStartedAt),
+          errorCode: "AI_DETERMINISTIC_RESPONSE",
+        });
+        await updateConversationState(admin, user.id, conversation.id, {});
+        await saveMessageBestEffort(admin, {
+          userId: user.id,
+          conversationId: conversation.id,
+          role: "assistant",
+          content: deterministicAnswer.message,
+          intent: deterministicAnswer.intent,
+          provider: "deterministic",
+          model: "finflow-daily-v1",
+        });
+        return json({
+          kind: "answer",
+          conversationId: conversation.id,
+          message: deterministicAnswer.message,
+          intent: deterministicAnswer.intent,
+          quota: await getQuota(client),
+        }, 200, req);
+      }
+
+      prompt = mutationRequested
+        ? buildSystemPrompt({
+          financialContext: workflowContextJson,
+          conversationState: safeState,
+          analyticsAllowed: financialContext.analyticsAllowed,
+          outputCanary,
+        })
+        : buildReadOnlySystemPrompt({
+          financialContext: financialContext.compactJson,
+          analyticsAllowed: financialContext.analyticsAllowed,
+          outputCanary,
+        });
       const actualBudget = estimateModelTokenBudget(prompt, history);
       if (actualBudget.estimatedInputTokens > MODEL_MAX_RESERVED_INPUT_TOKENS
         || actualBudget.maxOutputTokens > MODEL_MAX_OUTPUT_TOKENS) {
@@ -610,7 +834,7 @@ Deno.serve(async (req) => {
       errorCode: null,
     });
     const { output: rawOutput, provider, model } = modelResult;
-    const output = enforceActionWorkflow(rawOutput, existingState, financialContext.compactJson);
+    const output = enforceActionWorkflow(rawOutput, existingState, workflowContextJson, history.at(-1)?.content ?? "");
     const quotaAfterModel = await getQuota(client);
 
     if (output.kind === "out_of_scope") {
@@ -705,7 +929,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     const original = error instanceof Error ? error.message : "AI_PROVIDER_FAILED";
     const extracted = original.match(/AI_[A-Z0-9_]+|INVALID_REQUEST|INVALID_MODEL_OUTPUT|UNAUTHORIZED/)?.[0] ?? "AI_PROVIDER_FAILED";
-    const code = extracted === "INVALID_MODEL_OUTPUT" ? "AI_PROVIDER_FAILED" : extracted;
+    const code = extracted === "INVALID_MODEL_OUTPUT" ? "AI_MODEL_WORKFLOW_INVALID" : extracted;
     if (["AI_PROVIDER_FAILED", "AI_CONFIGURATION_FAILED", "AI_HISTORY_FAILED"].includes(code)) console.error("finance-ai", original);
     return json({ error: code, message: publicErrorMessage(code) }, errorStatus(code), req);
   }

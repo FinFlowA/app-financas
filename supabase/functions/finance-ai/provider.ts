@@ -45,10 +45,16 @@ export type ModelTokenBudget = {
 // O rollout atual usa o limite de 8 mil tokens/minuto da Groq. O request precisa
 // caber inteiro nesse teto (entrada + teto de saída), mesmo na primeira chamada.
 export const GROQ_COMPATIBLE_TPM_LIMIT = 8_000;
-export const MODEL_MAX_SYSTEM_PROMPT_CHARS = 15_000;
-export const MODEL_MAX_HISTORY_CHARS = 600;
-export const MODEL_MAX_OUTPUT_TOKENS = 512;
-export const MODEL_PROVIDER_SAFETY_TOKENS = 512;
+// O contrato operacional completo + o contexto financeiro compactado ocupa
+// cerca de 16,5 mil caracteres. O teto de tokens abaixo continua sendo a
+// fronteira real de custo; reduzimos o histórico para manter a mesma reserva.
+export const MODEL_MAX_SYSTEM_PROMPT_CHARS = 16_600;
+export const MODEL_MAX_HISTORY_CHARS = 400;
+// Modelos com raciocínio contabilizam os tokens internos dentro do teto de
+// conclusão. 512 podia encerrar o JSON estruturado no meio até em comandos
+// curtos (por exemplo, "Gastei 70 reais em um lanche").
+export const MODEL_MAX_OUTPUT_TOKENS = 576;
+export const MODEL_PROVIDER_SAFETY_TOKENS = 448;
 // Medida conservadora para o prompt pt-BR/JSON do FinFlow, validada contra a
 // contagem retornada pelo GPT-OSS. Entradas UTF-8 atípicas continuam protegidas
 // pela medição em bytes e pelo teto verificado antes de qualquer fetch.
@@ -104,8 +110,65 @@ function providerConfig(): ProviderConfig {
 
 function safeJsonParse(text: string): unknown {
   const trimmed = text.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-  if (trimmed.length > 20_000) throw new Error("INVALID_MODEL_OUTPUT");
-  return JSON.parse(trimmed);
+  if (trimmed.length > 20_000) throw new Error("AI_PROVIDER_RESPONSE_INVALID");
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    throw new Error("AI_PROVIDER_RESPONSE_INVALID");
+  }
+}
+
+function parseProviderOutput(content: string): ModelOutput {
+  try {
+    return parseModelOutput(safeJsonParse(content));
+  } catch (error) {
+    if (error instanceof Error && error.message === "AI_PROVIDER_RESPONSE_INVALID") throw error;
+    throw new Error("AI_PROVIDER_RESPONSE_INVALID");
+  }
+}
+
+// Se o provedor consumir a janela de conclusão antes de fechar o JSON, comandos
+// cotidianos de lançamento ainda devem entrar no fluxo seguro de perguntas. O
+// fallback apenas extrai fatos literais e nunca escolhe conta, categoria, data,
+// frequência ou status, nem cria uma proposta executável.
+export function fallbackNaturalTransaction(message: string): ModelOutput | null {
+  const normalized = message.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const expense = /\b(gastei|paguei|comprei|despesa)\b/.test(normalized);
+  const income = /\b(recebi|ganhei|entrou|receita)\b/.test(normalized);
+  if (expense === income) return null;
+  const amountRaw = message.match(/r\$\s*([\d.]+(?:,\d{1,2})?)/i)?.[1]
+    ?? message.match(/\b([\d.]+(?:,\d{1,2})?)\s*(?:reais|real)\b/i)?.[1];
+  if (!amountRaw) return null;
+  const compact = amountRaw.replace(/\./g, "").replace(",", ".");
+  const amount = Number(compact);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  const tail = message.match(/(?:r\$\s*[\d.]+(?:,\d{1,2})?|[\d.]+(?:,\d{1,2})?\s*(?:reais|real))\s+(?:em|com|de)\s+(.+)$/i)?.[1]
+    ?.replace(/^(?:um|uma)\s+/i, "").trim();
+  const data = [
+    { key: "type" as const, value: expense ? "despesa" : "receita" },
+    { key: "value" as const, value: String(amount) },
+    ...(tail && tail.length >= 2 ? [{ key: "description" as const, value: tail }] : []),
+  ];
+  return {
+    kind: "clarify",
+    intent: "create_transaction",
+    message: "Esse lançamento é único, parcelado, semanal, mensal ou anual?",
+    missing_fields: ["frequency"],
+    data,
+  };
+}
+
+function parsedOrNaturalFallback(content: string | undefined, messages: ConversationMessage[]): ModelOutput {
+  if (content) {
+    try {
+      return parseProviderOutput(content);
+    } catch (error) {
+      if (!(error instanceof Error) || error.message !== "AI_PROVIDER_RESPONSE_INVALID") throw error;
+    }
+  }
+  const fallback = fallbackNaturalTransaction(messages.at(-1)?.content ?? "");
+  if (fallback) return fallback;
+  throw new Error("AI_PROVIDER_RESPONSE_INVALID");
 }
 
 export type ProviderHttpFailure = {
@@ -116,9 +179,9 @@ export type ProviderHttpFailure = {
 export function classifyProviderHttpFailure(status: number): ProviderHttpFailure {
   if (status === 413) return { code: "AI_PROVIDER_REQUEST_TOO_LARGE", category: "request_too_large" };
   if (status === 429) return { code: "AI_PROVIDER_RATE_LIMITED", category: "rate_limited" };
-  if (status === 401 || status === 403) return { code: "AI_PROVIDER_FAILED", category: "authentication" };
-  if (status >= 400 && status < 500) return { code: "AI_PROVIDER_FAILED", category: "invalid_request" };
-  if (status >= 500) return { code: "AI_PROVIDER_FAILED", category: "upstream_unavailable" };
+  if (status === 401 || status === 403) return { code: "AI_PROVIDER_AUTH_FAILED", category: "authentication" };
+  if (status >= 400 && status < 500) return { code: "AI_PROVIDER_REQUEST_INVALID", category: "invalid_request" };
+  if (status >= 500) return { code: "AI_PROVIDER_UNAVAILABLE", category: "upstream_unavailable" };
   return { code: "AI_PROVIDER_FAILED", category: "unexpected" };
 }
 
@@ -144,7 +207,7 @@ export function validatedModelUsage(input: unknown, output: unknown): ModelUsage
   const outputTokens = tokenCount(output);
   // Uma resposta com conteúdo necessariamente consumiu entrada e saída. Sem
   // telemetria positiva não é seguro liberar a reserva máxima da chamada.
-  if (inputTokens <= 0 || outputTokens <= 0) throw new Error("AI_PROVIDER_FAILED");
+  if (inputTokens <= 0 || outputTokens <= 0) throw new Error("AI_PROVIDER_USAGE_INVALID");
   return { inputTokens, outputTokens };
 }
 
@@ -248,12 +311,11 @@ async function callOpenAi(
   if (!response.ok) throwProviderHttpFailure(config.name, response.status);
   const body = await response.json() as Record<string, unknown>;
   const content = extractOpenAiText(body);
-  if (!content) throw new Error("AI_PROVIDER_FAILED");
   const usage = body.usage && typeof body.usage === "object"
     ? body.usage as Record<string, unknown>
     : {};
   return {
-    output: parseModelOutput(safeJsonParse(content)),
+    output: parsedOrNaturalFallback(content, messages),
     usage: validatedModelUsage(usage.input_tokens, usage.output_tokens),
   };
 }
@@ -297,9 +359,8 @@ async function callGroq(
     usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
   const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new Error("AI_PROVIDER_FAILED");
   return {
-    output: parseModelOutput(safeJsonParse(content)),
+    output: parsedOrNaturalFallback(content, messages),
     usage: validatedModelUsage(body.usage?.prompt_tokens, body.usage?.completion_tokens),
   };
 }

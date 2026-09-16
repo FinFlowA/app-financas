@@ -457,6 +457,7 @@ function readIntent(message: string): FinanceAiReadIntent | "out_of_scope" {
   if (hasApproximateToken(text, ["transacao", "lancamento", "despesa", "receita", "entrada", "saida", "pendente", "atrasado", "vence", "vencido"])) return "list_transactions";
   if (hasApproximateToken(text, ["saldo", "financeiro", "financas", "dinheiro", "conta", "contas"])) return "financial_summary";
   if (/\bcomo funciona|controle financeiro|organizar\b/.test(text)) return "explain_financial_control";
+  if (/^(oi|ola|bom dia|boa tarde|boa noite|obrigad[oa]|valeu|tudo bem|como voce esta|quem e voce)[?!.\s]*$/.test(text)) return "casual_conversation";
   return "out_of_scope";
 }
 
@@ -1240,6 +1241,13 @@ export class LocalDemoOperationalFinanceAi {
 
   private answer(intent: FinanceAiReadIntent | "out_of_scope", message: string): string {
     if (intent === "out_of_scope") return "Posso responder exclusivamente sobre controle financeiro e executar as funções financeiras disponíveis no FinFlow.";
+    if (intent === "casual_conversation") {
+      const text = normalize(message);
+      if (/obrigad|valeu/.test(text)) return "Por nada! Quando precisar, é só chamar.";
+      if (/tudo bem|como voce esta/.test(text)) return "Tudo certo por aqui! E com você? Posso ajudar com seu FinFlow ou conversar um pouco.";
+      if (/quem e voce/.test(text)) return "Eu sou a Flô, sua assistente financeira no FinFlow.";
+      return "Oi! Eu sou a Flô. Como posso ajudar você hoje?";
+    }
     const transactions = this.rows("transacoes");
     const visibleTransactions = transactions.filter((row) => row.transacao_pai_id === null || row.transacao_pai_id === undefined);
     const operational = transactions.filter((row) => !String(row.descricao ?? "").includes("[Transf.]"));

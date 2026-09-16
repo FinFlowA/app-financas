@@ -1,5 +1,6 @@
 import {
   aggregateScopeArgument,
+  calculateDailyCashFlow,
   calculateFinancialSnapshot,
   financialSnapshotFromAggregate,
   MAX_PROVIDER_CONTEXT_CHARS,
@@ -167,6 +168,26 @@ Deno.test("separa fluxo operacional dos eventos de saldo e usa data de realizaç
   assertMoney(august.realized_expense, 95, "fluxo de caixa inclui saída efetiva da fatura");
   assertMoney(august.account_balance, 1_175, "saldo projetado de agosto");
   assertMoney(july.account_balance, 1_210, "saldo histórico de julho");
+});
+
+Deno.test("expõe o mesmo saldo diário realizado e projetado do fluxo de caixa", () => {
+  const snapshot = fixture();
+  const daily = calculateDailyCashFlow(
+    transactions,
+    snapshot.scopeAccountIds,
+    goals,
+    snapshot.currentBalance,
+    "2026-08-02",
+    "2026-08",
+  );
+  const day20 = daily.find((row) => row.date === "2026-08-20");
+  const day30 = daily.find((row) => row.date === "2026-08-30");
+  assert(day20 && day30, "dias projetados ausentes");
+  assertMoney(day20.account_balance, 1_195, "saldo no dia do aporte pendente");
+  assertMoney(day20.saved_to_goals, 30, "aporte ao objetivo no dia");
+  assert(day20.balance_is_projection, "dia futuro deveria ser projeção");
+  assertMoney(day30.account_balance, 1_175, "saldo após todas as pendências do mês");
+  assertMoney(day30.pending_expense, 20, "despesa pendente do dia");
 });
 
 Deno.test("guardar e resgatar afetam saldo, mas só guardar entra na previsão do objetivo", () => {

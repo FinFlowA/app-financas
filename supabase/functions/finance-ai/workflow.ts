@@ -197,6 +197,88 @@ function referenceExists(context: FinancialContext, key: DataKey, value: string)
   return id !== null && contextRows(context, contextKey).some((row) => Number(row.id) === id);
 }
 
+function resolveNamedReferences(fields: ModelField[], context: FinancialContext): void {
+  for (const field of fields) {
+    const contextKey = ID_CONTEXT[field.key];
+    if (!contextKey || positiveInteger(field.value) !== null) continue;
+    const requestedName = withoutAccents(field.value).replaceAll("_", " ").trim();
+    if (!requestedName) continue;
+    const matches = contextRows(context, contextKey).filter((row) => {
+      const candidate = typeof row.name === "string"
+        ? row.name
+        : typeof row.description === "string"
+        ? row.description
+        : "";
+      return withoutAccents(candidate).replaceAll("_", " ").trim() === requestedName;
+    });
+    if (matches.length !== 1) continue;
+    const id = Number(matches[0].id);
+    if (Number.isSafeInteger(id) && id > 0) field.value = String(id);
+  }
+}
+
+function explicitlySelected(
+  key: DataKey,
+  value: string,
+  message: string,
+  context: FinancialContext,
+): boolean {
+  const normalizedMessage = withoutAccents(message).replaceAll("_", " ");
+  if (key === "frequency") {
+    const patterns: Record<string, RegExp> = {
+      unica: /\b(unica|unico|uma vez)\b/,
+      parcelada: /\b(parcelad[ao]|parcelas?|\d+x)\b/,
+      semanal: /\b(semanal|toda semana)\b/,
+      mensal: /\b(mensal|todo mes|fixa)\b/,
+      anual: /\b(anual|todo ano)\b/,
+    };
+    return patterns[value]?.test(normalizedMessage) ?? false;
+  }
+  if (key === "status") {
+    return value === "paga"
+      ? /\b(pag[ao]|realizad[ao]|concluid[ao])\b/.test(normalizedMessage)
+      : /\b(pendente|agendad[ao]|a pagar|a receber)\b/.test(normalizedMessage);
+  }
+  if (key === "operation") {
+    return value === "guardar"
+      ? /\b(guardar|guarde|aporte|aportar|depositar|deposite)\b/.test(normalizedMessage)
+      : /\b(resgatar|resgate|retirar|retire|sacar|saque)\b/.test(normalizedMessage);
+  }
+  const contextKey = ID_CONTEXT[key];
+  const id = positiveInteger(value);
+  const row = contextKey && id !== null
+    ? contextRows(context, contextKey).find((item) => Number(item.id) === id)
+    : undefined;
+  const label = row && typeof row.name === "string"
+    ? row.name
+    : row && typeof row.description === "string"
+    ? row.description
+    : "";
+  const normalizedLabel = withoutAccents(label).replaceAll("_", " ").trim();
+  return normalizedLabel.length >= 2 && normalizedMessage.includes(normalizedLabel);
+}
+
+function removeImplicitUserChoices(
+  intent: DirectAction,
+  fields: ModelField[],
+  conversationState: Record<string, string>,
+  context: FinancialContext,
+  userMessage: string,
+): void {
+  if (!userMessage) return;
+  const protectedByIntent: Partial<Record<DirectAction, readonly DataKey[]>> = {
+    create_transaction: ["frequency", "status", "account_id", "category_id"],
+    transfer_between_accounts: ["frequency", "status", "account_id", "destination_account_id"],
+    create_card_purchase: ["card_id", "category_id", "frequency"],
+    move_goal: ["operation", "goal_id", "account_id"],
+  };
+  for (const key of protectedByIntent[intent] ?? []) {
+    if (cleaned(conversationState[key])) continue;
+    const field = fields.find((item) => item.key === key);
+    if (field && !explicitlySelected(key, field.value, userMessage, context)) removeField(fields, key);
+  }
+}
+
 function requiredActionFields(intent: DirectAction, values: Map<DataKey, string>): readonly DataKey[] {
   if (intent === "move_goal") {
     const fields: DataKey[] = ["operation", "goal_id", "value", "account_id"];
@@ -398,6 +480,7 @@ export function enforceActionWorkflow(
   rawOutput: ModelOutput,
   conversationState: Record<string, string>,
   compactFinancialContext: string,
+  userMessage = "",
 ): ModelOutput {
   const pinnedIntent = conversationState.__intent;
   const candidate = pinnedIntent && isDirectAction(pinnedIntent) && rawOutput.intent !== pinnedIntent
@@ -422,6 +505,8 @@ export function enforceActionWorkflow(
   const fields = mergeActionFields(conversationState, output)
     .filter((field) => allowed.has(field.key));
   applyDeterministicDefaults(output.intent, fields, context);
+  resolveNamedReferences(fields, context);
+  removeImplicitUserChoices(output.intent, fields, conversationState, context, userMessage);
 
   const badReference = invalidReference(fields, context);
   if (badReference) {

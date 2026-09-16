@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
@@ -16,7 +17,7 @@ type AiResponse = {
   messages?: { id: string; role: "user" | "assistant"; text: string }[];
 };
 
-const WELCOME = "Olá! Sou a IA financeira do FinFlow. Posso analisar seus dados e preparar ações para você revisar. Nenhuma alteração é feita sem sua confirmação.";
+const WELCOME = "Olá! Eu sou a Flô, sua assistente financeira no FinFlow. Posso conversar, explicar seus números e preparar ações para você revisar. Nenhuma alteração é feita sem sua confirmação.";
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NAVIGATION_ROUTES: Readonly<Record<string, string>> = {
   "/": "/",
@@ -254,7 +255,7 @@ export default function AssistantChat({
           <div className={styles.lockedIcon} aria-hidden>
             <svg width="27" height="27" viewBox="0 0 24 24" fill="none"><path d="m12 2 1.4 4.6L18 8l-4.6 1.4L12 14l-1.4-4.6L6 8l4.6-1.4L12 2Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="m18.5 14 .8 2.7 2.7.8-2.7.8-.8 2.7-.8-2.7-2.7-.8 2.7-.8.8-2.7Z" fill="currentColor"/></svg>
           </div>
-          <p className={styles.eyebrow}>IA FinFlow</p>
+          <p className={styles.eyebrow}>Flô · FinFlow</p>
           <h1>Seu controle financeiro por conversa</h1>
           <p className={styles.lockedDescription}>A IA operacional está disponível nos planos Smart e Premium. Seu plano atual é {plan}. Todas as ações financeiras exigem sua revisão e confirmação.</p>
           <Link href="/planos" className={styles.lockedCta}>Conhecer planos</Link>
@@ -266,15 +267,15 @@ export default function AssistantChat({
   const quotaText = quota ? `${Math.max(0, quota.remaining)}/${quota.limit < 0 ? "∞" : quota.limit} ações · ${Math.max(0, quota.model_remaining)}/${quota.model_limit} consultas` : "Conexão protegida";
   return (
     <div className={styles.page}>
-      <section className={styles.chatShell} aria-label="Conversa com a IA financeira">
+      <section className={styles.chatShell} aria-label="Conversa com a Flô, assistente financeira do FinFlow">
         <header className={styles.chatHeader}>
           <div className={styles.assistantIdentity}>
             <span className={styles.assistantIcon} aria-hidden>
-              <svg width="23" height="23" viewBox="0 0 24 24" fill="none"><path d="m12 2 1.4 4.6L18 8l-4.6 1.4L12 14l-1.4-4.6L6 8l4.6-1.4L12 2Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"/><path d="m18.5 14 .8 2.7 2.7.8-2.7.8-.8 2.7-.8-2.7-2.7-.8 2.7-.8.8-2.7Z" fill="currentColor"/></svg>
+              <Image src="/finflow-logo.png" alt="" width={23} height={23} />
             </span>
             <div className="min-w-0">
-              <p className={styles.eyebrow}>Somente finanças</p>
-              <h1 className={styles.chatTitle}>IA FinFlow</h1>
+              <p className={styles.eyebrow}>Assistente financeira</p>
+              <h1 className={styles.chatTitle}>Flô</h1>
               <p className={styles.quota}>{quotaText}</p>
             </div>
           </div>
@@ -296,7 +297,7 @@ export default function AssistantChat({
           <div className={styles.messagesInner}>
             {messages.map((message) => (
               <div key={message.id} className={styles.messageRow} data-role={message.role}>
-                {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden>✦</span>}
+                {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden><Image src="/finflow-logo.png" alt="" width={17} height={17} /></span>}
                 <div className={styles.messageBubble}>{message.text}</div>
               </div>
             ))}
