@@ -20,6 +20,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { usuarioPodeAcessarIA } from "../constants/features";
 import { parseFinanceAiHttpResponse } from "../lib/finance-ai/validation";
+import { formatAssistantMessage } from "../lib/assistant-message-format";
 import { getOptionalSecureStore } from "../lib/optional-native-modules";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
@@ -30,6 +31,23 @@ type ChatMessage = {
   text: string;
   createdAt?: string;
 };
+
+function AssistantMessageText({ text, color }: { text: string; color: string }) {
+  const blocks = formatAssistantMessage(text);
+  return (
+    <View style={styles.assistantMessageContent}>
+      {blocks.map((block, blockIndex) => (
+        <Text key={`${blockIndex}-${block.parts[0]?.text ?? ""}`} style={[styles.messageText, { color }]}>
+          {block.parts.map((part, partIndex) => (
+            <Text key={`${partIndex}-${part.text}`} style={part.emphasis ? styles.messageEmphasis : undefined}>
+              {part.text}
+            </Text>
+          ))}
+        </Text>
+      ))}
+    </View>
+  );
+}
 
 type AiQuota = {
   plan?: "free" | "smart" | "premium" | string;
@@ -68,6 +86,8 @@ type FinanceAiResponse = {
     createdAt?: string;
   }[];
   pendingAction?: PendingAction;
+  choices?: string[];
+  missingFields?: string[];
   action?: {
     ok?: boolean;
     error_code?: string;
@@ -88,7 +108,12 @@ class FinanceAiRequestError extends Error {
   }
 }
 
-const WELCOME_MESSAGE = "Olá! Eu sou a Flô, sua assistente financeira no FinFlow. Posso conversar, explicar seus números e preparar ações para você revisar. Nenhuma alteração é feita sem você tocar em Confirmar.";
+const WELCOME_MESSAGE = "Olá! Eu sou o Finn, seu assistente financeiro no FinFlow. Posso conversar, explicar seus números e preparar ações para você revisar. Nenhuma alteração é feita sem você tocar em Confirmar.";
+const INLINE_CHOICE_LIMIT = 4;
+
+function normalizeChoice(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
 function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -327,6 +352,8 @@ export default function ChatIAScreen() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [clarificationChoices, setClarificationChoices] = useState<string[]>([]);
+  const [clarificationField, setClarificationField] = useState<string | null>(null);
   const [quota, setQuota] = useState<AiQuota | null>(null);
   const [clearModalVisible, setClearModalVisible] = useState(false);
   const [clearing, setClearing] = useState(false);
@@ -385,6 +412,14 @@ export default function ChatIAScreen() {
     { icon: "savings" as const, text: "Criar um objetivo" },
   ], [limites.iaAnalitica, limitsEnabled]);
 
+  const autocompleteChoices = useMemo(() => {
+    const query = normalizeChoice(input);
+    if (clarificationChoices.length <= INLINE_CHOICE_LIMIT || !query) return [];
+    return clarificationChoices
+      .filter((choice) => normalizeChoice(choice).includes(query))
+      .slice(0, 6);
+  }, [clarificationChoices, input]);
+
   const appendAssistant = useCallback((text: string) => {
     setMessages((current) => [...current, { id: makeId("assistant"), role: "assistant", text }]);
   }, []);
@@ -416,6 +451,7 @@ export default function ChatIAScreen() {
       setMessages([{ id: "welcome", role: "assistant", text: WELCOME_MESSAGE }]);
       setConversationId(null);
       setPendingAction(null);
+      setClarificationChoices([]);
       setQuota(null);
       setInput("");
       setLoadingHistory(true);
@@ -495,6 +531,12 @@ export default function ChatIAScreen() {
     if (!operationIsCurrent(operationEpoch, operationUserId)) return;
     if (response.quota) setQuota(response.quota);
     if (response.message) appendAssistant(response.message);
+    setClarificationChoices(response.kind === "clarify" && Array.isArray(response.choices)
+      ? response.choices
+      : []);
+    setClarificationField(response.kind === "clarify" && Array.isArray(response.missingFields)
+      ? response.missingFields[0] ?? null
+      : null);
     if (response.pendingAction) await savePendingAction(response.pendingAction);
     if (response.kind === "navigate" && response.route) {
       setTimeout(() => {
@@ -504,7 +546,12 @@ export default function ChatIAScreen() {
   }, [appendAssistant, conversationStorageKey, operationIsCurrent, router, savePendingAction]);
 
   const sendMessage = useCallback(async (suggested?: string) => {
-    const text = (suggested ?? input).trim();
+    const typed = (suggested ?? input).trim();
+    const normalizedTyped = normalizeChoice(typed);
+    const matchingChoices = suggested || clarificationChoices.length <= INLINE_CHOICE_LIMIT || !normalizedTyped
+      ? []
+      : clarificationChoices.filter((choice) => normalizeChoice(choice).includes(normalizedTyped));
+    const text = (suggested ?? (matchingChoices.length === 1 ? matchingChoices[0] : typed)).trim();
     if (!text || loading || sendingRef.current || clearingRef.current || clearModalVisible) return;
     if (pendingAction) {
       showToast("Confirme ou cancele a ação exibida antes de continuar.", "info");
@@ -521,6 +568,8 @@ export default function ChatIAScreen() {
     sendingRef.current = true;
     setLoading(true);
     setInput("");
+    setClarificationChoices([]);
+    setClarificationField(null);
     setMessages((current) => [...current, { id: makeId("user"), role: "user", text }]);
     try {
       const response = await invokeFinanceAi({
@@ -541,7 +590,7 @@ export default function ChatIAScreen() {
         requestAnimationFrame(() => inputRef.current?.focus());
       }
     }
-  }, [appendAssistant, applyResponse, clearModalVisible, conversationId, input, loading, operationIsCurrent, pendingAction, session?.access_token, session?.user?.id, showToast]);
+  }, [appendAssistant, applyResponse, clarificationChoices, clearModalVisible, conversationId, input, loading, operationIsCurrent, pendingAction, session?.access_token, session?.user?.id, showToast]);
 
   const confirmAction = useCallback(async () => {
     if (!pendingAction || loading || clearingRef.current || clearModalVisible) return;
@@ -660,6 +709,7 @@ export default function ChatIAScreen() {
       await secureStorageRemoveItem(conversationStorageKey);
       await savePendingAction(null);
       setMessages([{ id: "welcome", role: "assistant", text: WELCOME_MESSAGE }]);
+      setClarificationChoices([]);
       setClearModalVisible(false);
       showToast(
         proposalCancellationWarning
@@ -695,11 +745,16 @@ export default function ChatIAScreen() {
               <MaterialIcons name="arrow-back" size={23} color="#FFF" />
             </TouchableOpacity>
             <View style={styles.headerIdentity}>
-              <View style={styles.headerSparkle}>
-                <MaterialIcons name="auto-awesome" size={20} color="#FFF" />
+              <View style={styles.headerFinnAvatar}>
+                <Image
+                  source={require("../assets/images/finn-chat-header.png")}
+                  style={styles.headerFinnImage}
+                  contentFit="contain"
+                  accessibilityLabel="Finn, mascote do FinFlow"
+                />
               </View>
               <View>
-                <Text style={styles.headerTitle}>Flô</Text>
+                <Text style={styles.headerTitle}>Finn</Text>
                 <Text style={styles.headerSubtitle}>Controle financeiro protegido</Text>
               </View>
             </View>
@@ -754,7 +809,12 @@ export default function ChatIAScreen() {
               <View key={message.id} style={[styles.messageRow, isUser && styles.messageRowUser]}>
                 {!isUser && (
                   <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
-                    <Image source={require("../assets/images/icon-square-v2.png")} style={styles.avatarLogo} contentFit="contain" accessibilityIgnoresInvertColors />
+                    <Image
+                      source={require("../assets/images/finn-message-avatar.png")}
+                      style={styles.avatarFinn}
+                      contentFit="cover"
+                      accessibilityLabel="Finn, assistente financeiro do FinFlow"
+                    />
                   </View>
                 )}
                 <View
@@ -766,7 +826,9 @@ export default function ChatIAScreen() {
                     !isUser && styles.assistantBubble,
                   ]}
                 >
-                  <Text style={[styles.messageText, { color: isUser ? "#FFF" : theme.text }]}>{message.text}</Text>
+                  {isUser
+                    ? <Text style={[styles.messageText, { color: "#FFF" }]}>{message.text}</Text>
+                    : <AssistantMessageText text={message.text} color={theme.text} />}
                 </View>
               </View>
             );
@@ -833,10 +895,35 @@ export default function ChatIAScreen() {
             </View>
           )}
 
+          {!pendingAction && clarificationChoices.length > 0 && clarificationChoices.length <= INLINE_CHOICE_LIMIT && (
+            <View style={[styles.choiceCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              <Text style={[styles.choiceTitle, { color: theme.textMuted }]}>Escolha uma opção</Text>
+              <View style={styles.choiceGrid}>
+                {clarificationChoices.map((choice) => (
+                  <TouchableOpacity
+                    key={choice}
+                    style={[styles.choiceButton, { backgroundColor: theme.surfaceMuted, borderColor: theme.primary }]}
+                    onPress={() => void sendMessage(choice)}
+                    disabled={loading}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Selecionar ${choice}`}
+                  >
+                    <Text style={[styles.choiceButtonText, { color: theme.text }]}>{choice}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
+
           {loading && !pendingAction && (
             <View style={styles.typingRow}>
               <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
-                <MaterialIcons name="auto-awesome" size={17} color={theme.primary} />
+                <Image
+                  source={require("../assets/images/finn-message-avatar.png")}
+                  style={styles.avatarFinn}
+                  contentFit="cover"
+                  accessibilityLabel="Finn, assistente financeiro do FinFlow"
+                />
               </View>
               <View style={[styles.typingBubble, { backgroundColor: theme.surface, borderColor: theme.border }]}>
                 <ActivityIndicator size="small" color={theme.primary} />
@@ -850,11 +937,34 @@ export default function ChatIAScreen() {
           {pendingAction && (
             <Text style={[styles.pendingComposerText, { color: theme.textMuted }]}>Confirme ou cancele a proposta para continuar.</Text>
           )}
+          {!pendingAction && autocompleteChoices.length > 0 && (
+            <View style={[styles.autocompletePanel, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+              {autocompleteChoices.map((choice) => (
+                  <TouchableOpacity
+                    key={choice}
+                    style={[styles.autocompleteOption, { borderBottomColor: theme.border }]}
+                    onPress={() => void sendMessage(choice)}
+                    disabled={loading}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Selecionar ${choice}`}
+                  >
+                    <MaterialIcons name="search" size={18} color={theme.primary} />
+                    <Text style={[styles.autocompleteText, { color: theme.text }]}>{choice}</Text>
+                  </TouchableOpacity>
+              ))}
+            </View>
+          )}
           <View style={[styles.composer, { backgroundColor: theme.surface, borderColor: pendingAction ? theme.border : theme.primary }]}>
             <TextInput
               ref={inputRef}
               style={[styles.input, { color: theme.text }]}
-              placeholder={!hasAccess ? "Disponível nos planos Smart e Premium" : pendingAction ? "Aguardando sua decisão" : "Pergunte ou peça uma ação financeira"}
+              placeholder={!hasAccess
+                ? "Disponível nos planos Smart e Premium"
+                : pendingAction
+                  ? "Aguardando sua decisão"
+                  : clarificationChoices.length > INLINE_CHOICE_LIMIT
+                    ? `Digite para buscar ${clarificationField === "category_id" ? "uma categoria" : "uma opção"}`
+                    : "Pergunte ou peça uma ação financeira"}
               placeholderTextColor={theme.textMuted}
               value={input}
               onChangeText={setInput}
@@ -954,7 +1064,8 @@ const styles = StyleSheet.create({
   headerTopRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)" },
   headerIdentity: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 },
-  headerSparkle: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.15)" },
+  headerFinnAvatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "rgba(255,255,255,0.13)", borderWidth: 1, borderColor: "rgba(255,255,255,0.20)" },
+  headerFinnImage: { width: 42, height: 42 },
   headerTitle: { color: "#FFF", fontSize: 19, fontWeight: "900" },
   headerSubtitle: { color: "#D8FFF0", fontSize: 10.5, fontWeight: "600", marginTop: 1 },
   statusRow: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 8, marginTop: 10 },
@@ -972,16 +1083,23 @@ const styles = StyleSheet.create({
   accessNoticeButtonText: { color: "#FFF", fontSize: 11, fontWeight: "900" },
   messageRow: { flexDirection: "row", alignItems: "flex-end", gap: 8, marginBottom: 13, paddingRight: 36 },
   messageRowUser: { justifyContent: "flex-end", paddingRight: 0, paddingLeft: 52 },
-  avatar: { width: 32, height: 32, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  avatarLogo: { width: 21, height: 21 },
+  avatar: { width: 34, height: 34, borderRadius: 12, alignItems: "center", justifyContent: "center", overflow: "hidden", borderWidth: 1, borderColor: "rgba(73, 180, 232, 0.32)" },
+  avatarFinn: { width: 34, height: 34 },
   bubble: { maxWidth: "88%", borderRadius: 18, paddingHorizontal: 14, paddingVertical: 11 },
   assistantBubble: { borderWidth: 1 },
   messageText: { fontSize: 14, lineHeight: 20.5, fontWeight: "500" },
+  assistantMessageContent: { gap: 8 },
+  messageEmphasis: { fontWeight: "900", fontVariant: ["tabular-nums"] },
   suggestionsWrap: { marginTop: 7, marginBottom: 12 },
   suggestionsTitle: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 9, marginLeft: 2 },
   suggestionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   suggestionCard: { width: "48.6%", minHeight: 74, borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, justifyContent: "space-between" },
   suggestionText: { fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 8 },
+  choiceCard: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, marginTop: 2, marginBottom: 14 },
+  choiceTitle: { fontSize: 11, lineHeight: 16, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.45, marginBottom: 9 },
+  choiceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  choiceButton: { minHeight: 48, minWidth: 112, maxWidth: "100%", borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, alignItems: "center", justifyContent: "center" },
+  choiceButtonText: { fontSize: 13, lineHeight: 18, fontWeight: "800", textAlign: "center" },
   proposalCard: { borderWidth: 1.5, borderRadius: FinFlowRadius.large, padding: 16, marginTop: 5, marginBottom: 14, ...FinFlowShadow },
   proposalHeader: { flexDirection: "row", alignItems: "center", gap: 11 },
   proposalIcon: { width: 43, height: 43, borderRadius: 14, alignItems: "center", justifyContent: "center" },
@@ -1003,6 +1121,9 @@ const styles = StyleSheet.create({
   typingText: { fontSize: 12, fontWeight: "600" },
   composerArea: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 9, paddingBottom: Platform.OS === "ios" ? 3 : 7 },
   pendingComposerText: { fontSize: 10.5, textAlign: "center", fontWeight: "700", marginBottom: 6 },
+  autocompletePanel: { maxHeight: 280, borderWidth: 1, borderRadius: 16, marginBottom: 8, overflow: "hidden", ...FinFlowShadow },
+  autocompleteOption: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
+  autocompleteText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: "700" },
   composer: { minHeight: 54, maxHeight: 132, borderWidth: 1.2, borderRadius: 19, flexDirection: "row", alignItems: "flex-end", paddingLeft: 14, paddingRight: 6, paddingVertical: 6 },
   input: { flex: 1, minHeight: 40, maxHeight: 112, fontSize: 14, lineHeight: 20, paddingTop: 9, paddingBottom: 8, paddingRight: 8, textAlignVertical: "top" },
   sendButton: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center" },

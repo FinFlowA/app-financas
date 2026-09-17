@@ -58,9 +58,9 @@ Deno.test("bloqueia saída fora do escopo e aceita resposta financeira", () => {
   assert(safeAssistantMessage("Aqui está uma piada sobre dinheiro", "financial_summary") === null, "Saída externa deveria ser bloqueada.");
 });
 
-Deno.test("aceita saída casual da Flô sem liberar afirmações de execução", () => {
+Deno.test("aceita saída casual do Finn sem liberar afirmações de execução", () => {
   assert(safeAssistantMessage("Oi! Como você está?", "casual_conversation", "answer") !== null, "Cumprimento seguro deveria passar.");
-  assert(safeAssistantMessage("Eu sou a Flô, sua assistente no FinFlow.", "casual_conversation", "answer") !== null, "Apresentação da Flô deveria passar.");
+  assert(safeAssistantMessage("Eu sou o Finn, seu assistente no FinFlow.", "casual_conversation", "answer") !== null, "Apresentação do Finn deveria passar.");
   assert(safeAssistantMessage("Criei uma despesa para você.", "casual_conversation", "answer") === null, "Conversa casual não pode alegar execução.");
 });
 

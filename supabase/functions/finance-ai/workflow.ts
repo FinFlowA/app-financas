@@ -226,7 +226,7 @@ function explicitlySelected(
   const normalizedMessage = withoutAccents(message).replaceAll("_", " ");
   if (key === "frequency") {
     const patterns: Record<string, RegExp> = {
-      unica: /\b(unica|unico|uma vez)\b/,
+      unica: /\b(unica|unico|uma vez|gastei|paguei|comprei|recebi|ganhei)\b/,
       parcelada: /\b(parcelad[ao]|parcelas?|\d+x)\b/,
       semanal: /\b(semanal|toda semana)\b/,
       mensal: /\b(mensal|todo mes|fixa)\b/,
@@ -236,13 +236,17 @@ function explicitlySelected(
   }
   if (key === "status") {
     return value === "paga"
-      ? /\b(pag[ao]|realizad[ao]|concluid[ao])\b/.test(normalizedMessage)
+      ? /\b(pag[ao]|realizad[ao]|concluid[ao]|gastei|paguei|comprei|recebi|ganhei)\b/.test(normalizedMessage)
       : /\b(pendente|agendad[ao]|a pagar|a receber)\b/.test(normalizedMessage);
   }
   if (key === "operation") {
     return value === "guardar"
       ? /\b(guardar|guarde|aporte|aportar|depositar|deposite)\b/.test(normalizedMessage)
       : /\b(resgatar|resgate|retirar|retire|sacar|saque)\b/.test(normalizedMessage);
+  }
+  if (key === "description") {
+    const description = withoutAccents(value).replaceAll("_", " ").trim();
+    return description.length >= 2 && normalizedMessage.includes(description);
   }
   const contextKey = ID_CONTEXT[key];
   const id = positiveInteger(value);
@@ -267,9 +271,9 @@ function removeImplicitUserChoices(
 ): void {
   if (!userMessage) return;
   const protectedByIntent: Partial<Record<DirectAction, readonly DataKey[]>> = {
-    create_transaction: ["frequency", "status", "account_id", "category_id"],
-    transfer_between_accounts: ["frequency", "status", "account_id", "destination_account_id"],
-    create_card_purchase: ["card_id", "category_id", "frequency"],
+    create_transaction: ["description", "account_id", "category_id"],
+    transfer_between_accounts: ["account_id", "destination_account_id"],
+    create_card_purchase: ["card_id", "category_id"],
     move_goal: ["operation", "goal_id", "account_id"],
   };
   for (const key of protectedByIntent[intent] ?? []) {
@@ -277,6 +281,28 @@ function removeImplicitUserChoices(
     const field = fields.find((item) => item.key === key);
     if (field && !explicitlySelected(key, field.value, userMessage, context)) removeField(fields, key);
   }
+}
+
+export function resolveReferencedFollowup(
+  conversationState: Record<string, string>,
+  userMessage: string,
+): ModelOutput | null {
+  const transactionId = positiveInteger(conversationState.__last_transaction_id ?? "");
+  if (transactionId === null) return null;
+  const message = withoutAccents(userMessage).replaceAll("_", " ");
+  const refersToLast = /\b(esse|este|isso|ultimo|ultima|acabei|acabou|agora|lancei errado|criei errado|fiz errado)\b/.test(message);
+  const wantsDelete = /\b(apague|apagar|delete|deletar|exclua|excluir|remova|remover)\b/.test(message);
+  if (!refersToLast || !wantsDelete) return null;
+  return {
+    kind: "propose_action",
+    intent: "delete_transaction",
+    message: "Revise a exclusão do lançamento que você acabou de criar.",
+    missing_fields: [],
+    data: [
+      { key: "transaction_id", value: String(transactionId) },
+      { key: "series_scope", value: "one" },
+    ],
+  };
 }
 
 function requiredActionFields(intent: DirectAction, values: Map<DataKey, string>): readonly DataKey[] {
@@ -303,6 +329,66 @@ function requiredActionFields(intent: DirectAction, values: Map<DataKey, string>
     return fields;
   }
   return ACTION_REQUIRED_FIELDS[intent] ?? [];
+}
+
+function contextualQuestion(key: DataKey, fields: ModelField[]): string {
+  const description = cleaned(fields.find((field) => field.key === "description")?.value);
+  const type = cleaned(fields.find((field) => field.key === "type")?.value);
+  const status = cleaned(fields.find((field) => field.key === "status")?.value);
+  if (description && key === "scheduled_date") {
+    if (status === "paga") return type === "receita"
+      ? `Quando você recebeu por ${description}?`
+      : `Quando foi esse gasto com ${description}?`;
+    return `Para qual data deseja agendar ${description}?`;
+  }
+  if (description && key === "account_id") return type === "receita"
+    ? `Em qual conta entrou o valor de ${description}?`
+    : `De qual conta saiu o valor de ${description}?`;
+  if (description && key === "category_id") return `Em qual categoria deseja colocar ${description}?`;
+  return QUESTIONS[key];
+}
+
+export function resolveDeterministicContinuation(
+  conversationState: Record<string, string>,
+  compactFinancialContext: string,
+  userMessage: string,
+): ModelOutput | null {
+  const intent = conversationState.__intent;
+  if (!isDirectAction(intent)) return null;
+  const context = contextObject(compactFinancialContext);
+  const current = Object.entries(conversationState)
+    .filter(([key, value]) => dataKeys.has(key) && cleaned(value))
+    .map(([key, value]) => ({ key: key as DataKey, value: cleaned(value) }));
+  const values = new Map(current.map((field) => [field.key, field.value]));
+  const missing = requiredActionFields(intent, values).find((key) => !cleaned(values.get(key)));
+  if (!missing) return null;
+  let value = "";
+  const contextKey = ID_CONTEXT[missing];
+  if (contextKey) {
+    const answer = withoutAccents(userMessage)
+      .replace(/^(?:conta|categoria|cartao|objetivo|caixinha)_+/, "")
+      .trim();
+    const matches = contextRows(context, contextKey).filter((row) => {
+      const label = typeof row.name === "string" ? row.name : typeof row.description === "string" ? row.description : "";
+      return withoutAccents(label) === answer;
+    });
+    if (matches.length === 1 && Number.isSafeInteger(Number(matches[0].id)) && Number(matches[0].id) > 0) {
+      value = String(matches[0].id);
+    }
+  } else if (["scheduled_date", "realization_date", "purchase_date"].includes(missing)) {
+    if (/\b(hoje|agora)\b/i.test(userMessage) && typeof context.current_date === "string") value = context.current_date;
+  }
+  if (!value) return null;
+  const resolved = enforceActionWorkflow({
+    kind: "clarify",
+    intent,
+    message: QUESTIONS[missing],
+    missing_fields: [missing],
+    data: [{ key: missing, value }],
+  }, conversationState, compactFinancialContext, userMessage);
+  // A criação da prévia possui validações e persistência próprias na Edge.
+  // O atalho local só avança etapas intermediárias do formulário.
+  return resolved.kind === "clarify" ? resolved : null;
 }
 
 function allowedActionFields(intent: DirectAction): ReadonlySet<DataKey> {
@@ -342,7 +428,8 @@ function applyDeterministicDefaults(
     removeField(fields, "recurrence_count");
   }
   if ((intent === "create_transaction" || intent === "transfer_between_accounts")
-      && frequency === "unica" && values.get("status") === "paga" && values.get("scheduled_date")) {
+      && frequency === "unica" && values.get("status") === "paga" && values.get("scheduled_date")
+      && !values.get("realization_date")) {
     setField(fields, "realization_date", values.get("scheduled_date")!);
   }
   if (intent === "move_goal" && !frequency) {
@@ -386,6 +473,18 @@ function applyDeterministicDefaults(
     const expected = Number(row?.value);
     if (Number.isFinite(expected) && expected > 0) setField(fields, "expected_value", String(expected));
   }
+}
+
+function applyNaturalSemanticDefaults(intent: DirectAction, fields: ModelField[], userMessage: string): void {
+  if (intent !== "create_transaction") return;
+  const message = withoutAccents(userMessage).replaceAll("_", " ");
+  const explicitlyRecurring = /\b(parcelad[ao]|parcelas?|\d+x|semanal|mensal|anual|todo dia|toda semana|todo mes|todo ano|recorrente|fix[ao])\b/.test(message);
+  const expenseDone = /\b(gastei|paguei|comprei|debitaram|saiu)\b/.test(message);
+  const incomeDone = /\b(recebi|ganhei|caiu|entrou)\b/.test(message);
+  if (!expenseDone && !incomeDone) return;
+  setField(fields, "type", expenseDone ? "despesa" : "receita");
+  if (!explicitlyRecurring) setField(fields, "frequency", "unica");
+  if (!explicitlyRecurring) setField(fields, "status", "paga");
 }
 
 function invalidReference(fields: ModelField[], context: FinancialContext): DataKey | null {
@@ -504,6 +603,7 @@ export function enforceActionWorkflow(
   const allowed = allowedActionFields(output.intent);
   const fields = mergeActionFields(conversationState, output)
     .filter((field) => allowed.has(field.key));
+  applyNaturalSemanticDefaults(output.intent, fields, userMessage);
   applyDeterministicDefaults(output.intent, fields, context);
   resolveNamedReferences(fields, context);
   removeImplicitUserChoices(output.intent, fields, conversationState, context, userMessage);
@@ -536,10 +636,15 @@ export function enforceActionWorkflow(
   const firstMissing = requiredActionFields(output.intent, values)
     .find((key) => cleaned(values.get(key)).length === 0);
   if (firstMissing) {
+    // IDs pertencem ao banco, nunca ao vocabulário do usuário. Se o modelo
+    // tentar pedir um ID, substituímos pela pergunta baseada no nome visível.
+    const modelAskedThis = !ID_CONTEXT[firstMissing]
+      && output.kind === "clarify"
+      && output.missing_fields.includes(firstMissing);
     return {
       kind: "clarify",
       intent: output.intent,
-      message: QUESTIONS[firstMissing],
+      message: modelAskedThis ? output.message : contextualQuestion(firstMissing, fields),
       missing_fields: [firstMissing],
       data: fields,
     };

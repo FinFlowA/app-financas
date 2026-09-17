@@ -105,6 +105,7 @@ interface Transacao {
   status: string;
   version?: number;
   transacao_pai_id?: number | null;
+  criado_por_ia?: boolean;
 }
 
 type ItemHistorico =
@@ -319,7 +320,7 @@ export default function TransacoesScreen() {
     if (!session?.user?.id) return;
     const requisicaoAtual = ++ultimaRequisicaoDadosRef.current;
     try {
-      const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas, resConciliadas] = await Promise.all([
+      const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas, resConciliadas, resOrigensIa] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
         supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
         fetchAllRows<Transacao>((from, to) => supabase
@@ -330,6 +331,7 @@ export default function TransacoesScreen() {
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
         supabase.rpc("list_bank_reconciled_transaction_ids"),
+        supabase.from("ai_transaction_origins").select("transaction_id").eq("user_id", session.user.id),
       ]);
       if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
       const erroLeitura = resTransacoes.error ?? resContas.error ?? resCategorias.error;
@@ -344,7 +346,11 @@ export default function TransacoesScreen() {
         setTransacoesConciliadas(new Set(((resConciliadas.data ?? []) as { transaction_id: number }[]).map((row) => Number(row.transaction_id))));
       }
       if (resTransacoes.data) {
-        const todas = resTransacoes.data as Transacao[];
+        const idsIa = new Set(((resOrigensIa.data ?? []) as { transaction_id: number }[]).map((row) => Number(row.transaction_id)));
+        const todas = (resTransacoes.data as Transacao[]).map((transacao) => ({
+          ...transacao,
+          criado_por_ia: idsIa.has(transacao.id),
+        }));
         const raizes = todas.filter((transacao) => transacao.transacao_pai_id == null);
         setTransacoes(todas);
         let resumos = normalizeTransactionPaymentSummaries([], raizes);
@@ -2213,6 +2219,13 @@ export default function TransacoesScreen() {
                       {transacoesConciliadas.has(t.id) && <View style={[styles.pendentePill, { backgroundColor: "#457B9D22" }]}>
                         <Text style={[styles.pendenteText, { color: "#457B9D" }]}>Conciliado</Text>
                       </View>}
+                      {t.criado_por_ia && <View
+                        style={styles.aiPill}
+                        accessibilityLabel="Lançamento criado pela inteligência artificial"
+                      >
+                        <MaterialIcons name="auto-awesome" size={11} color="#2563EB" />
+                        <Text style={styles.aiPillText}>IA</Text>
+                      </View>}
                     </View>
                   </View>
 
@@ -3334,6 +3347,8 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontWeight: "700" },
   pendentePill: { backgroundColor: "#4A1919", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
   pendenteText: { fontSize: 9, fontWeight: "700", color: "#FF6B6B" },
+  aiPill: { flexDirection: "row", alignItems: "center", gap: 3, backgroundColor: "#DBEAFE", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6 },
+  aiPillText: { fontSize: 9, fontWeight: "900", color: "#1D4ED8" },
   transferPill: { flexDirection: "row", alignItems: "center", backgroundColor: "#4D2C00", paddingHorizontal: 5, paddingVertical: 2, borderRadius: 6 },
   transferText: { fontSize: 9, fontWeight: "700", color: "#F4A261", marginLeft: 2 },
   transacaoAcoes: { alignItems: "flex-end" },

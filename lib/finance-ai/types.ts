@@ -77,7 +77,7 @@ export type FinanceAiNavigationRoute = "/" | "/transacoes" | "/caixinhas" | "/re
 
 export type FinanceAiHttpSuccessResponse =
   | { kind: "answer"; conversationId: Uuid; message: string; intent: FinanceAiReadIntent | "out_of_scope"; quota: FinanceAiQuota }
-  | { kind: "clarify"; conversationId: Uuid; message: string; intent: Exclude<FinanceAiIntent, "out_of_scope">; missingFields: string[]; quota: FinanceAiQuota }
+  | { kind: "clarify"; conversationId: Uuid; message: string; intent: Exclude<FinanceAiIntent, "out_of_scope">; missingFields: string[]; choices: string[]; quota: FinanceAiQuota }
   | { kind: "navigate"; conversationId: Uuid; message: string; intent: FinanceAiNavigationIntent; route: FinanceAiNavigationRoute; quota: FinanceAiQuota }
   | { kind: "proposal"; conversationId: Uuid; message: string; intent: FinanceAiMutationIntent; pendingAction: FinanceAiPendingAction; quota: FinanceAiQuota }
   | {

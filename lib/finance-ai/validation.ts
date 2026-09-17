@@ -141,10 +141,12 @@ export function parseFinanceAiHttpResponse(raw: string | unknown): FinanceAiResu
     valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "quota"])
       && messageBase(value) && (reads.has(String(value.intent)) || value.intent === "out_of_scope");
   } else if (value.kind === "clarify") {
-    valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "missingFields", "quota"])
+    valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "missingFields", "choices", "quota"])
       && messageBase(value) && allIntents.has(String(value.intent)) && value.intent !== "out_of_scope"
       && Array.isArray(value.missingFields) && value.missingFields.length >= 1 && value.missingFields.length <= 20
-      && value.missingFields.every((item) => text(item, 60));
+      && value.missingFields.every((item) => text(item, 60))
+      && Array.isArray(value.choices) && value.choices.length <= 30
+      && value.choices.every((item) => text(item, 100));
   } else if (value.kind === "navigate") {
     valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "route", "quota"])
       && messageBase(value) && navigation.has(String(value.intent)) && value.route === routes[String(value.intent)];

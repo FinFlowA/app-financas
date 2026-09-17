@@ -1,5 +1,5 @@
 import { DIRECT_ACTIONS, type ModelField, type ModelOutput } from "./contracts.ts";
-import { enforceActionWorkflow } from "./workflow.ts";
+import { enforceActionWorkflow, resolveDeterministicContinuation, resolveReferencedFollowup } from "./workflow.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -97,7 +97,7 @@ Deno.test("resolve nomes naturais unicos sem expor ou inventar identificadores",
   assert(output.data.some((field) => field.key === "category_id" && field.value === "10"), "categoria deveria ser resolvida pelo nome");
 });
 
-Deno.test("modelo nao pode escolher categoria conta frequencia ou status pelo usuario", () => {
+Deno.test("modelo pode interpretar sem inventar conta ou categoria", () => {
   const output = enforceActionWorkflow(proposal("create_transaction", [
     { key: "type", value: "despesa" }, { key: "frequency", value: "unica" },
     { key: "status", value: "paga" }, { key: "scheduled_date", value: "2026-08-08" },
@@ -105,10 +105,89 @@ Deno.test("modelo nao pode escolher categoria conta frequencia ou status pelo us
     { key: "account_id", value: "2" }, { key: "category_id", value: "10" },
   ]), {}, CONTEXT, "Crie uma despesa de 50 reais de almoço para hoje");
   assert(output.kind === "clarify", "escolhas omitidas precisam ser perguntadas");
-  assert(output.missing_fields[0] === "frequency", "frequencia deve ser a primeira escolha explicita pendente");
-  for (const key of ["frequency", "status", "account_id", "category_id"]) {
+  assert(output.missing_fields[0] === "account_id", "conta deve continuar sendo uma escolha explicita");
+  assert(output.data.some((field) => field.key === "frequency" && field.value === "unica"), "interpretacao de frequencia deve persistir");
+  assert(output.data.some((field) => field.key === "status" && field.value === "paga"), "interpretacao de status deve persistir");
+  for (const key of ["account_id", "category_id"]) {
     assert(!output.data.some((field) => field.key === key), `${key} inventado nao pode persistir no rascunho`);
   }
+});
+
+Deno.test("interpretacao natural do modelo e aceita sem roteiro redundante", () => {
+  const output = enforceActionWorkflow({
+    kind: "clarify", intent: "create_transaction", message: "Quando foi esse gasto com lanche?",
+    missing_fields: ["scheduled_date"],
+    data: [{ key: "type", value: "despesa" }, { key: "frequency", value: "unica" },
+      { key: "status", value: "paga" }, { key: "description", value: "Lanche" }, { key: "value", value: "70" }],
+  }, {}, CONTEXT, "Gastei 70 reais em um lanche");
+  assert(output.kind === "clarify", "a coleta ainda precisa continuar");
+  assert(output.data.some((field) => field.key === "type" && field.value === "despesa"), "gastei deve significar despesa");
+  assert(output.data.some((field) => field.key === "frequency" && field.value === "unica"), "passado singular deve significar unica");
+  assert(output.data.some((field) => field.key === "status" && field.value === "paga"), "gastei deve significar realizada");
+  assert(output.missing_fields[0] === "scheduled_date", "a próxima dúvida real deve ser a data");
+  assert(output.message === "Quando foi esse gasto com lanche?", "a pergunta natural do modelo deve ser preservada");
+});
+
+Deno.test("passado singular infere despesa unica realizada sem perguntar frequencia", () => {
+  const output = enforceActionWorkflow({
+    kind: "clarify", intent: "create_transaction", message: "Qual frequencia?",
+    missing_fields: ["frequency"], data: [
+      { key: "description", value: "Lanche" }, { key: "value", value: "70" },
+    ],
+  }, {}, CONTEXT, "Gastei 70 reais em um lanche");
+  assert(output.data.some((field) => field.key === "type" && field.value === "despesa"), "gastei deve inferir despesa");
+  assert(output.data.some((field) => field.key === "frequency" && field.value === "unica"), "gastei deve inferir frequencia unica");
+  assert(output.data.some((field) => field.key === "status" && field.value === "paga"), "gastei deve inferir realizado");
+  assert(output.missing_fields[0] !== "frequency", "nao deve perguntar frequencia obvia");
+});
+
+Deno.test("resposta curta com nome exato da conta nao depende do provedor", () => {
+  const output = resolveDeterministicContinuation({
+    __intent: "create_transaction", type: "despesa", frequency: "unica", status: "paga",
+    scheduled_date: "2026-09-17", realization_date: "2026-09-17", description: "Lanche", value: "70",
+  }, CONTEXT, "Carteira");
+  assert(output?.kind === "clarify", "deve continuar o formulário localmente");
+  assert(output.data.some((field) => field.key === "account_id" && field.value === "2"), "deve resolver a conta Carteira");
+  assert(output.missing_fields[0] === "category_id", "deve avançar para categoria");
+  assert(output.message === "Em qual categoria deseja colocar Lanche?", "deve contextualizar a próxima pergunta");
+});
+
+Deno.test("resposta com prefixo natural resolve a conta pelo nome", () => {
+  const output = resolveDeterministicContinuation({
+    __intent: "create_transaction", type: "despesa", frequency: "unica", status: "paga",
+    scheduled_date: "2026-09-17", realization_date: "2026-09-17", description: "Lanche", value: "70",
+  }, CONTEXT, "Conta carteira");
+  assert(output?.data.some((field) => field.key === "account_id" && field.value === "2"), "deve resolver Conta carteira");
+});
+
+Deno.test("pergunta tecnica por ID vira pergunta pelo nome visivel", () => {
+  const output = enforceActionWorkflow({
+    kind: "clarify", intent: "create_transaction", message: "Qual o ID da conta Carteira?",
+    missing_fields: ["account_id"], data: [
+      { key: "type", value: "despesa" }, { key: "frequency", value: "unica" },
+      { key: "status", value: "paga" }, { key: "scheduled_date", value: "2026-09-17" },
+      { key: "description", value: "Lanche" }, { key: "value", value: "70" },
+    ],
+  }, {}, CONTEXT, "Gastei 70 reais em um lanche");
+  assert(!/\bid\b/i.test(output.message), "nunca deve pedir ID ao usuario");
+  assert(output.message.includes("De qual conta"), "deve perguntar pela conta visivel");
+});
+
+Deno.test("lancamento realizado usa a mesma data salvo escolha explicita", () => {
+  const sameDate = enforceActionWorkflow(proposal("create_transaction", [
+    { key: "type", value: "despesa" }, { key: "frequency", value: "unica" }, { key: "status", value: "paga" },
+    { key: "scheduled_date", value: "2026-09-17" }, { key: "description", value: "Lanche" }, { key: "value", value: "70" },
+    { key: "account_id", value: "2" }, { key: "category_id", value: "10" },
+  ]), {}, CONTEXT, "Gastei 70 reais em um lanche hoje na Carteira, categoria Moradia");
+  assert(sameDate.data.some((field) => field.key === "realization_date" && field.value === "2026-09-17"), "data realizada deve copiar a agendada");
+
+  const differentDates = enforceActionWorkflow(proposal("create_transaction", [
+    { key: "type", value: "despesa" }, { key: "frequency", value: "unica" }, { key: "status", value: "paga" },
+    { key: "scheduled_date", value: "2026-09-16" }, { key: "realization_date", value: "2026-09-17" },
+    { key: "description", value: "Lanche" }, { key: "value", value: "70" },
+    { key: "account_id", value: "2" }, { key: "category_id", value: "10" },
+  ]), {}, CONTEXT, "Estava agendado para ontem, mas realizei hoje; Carteira, categoria Moradia");
+  assert(differentDates.data.some((field) => field.key === "realization_date" && field.value === "2026-09-17"), "datas explicitamente diferentes devem ser preservadas");
 });
 
 Deno.test("categoria explicitamente nomeada pelo usuario pode ser resolvida", () => {
@@ -214,4 +293,30 @@ Deno.test("modelo nao pode trocar a intencao de um rascunho ativo", () => {
   }, CONTEXT);
   assert(output.intent === "move_goal", "rascunho ativo foi substituido por outra acao");
   assert(output.kind === "clarify" && output.missing_fields[0] === "account_id", "deve continuar a coleta original");
+});
+
+Deno.test("descricao de lancamento nunca pode ser inventada pelo modelo", () => {
+  const output = enforceActionWorkflow(proposal("create_transaction", [
+    { key: "type", value: "receita" }, { key: "frequency", value: "unica" },
+    { key: "status", value: "paga" }, { key: "scheduled_date", value: "2026-08-08" },
+    { key: "description", value: "Ganhos" }, { key: "value", value: "50" },
+    { key: "account_id", value: "2" }, { key: "category_id", value: "10" },
+  ]), {}, CONTEXT, "Ganhei 50 reais hoje na Carteira");
+  assert(output.kind === "clarify", "descricao ausente deve impedir a proposta");
+  assert(output.missing_fields[0] === "description", "deve perguntar a descricao ao usuario");
+  assert(!output.data.some((field) => field.key === "description"), "descricao inventada nao pode permanecer no rascunho");
+});
+
+Deno.test("pedido natural pode referenciar o lancamento acabado de criar", () => {
+  const output = resolveReferencedFollowup(
+    { __last_transaction_id: "40" },
+    "Apague esse lancamento dos 50 reais, lancei errado.",
+  );
+  assert(output?.kind === "propose_action" && output.intent === "delete_transaction", "deve propor a exclusao do ultimo lancamento");
+  assert(output.data.some((field) => field.key === "transaction_id" && field.value === "40"), "deve usar internamente o ID salvo");
+});
+
+Deno.test("nao confunde uma exclusao especifica com referencia ao ultimo lancamento", () => {
+  const output = resolveReferencedFollowup({ __last_transaction_id: "40" }, "Apague o aluguel de agosto");
+  assert(output === null, "sem pronome ou referencia temporal deve deixar a IA identificar o item correto");
 });

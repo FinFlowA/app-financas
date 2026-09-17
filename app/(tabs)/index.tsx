@@ -3167,7 +3167,7 @@ export default function Dashboard() {
             <View style={{ width: 68, height: 68, borderRadius: 24, backgroundColor: "#7C6FF022", alignItems: "center", justifyContent: "center", marginBottom: 14 }}>
               <MaterialIcons name="auto-awesome" size={36} color="#7C6FF0" />
             </View>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>Flô</Text>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal, marginBottom: 8 }]}>Finn</Text>
             <View style={{ backgroundColor: "#7C6FF022", borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, marginBottom: 14 }}>
               <Text style={{ color: "#7C6FF0", fontWeight: "900", letterSpacing: 1 }}>SMART E PREMIUM</Text>
             </View>

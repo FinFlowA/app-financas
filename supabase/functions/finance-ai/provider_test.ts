@@ -25,6 +25,10 @@ Deno.test("falha de JSON preserva comando natural como rascunho seguro", () => {
   assert(!output.data.some((field) => ["account_id", "category_id", "frequency", "status"].includes(field.key)), "fallback não pode inventar escolhas");
 });
 
+Deno.test("frase analitica sobre gasto nao vira comando de lancamento", () => {
+  assert(fallbackNaturalTransaction("Quanto gastei com lanche este mês?") === null, "pergunta não pode iniciar escrita");
+});
+
 Deno.test("orçamento conservador permite uma consulta financeira curta no beta", () => {
   const prompt = buildSystemPrompt({
     financialContext: JSON.stringify({

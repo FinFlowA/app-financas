@@ -172,7 +172,7 @@ export function isFinancialControlMessage(message: string, state: Record<string,
   if (!message || message.length > MAX_MESSAGE_CHARS) return false;
   const normalized = normalizeText(message);
   if (containsSecurityThreat(normalized)) return false;
-  // A entrada também é a fronteira da conversa casual da Flô. Pedidos
+  // A entrada também é a fronteira da conversa casual do Finn. Pedidos
   // especializados fora do produto seguem para o modelo e voltam como
   // out_of_scope; somente ameaças à segurança são barradas antes do provedor.
   return normalized.trim().length > 0;

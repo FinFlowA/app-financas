@@ -913,7 +913,7 @@ export class LocalDemoOperationalFinanceAi {
         const message = `O objetivo ${String(goal?.nome ?? data.goalName ?? "selecionado")} tem ${formatMoney(balance)} dispon\u00edveis. Qual valor menor ou igual ao saldo voc\u00ea quer resgatar?`;
         this.drafts.set(conversationId, { intent, data, missingField: "value" });
         this.addMessage(conversationId, "assistant", message, intent);
-        return { kind: "clarify", conversationId, message, intent, missingFields: ["value"], quota: this.quota() };
+        return { kind: "clarify", conversationId, message, intent, missingFields: ["value"], choices: [], quota: this.quota() };
       }
     }
     if (intent === "complete_transaction") {
@@ -924,7 +924,7 @@ export class LocalDemoOperationalFinanceAi {
         const message = `Informe um valor realizado maior que zero e de no máximo ${formatMoney(expected)}.`;
         this.drafts.set(conversationId, { intent, data, missingField: "realizedValue" });
         this.addMessage(conversationId, "assistant", message, intent);
-        return { kind: "clarify", conversationId, message, intent, missingFields: ["realizedValue"], quota: this.quota() };
+        return { kind: "clarify", conversationId, message, intent, missingFields: ["realizedValue"], choices: [], quota: this.quota() };
       }
       const transaction = this.rows("transacoes").find((row) => row.id === data.transactionId);
       if (this.isInternalMovement(transaction) && Math.abs(realized - expected) > 0.005) {
@@ -932,7 +932,7 @@ export class LocalDemoOperationalFinanceAi {
         const message = `Movimentações internas precisam ser concluídas pelo valor integral de ${formatMoney(expected)}, sem pagamento parcial.`;
         this.drafts.set(conversationId, { intent, data, missingField: "realizedValue" });
         this.addMessage(conversationId, "assistant", message, intent);
-        return { kind: "clarify", conversationId, message, intent, missingFields: ["realizedValue"], quota: this.quota() };
+        return { kind: "clarify", conversationId, message, intent, missingFields: ["realizedValue"], choices: [], quota: this.quota() };
       }
     }
     if ((intent === "update_transaction" || intent === "delete_transaction") && data.transactionId !== undefined) {
@@ -1245,8 +1245,8 @@ export class LocalDemoOperationalFinanceAi {
       const text = normalize(message);
       if (/obrigad|valeu/.test(text)) return "Por nada! Quando precisar, é só chamar.";
       if (/tudo bem|como voce esta/.test(text)) return "Tudo certo por aqui! E com você? Posso ajudar com seu FinFlow ou conversar um pouco.";
-      if (/quem e voce/.test(text)) return "Eu sou a Flô, sua assistente financeira no FinFlow.";
-      return "Oi! Eu sou a Flô. Como posso ajudar você hoje?";
+      if (/quem e voce/.test(text)) return "Eu sou o Finn, seu assistente financeiro no FinFlow.";
+      return "Oi! Eu sou o Finn. Como posso ajudar você hoje?";
     }
     const transactions = this.rows("transacoes");
     const visibleTransactions = transactions.filter((row) => row.transacao_pai_id === null || row.transacao_pai_id === undefined);
@@ -1365,7 +1365,7 @@ export class LocalDemoOperationalFinanceAi {
         existingDraft.missingField = missing;
         const question = `${accepted ? "Ótimo. " : "Não consegui identificar essa informação. "}${this.questionFor(missing, existingDraft.data)}`;
         this.addMessage(conversationId, "assistant", question, existingDraft.intent);
-        return { kind: "clarify", conversationId, message: question, intent: existingDraft.intent, missingFields: [missing], quota: this.quota() };
+        return { kind: "clarify", conversationId, message: question, intent: existingDraft.intent, missingFields: [missing], choices: [], quota: this.quota() };
       }
       this.drafts.delete(conversationId);
       return this.createProposal(conversationId, existingDraft.intent, existingDraft.data);
@@ -1385,7 +1385,7 @@ export class LocalDemoOperationalFinanceAi {
         this.drafts.set(conversationId, { intent: detected, data, missingField: missing });
         const question = this.questionFor(missing, data);
         this.addMessage(conversationId, "assistant", question, detected);
-        return { kind: "clarify", conversationId, message: question, intent: detected, missingFields: [missing], quota: this.quota() };
+        return { kind: "clarify", conversationId, message: question, intent: detected, missingFields: [missing], choices: [], quota: this.quota() };
       }
       return this.createProposal(conversationId, detected, data);
     }

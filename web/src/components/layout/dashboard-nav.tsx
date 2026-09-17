@@ -16,7 +16,7 @@ export const NAV_ITEMS = [
   { href: "/cartoes", label: "Cartões", icon: "cards" },
   { href: "/relatorios", label: "Fluxo de caixa", shortLabel: "Fluxo", icon: "flow" },
   { href: "/calendario", label: "Calendário", icon: "calendar" },
-  { href: "/assistente", label: "Flô", shortLabel: "Flô", icon: "ai" },
+  { href: "/assistente", label: "Finn", shortLabel: "Finn", icon: "ai" },
   { href: "/planos", label: "Planos", icon: "plans" },
   { href: "/configuracoes", label: "Configurações", shortLabel: "Ajustes", icon: "settings" },
 ] as const satisfies ReadonlyArray<{

@@ -1562,7 +1562,10 @@ export async function buildFinancialContext(
   const scenarioCandidates = scenarioSourceRows
     .filter((row) => matchesRequest(row, tokens, requestContext, transactionRelatedText(row)))
     .sort(relevanceComparator)
-    .slice(0, 12)
+    // Uma recorrência semanal pode ter dezenas de ocorrências até o fim do
+    // ano. Preserve todas as correspondências necessárias para consultas por
+    // descrição, em vez de entregar ao assistente apenas as 12 primeiras.
+    .slice(0, 120)
     .map((row) => {
       const item = compactTransaction(row);
       return {
