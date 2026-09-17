@@ -20,6 +20,7 @@ import {
 import { buildReadOnlySystemPrompt, buildSystemPrompt } from "./prompt.ts";
 import {
   estimateModelTokenBudget,
+  fallbackProductGuidance,
   MODEL_MAX_OUTPUT_TOKENS,
   MODEL_MAX_RESERVED_INPUT_TOKENS,
   providerFailureMetadata,
@@ -1002,7 +1003,8 @@ Deno.serve(async (req) => {
         }, 200, req);
       }
 
-      const deterministicAnswer = await deterministicNamedFutureExpense(client, safeMessage)
+      const deterministicAnswer = fallbackProductGuidance(safeMessage)
+        ?? await deterministicNamedFutureExpense(client, safeMessage)
         ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson);
       if (deterministicAnswer) {
         conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);

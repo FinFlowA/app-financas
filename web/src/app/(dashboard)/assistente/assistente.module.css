@@ -75,7 +75,7 @@
 
 .chatShell {
   display: grid;
-  height: min(860px, calc(100dvh - 108px));
+  height: calc(100dvh - clamp(48px, 4.7vw, 80px));
   min-height: 590px;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;

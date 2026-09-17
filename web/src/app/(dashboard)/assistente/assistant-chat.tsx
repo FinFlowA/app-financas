@@ -6,6 +6,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import { formatAssistantMessage } from "../../../../../lib/assistant-message-format";
+import { inFinnVoice } from "../../../../../lib/finn-voice";
+import { finnProductGuidance } from "../../../../../lib/finn-product-guidance";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./assistente.module.css";
 
@@ -83,7 +85,7 @@ function validResponse(value: unknown): value is AiResponse {
 
 function safeError(body: Record<string, unknown>) {
   if (body.mode === "confirm") return "Não foi possível confirmar agora. Tente novamente: a confirmação é idempotente e não duplicará a ação.";
-  return "A IA financeira está indisponível agora. Nenhuma alteração foi realizada.";
+  return "Não consegui processar sua solicitação agora. Nenhuma alteração foi realizada.";
 }
 
 async function publicFunctionError(error: unknown): Promise<string | null> {
@@ -165,7 +167,7 @@ export default function AssistantChat({
     if (response.kind === "navigate" && response.route) {
       const destination = NAVIGATION_ROUTES[response.route];
       if (destination) router.push(destination);
-      else setNotice("A IA sugeriu uma tela que não está disponível no site.");
+      else setNotice("Não consegui abrir a tela sugerida porque ela não está disponível no site.");
     }
   }
 
@@ -224,6 +226,17 @@ export default function AssistantChat({
     event?.preventDefault();
     const text = (suggested ?? input).trim();
     if (!text || busy || pendingAction || !hasAccess) return;
+    const productGuidance = finnProductGuidance(text, messages.slice(-4).map((message) => message.text).join("\n"));
+    if (productGuidance) {
+      setNotice(null);
+      setInput("");
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: "user", text },
+        { id: crypto.randomUUID(), role: "assistant", text: productGuidance },
+      ]);
+      return;
+    }
     setBusy(true); setNotice(null); setInput("");
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", text }]);
     try { apply(await invoke({ mode: "message", message: text, ...(conversationId ? { conversationId } : {}), requestId: crypto.randomUUID() })); }
@@ -314,7 +327,7 @@ export default function AssistantChat({
               <div key={message.id} className={styles.messageRow} data-role={message.role}>
                 {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden><Image src="/finn-message-avatar.png" alt="" width={31} height={31} /></span>}
                 <div className={styles.messageBubble}>
-                  {message.role === "assistant" ? <AssistantMessage text={message.text} /> : message.text}
+                  {message.role === "assistant" ? <AssistantMessage text={inFinnVoice(message.text)} /> : message.text}
                 </div>
               </div>
             ))}
@@ -340,7 +353,7 @@ export default function AssistantChat({
                 </div>
               </section>
             )}
-            {busy && <p role="status" className={styles.typing}>A IA está analisando com segurança</p>}
+            {busy && <p role="status" className={styles.typing}>Estou analisando com segurança</p>}
             {notice && <p role="alert" className={styles.notice}>{notice}</p>}
             <div ref={bottomRef} />
           </div>
@@ -351,6 +364,11 @@ export default function AssistantChat({
             <textarea
               value={input}
               onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing) return;
+                event.preventDefault();
+                if (!busy && !pendingAction && input.trim()) void send();
+              }}
               disabled={busy || !!pendingAction}
               maxLength={2000}
               rows={2}
@@ -364,7 +382,7 @@ export default function AssistantChat({
               <svg aria-hidden width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="m5 12 14-7-4.5 14-3-5.5L5 12Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/><path d="m11.5 13.5 3.3-3.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/></svg>
             </button>
           </div>
-          <p className={styles.disclaimer}>Revise valores e datas. A IA não substitui orientação profissional.</p>
+          <p className={styles.disclaimer}>Enter envia • Shift + Enter quebra a linha. Revise valores e datas.</p>
         </form>
       </section>
     </div>

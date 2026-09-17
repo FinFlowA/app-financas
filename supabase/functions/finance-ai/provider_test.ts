@@ -2,6 +2,7 @@ import { buildSystemPrompt } from "./prompt.ts";
 import {
   classifyProviderHttpFailure,
   estimateModelTokenBudget,
+  fallbackProductGuidance,
   fallbackNaturalTransaction,
   GROQ_COMPATIBLE_TPM_LIMIT,
   MODEL_MAX_OUTPUT_TOKENS,
@@ -27,6 +28,18 @@ Deno.test("falha de JSON preserva comando natural como rascunho seguro", () => {
 
 Deno.test("frase analitica sobre gasto nao vira comando de lancamento", () => {
   assert(fallbackNaturalTransaction("Quanto gastei com lanche este mês?") === null, "pergunta não pode iniciar escrita");
+});
+
+Deno.test("falha de JSON ainda responde orientacao simples do produto", () => {
+  const output = fallbackProductGuidance("Como criar uma conta?");
+  assert(output?.kind === "answer", "orientacao deve produzir uma resposta segura");
+  assert(output.intent === "explain_financial_control", "orientacao deve permanecer no escopo financeiro");
+  assert(output.message.includes("Contas") && output.message.includes("Nova conta"), "resposta deve indicar o caminho visivel");
+  assert(output.data.length === 0 && output.missing_fields.length === 0, "orientacao nunca deve iniciar uma escrita");
+
+  const transactionHelp = fallbackProductGuidance("Como eu lanço uma receita?");
+  assert(transactionHelp?.kind === "answer", "pergunta sobre como lançar deve receber orientação");
+  assert(transactionHelp.message.includes("Histórico") && transactionHelp.message.includes("Novo lançamento"), "orientação deve indicar o fluxo de lançamento");
 });
 
 Deno.test("orçamento conservador permite uma consulta financeira curta no beta", () => {

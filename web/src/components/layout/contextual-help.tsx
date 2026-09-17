@@ -3,18 +3,31 @@
 import { useEffect, useId, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
+import Image from "next/image";
 
 type HelpContent = {
   title: string;
   description: string;
   items: readonly string[];
   note?: string;
+  finnImage: string;
+  finnMood: string;
 };
+
+const FINN = {
+  welcome: { finnImage: "/finn-help-welcome.webp", finnMood: "Finn acenando para apresentar esta tela" },
+  analysis: { finnImage: "/finn-help-analysis.webp", finnMood: "Finn analisando os detalhes desta tela" },
+  organize: { finnImage: "/finn-help-organize.webp", finnMood: "Finn organizando as informações desta tela" },
+  goals: { finnImage: "/finn-help-goals.webp", finnMood: "Finn comemorando uma meta financeira" },
+  security: { finnImage: "/finn-help-security.webp", finnMood: "Finn protegendo seus dados financeiros" },
+  guide: { finnImage: "/finn-help-guide.webp", finnMood: "Finn indicando como usar esta tela" },
+} as const;
 
 const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: HelpContent }> = [
   {
     route: "/cartoes/",
     content: {
+      ...FINN.analysis,
       title: "Detalhes do cartão",
       description: "Acompanhe as compras, parcelas, faturas e pagamentos deste cartão.",
       items: [
@@ -27,6 +40,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/transacoes",
     content: {
+      ...FINN.analysis,
       title: "Histórico",
       description: "Aqui ficam seus lançamentos realizados, pendentes e atrasados.",
       items: [
@@ -39,6 +53,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/contas",
     content: {
+      ...FINN.organize,
       title: "Contas",
       description: "Cadastre e acompanhe as contas que compõem seu saldo financeiro.",
       items: [
@@ -51,6 +66,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/conciliacao",
     content: {
+      ...FINN.analysis,
       title: "Extrato e conciliação",
       description: "Compare o extrato do banco com os lançamentos do FinFlow.",
       items: [
@@ -64,6 +80,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/categorias",
     content: {
+      ...FINN.organize,
       title: "Categorias",
       description: "Organize receitas e despesas para entender de onde o dinheiro vem e para onde vai.",
       items: [
@@ -76,6 +93,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/objetivos",
     content: {
+      ...FINN.goals,
       title: "Objetivos",
       description: "Planeje metas financeiras e acompanhe o dinheiro guardado em cada caixinha.",
       items: [
@@ -89,6 +107,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
     route: "/cartoes",
     exact: true,
     content: {
+      ...FINN.organize,
       title: "Cartões",
       description: "Gerencie cartões de crédito, limites, compras parceladas e faturas.",
       items: [
@@ -101,6 +120,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/relatorios",
     content: {
+      ...FINN.analysis,
       title: "Fluxo de caixa",
       description: "Visualize o saldo realizado e a projeção das suas finanças ao longo do tempo.",
       items: [
@@ -114,6 +134,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/calendario",
     content: {
+      ...FINN.organize,
       title: "Calendário",
       description: "Organize os agendamentos financeiros pela data prevista.",
       items: [
@@ -126,6 +147,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/assistente",
     content: {
+      ...FINN.welcome,
       title: "Finn — assistente financeiro",
       description: "Converse com a IA financeira para analisar dados e preparar ações no FinFlow.",
       items: [
@@ -139,6 +161,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/planos",
     content: {
+      ...FINN.guide,
       title: "Planos",
       description: "Compare os recursos e limites disponíveis em cada plano do FinFlow.",
       items: [
@@ -151,6 +174,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/seguranca",
     content: {
+      ...FINN.security,
       title: "Segurança",
       description: "Revise os recursos usados para proteger sua conta e seus dados.",
       items: [
@@ -163,6 +187,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/configuracoes",
     content: {
+      ...FINN.guide,
       title: "Configurações",
       description: "Personalize sua conta, aparência e preferências do FinFlow.",
       items: [
@@ -176,6 +201,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
     route: "/",
     exact: true,
     content: {
+      ...FINN.welcome,
       title: "Início",
       description: "Veja um resumo da sua vida financeira e acesse rapidamente as ações mais usadas.",
       items: [
@@ -250,7 +276,14 @@ export default function ContextualHelp() {
         title={`Ajuda: ${content.title}`}
         onClick={() => setOpen(true)}
       >
-        ?
+        <Image
+          src={content.finnImage}
+          alt=""
+          width={48}
+          height={48}
+          className="h-full w-full rounded-full object-cover"
+          aria-hidden="true"
+        />
       </button>
 
       {open && typeof document !== "undefined" && createPortal(
@@ -278,10 +311,20 @@ export default function ContextualHelp() {
               ×
             </button>
 
-            <span className="grid h-14 w-14 place-items-center rounded-2xl border border-primary/30 bg-primary-soft text-2xl font-black text-primary-dark" aria-hidden="true">?</span>
-            <p className="mt-5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-primary-dark">Ajuda desta tela</p>
-            <h2 id={titleId} className="mt-2 pr-12 text-2xl font-black text-foreground">{content.title}</h2>
-            <p id={descriptionId} className="mt-2 text-sm leading-6 text-foreground-muted">{content.description}</p>
+            <div className="flex items-center gap-4 pr-12">
+              <Image
+                src={content.finnImage}
+                alt={content.finnMood}
+                width={96}
+                height={96}
+                className="h-24 w-24 shrink-0 rounded-[24px] border border-primary/30 object-cover shadow-[0_14px_32px_rgba(0,0,0,0.28)]"
+              />
+              <div className="min-w-0">
+                <p className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-primary-dark">Finn explica</p>
+                <h2 id={titleId} className="mt-1 text-2xl font-black text-foreground">{content.title}</h2>
+              </div>
+            </div>
+            <p id={descriptionId} className="mt-5 rounded-2xl border border-primary/20 bg-primary-soft/60 px-4 py-3 text-sm font-semibold leading-6 text-foreground">{content.description}</p>
 
             <ul className="mt-6 space-y-3">
               {content.items.map((item) => (

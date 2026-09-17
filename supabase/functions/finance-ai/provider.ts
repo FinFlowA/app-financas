@@ -158,6 +158,44 @@ export function fallbackNaturalTransaction(message: string): ModelOutput | null 
   };
 }
 
+export function fallbackProductGuidance(message: string): ModelOutput | null {
+  const normalized = message.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const asksHow = /\b(como|onde|qual (?:e|seria) a forma)\b/.test(normalized);
+  if (!asksHow) return null;
+
+  const guidance: ReadonlyArray<readonly [RegExp, string]> = [
+    [
+      /\b(criar|cadastrar|adicionar|lanco|lancar|registro|registrar)\b.*\b(receita|despesa|lancamento)\b|\b(receita|despesa|lancamento)\b.*\b(criar|cadastrar|adicionar|lanco|lancar|registro|registrar)\b/,
+      "Para registrar uma receita ou despesa, abra Histórico e selecione Novo lançamento. Escolha o tipo, preencha descrição, valor, conta, categoria e data, revise e salve. Se preferir, diga diretamente o que aconteceu e eu preparo o lançamento para sua confirmação.",
+    ],
+    [
+      /\b(criar|cadastrar|adicionar|abrir)\b.*\bconta\b|\bconta\b.*\b(criar|cadastrar|adicionar|abrir)\b/,
+      "Para criar uma conta, abra Contas e selecione Nova conta. Informe o nome, o saldo inicial e a cor; depois revise os dados e salve. Se preferir, também posso preparar a criação por aqui: diga o nome da conta e eu pedirei somente as informações que faltarem.",
+    ],
+    [
+      /\b(criar|cadastrar|adicionar)\b.*\bcategoria\b|\bcategoria\b.*\b(criar|cadastrar|adicionar)\b/,
+      "Para criar uma categoria, abra Categorias e selecione Nova categoria. Escolha se ela é de receita ou despesa, informe o nome, a cor e o ícone e salve. Também posso preparar essa criação por aqui.",
+    ],
+    [
+      /\b(criar|cadastrar|adicionar)\b.*\b(objetivo|meta|caixinha)\b|\b(objetivo|meta|caixinha)\b.*\b(criar|cadastrar|adicionar)\b/,
+      "Para criar um objetivo, abra Objetivos e selecione Novo objetivo. Informe o nome e o valor da meta; a data é opcional. Depois você poderá guardar ou resgatar valores pela própria tela.",
+    ],
+    [
+      /\b(criar|cadastrar|adicionar)\b.*\bcartao\b|\bcartao\b.*\b(criar|cadastrar|adicionar)\b/,
+      "Para cadastrar um cartão, abra Cartões e selecione Novo cartão. Informe o nome, o limite e os dias de fechamento e vencimento, revise e salve.",
+    ],
+  ];
+  const match = guidance.find(([pattern]) => pattern.test(normalized));
+  if (!match) return null;
+  return {
+    kind: "answer",
+    intent: "explain_financial_control",
+    message: match[1],
+    missing_fields: [],
+    data: [],
+  };
+}
+
 function parsedOrNaturalFallback(content: string | undefined, messages: ConversationMessage[]): ModelOutput {
   if (content) {
     try {
@@ -166,7 +204,8 @@ function parsedOrNaturalFallback(content: string | undefined, messages: Conversa
       if (!(error instanceof Error) || error.message !== "AI_PROVIDER_RESPONSE_INVALID") throw error;
     }
   }
-  const fallback = fallbackNaturalTransaction(messages.at(-1)?.content ?? "");
+  const lastMessage = messages.at(-1)?.content ?? "";
+  const fallback = fallbackNaturalTransaction(lastMessage) ?? fallbackProductGuidance(lastMessage);
   if (fallback) return fallback;
   throw new Error("AI_PROVIDER_RESPONSE_INVALID");
 }

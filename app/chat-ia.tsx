@@ -21,6 +21,8 @@ import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../co
 import { usuarioPodeAcessarIA } from "../constants/features";
 import { parseFinanceAiHttpResponse } from "../lib/finance-ai/validation";
 import { formatAssistantMessage } from "../lib/assistant-message-format";
+import { inFinnVoice } from "../lib/finn-voice";
+import { finnProductGuidance } from "../lib/finn-product-guidance";
 import { getOptionalSecureStore } from "../lib/optional-native-modules";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
@@ -269,7 +271,7 @@ async function invokeFinanceAi(body: Record<string, unknown>, accessToken?: stri
   if (error) {
     let message = body.mode === "confirm"
       ? "Não foi possível confirmar o resultado. Toque novamente em Confirmar: o FinFlow verificará a mesma ação sem duplicá-la."
-      : "Não foi possível acessar a IA agora. Nenhuma nova alteração financeira foi iniciada.";
+      : "Não consegui processar sua solicitação agora. Nenhuma nova alteração financeira foi iniciada.";
     let code: string | undefined;
     let status: number | undefined;
     const context = (error as { context?: unknown }).context;
@@ -287,7 +289,7 @@ async function invokeFinanceAi(body: Record<string, unknown>, accessToken?: stri
     throw new FinanceAiRequestError(diagnosticMessage, code, status);
   }
   const validation = parseFinanceAiHttpResponse(data);
-  if (!validation.ok) throw new Error("A IA retornou uma resposta inválida. Nenhuma ação foi realizada.");
+  if (!validation.ok) throw new Error("Não consegui validar minha resposta. Nenhuma ação foi realizada.");
   const response = validation.value as FinanceAiResponse;
   if (response.error) {
     throw new FinanceAiRequestError(
@@ -557,6 +559,19 @@ export default function ChatIAScreen() {
       showToast("Confirme ou cancele a ação exibida antes de continuar.", "info");
       return;
     }
+    const productGuidance = finnProductGuidance(text, messages.slice(-4).map((message) => message.text).join("\n"));
+    if (productGuidance) {
+      setInput("");
+      setClarificationChoices([]);
+      setClarificationField(null);
+      setMessages((current) => [
+        ...current,
+        { id: makeId("user"), role: "user", text },
+        { id: makeId("assistant"), role: "assistant", text: productGuidance },
+      ]);
+      requestAnimationFrame(() => inputRef.current?.focus());
+      return;
+    }
     const operationEpoch = sessionEpochRef.current;
     const operationUserId = session?.user?.id ?? null;
     const accessToken = typeof session?.access_token === "string" ? session.access_token : undefined;
@@ -581,7 +596,7 @@ export default function ChatIAScreen() {
       await applyResponse(response, operationEpoch, operationUserId);
     } catch (error) {
       if (operationIsCurrent(operationEpoch, operationUserId)) {
-        appendAssistant(error instanceof Error ? error.message : "Não foi possível consultar a IA agora.");
+        appendAssistant(error instanceof Error ? error.message : "Não consegui processar sua solicitação agora.");
       }
     } finally {
       if (operationIsCurrent(operationEpoch, operationUserId)) {
@@ -590,7 +605,7 @@ export default function ChatIAScreen() {
         requestAnimationFrame(() => inputRef.current?.focus());
       }
     }
-  }, [appendAssistant, applyResponse, clarificationChoices, clearModalVisible, conversationId, input, loading, operationIsCurrent, pendingAction, session?.access_token, session?.user?.id, showToast]);
+  }, [appendAssistant, applyResponse, clarificationChoices, clearModalVisible, conversationId, input, loading, messages, operationIsCurrent, pendingAction, session?.access_token, session?.user?.id, showToast]);
 
   const confirmAction = useCallback(async () => {
     if (!pendingAction || loading || clearingRef.current || clearModalVisible) return;
@@ -828,7 +843,7 @@ export default function ChatIAScreen() {
                 >
                   {isUser
                     ? <Text style={[styles.messageText, { color: "#FFF" }]}>{message.text}</Text>
-                    : <AssistantMessageText text={message.text} color={theme.text} />}
+                    : <AssistantMessageText text={inFinnVoice(message.text)} color={theme.text} />}
                 </View>
               </View>
             );
