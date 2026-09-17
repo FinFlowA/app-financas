@@ -2,6 +2,7 @@ import { buildSystemPrompt } from "./prompt.ts";
 import {
   classifyProviderHttpFailure,
   estimateModelTokenBudget,
+  fallbackNaturalTransaction,
   GROQ_COMPATIBLE_TPM_LIMIT,
   MODEL_MAX_OUTPUT_TOKENS,
   MODEL_MAX_RESERVED_INPUT_TOKENS,
@@ -14,6 +15,19 @@ import {
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
+
+Deno.test("falha de JSON preserva comando natural como rascunho seguro", () => {
+  const output = fallbackNaturalTransaction("Gastei 70 reais em um lanche");
+  assert(output?.kind === "clarify" && output.intent === "create_transaction", "deveria iniciar lançamento");
+  assert(output.data.some((field) => field.key === "type" && field.value === "despesa"), "tipo literal ausente");
+  assert(output.data.some((field) => field.key === "value" && field.value === "70"), "valor literal ausente");
+  assert(output.data.some((field) => field.key === "description" && field.value === "lanche"), "descrição literal ausente");
+  assert(!output.data.some((field) => ["account_id", "category_id", "frequency", "status"].includes(field.key)), "fallback não pode inventar escolhas");
+});
+
+Deno.test("frase analitica sobre gasto nao vira comando de lancamento", () => {
+  assert(fallbackNaturalTransaction("Quanto gastei com lanche este mês?") === null, "pergunta não pode iniciar escrita");
+});
 
 Deno.test("orçamento conservador permite uma consulta financeira curta no beta", () => {
   const prompt = buildSystemPrompt({
@@ -34,6 +48,20 @@ Deno.test("orçamento conservador permite uma consulta financeira curta no beta"
     budget.estimatedInputTokens <= MODEL_MAX_RESERVED_INPUT_TOKENS,
     "uma consulta curta precisa caber no pré-orçamento",
   );
+});
+
+Deno.test("comando natural de criação cabe no contrato operacional completo", () => {
+  const prompt = buildSystemPrompt({
+    financialContext: JSON.stringify({ context: "x".repeat(3_900) }),
+    conversationState: {},
+    analyticsAllowed: false,
+    outputCanary: "7f41f60a7f41f60a7f41f60a7f41f60a",
+  });
+  const budget = estimateModelTokenBudget(prompt, [{
+    role: "user",
+    content: "Crie uma despesa de 50 reais de almoço para hoje",
+  }]);
+  assert(budget.estimatedInputTokens <= MODEL_MAX_RESERVED_INPUT_TOKENS, "comando natural deve caber no teto real");
 });
 
 Deno.test("orçamento inclui schema, histórico e contexto amplo", () => {
@@ -96,7 +124,7 @@ Deno.test("uso ausente ou zerado nunca libera a reserva do provedor", () => {
     try {
       validatedModelUsage(input, output);
     } catch (error) {
-      rejected = error instanceof Error && error.message === "AI_PROVIDER_FAILED";
+      rejected = error instanceof Error && error.message === "AI_PROVIDER_USAGE_INVALID";
     }
     assert(rejected, `uso inválido deveria ser rejeitado: ${String(input)}/${String(output)}`);
   }
@@ -112,6 +140,7 @@ Deno.test("falhas HTTP do provedor são classificadas sem ler corpo sensível", 
   assert(classifyProviderHttpFailure(413).code === "AI_PROVIDER_REQUEST_TOO_LARGE", "413 precisa ser específico");
   assert(classifyProviderHttpFailure(413).category === "request_too_large", "categoria 413 incorreta");
   assert(classifyProviderHttpFailure(429).code === "AI_PROVIDER_RATE_LIMITED", "429 precisa preservar rate limit");
-  assert(classifyProviderHttpFailure(400).category === "invalid_request", "400 precisa ser sanitizado");
-  assert(classifyProviderHttpFailure(503).category === "upstream_unavailable", "5xx precisa ser sanitizado");
+  assert(classifyProviderHttpFailure(401).code === "AI_PROVIDER_AUTH_FAILED", "401 precisa identificar autenticacao sem expor a chave");
+  assert(classifyProviderHttpFailure(400).code === "AI_PROVIDER_REQUEST_INVALID", "400 precisa identificar contrato invalido");
+  assert(classifyProviderHttpFailure(503).code === "AI_PROVIDER_UNAVAILABLE", "5xx precisa identificar indisponibilidade");
 });

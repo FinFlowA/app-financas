@@ -1,4 +1,10 @@
-import { hasRemainingActionQuota, parseModelOutput, publicErrorMessage } from "./contracts.ts";
+import {
+  hasRemainingActionQuota,
+  NAVIGATION_INTENTS,
+  parseModelOutput,
+  publicErrorMessage,
+  READ_INTENTS,
+} from "./contracts.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -23,6 +29,29 @@ Deno.test("aceita consulta financeira estruturada", () => {
     data: [],
   });
   assert(output.intent === "financial_summary", "Intent incorreta.");
+});
+
+Deno.test("simula todos os tipos de consulta e navegacao aceitos pela Flo", () => {
+  for (const intent of READ_INTENTS) {
+    const output = parseModelOutput({
+      kind: "answer",
+      intent,
+      message: `Resposta ficticia para ${intent}.`,
+      missing_fields: [],
+      data: [],
+    });
+    assert(output.kind === "answer" && output.intent === intent, `consulta ${intent} deveria ser aceita`);
+  }
+  for (const intent of NAVIGATION_INTENTS) {
+    const output = parseModelOutput({
+      kind: "navigate",
+      intent,
+      message: `Abrindo ${intent}.`,
+      missing_fields: [],
+      data: [],
+    });
+    assert(output.kind === "navigate" && output.intent === intent, `navegacao ${intent} deveria ser aceita`);
+  }
 });
 
 Deno.test("aceita proposta, mas nunca confirmação pelo modelo", () => {

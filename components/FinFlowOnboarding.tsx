@@ -1,6 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -17,6 +18,7 @@ type TutorialStep = {
   title: string;
   description: string;
   hint: string;
+  mascot?: boolean;
 };
 
 const STEPS: TutorialStep[] = [
@@ -70,11 +72,12 @@ const STEPS: TutorialStep[] = [
   },
   {
     icon: "auto-awesome",
-    eyebrow: "IA FinFlow",
-    title: "Peça ajuda em linguagem natural",
+    eyebrow: "Finn · Assistente FinFlow",
+    title: "Conheça o Finn",
     description:
-      "Consulte seus dados financeiros ou peça para a IA preparar ações, como criar lançamentos, contas, categorias e objetivos.",
+      "Converse naturalmente com o Finn para consultar seus dados ou preparar lançamentos, contas, categorias e objetivos.",
     hint: "Revise a prévia antes de confirmar: a IA nunca deve alterar seus dados sem sua confirmação.",
+    mascot: true,
   },
   {
     icon: "shield",
@@ -169,12 +172,21 @@ export default function FinFlowOnboarding({
             contentContainerStyle={styles.bodyContent}
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.illustration}>
+            <View style={[styles.illustration, step.mascot && styles.mascotIllustration]}>
               <View style={[styles.glowLarge, { backgroundColor: "rgba(35, 191, 142, 0.12)" }]} />
               <View style={[styles.glowSmall, { backgroundColor: "rgba(93, 220, 177, 0.15)" }]} />
-              <View style={styles.iconCircle}>
-                <MaterialIcons name={step.icon} size={46} color="#FFFFFF" />
-              </View>
+              {step.mascot ? (
+                <Image
+                  source={require("../assets/images/finn-onboarding.png")}
+                  style={styles.mascotImage}
+                  resizeMode="contain"
+                  accessibilityLabel="Finn, assistente financeiro do FinFlow"
+                />
+              ) : (
+                <View style={styles.iconCircle}>
+                  <MaterialIcons name={step.icon} size={46} color="#FFFFFF" />
+                </View>
+              )}
             </View>
 
             <Text style={styles.eyebrow}>{step.eyebrow}</Text>
@@ -282,6 +294,8 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     marginTop: 8,
   },
+  mascotIllustration: { height: 184 },
+  mascotImage: { width: 184, height: 184 },
   glowLarge: {
     position: "absolute",
     width: 174,

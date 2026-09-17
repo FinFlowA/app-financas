@@ -16,7 +16,7 @@ export const FINANCE_AI_MUTATION_INTENTS = [
 ] as const;
 
 export const FINANCE_AI_READ_INTENTS = [
-  "financial_summary", "list_transactions", "cash_flow", "category_analysis", "budget_analysis",
+  "casual_conversation", "financial_summary", "list_transactions", "cash_flow", "category_analysis", "budget_analysis",
   "financial_projection", "card_summary", "goal_progress", "explain_financial_control",
 ] as const;
 
@@ -77,7 +77,7 @@ export type FinanceAiNavigationRoute = "/" | "/transacoes" | "/caixinhas" | "/re
 
 export type FinanceAiHttpSuccessResponse =
   | { kind: "answer"; conversationId: Uuid; message: string; intent: FinanceAiReadIntent | "out_of_scope"; quota: FinanceAiQuota }
-  | { kind: "clarify"; conversationId: Uuid; message: string; intent: Exclude<FinanceAiIntent, "out_of_scope">; missingFields: string[]; quota: FinanceAiQuota }
+  | { kind: "clarify"; conversationId: Uuid; message: string; intent: Exclude<FinanceAiIntent, "out_of_scope">; missingFields: string[]; choices: string[]; quota: FinanceAiQuota }
   | { kind: "navigate"; conversationId: Uuid; message: string; intent: FinanceAiNavigationIntent; route: FinanceAiNavigationRoute; quota: FinanceAiQuota }
   | { kind: "proposal"; conversationId: Uuid; message: string; intent: FinanceAiMutationIntent; pendingAction: FinanceAiPendingAction; quota: FinanceAiQuota }
   | {

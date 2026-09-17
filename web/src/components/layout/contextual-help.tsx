@@ -126,7 +126,7 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
   {
     route: "/assistente",
     content: {
-      title: "Assistente IA",
+      title: "Finn — assistente financeiro",
       description: "Converse com a IA financeira para analisar dados e preparar ações no FinFlow.",
       items: [
         "Peça resumos, comparações, explicações ou ajuda para organizar as finanças.",

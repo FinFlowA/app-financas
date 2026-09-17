@@ -34,6 +34,7 @@ export const DIRECT_ACTIONS = [
 ] as const;
 
 export const READ_INTENTS = [
+  "casual_conversation",
   "financial_summary",
   "list_transactions",
   "cash_flow",
@@ -255,6 +256,9 @@ export function publicErrorMessage(code: string): string {
     AI_CONFIGURATION_FAILED: "A IA financeira está temporariamente indisponível por uma falha de configuração.",
     AI_HISTORY_FAILED: "Não consegui acessar o histórico da conversa agora.",
     AI_PROVIDER_NOT_CONFIGURED: "O provedor da IA financeira ainda não foi configurado.",
+    AI_PROVIDER_AUTH_FAILED: "A autenticação do provedor da IA falhou. Nenhuma ação financeira foi realizada. [AI_PROVIDER_AUTH_FAILED]",
+    AI_PROVIDER_REQUEST_INVALID: "O provedor recusou o formato da solicitação. Nenhuma ação financeira foi realizada. [AI_PROVIDER_REQUEST_INVALID]",
+    AI_PROVIDER_UNAVAILABLE: "O provedor da IA está temporariamente indisponível. Nenhuma ação financeira foi realizada. [AI_PROVIDER_UNAVAILABLE]",
     AI_ACTION_EXECUTION_FAILED: "A ação não pôde ser concluída. Nenhuma alteração financeira foi aplicada.",
     AI_ACTION_NOT_CANCELLABLE: "Essa ação já foi finalizada e não pode mais ser cancelada.",
     AI_ACTION_NOT_EXECUTABLE: "Essa ação não está mais disponível para execução.",
@@ -307,6 +311,9 @@ export function publicErrorMessage(code: string): string {
     AI_RATE_LIMITED: "Muitas mensagens foram enviadas em pouco tempo. Aguarde alguns segundos e tente novamente.",
     AI_PROVIDER_RATE_LIMITED: "O provedor da IA está temporariamente no limite. Aguarde um pouco e tente novamente.",
     AI_PROVIDER_REQUEST_TOO_LARGE: "Esta consulta reuniu informações demais para o limite atual da IA. Informe uma conta, período ou item específico e tente novamente.",
+    AI_PROVIDER_RESPONSE_INVALID: "A IA respondeu em um formato inesperado. Nenhuma ação financeira foi realizada.",
+    AI_PROVIDER_USAGE_INVALID: "A IA não conseguiu validar o consumo desta consulta. Nenhuma ação financeira foi realizada.",
+    AI_MODEL_WORKFLOW_INVALID: "A resposta da IA não passou pela validação de segurança. Nenhuma ação financeira foi realizada.",
     AI_PROVIDER_FAILED: "Não consegui consultar a IA agora. Nenhuma ação financeira foi realizada.",
     AI_TEMPORARILY_PAUSED: "A IA financeira foi pausada temporariamente para proteger a disponibilidade e os custos do serviço. Tente novamente mais tarde.",
     AI_SENSITIVE_DATA_REJECTED: "Por segurança, não envie senhas, PINs, códigos bancários, chaves, tokens, CPF ou número completo de cartão. Remova esses dados e tente novamente.",

@@ -9,19 +9,15 @@ function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
-Deno.test("aceita somente controle financeiro e preserva categorias legítimas", () => {
+Deno.test("aceita controle financeiro e conversa casual segura", () => {
   assert(isFinancialControlMessage("Quanto gastei com futebol este mês?", {}), "Categoria Futebol deveria ser financeira.");
   assert(isFinancialControlMessage("Mostre meus gastos na categoria Política", {}), "Categoria Política deveria ser financeira.");
   assert(isFinancialControlMessage("Crie uma categoria chamada Dom Casmurro", {}), "Nome de categoria não deveria virar assunto externo.");
   assert(isFinancialControlMessage("Crie uma despesa de R$ 35 com a descrição Dom Casmurro", {}), "Descrição financeira legítima deveria passar.");
-  assert(!isFinancialControlMessage("Qual foi o resultado do futebol?", {}), "Placar não é controle financeiro.");
-  assert(!isFinancialControlMessage("Conte uma piada sobre meu saldo", {}), "Pedido misto deveria ser bloqueado.");
-  assert(!isFinancialControlMessage("Tenho saldo; quem escreveu Dom Casmurro?", {}), "Pergunta geral misturada com termo financeiro deveria ser bloqueada.");
-  assert(!isFinancialControlMessage("Mostre meu saldo e quem escreveu Dom Casmurro?", {}), "Pedido geral unido por conjunção deveria ser bloqueado.");
-  assert(!isFinancialControlMessage("Mostre meu saldo, quem escreveu Dom Casmurro?", {}), "Pedido geral separado por vírgula deveria ser bloqueado.");
-  assert(!isFinancialControlMessage("Mostre meu saldo, mas quem escreveu Dom Casmurro?", {}), "Pedido geral adversativo deveria ser bloqueado.");
-  assert(!isFinancialControlMessage("Me conta uma curiosidade", {}), "O verbo contar não pode ser confundido com conta financeira.");
-  assert(!isFinancialControlMessage("Mostre meu saldo e me diga quem escreveu Dom Casmurro", {}), "Pedido misto com 'me diga' deveria ser bloqueado.");
+  assert(isFinancialControlMessage("Oi", {}), "Cumprimento deveria passar.");
+  assert(isFinancialControlMessage("Tudo bem?", {}), "Conversa casual deveria passar.");
+  assert(isFinancialControlMessage("Me conta uma curiosidade", {}), "Conversa leve deveria passar para classificação do modelo.");
+  assert(isFinancialControlMessage("Qual foi o resultado do futebol?", {}), "Assunto distante deve receber redirecionamento humano do modelo.");
 });
 
 Deno.test("bloqueia prompt injection e operações de identidade", () => {
@@ -31,10 +27,10 @@ Deno.test("bloqueia prompt injection e operações de identidade", () => {
 });
 
 Deno.test("continuação curta exige um rascunho ativo", () => {
-  assert(!isFinancialControlMessage("Nubank", {}), "Nome isolado sem rascunho não deveria passar.");
+  assert(isFinancialControlMessage("Nubank", {}), "Texto casual ou ambíguo deve chegar ao classificador sem executar ação.");
   assert(isFinancialControlMessage("Nubank", { __intent: "create_transaction" }), "Conta deveria completar o rascunho.");
   assert(isFinancialControlMessage("R$ 129,90", { __intent: "create_transaction" }), "Valor deveria completar o rascunho.");
-  assert(!isFinancialControlMessage("Pesquise a capital da França", { __intent: "create_transaction" }), "Mudança de assunto deveria ser bloqueada.");
+  assert(isFinancialControlMessage("Pesquise a capital da França", { __intent: "create_transaction" }), "Mudança de assunto deve chegar ao modelo para pausar ou cancelar claramente o rascunho.");
 });
 
 Deno.test("rejeita e redige credenciais e identificadores sensíveis", () => {
@@ -60,6 +56,12 @@ Deno.test("rejeita e redige credenciais e identificadores sensíveis", () => {
 Deno.test("bloqueia saída fora do escopo e aceita resposta financeira", () => {
   assert(safeAssistantMessage("Seu saldo é R$ 100,00.", "financial_summary") !== null, "Resposta financeira válida foi bloqueada.");
   assert(safeAssistantMessage("Aqui está uma piada sobre dinheiro", "financial_summary") === null, "Saída externa deveria ser bloqueada.");
+});
+
+Deno.test("aceita saída casual do Finn sem liberar afirmações de execução", () => {
+  assert(safeAssistantMessage("Oi! Como você está?", "casual_conversation", "answer") !== null, "Cumprimento seguro deveria passar.");
+  assert(safeAssistantMessage("Eu sou o Finn, seu assistente no FinFlow.", "casual_conversation", "answer") !== null, "Apresentação do Finn deveria passar.");
+  assert(safeAssistantMessage("Criei uma despesa para você.", "casual_conversation", "answer") === null, "Conversa casual não pode alegar execução.");
 });
 
 Deno.test("modelo nunca pode alegar que executou uma escrita", () => {
