@@ -549,26 +549,10 @@ export default function CaixinhasScreen() {
 
   const deletarCaixinha = async (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
-
-    const { data: transacoesDoObjetivo, error } = await supabase
-      .from("transacoes")
-      .select("descricao");
-
-    if (error) {
-      return setModalAvisoCaixinha({
-        titulo: "Não foi possível verificar",
-        mensagem: "Confira sua conexão e tente novamente antes de excluir este objetivo.",
-      });
-    }
-
-    const possuiMovimentacao = (transacoesDoObjetivo ?? []).some(
-      (transacao) => movimentoPertenceAoObjetivo(transacao.descricao, caixa),
-    );
-
-    if (possuiMovimentacao) {
+    if (Math.abs(Number(caixa.saldo_atual)) > 0.005) {
       return setModalAvisoCaixinha({
         titulo: "Ação não permitida",
-        mensagem: `O objetivo "${caixa.nome}" possui movimentações registradas. Para preservar o histórico financeiro, ele não pode ser excluído.`,
+        mensagem: `Resgate o saldo de “${caixa.nome}” antes de excluir o objetivo.`,
       });
     }
 
@@ -797,6 +781,8 @@ export default function CaixinhasScreen() {
       <Animated.ScrollView
         style={styles.content}
         contentContainerStyle={[styles.contentContainer, { paddingBottom: 112 + Math.max(insets.bottom, 8) }]}
+        alwaysBounceVertical
+        overScrollMode="always"
         refreshControl={(
           <RefreshControl
             refreshing={atualizandoTela}
@@ -806,6 +792,7 @@ export default function CaixinhasScreen() {
             }}
             tintColor="#2A9D8F"
             colors={["#2A9D8F"]}
+            progressViewOffset={FinFlowTabHeader.expandedHeight}
           />
         )}
         onScroll={onScrollObjetivos}

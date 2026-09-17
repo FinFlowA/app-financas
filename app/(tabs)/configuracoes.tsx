@@ -801,6 +801,8 @@ export default function ConfiguracoesScreen() {
         <Animated.ScrollView
           style={styles.mainScroll}
           contentContainerStyle={styles.mainScrollContent}
+          alwaysBounceVertical
+          overScrollMode="always"
           refreshControl={(
             <RefreshControl
               refreshing={atualizandoTela}
@@ -813,6 +815,7 @@ export default function ConfiguracoesScreen() {
               }}
               tintColor="#2A9D8F"
               colors={["#2A9D8F"]}
+              progressViewOffset={FinFlowTabHeader.expandedHeight}
             />
           )}
           onScroll={onScrollAjustes}

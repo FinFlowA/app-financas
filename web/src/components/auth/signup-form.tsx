@@ -122,7 +122,7 @@ export function SignupForm() {
           className={INPUT_CLASS}
           aria-invalid={Boolean(state.errors?.dataNascimento)}
         />
-        <p className={HELPER_CLASS}>Uso permitido apenas para maiores de 18 anos.</p>
+        <p className={HELPER_CLASS}>Informe sua data de nascimento.</p>
         <FieldError message={state.errors?.dataNascimento} />
       </div>
 

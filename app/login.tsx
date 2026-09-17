@@ -26,7 +26,6 @@ import { supabase } from "../lib/supabase";
 import {
   dataNascimentoParaISO,
   formatarDataNascimento,
-  idadeEmAnos,
   LEGAL_DOCUMENT_VERSION,
 } from "../lib/legal";
 import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
@@ -230,18 +229,6 @@ export default function LoginScreen() {
         });
       }
     } else {
-      const nascimento = data.user?.user_metadata?.data_nascimento;
-      const idade = nascimento ? idadeEmAnos(nascimento) : null;
-      if (idade !== null && idade < 18) {
-        await supabase.auth.signOut({ scope: "local" });
-        setLoading(false);
-        setModalErro({
-          titulo: "Acesso não permitido",
-          mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-          cor: "#A94F44",
-        });
-        return;
-      }
       await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
       setEmailPendenteConfirmacao("");
       router.replace("/(tabs)");
@@ -282,15 +269,12 @@ export default function LoginScreen() {
       }
 
       const resultadoOAuth = await finalizarLoginOAuth(supabase);
-      if (resultadoOAuth.status === "idade_invalida") {
-        setModalErro({
-          titulo: "Acesso não permitido",
-          mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-          cor: FinFlowColors.red,
-        });
+      if (resultadoOAuth.status === "erro") throw new Error("OAUTH_USER_NOT_VERIFIED");
+
+      if (resultadoOAuth.status === "senha_pendente") {
+        router.replace("/define-password" as any);
         return;
       }
-      if (resultadoOAuth.status === "erro") throw new Error("OAUTH_USER_NOT_VERIFIED");
 
       await AsyncStorage.removeItem(PENDING_EMAIL_CONFIRMATION_KEY);
       setEmailPendenteConfirmacao("");
@@ -341,15 +325,8 @@ export default function LoginScreen() {
       );
 
     const nascimentoISO = dataNascimentoParaISO(dataNascimento);
-    const idade = nascimentoISO ? idadeEmAnos(nascimentoISO) : null;
-    if (idade === null)
+    if (!nascimentoISO)
       return Alert.alert("Data inválida", "Informe uma data de nascimento válida no formato DD/MM/AAAA.");
-    if (idade < 18)
-      return setModalErro({
-        titulo: "Cadastro não permitido",
-        mensagem: "O FinFlow é destinado somente a pessoas com 18 anos ou mais.",
-        cor: "#A94F44",
-      });
     if (!aceitouTermos)
       return Alert.alert(
         "Aceite necessário",
@@ -371,6 +348,7 @@ export default function LoginScreen() {
             termos_aceitos_em: new Date().toISOString(),
             termos_versao: LEGAL_DOCUMENT_VERSION,
             tutorial_pendente: true,
+            senha_definida: true,
           },
         },
       });

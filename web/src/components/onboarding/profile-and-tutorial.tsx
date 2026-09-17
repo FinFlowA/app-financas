@@ -137,7 +137,7 @@ export default function ProfileAndTutorial({ missingBirth, missingTerms, tutoria
                 <label className={styles.field}>
                   <span>Data de nascimento</span>
                   <span className={styles.inputWrap}><Icon name="calendar" /><input type="date" name="data_nascimento" required /></span>
-                  <small>O FinFlow é exclusivo para maiores de 18 anos.</small>
+                  <small>Informe sua data de nascimento.</small>
                 </label>
               )}
               {missingTerms && (

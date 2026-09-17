@@ -78,7 +78,6 @@ import FinFlowPopup from "../components/FinFlowPopup";
 import {
   dataNascimentoParaISO,
   formatarDataNascimento,
-  idadeEmAnos,
   LEGAL_DOCUMENT_VERSION,
   listarPendenciasCadastro,
   type PendenciaCadastro,
@@ -758,10 +757,6 @@ export default function RootLayout() {
       setErroCadastroPendente("Informe uma data de nascimento válida.");
       return;
     }
-    if (nascimentoISO && (idadeEmAnos(nascimentoISO) ?? -1) < 18) {
-      setErroCadastroPendente("O FinFlow é destinado somente a maiores de 18 anos.");
-      return;
-    }
     if (precisaTermos && !termosPendentesAceitos) {
       setErroCadastroPendente("É necessário aceitar os Termos de Uso e a Política de Privacidade.");
       return;
@@ -1079,10 +1074,17 @@ export default function RootLayout() {
     const seg = segments[0] as string;
     const inAuthGroup = seg === "login";
     const inSpecialFlow = seg === "reset-password" || seg === "email-confirmed";
+    const needsGooglePassword = session?.user?.app_metadata?.provider === "google"
+      && session?.user?.user_metadata?.senha_definida !== true;
+
+    if (session && needsGooglePassword && seg !== "define-password") {
+      router.replace("/define-password" as any);
+      return;
+    }
 
     if (!session && !inAuthGroup && !inSpecialFlow) {
       router.replace("/login");
-    } else if (session && inAuthGroup) {
+    } else if (session && inAuthGroup && !needsGooglePassword) {
       router.replace("/(tabs)");
     }
   }, [session, isReady, isAuthReady, router, segments]);
@@ -1447,9 +1449,6 @@ export default function RootLayout() {
                   maxLength={10}
                   editable={!salvandoCadastroPendente}
                 />
-                <Text style={{ color: isDark ? "#999" : "#75808A", fontSize: 11, marginTop: 6 }}>
-                  O FinFlow é destinado a pessoas com 18 anos ou mais.
-                </Text>
               </View>
             )}
 

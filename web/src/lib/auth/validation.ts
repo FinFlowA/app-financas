@@ -164,8 +164,6 @@ export function validateSignup(formData: FormData): ValidationResult<SignupData>
   const age = ageFromIsoDate(dataNascimento);
   if (age === null) {
     errors.dataNascimento = "Informe uma data de nascimento válida.";
-  } else if (age < 18) {
-    errors.dataNascimento = "O FinFlow está disponível somente para maiores de 18 anos.";
   }
 
   if (!isStrongPassword(senha)) errors.senha = PASSWORD_REQUIREMENTS_MESSAGE;

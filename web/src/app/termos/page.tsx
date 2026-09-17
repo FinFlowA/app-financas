@@ -24,9 +24,8 @@ export default function TermsPage() {
         <p className="rounded-ff-md border border-orange/25 bg-orange/10 p-4 font-semibold text-foreground">O FinFlow é uma ferramenta de organização. Não é banco, instituição de pagamento, corretora, consultoria contábil ou de investimentos e não movimenta dinheiro por conta própria.</p>
       </LegalSection>
 
-      <LegalSection title="3. Conta, idade e segurança">
+      <LegalSection title="3. Conta e segurança">
         <LegalList>
-          <li>O serviço é destinado somente a pessoas com 18 anos ou mais.</li>
           <li>A data de nascimento e os demais dados de cadastro devem ser informados corretamente.</li>
           <li>O telefone celular é opcional e, enquanto não confirmado, não é usado para entrar, recuperar a conta ou comprovar identidade.</li>
           <li>Senha, dispositivo, códigos temporários e sessão devem ser protegidos e não podem ser cedidos ou comercializados.</li>

@@ -14,7 +14,6 @@ import {
 } from "@/lib/auth/safe-errors";
 import type { AuthActionState } from "@/lib/auth/state";
 import {
-  ageFromIsoDate,
   validateLogin,
   validateNewPassword,
   validateRecoveryEmail,
@@ -42,7 +41,7 @@ export async function signInAction(
 
   try {
     const supabase = await createClient();
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password: senha,
     });
@@ -69,19 +68,6 @@ export async function signInAction(
         message: "E-mail ou senha inválidos.",
         values: { email },
       };
-    }
-
-    const birthDate = data.user?.user_metadata?.data_nascimento;
-    if (typeof birthDate === "string") {
-      const age = ageFromIsoDate(birthDate);
-      if (age !== null && age < 18) {
-        await supabase.auth.signOut({ scope: "local" });
-        return {
-          status: "error",
-          message: "O FinFlow está disponível somente para maiores de 18 anos.",
-          values: { email },
-        };
-      }
     }
 
     authenticated = true;
@@ -152,6 +138,7 @@ export async function signUpAction(
           termos_aceitos_em: new Date().toISOString(),
           termos_versao: LEGAL_DOCUMENT_VERSION,
           tutorial_pendente: true,
+          senha_definida: true,
         },
       },
     });
@@ -260,6 +247,30 @@ export async function resendConfirmationAction(
       "Se a confirmação ainda estiver pendente, um novo link será enviado. Confira também a caixa de spam.",
     values: { email },
   };
+}
+
+export async function defineOAuthPasswordAction(
+  _previousState: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState> {
+  const validation = validateNewPassword(formData);
+  if (!validation.ok) return { status: "error", errors: validation.errors };
+  try {
+    const supabase = await createClient();
+    const { data, error: userError } = await supabase.auth.getUser();
+    const user = data.user;
+    if (userError || !user || user.app_metadata?.provider !== "google") {
+      return { status: "error", message: "Entre novamente com o Google para definir sua senha." };
+    }
+    const { error } = await supabase.auth.updateUser({
+      password: validation.data.senha,
+      data: { ...user.user_metadata, senha_definida: true },
+    });
+    if (error) return { status: "error", message: safeUnexpectedMessage() };
+  } catch {
+    return { status: "error", message: safeUnexpectedMessage() };
+  }
+  redirect("/");
 }
 
 export async function updatePasswordAction(

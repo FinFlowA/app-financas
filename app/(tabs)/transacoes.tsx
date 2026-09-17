@@ -1884,6 +1884,8 @@ export default function TransacoesScreen() {
         ref={paginaScrollRef}
         style={styles.mainScroll}
         contentContainerStyle={styles.mainScrollContent}
+        alwaysBounceVertical
+        overScrollMode="always"
         refreshControl={(
           <RefreshControl
             refreshing={atualizandoTela}
@@ -1893,6 +1895,7 @@ export default function TransacoesScreen() {
             }}
             tintColor="#2A9D8F"
             colors={["#2A9D8F"]}
+            progressViewOffset={FinFlowTabHeader.expandedHeight}
           />
         )}
         onScroll={onScrollHistorico}

@@ -1,5 +1,4 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { idadeEmAnos } from "./legal";
 
 export const PENDING_EMAIL_CONFIRMATION_KEY = "@finflow_pending_email_confirmation";
 
@@ -31,11 +30,11 @@ export function lerFluxoRecuperacaoSenha(raw: string | null): PasswordRecoveryFl
 
 export type ResultadoLoginOAuth =
   | { status: "sucesso" }
-  | { status: "idade_invalida" }
+  | { status: "senha_pendente" }
   | { status: "erro" };
 
 /** Roda depois de exchangeCodeForSession bem-sucedido: confirma e-mail
- * verificado, aplica o bloqueio de 18 anos e liga o tutorial no primeiro
+ * verificado e liga o tutorial no primeiro
  * acesso via provedor externo. Compartilhado entre a interceptação normal
  * (WebBrowser.openAuthSessionAsync) e a tela de fallback app/auth/callback,
  * usada quando o sistema entrega o retorno como navegação comum. */
@@ -49,17 +48,14 @@ export async function finalizarLoginOAuth(
     return { status: "erro" };
   }
 
-  const nascimento = usuario.user_metadata?.data_nascimento;
-  const idade = typeof nascimento === "string" ? idadeEmAnos(nascimento) : null;
-  if (idade !== null && idade < 18) {
-    await supabase.auth.signOut({ scope: "local" });
-    return { status: "idade_invalida" };
-  }
-
   if (usuario.user_metadata?.tutorial_pendente === undefined) {
     await supabase.auth.updateUser({
       data: { ...usuario.user_metadata, tutorial_pendente: true },
     });
+  }
+
+  if (usuario.app_metadata?.provider === "google" && usuario.user_metadata?.senha_definida !== true) {
+    return { status: "senha_pendente" };
   }
 
   return { status: "sucesso" };

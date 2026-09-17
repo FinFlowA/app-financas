@@ -493,6 +493,8 @@ export default function RelatoriosScreen() {
         style={styles.contentScroll}
         contentContainerStyle={[styles.content, { paddingBottom: tabBarHeight + 6 }]}
         showsVerticalScrollIndicator={false}
+        alwaysBounceVertical
+        overScrollMode="always"
         refreshControl={(
           <RefreshControl
             refreshing={atualizandoTela}
@@ -502,6 +504,7 @@ export default function RelatoriosScreen() {
             }}
             tintColor="#2A9D8F"
             colors={["#2A9D8F"]}
+            progressViewOffset={FinFlowTabHeader.expandedHeight}
           />
         )}
       >
