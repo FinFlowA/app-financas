@@ -463,11 +463,20 @@ function allowedBetaEmail(email?: string): boolean {
   return Boolean(email) && allowed.includes(email!.toLocaleLowerCase("pt-BR"));
 }
 
+function aiRolloutMode(): string {
+  // Enquanto os planos não estiverem ativos, a IA fica disponível para toda a
+  // base. Os modos restritivos continuam disponíveis para uma futura ativação.
+  return (optionalSecret("FINFLOW_AI_ROLLOUT_MODE") || "all").toLowerCase();
+}
+
+function aiPlansAreEnforced(quota: JsonRecord): boolean {
+  return aiRolloutMode() === "plans" && Boolean(quota.limits_enabled);
+}
+
 function ensureRolloutAccess(email: string | undefined, quota: JsonRecord): void {
   const limitsEnabled = Boolean(quota.limits_enabled);
-  // Fail closed: uma publicação sem configuração explícita nunca libera custo
-  // de IA para toda a base por engano.
-  const rollout = (optionalSecret("FINFLOW_AI_ROLLOUT_MODE") || "off").toLowerCase();
+  const rollout = aiRolloutMode();
+  if (rollout === "all" || rollout === "public") return;
   if (rollout === "off") throw new Error("AI_NOT_AVAILABLE");
   if (rollout === "beta" && !allowedBetaEmail(email)) throw new Error("AI_NOT_AVAILABLE");
   if (rollout === "plans" && !limitsEnabled) throw new Error("AI_NOT_AVAILABLE");
@@ -862,7 +871,8 @@ Deno.serve(async (req) => {
     // de escrita ativo, a conversa precisa continuar no prompt operacional.
     const mutationRequested = isLikelyMutationRequest(message)
       || isDirectAction(existingState.__intent);
-    if (analyticsRequested && Boolean(quota.limits_enabled) && quota.plan !== "premium") throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
+    const plansAreEnforced = aiPlansAreEnforced(quota);
+    if (analyticsRequested && plansAreEnforced && quota.plan !== "premium") throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
     if (mutationRequested && !hasRemainingActionQuota(quota.remaining)) {
       throw new Error("AI_DAILY_QUOTA_EXCEEDED");
     }
@@ -901,7 +911,7 @@ Deno.serve(async (req) => {
       financialContext = await buildFinancialContext(
         client,
         String(quota.plan ?? "free"),
-        Boolean(quota.limits_enabled),
+        plansAreEnforced,
         contextRequest,
         user.id,
       );
