@@ -41,6 +41,9 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="pt-BR" className="dark h-full antialiased" suppressHydrationWarning>
       <head>
+        {/* THEME_INIT_SCRIPT é uma string estática definida acima, sem
+            interpolação de dado do usuário ou da requisição: nada aqui exige
+            sanitização contra XSS. */}
         <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full">{children}<WebPlatform /></body>
