@@ -30,6 +30,7 @@ function expectInvalid(value: unknown): void {
 export function runFinanceAiValidationTests(): void {
 expectValid({ kind: "answer", conversationId: id, message: "Saldo atual.", intent: "financial_summary", quota });
 expectValid({ kind: "answer", conversationId: id, message: "Só trato de finanças.", intent: "out_of_scope", quota });
+expectValid({ kind: "answer", conversationId: id, message: "Tesouro Direto é um título público.", intent: "investment_education", quota });
 expectValid({ kind: "clarify", conversationId: id, message: "Qual conta?", intent: "create_transaction", missingFields: ["account_id"], choices: ["Nubank", "Carteira"], quota });
 expectValid({ kind: "navigate", conversationId: id, message: "Abrindo.", intent: "open_history", route: "/transacoes", quota });
 expectValid({

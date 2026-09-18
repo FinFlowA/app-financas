@@ -44,6 +44,7 @@ export const READ_INTENTS = [
   "card_summary",
   "goal_progress",
   "explain_financial_control",
+  "investment_education",
 ] as const;
 
 export const NAVIGATION_INTENTS = [
