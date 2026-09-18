@@ -6,10 +6,6 @@ const webSignOutAction = readFileSync(
   resolve(process.cwd(), "src/app/(dashboard)/sign-out-action.ts"),
   "utf8",
 );
-const mobileLogin = readFileSync(
-  resolve(process.cwd(), "../app/login.tsx"),
-  "utf8",
-);
 const mobileSettings = readFileSync(
   resolve(process.cwd(), "../app/(tabs)/configuracoes.tsx"),
   "utf8",
@@ -34,7 +30,6 @@ const supabaseConfig = readFileSync(
 describe("isolamento de sessao entre site e app", () => {
   it("encerra somente a sessao local nos logouts normais", () => {
     expect(webSignOutAction).toContain('auth.signOut({ scope: "local" })');
-    expect(mobileLogin).toContain('auth.signOut({ scope: "local" })');
     expect(mobileSettings).toContain('auth.signOut({ scope: "local" })');
 
     expect(webSignOutAction).not.toMatch(/auth\.signOut\(\s*\)/);

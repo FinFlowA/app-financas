@@ -26,6 +26,7 @@ const POSSESSIVE_CREDENTIAL_REDACTION_PATTERN = new RegExp(
 const FINANCIAL_TOPIC_PATTERN = /(financ|dinheir|saldo|conta|receit|despes|gast|renda|orcament|balanco|resultado|fluxo|caixa|lanc|transa|transfer|categoria|objetiv|caixinha|cartao|fatura|compra|parcela|pag|receb|pendente|atras|venc|juros|desconto|econom|poup|meta|histor|extrato|realiz|agend|planej|previs|projec|resgat|retir|saqu|aporte|deposit|guard)/;
 const IMPLICIT_FINANCIAL_PROJECTION_PATTERN = /\b(?:quanto|qual(?:\s+valor)?)\b.{0,35}\b(?:terei|vou\s+ter|vai\s+sobrar|sobrara|ficara)\b.{0,45}\b(?:fim\s+do\s+(?:mes|ano)|final\s+do\s+ano|proximo\s+mes|mes\s+que\s+vem|em\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro))\b/;
 const FORBIDDEN_ACCESS_PATTERN = /(senha|password|biometri|login|email|e-mail|telefone|celular|sms|codigo de verificacao|autenticacao|parceria|vinculo|assinatura|plano).{0,45}(alter|editar|trocar|mudar|excluir|remover|recuper|confirm|criar|cancel)|(?:alter|editar|trocar|mudar|excluir|remover|recuper|confirm|criar|cancel).{0,45}(senha|password|biometri|login|email|e-mail|telefone|celular|sms|autenticacao|parceria|vinculo|assinatura)/;
+const SENSITIVE_ACCOUNT_ACTION_PATTERN = /\b(?:troque|mude|altere|edite|exclua|remova|confirme|crie|cancele)\b.{0,45}\b(?:senha|password|biometria|login|e-?mail|telefone|celular|autenticacao|parceria|vinculo|assinatura|plano)\b|\b(?:senha|password|biometria|login|e-?mail|telefone|celular|autenticacao|parceria|vinculo|assinatura|plano)\b.{0,45}\b(?:troque|mude|altere|edite|exclua|remova|confirme|crie|cancele)\b/;
 const PROMPT_INJECTION_PATTERN = /(ignore|ignorar|esqueca|esqueça|desconsidere|burlar|contorne|bypass|jailbreak|dan mode).{0,55}(instruc|regra|prompt|sistema|system|developer|seguranc)|(?:revele|mostre|repita|imprima|exponha).{0,55}(prompt|instruc|segredo|chave|token|system|developer)|(?:finja|aja|atue).{0,30}(como|ser).{0,35}(assistente sem regra|dan|outro sistema)/;
 const OUTSIDE_TOPIC_PATTERN = /(conte|conta|contar|faca|faça|escreva|gere|crie).{0,24}(piada|poema|curiosidade|historia ficticia|história fictícia|receita culinaria|receita culinária|codigo fonte|código fonte|programa|software)|(?:resultado|placar|noticia|notícia|previsao|previsão|opine|explique|quem ganhou|quem vence).{0,35}(clima|tempo|futebol|campeonato|eleicao|eleição|politica|política)|(?:diagnostique|prescreva|recomende tratamento|interprete exame|aconselhamento juridico|aconselhamento jurídico|redija peticao|redija petição)|\b(capital da|geografia)\b|(?:qual|indique|recomende).{0,35}(acao para comprar|ação para comprar|criptomoeda|aposta|bet)/;
 const STRUCTURED_INJECTION_PATTERN = /(?:^|[\s{[,(])(?:system|developer|assistant|tool)\s*(?:role|message|prompt)?\s*[:=]|(?:base64|rot13|unicode|hexadecimal).{0,40}(?:prompt|instruc|regra|system|developer)|(?:prompt|instruc|regra|system|developer).{0,40}(?:base64|rot13|unicode|hexadecimal)/;
@@ -140,12 +141,18 @@ function containsMixedOutsideRequest(normalized: string): boolean {
   ));
 }
 
-function containsUnsafeOrOutsideTopic(normalized: string): boolean {
+function containsSecurityThreat(normalized: string): boolean {
   const hardened = securityNormalized(normalized);
   return FORBIDDEN_ACCESS_PATTERN.test(hardened)
+    || SENSITIVE_ACCOUNT_ACTION_PATTERN.test(hardened)
     || PROMPT_INJECTION_PATTERN.test(hardened)
     || ADDITIONAL_PROMPT_INJECTION_PATTERN.test(hardened)
-    || STRUCTURED_INJECTION_PATTERN.test(hardened)
+    || STRUCTURED_INJECTION_PATTERN.test(hardened);
+}
+
+function containsUnsafeOrOutsideTopic(normalized: string): boolean {
+  const hardened = securityNormalized(normalized);
+  return containsSecurityThreat(hardened)
     || OUTSIDE_TOPIC_PATTERN.test(hardened)
     || containsMixedOutsideRequest(hardened);
 }
@@ -164,10 +171,11 @@ function isSafeDraftContinuation(normalized: string, state: Record<string, strin
 export function isFinancialControlMessage(message: string, state: Record<string, string>): boolean {
   if (!message || message.length > MAX_MESSAGE_CHARS) return false;
   const normalized = normalizeText(message);
-  if (containsUnsafeOrOutsideTopic(normalized)) return false;
-  return FINANCIAL_TOPIC_PATTERN.test(normalized)
-    || IMPLICIT_FINANCIAL_PROJECTION_PATTERN.test(normalized)
-    || isSafeDraftContinuation(normalized, state);
+  if (containsSecurityThreat(normalized)) return false;
+  // A entrada também é a fronteira da conversa casual do Finn. Pedidos
+  // especializados fora do produto seguem para o modelo e voltam como
+  // out_of_scope; somente ameaças à segurança são barradas antes do provedor.
+  return normalized.trim().length > 0;
 }
 
 export function safeAssistantMessage(
@@ -188,8 +196,10 @@ export function safeAssistantMessage(
   // O modelo apenas interpreta e propõe. Mensagens de sucesso são produzidas
   // exclusivamente pelo servidor depois do RPC transacional de confirmação.
   if (containsFalseExecutionClaim(normalized, kind)) return null;
+  if (containsSecurityThreat(normalized)) return null;
+  if (intent === "casual_conversation" && kind === "answer") return redacted;
   if (containsUnsafeOrOutsideTopic(normalized)
-    || /\b(piada|poema|receita culinaria|historia ficticia|codigo fonte)\b/.test(normalized)) return null;
+    || /\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return null;
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return redacted;
   if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return redacted;
   if (kind === "propose_action" && /\b(?:revise|confira|previa|confirmar)\b/i.test(normalized)) return redacted;

@@ -67,6 +67,7 @@ import {
 } from "../lib/offline-sync";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { getOptionalNetInfo, getOptionalScreenCapture } from "../lib/optional-native-modules";
+import { formatarEntradaMoeda, valorDaEntradaMoeda } from "../lib/utils";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
@@ -78,7 +79,6 @@ import FinFlowPopup from "../components/FinFlowPopup";
 import {
   dataNascimentoParaISO,
   formatarDataNascimento,
-  idadeEmAnos,
   LEGAL_DOCUMENT_VERSION,
   listarPendenciasCadastro,
   type PendenciaCadastro,
@@ -758,10 +758,6 @@ export default function RootLayout() {
       setErroCadastroPendente("Informe uma data de nascimento válida.");
       return;
     }
-    if (nascimentoISO && (idadeEmAnos(nascimentoISO) ?? -1) < 18) {
-      setErroCadastroPendente("O FinFlow é destinado somente a maiores de 18 anos.");
-      return;
-    }
     if (precisaTermos && !termosPendentesAceitos) {
       setErroCadastroPendente("É necessário aceitar os Termos de Uso e a Política de Privacidade.");
       return;
@@ -1012,7 +1008,7 @@ export default function RootLayout() {
 
     let saldo: number | null = null;
     if (manter) {
-      saldo = Number(saldoCaixinha.replace(",", "."));
+      saldo = valorDaEntradaMoeda(saldoCaixinha);
       if (!Number.isFinite(saldo) || saldo < 0 || saldo > Number(decisao.saldo_disponivel)) {
         Alert.alert(
           "Saldo inválido",
@@ -1079,10 +1075,17 @@ export default function RootLayout() {
     const seg = segments[0] as string;
     const inAuthGroup = seg === "login";
     const inSpecialFlow = seg === "reset-password" || seg === "email-confirmed";
+    const needsGooglePassword = session?.user?.app_metadata?.provider === "google"
+      && session?.user?.user_metadata?.senha_definida !== true;
+
+    if (session && needsGooglePassword && seg !== "define-password") {
+      router.replace("/define-password" as any);
+      return;
+    }
 
     if (!session && !inAuthGroup && !inSpecialFlow) {
       router.replace("/login");
-    } else if (session && inAuthGroup) {
+    } else if (session && inAuthGroup && !needsGooglePassword) {
       router.replace("/(tabs)");
     }
   }, [session, isReady, isAuthReady, router, segments]);
@@ -1447,9 +1450,6 @@ export default function RootLayout() {
                   maxLength={10}
                   editable={!salvandoCadastroPendente}
                 />
-                <Text style={{ color: isDark ? "#999" : "#75808A", fontSize: 11, marginTop: 6 }}>
-                  O FinFlow é destinado a pessoas com 18 anos ou mais.
-                </Text>
               </View>
             )}
 
@@ -1611,26 +1611,30 @@ export default function RootLayout() {
 
             {definindoSaldoCaixinha ? (
               <>
-                <TextInput
+                <View
                   style={{
                     width: "100%",
                     marginTop: 14,
                     borderWidth: 1,
                     borderColor: isDark ? "#444" : "#D4E0DC",
                     backgroundColor: isDark ? "#292929" : "#F8FAF9",
-                    color: isDark ? "#FFF" : "#17212B",
                     borderRadius: 12,
                     paddingHorizontal: 14,
-                    paddingVertical: 12,
-                    fontSize: 16,
+                    flexDirection: "row",
+                    alignItems: "center",
                   }}
-                  placeholder="Saldo que ficará com você"
-                  placeholderTextColor={isDark ? "#888" : "#8A949E"}
-                  keyboardType="decimal-pad"
-                  value={saldoCaixinha}
-                  onChangeText={setSaldoCaixinha}
-                  editable={!resolvendoCaixinha}
-                />
+                >
+                  <Text style={{ color: isDark ? "#AAA" : "#66717D", fontSize: 16, marginRight: 5 }}>R$</Text>
+                  <TextInput
+                    style={{ flex: 1, paddingVertical: 12, fontSize: 16, color: isDark ? "#FFF" : "#17212B" }}
+                    placeholder="0,00"
+                    placeholderTextColor={isDark ? "#888" : "#8A949E"}
+                    keyboardType="decimal-pad"
+                    value={saldoCaixinha}
+                    onChangeText={(texto) => setSaldoCaixinha(formatarEntradaMoeda(texto))}
+                    editable={!resolvendoCaixinha}
+                  />
+                </View>
                 <TouchableOpacity
                   style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 14 }]}
                   onPress={() => resolverDecisaoCaixinha(true)}

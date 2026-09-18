@@ -6,12 +6,12 @@ const HOME_INSIGHT_PROMPT = "Analise meus dados financeiros atuais e me dê um i
 
 export default async function AssistentePage({ searchParams }: { searchParams: Promise<{ prompt?: string }> }) {
   const params = await searchParams;
-  // Somente atalhos definidos pelo próprio FinFlow são executados
-  // automaticamente. Isso evita que um link externo consuma a cota do usuário
-  // ou tente iniciar uma ação por meio de texto arbitrário na URL.
   const initialPrompt = params.prompt === "insight-financeiro" ? HOME_INSIGHT_PROMPT : null;
   const supabase = await createClient();
-  const [{ data: authData }, entitlementResult] = await Promise.all([supabase.auth.getUser(), supabase.rpc("get_my_entitlement")]);
+  const [{ data: authData }, entitlementResult] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase.rpc("get_my_entitlement"),
+  ]);
   if (!authData.user) redirect("/login");
   const raw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
   const entitlement = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};

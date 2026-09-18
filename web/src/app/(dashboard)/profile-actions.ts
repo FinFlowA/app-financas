@@ -26,7 +26,6 @@ export async function completeRequiredProfile(_: ProfileActionState, formData: F
   const birthDate = currentBirth || String(formData.get("data_nascimento") ?? "");
   const age = ageFromIsoDate(birthDate);
   if (age === null) return { status: "error", message: "Informe uma data de nascimento válida." };
-  if (age < 18) { await supabase.auth.signOut({ scope: "local" }); return { status: "error", message: "O FinFlow está disponível somente para maiores de 18 anos." }; }
   const legalCurrent = metadata.termos_versao === LEGAL_DOCUMENT_VERSION && typeof metadata.termos_aceitos_em === "string";
   if (!legalCurrent && formData.get("aceite_legal") !== "on") return { status: "error", message: "Você precisa aceitar os Termos e a Política de Privacidade para continuar." };
   const { error } = await supabase.auth.updateUser({ data: {

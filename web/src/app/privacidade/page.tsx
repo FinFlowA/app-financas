@@ -93,8 +93,8 @@ export default function PrivacyPage() {
         <p>Perfil, preferências, avisos, parceria e exclusão da conta podem ser controlados nas configurações. Para outros pedidos, escreva para o canal de privacidade. A identidade do solicitante pode ser confirmada antes do atendimento.</p>
       </LegalSection>
 
-      <LegalSection title="9. Idade mínima">
-        <p>O FinFlow é destinado exclusivamente a pessoas com <strong className="text-foreground">18 anos ou mais</strong>. A data de nascimento é solicitada no cadastro para confirmar esse requisito.</p>
+      <LegalSection title="9. Data de nascimento">
+        <p>A data de nascimento é mantida como informação de cadastro e deve ser fornecida corretamente.</p>
       </LegalSection>
 
       <LegalSection title="10. Atualizações">

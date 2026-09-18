@@ -34,6 +34,7 @@ export const DIRECT_ACTIONS = [
 ] as const;
 
 export const READ_INTENTS = [
+  "casual_conversation",
   "financial_summary",
   "list_transactions",
   "cash_flow",
@@ -252,9 +253,12 @@ export function publicErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     UNAUTHORIZED: "Sua sessão expirou. Entre novamente para usar a IA financeira.",
     METHOD_NOT_ALLOWED: "Esta operação não é aceita pela IA financeira.",
-    AI_CONFIGURATION_FAILED: "A IA financeira está temporariamente indisponível por uma falha de configuração.",
+    AI_CONFIGURATION_FAILED: "Não consegui acessar meus recursos financeiros agora por uma falha de configuração.",
     AI_HISTORY_FAILED: "Não consegui acessar o histórico da conversa agora.",
-    AI_PROVIDER_NOT_CONFIGURED: "O provedor da IA financeira ainda não foi configurado.",
+    AI_PROVIDER_NOT_CONFIGURED: "Ainda não consigo responder porque meu serviço de processamento não foi configurado.",
+    AI_PROVIDER_AUTH_FAILED: "Não consegui autenticar meu serviço de processamento. Nenhuma ação financeira foi realizada. [AI_PROVIDER_AUTH_FAILED]",
+    AI_PROVIDER_REQUEST_INVALID: "O provedor recusou o formato da solicitação. Nenhuma ação financeira foi realizada. [AI_PROVIDER_REQUEST_INVALID]",
+    AI_PROVIDER_UNAVAILABLE: "Meu serviço de processamento está temporariamente indisponível. Nenhuma ação financeira foi realizada. [AI_PROVIDER_UNAVAILABLE]",
     AI_ACTION_EXECUTION_FAILED: "A ação não pôde ser concluída. Nenhuma alteração financeira foi aplicada.",
     AI_ACTION_NOT_CANCELLABLE: "Essa ação já foi finalizada e não pode mais ser cancelada.",
     AI_ACTION_NOT_EXECUTABLE: "Essa ação não está mais disponível para execução.",
@@ -267,7 +271,7 @@ export function publicErrorMessage(code: string): string {
     AI_INVOICE_PAYMENT_ALREADY_REVERSED: "Este pagamento de fatura já foi estornado.",
     AI_SHARED_TRANSACTION_OWNERSHIP_IMMUTABLE: "Não é possível transferir a propriedade de um lançamento compartilhado.",
     AI_DAILY_MESSAGE_LIMIT: "Você atingiu o limite diário de consultas à IA do seu plano. O acesso renova à meia-noite, no horário de Brasília.",
-    AI_DAILY_SAFETY_LIMIT: "A IA foi pausada para sua conta hoje após muitas tentativas sem conclusão. Tente novamente amanhã.",
+    AI_DAILY_SAFETY_LIMIT: "Precisei pausar meu atendimento nesta conta hoje após muitas tentativas sem conclusão. Tente novamente amanhã.",
     AI_PROPOSAL_RATE_LIMITED: "Muitas ações foram preparadas em pouco tempo. Aguarde alguns minutos e tente novamente.",
     AI_TOO_MANY_PENDING_ACTIONS: "Você possui muitas ações aguardando confirmação. Confirme ou cancele alguma delas antes de continuar.",
     AI_IDEMPOTENCY_CONFLICT: "O pedido foi alterado durante o processamento. Envie-o novamente para gerar uma nova prévia.",
@@ -305,10 +309,13 @@ export function publicErrorMessage(code: string): string {
     AI_ANALYTICS_PLAN_REQUIRED: "Análises e projeções com IA estão disponíveis no plano Premium.",
     AI_DAILY_LIMIT_REACHED: "Você atingiu o limite diário de ações da IA. A cota renova à meia-noite, no horário de Brasília.",
     AI_RATE_LIMITED: "Muitas mensagens foram enviadas em pouco tempo. Aguarde alguns segundos e tente novamente.",
-    AI_PROVIDER_RATE_LIMITED: "O provedor da IA está temporariamente no limite. Aguarde um pouco e tente novamente.",
-    AI_PROVIDER_REQUEST_TOO_LARGE: "Esta consulta reuniu informações demais para o limite atual da IA. Informe uma conta, período ou item específico e tente novamente.",
-    AI_PROVIDER_FAILED: "Não consegui consultar a IA agora. Nenhuma ação financeira foi realizada.",
-    AI_TEMPORARILY_PAUSED: "A IA financeira foi pausada temporariamente para proteger a disponibilidade e os custos do serviço. Tente novamente mais tarde.",
+    AI_PROVIDER_RATE_LIMITED: "Estou temporariamente no limite de processamento. Aguarde um pouco e tente novamente.",
+    AI_PROVIDER_REQUEST_TOO_LARGE: "Não consegui analisar tudo de uma vez. Informe uma conta, período ou item específico e tente novamente.",
+    AI_PROVIDER_RESPONSE_INVALID: "Não consegui organizar minha resposta no formato esperado. Nenhuma ação financeira foi realizada.",
+    AI_PROVIDER_USAGE_INVALID: "Não consegui validar o processamento desta consulta. Nenhuma ação financeira foi realizada.",
+    AI_MODEL_WORKFLOW_INVALID: "Não consegui validar minha resposta com segurança. Nenhuma ação financeira foi realizada.",
+    AI_PROVIDER_FAILED: "Não consegui processar sua solicitação agora. Nenhuma ação financeira foi realizada.",
+    AI_TEMPORARILY_PAUSED: "Precisei pausar meu atendimento temporariamente para manter o serviço disponível. Tente novamente mais tarde.",
     AI_SENSITIVE_DATA_REJECTED: "Por segurança, não envie senhas, PINs, códigos bancários, chaves, tokens, CPF ou número completo de cartão. Remova esses dados e tente novamente.",
     PENDING_ACTION_EXPIRED: "Essa confirmação expirou. Peça novamente para eu preparar a ação.",
     PENDING_ACTION_NOT_FOUND: "Essa ação não está mais disponível para confirmação.",
@@ -316,7 +323,7 @@ export function publicErrorMessage(code: string): string {
   };
   if (messages[code]) return messages[code];
   if (code.startsWith("AI_SCHEMA_") || code === "AI_ENTITLEMENT_UNAVAILABLE") {
-    return "A IA financeira está temporariamente indisponível por uma falha de configuração.";
+    return "Não consegui acessar meus recursos financeiros agora por uma falha de configuração.";
   }
   if (code.includes("NOT_FOUND")) return "Não encontrei o item financeiro solicitado ou você não possui acesso a ele.";
   if (code.includes("ARCHIVED")) return "O item está arquivado e precisa ser reativado antes desta ação.";

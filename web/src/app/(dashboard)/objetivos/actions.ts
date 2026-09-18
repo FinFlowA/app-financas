@@ -11,6 +11,7 @@ import {
 } from "@/lib/finance-action";
 import { hojeEmSaoPaulo } from "@/lib/date";
 import { moneyIsPositive, parseMoney } from "@/lib/money";
+import { createClient } from "@/lib/supabase/server";
 import { CORES_OBJETIVO, ICONES_OBJETIVO } from "./goal-options";
 
 // Os emojis antigos continuam aceitos para preservar objetivos já cadastrados.
@@ -133,6 +134,22 @@ export async function alterarEstadoObjetivo(formData: FormData): Promise<Resulta
   if (!Number.isInteger(goalId) || goalId <= 0) return { erro: "Objetivo inválido." };
   if (!["archive_goal", "delete_goal", "reactivate_goal"].includes(operacao)) {
     return { erro: "Operação inválida." };
+  }
+  if (operacao === "delete_goal") {
+    const supabase = await createClient();
+    const { data: objetivo, error: leituraErro } = await supabase
+      .from("caixinhas")
+      .select("saldo_atual")
+      .eq("id", goalId)
+      .single();
+    if (leituraErro || !objetivo) return { erro: "Objetivo não encontrado." };
+    if (Math.abs(Number(objetivo.saldo_atual ?? 0)) > 0.005) {
+      return { erro: "Resgate o saldo do objetivo antes de excluí-lo." };
+    }
+    const { error: exclusaoErro } = await supabase.from("caixinhas").delete().eq("id", goalId);
+    if (exclusaoErro) return { erro: "Não foi possível excluir o objetivo." };
+    revalidarObjetivos();
+    return { erro: null };
   }
   const resultado = await executeManualFinancialAction(
     operacao as "archive_goal" | "delete_goal" | "reactivate_goal",

@@ -71,6 +71,7 @@ export async function GET(request: NextRequest) {
     // Primeiro acesso via Google: nunca passou pelo cadastro por senha, que é
     // quem normalmente liga essa flag. Sem isso, quem entra pelo Google nunca
     // veria o tutorial guiado.
+    const needsPassword = userData.user.user_metadata?.senha_definida !== true;
     if (userData.user.user_metadata?.tutorial_pendente === undefined) {
       await supabase.auth.updateUser({
         data: { ...userData.user.user_metadata, tutorial_pendente: true },
@@ -78,6 +79,9 @@ export async function GET(request: NextRequest) {
     }
 
     await clearPkceVerifierCookies();
+    if (needsPassword) {
+      return NextResponse.redirect(new URL("/definir-senha", origin));
+    }
   }
 
   if (flow === "recovery") {

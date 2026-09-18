@@ -15,6 +15,7 @@ import {
 import Modal from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
 
 interface Categoria {
   id: number;
@@ -173,7 +174,7 @@ export default function RankingScreen() {
 
   const salvarMeta = async () => {
     if (!catSelecionada) return;
-    const valorNum = parseFloat(valorMetaInput.replace(",", "."));
+    const valorNum = valorDaEntradaMoeda(valorMetaInput);
     if (isNaN(valorNum) || valorNum < 0)
       return Alert.alert("Aviso", "Valor inválido.");
     try {
@@ -318,13 +319,16 @@ export default function RankingScreen() {
             <Text style={styles.colorLabel}>
               Qual é o máximo que queres gastar?
             </Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ex: 300.00 (Coloca 0 para remover)"
-              value={valorMetaInput}
-              onChangeText={setValorMetaInput}
-              keyboardType="numeric"
-            />
+            <View style={styles.moneyInput}>
+              <Text style={styles.moneyPrefix}>R$</Text>
+              <TextInput
+                style={styles.moneyInputField}
+                placeholder="0,00 (digite 0 para remover)"
+                value={valorMetaInput}
+                onChangeText={(texto) => setValorMetaInput(formatarEntradaMoeda(texto))}
+                keyboardType="numeric"
+              />
+            </View>
             <View style={styles.modalButtons}>
               <Button
                 title="Cancelar"
@@ -524,6 +528,17 @@ const styles = StyleSheet.create({
     fontSize: 16,
     marginBottom: 25,
   },
+  moneyInput: {
+    borderWidth: 1,
+    borderColor: "#DDD",
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    marginBottom: 25,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  moneyPrefix: { color: "#666", fontSize: 16, marginRight: 5 },
+  moneyInputField: { flex: 1, paddingVertical: 12, fontSize: 16, color: "#1A1A1A" },
   colorLabel: {
     fontSize: 14,
     color: "#666",

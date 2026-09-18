@@ -107,7 +107,11 @@ includes(screen, 'erroReabertura?.code === "PGRST202"', "Tela nao falha fechada 
 includes(screen, "resultadoAtomico.remaining_value", "Toast nao usa o saldo restante devolvido pelo servidor.");
 includes(screen, "Este lançamento antigo está sem categoria", "Conclusao de legado sem categoria nao orienta a edicao.");
 includes(screen, "<SafeAreaView style={styles.realizationModalOverlay}", "Modal de realizacao nao respeita a area segura do aparelho.");
-includes(screen, "contentContainerStyle={styles.realizationModalScrollContent}", "Modal de realizacao nao oferece rolagem centralizada em telas pequenas.");
+matches(
+  screen,
+  /contentContainerStyle=\{\[\s*styles\.realizationModalScrollContent,[\s\S]*?realizationKeyboardVisible\s*&&\s*styles\.realizationModalScrollContentKeyboard[\s\S]*?\]\}/,
+  "Modal de realizacao nao oferece rolagem adaptada ao teclado em telas pequenas.",
+);
 matches(screen, /realizationModalScrollContent:\s*\{[\s\S]*?flexGrow:\s*1[\s\S]*?justifyContent:\s*"center"/, "Conteudo do modal de realizacao pode ficar fora da tela com o teclado aberto.");
 matches(screen, /Platform\.OS === "web"[\s\S]*?React\.createElement\("input", \{[\s\S]*?type: "date"/, "Web nao oferece um seletor de data HTML acessivel no modal de realizacao.");
 matches(screen, /Platform\.OS !== "web" && mostrarDataRealizacao[\s\S]*?<DateTimePicker/, "Seletor nativo de data nao foi preservado no Android e iOS.");

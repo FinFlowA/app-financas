@@ -95,5 +95,20 @@ assertMatches(
   /code === "AI_ACTION_STATE_CHANGED"[\s\S]{0,400}return 409;/,
   "O conflito otimista deve ser traduzido pela Edge como HTTP 409.",
 );
+assertIncludes(
+  edgeSource,
+  'optionalSecret("FINFLOW_AI_ROLLOUT_MODE") || "all"',
+  "A IA deve ficar liberada para todos enquanto os planos não forem ativados explicitamente.",
+);
+assertMatches(
+  edgeSource,
+  /if \(rollout === "all" \|\| rollout === "public"\) return;/,
+  "O rollout público precisa liberar o acesso antes das regras de plano.",
+);
+assertIncludes(
+  edgeSource,
+  "const plansAreEnforced = aiPlansAreEnforced(quota);",
+  "Consultas analíticas só podem ser limitadas quando o rollout por planos estiver ativo.",
+);
 
 process.stdout.write("Finance AI optimistic state guard tests passed.\n");

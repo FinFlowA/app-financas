@@ -126,9 +126,19 @@ export default function ResetPasswordScreen() {
 
   useEffect(() => {
     let ativo = true;
-    void fluxoRecuperacaoValido().then((valido) => {
-      if (ativo) setStatusFluxo(valido ? "valido" : "invalido");
-    });
+    void (async () => {
+      // O deep link pode montar esta tela alguns instantes antes de o layout
+      // concluir exchangeCodeForSession. Aguarde a sessão/marker em vez de
+      // declarar um link PKCE válido como expirado por causa dessa corrida.
+      for (let tentativa = 0; tentativa < 15 && ativo; tentativa += 1) {
+        if (await fluxoRecuperacaoValido()) {
+          if (ativo) setStatusFluxo("valido");
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 250));
+      }
+      if (ativo) setStatusFluxo("invalido");
+    })();
     return () => { ativo = false; };
   }, []);
 

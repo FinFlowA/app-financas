@@ -466,7 +466,7 @@ export default function CaixinhasScreen() {
   const abrirEditar = (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
     setNomeEditCaixa(caixa.nome);
-    setMetaEditCaixa(Number(caixa.meta_valor).toFixed(2).replace(".", ","));
+    setMetaEditCaixa(formatarEntradaMoeda(String(Math.round(Number(caixa.meta_valor) * 100))));
     setCorEditCaixa(PALETA_CORES.includes(caixa.cor) ? caixa.cor : PALETA_CORES[0]);
     setIconeEditCaixa(caixa.icone);
     setCompartilhadoEditCaixa(caixa.compartilhado ?? false);
@@ -482,7 +482,7 @@ export default function CaixinhasScreen() {
 
   const salvarEdicaoCaixinha = async () => {
     if (!caixaOpcoes) return;
-    const valorNum = parseFloat(metaEditCaixa.replace(",", "."));
+    const valorNum = valorDaEntradaMoeda(metaEditCaixa);
     if (nomeEditCaixa.trim() === "" || isNaN(valorNum) || valorNum <= 0)
       return Alert.alert("Aviso", "Nome e meta são obrigatórios.");
 
@@ -549,26 +549,10 @@ export default function CaixinhasScreen() {
 
   const deletarCaixinha = async (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
-
-    const { data: transacoesDoObjetivo, error } = await supabase
-      .from("transacoes")
-      .select("descricao");
-
-    if (error) {
-      return setModalAvisoCaixinha({
-        titulo: "Não foi possível verificar",
-        mensagem: "Confira sua conexão e tente novamente antes de excluir este objetivo.",
-      });
-    }
-
-    const possuiMovimentacao = (transacoesDoObjetivo ?? []).some(
-      (transacao) => movimentoPertenceAoObjetivo(transacao.descricao, caixa),
-    );
-
-    if (possuiMovimentacao) {
+    if (Math.abs(Number(caixa.saldo_atual)) > 0.005) {
       return setModalAvisoCaixinha({
         titulo: "Ação não permitida",
-        mensagem: `O objetivo "${caixa.nome}" possui movimentações registradas. Para preservar o histórico financeiro, ele não pode ser excluído.`,
+        mensagem: `Resgate o saldo de “${caixa.nome}” antes de excluir o objetivo.`,
       });
     }
 
@@ -637,7 +621,7 @@ export default function CaixinhasScreen() {
 
   const confirmarMovimento = async () => {
     if (!caixaSelecionada) return;
-    const valorNum = parseFloat(valorMovimento.replace(",", "."));
+    const valorNum = valorDaEntradaMoeda(valorMovimento);
     if (isNaN(valorNum) || valorNum <= 0) return Alert.alert("Aviso", "Valor inválido.");
     if (!contaMovimentoId) return Alert.alert("Aviso", "Seleciona uma conta para continuar.");
 
@@ -797,6 +781,8 @@ export default function CaixinhasScreen() {
       <Animated.ScrollView
         style={styles.content}
         contentContainerStyle={[styles.contentContainer, { paddingBottom: 112 + Math.max(insets.bottom, 8) }]}
+        alwaysBounceVertical
+        overScrollMode="always"
         refreshControl={(
           <RefreshControl
             refreshing={atualizandoTela}
@@ -806,6 +792,7 @@ export default function CaixinhasScreen() {
             }}
             tintColor="#2A9D8F"
             colors={["#2A9D8F"]}
+            progressViewOffset={FinFlowTabHeader.expandedHeight}
           />
         )}
         onScroll={onScrollObjetivos}
@@ -1057,7 +1044,7 @@ export default function CaixinhasScreen() {
                   placeholderTextColor={Cores.textoSecundario}
                   placeholder="0,00"
                   value={metaEditCaixa}
-                  onChangeText={setMetaEditCaixa}
+                  onChangeText={(texto) => setMetaEditCaixa(formatarEntradaMoeda(texto))}
                   keyboardType="decimal-pad"
                 />
               </View>
@@ -1295,7 +1282,7 @@ export default function CaixinhasScreen() {
                 placeholderTextColor={Cores.textoSecundario}
                 placeholder="0,00"
                 value={valorMovimento}
-                onChangeText={setValorMovimento}
+                onChangeText={(texto) => setValorMovimento(formatarEntradaMoeda(texto))}
                 keyboardType="decimal-pad"
               />
             </View>

@@ -18,6 +18,12 @@ const PUBLIC_ROUTES = new Set([
 
 const AUTH_ENTRY_ROUTES = new Set(["/login", "/cadastro", "/esqueci-senha"]);
 
+function trustedAppUrl(pathname: string) {
+  const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+  const origin = new URL(configuredOrigin).origin;
+  return new URL(pathname, origin);
+}
+
 // Estas rotas não dependem da sessão. Liberá-las antes de criar o cliente
 // evita uma validação remota de autenticação para documentos legais e
 // recursos estáticos usados logo na primeira abertura do site/PWA.
@@ -66,15 +72,17 @@ export async function updateSession(request: NextRequest, requestHeaders = reque
   const isPublicRoute = PUBLIC_ROUTES.has(pathname);
 
   if (!user && !isPublicRoute) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/login";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(trustedAppUrl("/login"));
   }
 
   if (user && AUTH_ENTRY_ROUTES.has(pathname)) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/";
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(trustedAppUrl("/"));
+  }
+
+  const googleNeedsPassword = user?.app_metadata?.provider === "google"
+    && user.user_metadata?.senha_definida !== true;
+  if (googleNeedsPassword && pathname !== "/definir-senha") {
+    return NextResponse.redirect(trustedAppUrl("/definir-senha"));
   }
 
   return supabaseResponse;

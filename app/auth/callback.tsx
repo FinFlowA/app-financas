@@ -19,7 +19,7 @@ export default function AuthCallbackScreen() {
   const { isDark } = useAppTheme();
   const theme = finFlowTheme(isDark);
   const params = useLocalSearchParams<{ code?: string; error?: string }>();
-  const [status, setStatus] = useState<"verificando" | "idade_invalida" | "erro">("verificando");
+  const [status, setStatus] = useState<"verificando" | "erro">("verificando");
 
   useEffect(() => {
     let ativo = true;
@@ -43,8 +43,8 @@ export default function AuthCallbackScreen() {
 
         const resultado = await finalizarLoginOAuth(supabase);
         if (!ativo) return;
-        if (resultado.status === "idade_invalida") {
-          setStatus("idade_invalida");
+        if (resultado.status === "senha_pendente") {
+          router.replace("/define-password" as any);
           return;
         }
         if (resultado.status === "erro") {
@@ -80,18 +80,6 @@ export default function AuthCallbackScreen() {
               <ActivityIndicator size="large" color={theme.primary} />
               <Text style={[styles.title, { color: theme.text, marginTop: 18 }]}>Concluindo login com Google</Text>
               <Text style={[styles.subtitle, { color: theme.textMuted }]}>Aguarde um instante.</Text>
-            </>
-          ) : status === "idade_invalida" ? (
-            <>
-              <View style={[styles.iconWrap, { backgroundColor: "#C0392E1A" }]}>
-                <MaterialIcons name="block" size={42} color="#C0392E" />
-              </View>
-              <Text style={[styles.title, { color: theme.text }]}>Acesso não permitido</Text>
-              <Text style={[styles.subtitle, { color: theme.textMuted }]}>O FinFlow é destinado somente a pessoas com 18 anos ou mais.</Text>
-              <TouchableOpacity style={[styles.button, { backgroundColor: theme.primary }]} onPress={() => router.replace("/login")} activeOpacity={0.84}>
-                <Text style={styles.buttonText}>Voltar ao login</Text>
-                <MaterialIcons name="arrow-forward" size={19} color="#FFF" />
-              </TouchableOpacity>
             </>
           ) : (
             <>

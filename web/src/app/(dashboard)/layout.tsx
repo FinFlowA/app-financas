@@ -40,8 +40,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const birthDate = typeof metadata?.data_nascimento === "string" ? metadata.data_nascimento : "";
   const age = ageFromIsoDate(birthDate);
   // Uma string preenchida, mas inválida, não pode contornar a pendência.
-  // Sessões antigas de menores também voltam ao fluxo que encerra o acesso.
-  const missingBirth = age === null || age < 18;
+  const missingBirth = age === null;
   const missingTerms = typeof metadata?.termos_aceitos_em !== "string" || metadata?.termos_versao !== LEGAL_DOCUMENT_VERSION;
   const tutorialPending = metadata?.tutorial_pendente === true;
   const categoriesInitialized = metadata?.categorias_padrao_versao === 1;

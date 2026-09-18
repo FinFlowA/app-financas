@@ -17,16 +17,17 @@ import {
   redactSensitiveText,
   safeAssistantMessage,
 } from "./guard.ts";
-import { buildSystemPrompt } from "./prompt.ts";
+import { buildReadOnlySystemPrompt, buildSystemPrompt } from "./prompt.ts";
 import {
   estimateModelTokenBudget,
+  fallbackProductGuidance,
   MODEL_MAX_OUTPUT_TOKENS,
   MODEL_MAX_RESERVED_INPUT_TOKENS,
   providerFailureMetadata,
   requestModel,
   type ModelTokenBudget,
 } from "./provider.ts";
-import { enforceActionWorkflow } from "./workflow.ts";
+import { enforceActionWorkflow, resolveDeterministicContinuation, resolveReferencedFollowup } from "./workflow.ts";
 
 type JsonRecord = Record<string, unknown>;
 type RequestMode = "message" | "confirm" | "cancel" | "history" | "clear";
@@ -35,7 +36,7 @@ type AdminClient = ReturnType<typeof adminClient>;
 
 const MAX_REQUEST_BYTES = 24_000;
 const MAX_MESSAGE_CHARS = 2_000;
-const OUT_OF_SCOPE_MESSAGE = "Posso ajudar exclusivamente com o controle financeiro no FinFlow: contas, lançamentos, categorias, objetivos, cartões, faturas, orçamento e fluxo de caixa.";
+const OUT_OF_SCOPE_MESSAGE = "Posso conversar um pouco com você, mas não consigo orientar esse assunto com a profundidade necessária. Meu foco é ajudar com organização financeira e com os recursos do FinFlow.";
 const ANALYTIC_INTENTS = new Set(["category_analysis", "budget_analysis", "financial_projection"]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9:_-]{8,100}$/;
@@ -43,6 +44,24 @@ const PRE_CONTEXT_MODEL_BUDGET: ModelTokenBudget = {
   estimatedInputTokens: 1,
   maxOutputTokens: 1,
 };
+const CHAT_RETENTION_MS = 24 * 60 * 60 * 1_000;
+
+function chatRetentionCutoff(): string {
+  return new Date(Date.now() - CHAT_RETENTION_MS).toISOString();
+}
+
+async function purgeExpiredChat(admin: AdminClient, userId: string): Promise<void> {
+  const cutoff = chatRetentionCutoff();
+  const { error: messagesError } = await admin.from("ai_messages").delete()
+    .eq("user_id", userId)
+    .lt("created_at", cutoff);
+  if (messagesError) throw new Error("AI_HISTORY_FAILED");
+
+  const { error: conversationsError } = await admin.from("ai_conversations").delete()
+    .eq("user_id", userId)
+    .lt("updated_at", cutoff);
+  if (conversationsError) throw new Error("AI_HISTORY_FAILED");
+}
 
 const NAVIGATION_ROUTES: Record<NavigationIntent, string> = {
   open_home: "/",
@@ -67,6 +86,296 @@ function optionalSecret(name: string): string {
 
 function asObject(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
+
+async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
+  const [accounts, categories, goals, cards] = await Promise.all([
+    client.from("contas").select("id,nome,arquivado,compartilhado").order("nome").limit(60),
+    client.from("categorias").select("id,nome,tipo,ativa").order("nome").limit(100),
+    client.from("caixinhas").select("id,nome,arquivado,saldo_atual").order("nome").limit(60),
+    client.from("cartoes").select("id,nome,ativo,limite").order("nome").limit(40),
+  ]);
+  for (const result of [accounts, categories, goals, cards]) {
+    if (result.error) throw new Error("AI_CONTEXT_QUERY_FAILED");
+  }
+  return {
+    accounts: (accounts.data ?? []).map((row) => ({ id: row.id, name: row.nome, active: !row.arquivado, shared: Boolean(row.compartilhado) })),
+    categories: (categories.data ?? []).map((row) => ({ id: row.id, name: row.nome, type: row.tipo, active: row.ativa !== false })),
+    goals: (goals.data ?? []).map((row) => ({ id: row.id, name: row.nome, active: !row.arquivado, balance: row.saldo_atual })),
+    cards: (cards.data ?? []).map((row) => ({ id: row.id, name: row.nome, active: row.ativo !== false, available_limit: row.limite })),
+  };
+}
+
+function operationalContext(compactJson: string, references: OperationalReferences, maximum = 8_000): string {
+  let source: JsonRecord;
+  try {
+    source = asObject(JSON.parse(compactJson));
+  } catch {
+    throw new Error("AI_CONTEXT_INVALID");
+  }
+  const take = (key: string, limit: number) => Array.isArray(source[key])
+    ? (source[key] as unknown[]).slice(0, limit)
+    : [];
+  const minimal = (rows: unknown[], keys: string[]) => rows.map((item) => {
+    const row = asObject(item);
+    return Object.fromEntries(keys.filter((key) => row[key] !== undefined).map((key) => [key, row[key]]));
+  });
+  const compact: JsonRecord = {
+    current_date: source.current_date,
+    timezone: source.timezone,
+    plan: source.plan,
+    accounts: minimal((references.accounts as unknown[]).slice(0, 60), ["id", "name", "active", "shared"]),
+    categories: minimal((references.categories as unknown[]).slice(0, 100), ["id", "name", "type", "active"]),
+    goals: minimal((references.goals as unknown[]).slice(0, 60), ["id", "name", "active", "balance", "can_move_money"]),
+    cards: minimal((references.cards as unknown[]).slice(0, 40), ["id", "name", "active", "available_limit"]),
+    relevant_transactions: take("relevant_transactions", 8),
+    relevant_invoice_items: take("relevant_invoice_items", 6),
+    invoice_summaries: take("invoice_summaries", 4),
+  };
+  const keys = [
+    "relevant_transactions", "relevant_invoice_items", "invoice_summaries",
+    "goals", "cards",
+  ];
+  let encoded = JSON.stringify(compact);
+  while (encoded.length > maximum) {
+    const candidate = keys
+      .map((key) => ({ key, rows: compact[key] as unknown[] }))
+      .filter(({ rows }) => Array.isArray(rows) && rows.length > 1)
+      .sort((left, right) => right.rows.length - left.rows.length)[0];
+    if (!candidate) break;
+    candidate.rows.pop();
+    encoded = JSON.stringify(compact);
+  }
+  if (encoded.length > maximum) throw new Error("AI_CONTEXT_TOO_LARGE");
+  return encoded;
+}
+
+function clarificationChoices(
+  compactJson: string,
+  missingFields: string[],
+  state: Record<string, string>,
+): string[] {
+  const field = missingFields[0];
+  const contextKey: Record<string, string> = {
+    account_id: "accounts",
+    destination_account_id: "accounts",
+    category_id: "categories",
+    goal_id: "goals",
+    card_id: "cards",
+    transaction_id: "relevant_transactions",
+    purchase_id: "relevant_invoice_items",
+  };
+  const key = contextKey[field];
+  if (!key) return [];
+  let context: JsonRecord;
+  try {
+    context = asObject(JSON.parse(compactJson));
+  } catch {
+    return [];
+  }
+  const rows = Array.isArray(context[key]) ? context[key] as unknown[] : [];
+  const expectedCategoryType = field === "category_id" ? state.type : "";
+  return [...new Set(rows
+    .map(asObject)
+    .filter((row) => row.active !== false)
+    .filter((row) => !expectedCategoryType || !row.type || row.type === expectedCategoryType)
+    .map((row) => typeof row.name === "string"
+      ? row.name.trim()
+      : typeof row.description === "string" ? row.description.trim() : "")
+    .filter((name) => name.length > 0 && name.length <= 100))]
+    .slice(0, 30);
+}
+
+function deterministicDatedAnswer(message: string, compactJson: string): { message: string; intent: "cash_flow" | "list_transactions" } | null {
+  let context: JsonRecord;
+  try {
+    context = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const normalized = normalizeText(message);
+  const daily = Array.isArray(context.daily_cash_flow) ? context.daily_cash_flow.map(asObject) : [];
+  const monthNames: Record<string, string> = {
+    janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
+    julho: "07", agosto: "08", setembro: "09", outubro: "10", novembro: "11", dezembro: "12",
+  };
+  const explicitIso = normalized.match(/\b((?:19|20)\d{2})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\b/);
+  const explicitBr = normalized.match(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/((?:19|20)\d{2}))?\b/);
+  const namedDay = normalized.match(/\bdia\s+(0?[1-9]|[12]\d|3[01])(?:\s+de\s+([a-z]+))?/);
+  const contextYear = String(context.focus_month ?? context.current_date ?? "").slice(0, 4);
+  let requestedDate = "";
+  if (explicitIso) requestedDate = `${explicitIso[1]}-${explicitIso[2]}-${explicitIso[3]}`;
+  else if (explicitBr) requestedDate = `${explicitBr[3] ?? contextYear}-${String(Number(explicitBr[2])).padStart(2, "0")}-${String(Number(explicitBr[1])).padStart(2, "0")}`;
+  else if (namedDay) {
+    const month = monthNames[namedDay[2] ?? ""] ?? String(context.focus_month ?? "").slice(5, 7);
+    if (contextYear && month) requestedDate = `${contextYear}-${month}-${String(Number(namedDay[1])).padStart(2, "0")}`;
+  }
+  else if (/\b(?:ate\s+)?(?:o\s+)?fim\s+do\s+ano\b/.test(normalized) && contextYear) {
+    requestedDate = `${contextYear}-12-31`;
+  }
+
+  const money = (value: unknown) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
+  const asksFutureExpenseByName = /\bquanto\b.*\b(?:vou\s+)?gastar\b/.test(normalized);
+  if (asksFutureExpenseByName && requestedDate) {
+    const ignoredWords = new Set([
+      "quanto", "vou", "gastar", "gasto", "despesa", "despesas", "ate", "fim", "ano", "mes",
+      "semana", "semanal", "conta", "minha", "meu", "de", "do", "da", "em", "com", "para", "o", "a",
+    ]);
+    const requestTokens = new Set((normalized.match(/[a-z0-9]{3,}/g) ?? []).filter((token) => !ignoredWords.has(token)));
+    const currentDate = String(context.current_date ?? "");
+    const candidates = (Array.isArray(context.scenario_candidates) ? context.scenario_candidates : [])
+      .map(asObject)
+      .map((transaction) => {
+        const description = normalizeText(String(transaction.description ?? ""));
+        const score = [...requestTokens].filter((token) => description.includes(token)).length;
+        return { transaction, description, score };
+      })
+      .filter(({ transaction, score }) => score > 0
+        && String(transaction.type ?? "") === "despesa"
+        && String(transaction.status ?? "") !== "paga"
+        && String(transaction.scheduled_date ?? "") >= currentDate
+        && String(transaction.scheduled_date ?? "") <= requestedDate)
+      .sort((left, right) => right.score - left.score);
+    const best = candidates[0];
+    if (best) {
+      const bestTokens = new Set(best.description.match(/[a-z0-9]{3,}/g) ?? []);
+      const matched = candidates.filter((candidate) => candidate.score === best.score
+        || [...bestTokens].some((token) => token.length >= 4 && candidate.description.includes(token)));
+      const total = matched.reduce((sum, candidate) => sum + (Number(candidate.transaction.value) || 0), 0);
+      const label = String(best.transaction.description ?? "despesa recorrente");
+      const displayDate = `${requestedDate.slice(8, 10)}/${requestedDate.slice(5, 7)}/${requestedDate.slice(0, 4)}`;
+      return {
+        message: `Você ainda gastará ${money(total)} com ${label} até ${displayDate}. O total considera ${matched.length} ${matched.length === 1 ? "lançamento pendente" : "lançamentos pendentes"} já cadastrados no FinFlow.`,
+        intent: "list_transactions",
+      };
+    }
+  }
+  const row = (requestedDate ? daily.find((item) => String(item.date ?? "") === requestedDate) : null)
+    ?? (daily.length === 1 ? daily[0] : null);
+  if (!row) return null;
+  const date = String(row.date ?? "");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const displayDate = `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
+  const conditionalExclusion = /(nao\s+(?:vou\s+)?(?:gastar|pagar|receber)|\bsem\b|desconsider|retir|exclu)/.test(normalized);
+  if (conditionalExclusion) {
+    const ignoredWords = new Set([
+      "quanto", "conta", "saldo", "sera", "terei", "gastar", "pagar", "receber", "dia", "mes",
+      "ano", "nao", "sem", "com", "para", "meu", "minha", "vou", "ter", "de", "do", "da", "em", "e",
+    ]);
+    const requestTokens = new Set((normalized.match(/[a-z0-9]{3,}/g) ?? []).filter((token) => !ignoredWords.has(token)));
+    const sourceCandidates = [...new Map([
+      ...(Array.isArray(context.scenario_candidates) ? context.scenario_candidates : []),
+      ...(Array.isArray(context.relevant_transactions) ? context.relevant_transactions : []),
+    ].map((item) => {
+      const row = asObject(item);
+      return [String(row.id ?? `${row.description}:${row.scheduled_date}`), row] as const;
+    })).values()];
+    const candidates = sourceCandidates
+      .map(asObject)
+      .map((transaction) => {
+        const description = normalizeText(String(transaction.description ?? ""));
+        const descriptionTokens = new Set(description.match(/[a-z0-9]{3,}/g) ?? []);
+        const score = [...requestTokens].filter((token) => descriptionTokens.has(token)).length;
+        return { transaction, description, score };
+      })
+      .filter((candidate) => candidate.score > 0)
+      .sort((left, right) => right.score - left.score);
+    const best = candidates[0];
+    if (best) {
+      const bestTokens = new Set(best.description.match(/[a-z0-9]{3,}/g) ?? []);
+      const matched = candidates.filter((candidate) => (
+        candidate.score === best.score
+        || [...bestTokens].some((token) => token.length >= 4 && candidate.description.includes(token))
+      )).map((candidate) => candidate.transaction)
+        .filter((transaction) => String(transaction.status ?? "") !== "paga")
+        .filter((transaction) => String(transaction.scheduled_date ?? "") <= date);
+      const projectedDelta = matched.reduce((total, transaction) => {
+        const value = Number(transaction.value) || 0;
+        return total + (String(transaction.type ?? "") === "receita" ? value : -value);
+      }, 0);
+      if (matched.length > 0) {
+        const baseline = Number(row.account_balance) || 0;
+        const scenarioBalance = baseline - projectedDelta;
+        const label = String(best.transaction.description ?? "lançamento citado");
+        const totalRemoved = Math.abs(projectedDelta);
+        return {
+          message: `Sem ${label}, seu saldo projetado em ${displayDate} seria ${money(scenarioBalance)}. Considerei ${matched.length} ${matched.length === 1 ? "ocorrência pendente" : "ocorrências pendentes"}, somando ${money(totalRemoved)}, que entrariam na projeção até essa data.`,
+          intent: "cash_flow",
+        };
+      }
+    }
+    return null;
+  }
+  const asksItems = /(o que|quais|lancamento|agend|programad|calendario|agenda)/.test(normalized);
+
+  if (asksItems) {
+    const transactions = (Array.isArray(context.relevant_transactions) ? context.relevant_transactions : [])
+      .map(asObject)
+      .filter((transaction) => String(transaction.scheduled_date ?? "") === date);
+    if (transactions.length === 0) {
+      return { message: `Você não possui lançamentos agendados para ${displayDate}.`, intent: "list_transactions" };
+    }
+    const details = transactions.slice(0, 8).map((transaction) => {
+      const type = String(transaction.type ?? "") === "receita" ? "Receita" : "Despesa";
+      const status = String(transaction.status ?? "") === "paga" ? "realizada" : "pendente";
+      return `${type}: ${String(transaction.description ?? "Lançamento")} — ${money(transaction.value)} (${status})`;
+    });
+    const suffix = transactions.length > details.length ? ` Além desses, há mais ${transactions.length - details.length}.` : "";
+    return { message: `Em ${displayDate}: ${details.join("; ")}.${suffix}`, intent: "list_transactions" };
+  }
+
+  if (/(saldo|quanto terei|quanto vou ter|previs)/.test(normalized)) {
+    const projected = Boolean(row.balance_is_projection);
+    return {
+      message: `Em ${displayDate}, seu saldo ${projected ? "projetado" : "realizado"} é ${money(row.account_balance)}.`,
+      intent: "cash_flow",
+    };
+  }
+  return null;
+}
+
+async function deterministicNamedFutureExpense(
+  client: SupabaseClient,
+  message: string,
+): Promise<{ message: string; intent: "list_transactions" } | null> {
+  const normalized = normalizeText(message);
+  const match = normalized.match(/\bquanto\b.*?\b(?:vou\s+)?gastar\s+(?:de|com)?\s*([a-z0-9][a-z0-9\s-]*?)(?=\s+ate\b|\s+no\s+restante\b|[?.!]|$)/);
+  if (!match) return null;
+  const description = match[1].replace(/\b(?:o|a|os|as)\b/g, " ").replace(/\s+/g, " ").trim();
+  if (description.length < 2 || description.length > 100) return null;
+  const currentDate = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit",
+  }).format(new Date());
+  const year = currentDate.slice(0, 4);
+  const explicitDate = normalized.match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{4}))?\b/);
+  const endDate = /\bfim\s+do\s+ano\b/.test(normalized)
+    ? `${year}-12-31`
+    : explicitDate
+      ? `${explicitDate[3] ?? year}-${String(Number(explicitDate[2])).padStart(2, "0")}-${String(Number(explicitDate[1])).padStart(2, "0")}`
+      : "";
+  if (!endDate || endDate < currentDate) return null;
+  const { data, error } = await client.from("transacoes")
+    .select("valor,descricao,data_vencimento")
+    .eq("tipo", "despesa")
+    .neq("status", "paga")
+    .gte("data_vencimento", currentDate)
+    .lte("data_vencimento", endDate)
+    .ilike("descricao", `%${description}%`)
+    .order("data_vencimento")
+    .limit(500);
+  if (error) throw new Error("FINANCIAL_CONTEXT_FAILED");
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length === 0) return null;
+  const total = rows.reduce((sum, row) => sum + (Number(row.valor) || 0), 0);
+  const label = String(rows[0].descricao ?? description).replace(/\s*\[(?:[^\]]+)]\s*/g, " ").trim();
+  const displayDate = `${endDate.slice(8, 10)}/${endDate.slice(5, 7)}/${endDate.slice(0, 4)}`;
+  const money = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(total);
+  return {
+    message: `Você ainda gastará ${money} com ${label} até ${displayDate}. O total considera ${rows.length} ${rows.length === 1 ? "lançamento pendente" : "lançamentos pendentes"} já cadastrados no FinFlow.`,
+    intent: "list_transactions",
+  };
 }
 
 function normalizeRpcObject(value: unknown): JsonRecord {
@@ -126,12 +435,15 @@ function isAnalyticalRequest(message: string): boolean {
 }
 
 function isDraftCancellation(message: string): boolean {
-  return /^(cancelar?|cancela|desistir|desisto|deixa pra la|esquece|nao quero)(?:[.!\s]|$)/.test(normalizeText(message));
+  return /^(cancelar?|cancela|desistir|desisto|deixa pra la|esquece|nao quero|vamos falar de outra coisa|quero mudar de assunto)(?:[.!\s]|$)/.test(normalizeText(message));
 }
 
 function isLikelyMutationRequest(message: string): boolean {
   const normalized = normalizeText(message);
   if (/\b(como|posso|onde|qual a forma)\b/.test(normalized)) return false;
+  if (!/\b(quanto|qual|mostre|liste|compare)\b/.test(normalized)
+      && /\b(gastei|paguei|comprei|recebi|ganhei)\b/.test(normalized)
+      && /(?:r\$\s*)?\d/.test(normalized)) return true;
   return /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized)
     && /(conta|categoria|objetiv|caixinha|lanc|transa|receit|despes|cartao|compra|fatura|transfer)/.test(normalized);
 }
@@ -152,11 +464,20 @@ function allowedBetaEmail(email?: string): boolean {
   return Boolean(email) && allowed.includes(email!.toLocaleLowerCase("pt-BR"));
 }
 
+function aiRolloutMode(): string {
+  // Enquanto os planos não estiverem ativos, a IA fica disponível para toda a
+  // base. Os modos restritivos continuam disponíveis para uma futura ativação.
+  return (optionalSecret("FINFLOW_AI_ROLLOUT_MODE") || "all").toLowerCase();
+}
+
+function aiPlansAreEnforced(quota: JsonRecord): boolean {
+  return aiRolloutMode() === "plans" && Boolean(quota.limits_enabled);
+}
+
 function ensureRolloutAccess(email: string | undefined, quota: JsonRecord): void {
   const limitsEnabled = Boolean(quota.limits_enabled);
-  // Fail closed: uma publicação sem configuração explícita nunca libera custo
-  // de IA para toda a base por engano.
-  const rollout = (optionalSecret("FINFLOW_AI_ROLLOUT_MODE") || "off").toLowerCase();
+  const rollout = aiRolloutMode();
+  if (rollout === "all" || rollout === "public") return;
   if (rollout === "off") throw new Error("AI_NOT_AVAILABLE");
   if (rollout === "beta" && !allowedBetaEmail(email)) throw new Error("AI_NOT_AVAILABLE");
   if (rollout === "plans" && !limitsEnabled) throw new Error("AI_NOT_AVAILABLE");
@@ -253,7 +574,8 @@ async function adjustModelRequest(
 }
 
 async function findConversation(admin: AdminClient, userId: string, requestedId?: unknown): Promise<{ id: string; state: Record<string, string> } | null> {
-  let query = admin.from("ai_conversations").select("id,state").eq("user_id", userId);
+  let query = admin.from("ai_conversations").select("id,state").eq("user_id", userId)
+    .gte("updated_at", chatRetentionCutoff());
   if (requestedId == null) {
     query = query.order("updated_at", { ascending: false }).order("id", { ascending: false }).limit(1);
   } else {
@@ -278,6 +600,7 @@ async function recentMessages(admin: AdminClient, userId: string, conversationId
     .select("role,content")
     .eq("user_id", userId)
     .eq("conversation_id", conversationId)
+    .gte("created_at", chatRetentionCutoff())
     .in("role", ["user", "assistant"])
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
@@ -364,11 +687,39 @@ function actionSuccessMessage(actionType: unknown, replayed: boolean): string {
   return replayed ? `${message} Esta confirmação já havia sido processada e não foi duplicada.` : message;
 }
 
+function executionReferenceState(result: JsonRecord): Record<string, string> {
+  const actionType = String(result.action_type ?? "");
+  const execution = asObject(result.result);
+  if (actionType === "create_transaction" || actionType === "transfer_between_accounts") {
+    const ids = Array.isArray(execution.transaction_ids) ? execution.transaction_ids : [];
+    const id = Number(ids.at(-1));
+    if (Number.isSafeInteger(id) && id > 0) return { __last_transaction_id: String(id) };
+  }
+  const transactionId = Number(execution.transaction_id);
+  if (Number.isSafeInteger(transactionId) && transactionId > 0) {
+    return { __last_transaction_id: String(transactionId) };
+  }
+  return {};
+}
+
+function createdTransactionIds(result: JsonRecord): number[] {
+  const actionType = String(result.action_type ?? "");
+  if (!["create_transaction", "transfer_between_accounts", "move_goal", "pay_invoice"].includes(actionType)) return [];
+  const execution = asObject(result.result);
+  const candidates = [
+    ...(Array.isArray(execution.transaction_ids) ? execution.transaction_ids : []),
+    execution.transaction_id,
+    execution.payment_transaction_id,
+  ];
+  return [...new Set(candidates.map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))];
+}
+
 async function handleHistory(admin: AdminClient, userId: string, requestedId?: unknown): Promise<JsonRecord> {
   const conversation = await findConversation(admin, userId, requestedId);
   if (!conversation) return { conversationId: null, messages: [] };
   const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent")
     .eq("user_id", userId).eq("conversation_id", conversation.id)
+    .gte("created_at", chatRetentionCutoff())
     .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(200);
   if (error) throw new Error("AI_HISTORY_FAILED");
   return {
@@ -428,6 +779,7 @@ Deno.serve(async (req) => {
     const mode = requestMode(body.mode);
     validateRequestFields(body, mode);
     const admin = adminClient();
+    await purgeExpiredChat(admin, user.id);
 
     // Histórico e limpeza são direitos de privacidade. Cancelar uma proposta
     // também continua disponível após downgrade, encerramento do rollout ou
@@ -469,8 +821,17 @@ Deno.serve(async (req) => {
       // atualização visual da cota não podem converter um sucesso real em
       // HTTP 500 e induzir o usuário a acreditar que nada aconteceu.
       try {
+        const transactionIds = createdTransactionIds(result);
+        if (transactionIds.length > 0) {
+          const { error: originError } = await admin.from("ai_transaction_origins").upsert(
+            transactionIds.map((transactionId) => ({ transaction_id: transactionId, user_id: user.id, source: "ai" })),
+            { onConflict: "transaction_id" },
+          );
+          if (originError) console.error("finance-ai transaction origin", originError.message);
+        }
         const conversation = await findConversation(admin, user.id, body.conversationId);
         if (conversation) {
+          await updateConversationState(admin, user.id, conversation.id, executionReferenceState(result));
           await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: message, intent: String(result.action_type ?? "") });
         }
       } catch (historyError) {
@@ -506,8 +867,14 @@ Deno.serve(async (req) => {
     }
 
     const analyticsRequested = isAnalyticalRequest(message);
-    if (analyticsRequested && Boolean(quota.limits_enabled) && quota.plan !== "premium") throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
-    if (isLikelyMutationRequest(message) && !hasRemainingActionQuota(quota.remaining)) {
+    // Respostas curtas como "Carteira", "Alimentação" ou "pendente" não
+    // repetem o verbo da solicitação original. Enquanto houver um rascunho
+    // de escrita ativo, a conversa precisa continuar no prompt operacional.
+    const mutationRequested = isLikelyMutationRequest(message)
+      || isDirectAction(existingState.__intent);
+    const plansAreEnforced = aiPlansAreEnforced(quota);
+    if (analyticsRequested && plansAreEnforced && quota.plan !== "premium") throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
+    if (mutationRequested && !hasRemainingActionQuota(quota.remaining)) {
       throw new Error("AI_DAILY_QUOTA_EXCEEDED");
     }
 
@@ -520,6 +887,7 @@ Deno.serve(async (req) => {
     let modelResult: Awaited<ReturnType<typeof requestModel>>;
     let financialContext: Awaited<ReturnType<typeof buildFinancialContext>>;
     let prompt: string;
+    let workflowContextJson: string;
     let history: ConversationMessage[];
     let safetyId: string;
     const outputCanary = crypto.randomUUID().replaceAll("-", "");
@@ -535,22 +903,153 @@ Deno.serve(async (req) => {
         ...storedHistory.map((item) => ({ ...item, content: redactSensitiveText(item.content) })),
         { role: "user" as const, content: safeMessage },
       ];
-      const contextRequest = `${safeMessage}\n${JSON.stringify(safeState)}`.slice(0, 3_000);
+      const recentUserContext = storedHistory
+        .filter((item) => item.role === "user")
+        .slice(-3)
+        .map((item) => redactSensitiveText(item.content));
+      const semanticMessage = [...recentUserContext, safeMessage].join("\nContinuação do usuário: ");
+      const contextRequest = `${semanticMessage}\n${JSON.stringify(safeState)}`.slice(-3_000);
       financialContext = await buildFinancialContext(
         client,
         String(quota.plan ?? "free"),
-        Boolean(quota.limits_enabled),
+        plansAreEnforced,
         contextRequest,
         user.id,
       );
+      const operationalReferences = mutationRequested
+        ? await loadOperationalReferences(client)
+        : null;
+      workflowContextJson = mutationRequested
+        ? operationalContext(financialContext.compactJson, operationalReferences!)
+        : financialContext.compactJson;
       if (analyticsRequested && !financialContext.analyticsAllowed) throw new Error("AI_ANALYTICS_PLAN_REQUIRED");
 
-      prompt = buildSystemPrompt({
-        financialContext: financialContext.compactJson,
-        conversationState: safeState,
-        analyticsAllowed: financialContext.analyticsAllowed,
-        outputCanary,
-      });
+      const deterministicContinuation = mutationRequested
+        ? resolveDeterministicContinuation(existingState, workflowContextJson, safeMessage)
+        : null;
+      if (deterministicContinuation) {
+        conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
+        await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
+        await finalizeModelRequest(admin, {
+          usageId, provider: "not_called", model: "not_called", inputTokens: 0, outputTokens: 0,
+          status: "failed", latencyMs: monitoringLatencyMs(requestStartedAt), errorCode: "AI_DETERMINISTIC_CONTINUATION",
+        });
+        const nextState = fieldsToPayload(deterministicContinuation.data);
+        nextState.__intent = deterministicContinuation.intent;
+        await updateConversationState(admin, user.id, conversation.id, nextState);
+        await saveMessageBestEffort(admin, {
+          userId: user.id, conversationId: conversation.id, role: "assistant",
+          content: deterministicContinuation.message, intent: deterministicContinuation.intent,
+          provider: "deterministic", model: "finflow-form-v1",
+        });
+        return json({
+          kind: deterministicContinuation.kind,
+          conversationId: conversation.id,
+          message: deterministicContinuation.message,
+          intent: deterministicContinuation.intent,
+          missingFields: deterministicContinuation.missing_fields,
+          choices: clarificationChoices(workflowContextJson, deterministicContinuation.missing_fields, nextState),
+          quota: await getQuota(client),
+        }, 200, req);
+      }
+
+      const referencedFollowup = mutationRequested
+        ? resolveReferencedFollowup(existingState, safeMessage)
+        : null;
+      if (referencedFollowup) {
+        const output = enforceActionWorkflow(referencedFollowup, existingState, workflowContextJson, safeMessage);
+        if (output.kind !== "propose_action" || !isDirectAction(output.intent)) throw new Error("INVALID_MODEL_OUTPUT");
+        conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
+        await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
+        await finalizeModelRequest(admin, {
+          usageId, provider: "not_called", model: "not_called", inputTokens: 0, outputTokens: 0,
+          status: "failed", latencyMs: monitoringLatencyMs(requestStartedAt), errorCode: "AI_DETERMINISTIC_FOLLOWUP",
+        });
+        const quotaAfterFollowup = await getQuota(client);
+        if (!hasRemainingActionQuota(quotaAfterFollowup.remaining)) throw new Error("AI_DAILY_QUOTA_EXCEEDED");
+        await updateConversationState(admin, user.id, conversation.id, {});
+        const { data, error } = await client.rpc("ai_create_pending_action", {
+          p_action_type: output.intent,
+          p_payload: fieldsToPayload(output.data),
+          p_idempotency_key: `conversation:${conversation.id}:${requestId}`,
+          p_ttl_seconds: 600,
+        });
+        if (error) throw new Error(errorCodeFromRpc(error, "INVALID_REQUEST"));
+        const action = normalizeRpcObject(data);
+        if (!action.ok || !action.id || !action.confirmation_token) throw new Error(String(action.error_code || "INVALID_REQUEST"));
+        const rawPreview = asObject(action.preview);
+        const summaryCandidate = typeof rawPreview.summary === "string" ? rawPreview.summary : output.message;
+        const summary = safeAssistantMessage(summaryCandidate, output.intent)
+          ?? "Revise os dados financeiros desta ação antes de confirmar.";
+        const preview = {
+          title: redactSensitiveText(redactInternalIdentifiers(typeof rawPreview.title === "string" ? rawPreview.title : "Ação financeira")).slice(0, 200),
+          summary,
+          consequences: (Array.isArray(rawPreview.consequences) ? rawPreview.consequences : [])
+            .filter((item): item is string => typeof item === "string")
+            .slice(0, 20)
+            .map((item) => redactSensitiveText(redactInternalIdentifiers(item)).slice(0, 500)),
+        };
+        await saveMessageBestEffort(admin, {
+          userId: user.id, conversationId: conversation.id, role: "assistant", content: summary,
+          intent: output.intent, provider: "deterministic", model: "finflow-followup-v1",
+        });
+        return json({
+          kind: "proposal", conversationId: conversation.id, message: summary, intent: output.intent,
+          pendingAction: {
+            id: action.id, confirmationToken: action.confirmation_token, actionType: action.action_type,
+            expiresAt: action.expires_at, preview,
+          },
+          quota: quotaAfterFollowup,
+        }, 200, req);
+      }
+
+      const deterministicAnswer = fallbackProductGuidance(safeMessage)
+        ?? await deterministicNamedFutureExpense(client, safeMessage)
+        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson);
+      if (deterministicAnswer) {
+        conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
+        await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
+        await finalizeModelRequest(admin, {
+          usageId,
+          provider: "not_called",
+          model: "not_called",
+          inputTokens: 0,
+          outputTokens: 0,
+          status: "failed",
+          latencyMs: monitoringLatencyMs(requestStartedAt),
+          errorCode: "AI_DETERMINISTIC_RESPONSE",
+        });
+        await updateConversationState(admin, user.id, conversation.id, {});
+        await saveMessageBestEffort(admin, {
+          userId: user.id,
+          conversationId: conversation.id,
+          role: "assistant",
+          content: deterministicAnswer.message,
+          intent: deterministicAnswer.intent,
+          provider: "deterministic",
+          model: "finflow-daily-v1",
+        });
+        return json({
+          kind: "answer",
+          conversationId: conversation.id,
+          message: deterministicAnswer.message,
+          intent: deterministicAnswer.intent,
+          quota: await getQuota(client),
+        }, 200, req);
+      }
+
+      prompt = mutationRequested
+        ? buildSystemPrompt({
+          financialContext: workflowContextJson,
+          conversationState: safeState,
+          analyticsAllowed: financialContext.analyticsAllowed,
+          outputCanary,
+        })
+        : buildReadOnlySystemPrompt({
+          financialContext: financialContext.compactJson,
+          analyticsAllowed: financialContext.analyticsAllowed,
+          outputCanary,
+        });
       const actualBudget = estimateModelTokenBudget(prompt, history);
       if (actualBudget.estimatedInputTokens > MODEL_MAX_RESERVED_INPUT_TOKENS
         || actualBudget.maxOutputTokens > MODEL_MAX_OUTPUT_TOKENS) {
@@ -610,7 +1109,7 @@ Deno.serve(async (req) => {
       errorCode: null,
     });
     const { output: rawOutput, provider, model } = modelResult;
-    const output = enforceActionWorkflow(rawOutput, existingState, financialContext.compactJson);
+    const output = enforceActionWorkflow(rawOutput, existingState, workflowContextJson, history.at(-1)?.content ?? "");
     const quotaAfterModel = await getQuota(client);
 
     if (output.kind === "out_of_scope") {
@@ -642,7 +1141,12 @@ Deno.serve(async (req) => {
       };
       await updateConversationState(admin, user.id, conversation.id, state);
       await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model });
-      return json({ kind: "clarify", conversationId: conversation.id, message: outputMessage, intent: output.intent, missingFields: output.missing_fields, quota: quotaAfterModel }, 200, req);
+      return json({
+        kind: "clarify", conversationId: conversation.id, message: outputMessage,
+        intent: output.intent, missingFields: output.missing_fields,
+        choices: clarificationChoices(workflowContextJson, output.missing_fields, state),
+        quota: quotaAfterModel,
+      }, 200, req);
     }
 
     if (output.kind === "answer") {
@@ -705,7 +1209,7 @@ Deno.serve(async (req) => {
   } catch (error) {
     const original = error instanceof Error ? error.message : "AI_PROVIDER_FAILED";
     const extracted = original.match(/AI_[A-Z0-9_]+|INVALID_REQUEST|INVALID_MODEL_OUTPUT|UNAUTHORIZED/)?.[0] ?? "AI_PROVIDER_FAILED";
-    const code = extracted === "INVALID_MODEL_OUTPUT" ? "AI_PROVIDER_FAILED" : extracted;
+    const code = extracted === "INVALID_MODEL_OUTPUT" ? "AI_MODEL_WORKFLOW_INVALID" : extracted;
     if (["AI_PROVIDER_FAILED", "AI_CONFIGURATION_FAILED", "AI_HISTORY_FAILED"].includes(code)) console.error("finance-ai", original);
     return json({ error: code, message: publicErrorMessage(code) }, errorStatus(code), req);
   }

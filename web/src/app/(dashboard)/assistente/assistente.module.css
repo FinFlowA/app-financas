@@ -115,6 +115,13 @@
   height: 43px;
   flex: 0 0 43px;
   border-radius: 14px;
+  overflow: hidden;
+}
+
+.assistantIcon img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .chatTitle {
@@ -239,6 +246,14 @@
   background: color-mix(in srgb, var(--ff-primary) 20%, transparent);
   color: var(--ff-primary-dark);
   font-size: 0.78rem;
+  overflow: hidden;
+  border: 1px solid rgba(73, 180, 232, 0.32);
+}
+
+.messageAvatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .messageBubble {
@@ -252,6 +267,21 @@
   line-height: 1.56;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.assistantMessageContent {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.assistantMessageContent p {
+  margin: 0;
+}
+
+.assistantMessageContent strong {
+  color: var(--primary, #159c7c);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
 }
 
 .messageRow[data-role="user"] .messageBubble {

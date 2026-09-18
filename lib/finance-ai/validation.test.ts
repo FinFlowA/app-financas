@@ -30,7 +30,7 @@ function expectInvalid(value: unknown): void {
 export function runFinanceAiValidationTests(): void {
 expectValid({ kind: "answer", conversationId: id, message: "Saldo atual.", intent: "financial_summary", quota });
 expectValid({ kind: "answer", conversationId: id, message: "Só trato de finanças.", intent: "out_of_scope", quota });
-expectValid({ kind: "clarify", conversationId: id, message: "Qual conta?", intent: "create_transaction", missingFields: ["account_id"], quota });
+expectValid({ kind: "clarify", conversationId: id, message: "Qual conta?", intent: "create_transaction", missingFields: ["account_id"], choices: ["Nubank", "Carteira"], quota });
 expectValid({ kind: "navigate", conversationId: id, message: "Abrindo.", intent: "open_history", route: "/transacoes", quota });
 expectValid({
   kind: "proposal",
@@ -59,7 +59,7 @@ expectInvalid("não é json");
 expectInvalid({ kind: "answer", conversationId: id, message: "Inválida", intent: "create_account", quota });
 expectInvalid({ kind: "answer", conversationId: id, message: "Saldo.", intent: "financial_summary" });
 expectInvalid({ kind: "navigate", conversationId: id, message: "Abrindo", intent: "open_history", route: "/cartoes", quota });
-expectInvalid({ kind: "clarify", conversationId: id, message: "Qual conta?", intent: "create_transaction", missingFields: [], quota });
+expectInvalid({ kind: "clarify", conversationId: id, message: "Qual conta?", intent: "create_transaction", missingFields: [], choices: [], quota });
 expectInvalid({ kind: "executed", message: "Concluído.", result: { ok: true, action_id: id, action_type: "create_account", status: "succeeded", result: {}, replayed: false, extra: true }, quota });
 expectInvalid({ error: "erro interno" });
 }
