@@ -87,6 +87,33 @@ Deno.test("modelo nunca pode alegar que executou uma escrita", () => {
   );
 });
 
+Deno.test("educacao sobre investimentos passa sem numeros mas nunca cita um ativo especifico", () => {
+  assert(
+    safeAssistantMessage(
+      "O Tesouro Direto é um título público de renda fixa emitido pelo governo. Isso é educação financeira geral, não uma recomendação personalizada.",
+      "investment_education",
+      "answer",
+    ) !== null,
+    "Explicação conceitual sem números deveria passar pela nova regra financeira.",
+  );
+  assert(
+    safeAssistantMessage(
+      "A Selic está em 13,75% ao ano (referência 18/09/2026) e serve de base para a renda fixa.",
+      "investment_education",
+      "answer",
+    ) !== null,
+    "Citação de indicador público com data de referência deveria passar.",
+  );
+  assert(
+    safeAssistantMessage(
+      "Invista em PETR4, é uma ótima ação para comprar agora.",
+      "investment_education",
+      "answer",
+    ) === null,
+    "Recomendação de ticker específico nunca pode ser liberada em investment_education.",
+  );
+});
+
 Deno.test("identificadores internos não aparecem na mensagem do modelo", () => {
   const safe = safeAssistantMessage(
     "A conta 123e4567-e89b-42d3-a456-426614174000 tem saldo de R$ 10,00.",

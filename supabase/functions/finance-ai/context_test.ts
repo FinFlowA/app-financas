@@ -2,9 +2,11 @@ import {
   aggregateScopeArgument,
   calculateDailyCashFlow,
   calculateFinancialSnapshot,
+  contextNeeds,
   financialSnapshotFromAggregate,
   MAX_PROVIDER_CONTEXT_CHARS,
   redactSensitiveText,
+  selectedMonth,
   selectRelevantRows,
   serializeContextWithinBudget,
   type FinancialRow,
@@ -443,4 +445,263 @@ Deno.test("preserva recurso citado, inclusive arquivado, fora do baseline ao red
 
   assert(parsed.accounts.some((row: FinancialRow) => row.id === 40), "a conta citada foi podada");
   assert(parsed.categories.some((row: FinancialRow) => row.id === 41 && row.active === false), "a categoria arquivada citada foi podada");
+});
+
+Deno.test("recorrencia semanal com muitas ocorrencias no cenario nao estoura o orcamento nem apaga contas e categorias", () => {
+  // Uma despesa fixa semanal ("Refrigerante") citada numa pergunta de
+  // projeção pode reunir dezenas de ocorrências em scenario_candidates (até
+  // 120, ver context.ts). Sem cortar esse array ANTES dos demais, ele sozinho
+  // já ultrapassa o orçamento (40 itens ~= 6,3 mil caracteres nesta massa),
+  // então nenhum outro corte (contas, categorias) resolve sozinho e o
+  // contexto sempre cai no resumo essencial, que zera contas e categorias
+  // mesmo quando elas caberiam perfeitamente ao lado de uma lista de cenário
+  // já reduzida. Cortando scenario_candidates primeiro, o restante do
+  // contexto (contas, categorias) sobrevive intacto nesta massa de teste.
+  const account = (id: number) => ({ id, name: `Conta ${id}`, type: "corrente", balance: 1_234.56 });
+  const category = (id: number) => ({ id, name: `Categoria ${id}`, type: id % 2 ? "despesa" : "receita" });
+  const scenario = (index: number) => ({
+    id: 1_000 + index,
+    type: "despesa",
+    value: 6.5,
+    description: "Refrigerante (Fixa semanal)",
+    status: index < 20 ? "paga" : "pendente",
+    scheduled_date: `2026-${String(Math.min(12, Math.floor(index / 4) + 1)).padStart(2, "0")}-${String((index % 4) * 7 + 2).padStart(2, "0")}`,
+    realization_date: null,
+  });
+
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: { type: "active_accounts", account_ids: [1, 2, 3, 4], all_active_account_balance: 9.67 },
+    dataset_complete: { transactions: true, invoice_items: true, accounts_in_context: true, categories_in_context: true },
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40 },
+    monthly_cash_flow: [{ month: "2026-09", realized_income: 100, realized_expense: 55, pending_income: 0, pending_expense: 20, account_balance: 9.67 }],
+    daily_cash_flow: [],
+    accounts: Array.from({ length: 4 }, (_, index) => account(index + 1)),
+    categories: Array.from({ length: 6 }, (_, index) => category(index + 1)),
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: Array.from({ length: 40 }, (_, index) => scenario(index)),
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "o cenario com muitas recorrencias excedeu o teto da Groq");
+  const parsed = JSON.parse(encoded);
+  assert(Array.isArray(parsed.scenario_candidates), "scenario_candidates precisa continuar sendo um array valido");
+  assert(parsed.scenario_candidates.length > 0, "a pergunta de cenario nao pode ficar sem nenhuma ocorrencia da recorrencia citada");
+  assert(parsed.scenario_candidates.length <= 40, "o corte precisa reduzir a lista original quando ela nao cabe no orcamento");
+  assert(parsed.accounts.length === 4, "contas nao podiam ter sido zeradas so por causa de uma lista de cenario grande");
+  assert(parsed.categories.length === 6, "categorias nao podiam ter sido zeradas so por causa de uma lista de cenario grande");
+  assert(parsed.context_budget.truncated === true, "o orcamento reduzido ainda precisa ser sinalizado como truncado");
+});
+
+Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investimentos", () => {
+  const investmentQuestions = [
+    "Onde posso investir o meu dinheiro?",
+    "Qual a diferença entre renda fixa e renda variável?",
+    "O que é um CDB?",
+    "Como funciona o Tesouro Direto?",
+    "É melhor deixar na poupança ou investir em fundo imobiliário?",
+    "Quanto está a Selic hoje?",
+  ];
+  for (const question of investmentQuestions) {
+    const needs = contextNeeds(question, true);
+    assert(needs.investmentEducation, `deveria reconhecer educacao sobre investimentos: "${question}"`);
+    assert(needs.route === "investment_education", `rota deveria ser investment_education para: "${question}"`);
+  }
+
+  const unrelated = contextNeeds("Quanto gastei com mercado este mês?", true);
+  assert(!unrelated.investmentEducation, "pergunta sobre gasto de mercado nao deveria acionar educacao de investimentos");
+
+  const mutation = contextNeeds("Crie uma despesa de investimento de R$ 500", true);
+  assert(!mutation.investmentEducation, "uma mutacao nunca deveria ser roteada como educacao de investimentos");
+  assert(mutation.route === "mutation", "mutacao continua tendo prioridade sobre qualquer outro dominio");
+});
+
+Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual, nao do foco anterior", () => {
+  const currentMonth = "2026-09";
+  assert(selectedMonth("Qual o valor total que eu irei receber mês que vem?", currentMonth) === "2026-10", "mes que vem deveria ser outubro, nao o mes atual");
+  assert(selectedMonth("Quanto vou gastar no próximo mês?", currentMonth) === "2026-10", "proximo mes deveria avancar um mes a partir do atual");
+  assert(selectedMonth("Como foi meu mês passado?", currentMonth) === "2026-08", "mes passado deveria voltar um mes a partir do atual");
+  assert(selectedMonth("Quanto gastei no mês anterior?", currentMonth) === "2026-08", "mes anterior deveria voltar um mes a partir do atual");
+  // Guarda a virada de ano nos dois sentidos.
+  assert(selectedMonth("mês que vem", "2026-12") === "2027-01", "mes que vem em dezembro deveria virar o ano");
+  assert(selectedMonth("mês passado", "2026-01") === "2025-12", "mes passado em janeiro deveria voltar o ano");
+  // Um mes explicito continua tendo prioridade sobre o fallback do parametro.
+  assert(selectedMonth("Quanto gastei em julho de 2026?", currentMonth) === "2026-07", "mes explicito nomeado continua funcionando");
+  assert(selectedMonth("Sem nenhuma referencia de data", currentMonth) === currentMonth, "sem referencia de mes, o fallback deve ser preservado");
+});
+
+Deno.test("selectedMonth foca o mes de uma data DD/MM citada, mesmo fora do mes atual", () => {
+  // Bug real: "Quanto vou ter na conta dia 14/08?" (perguntado em setembro)
+  // nao mudava o foco para agosto. O fluxo diario e as transacoes do
+  // contexto continuavam sendo montados para setembro, ficavam vazios para
+  // a data pedida, e o modelo — sem nenhum dado relevante para responder —
+  // classificava a pergunta como fora de escopo tres vezes seguidas.
+  const currentMonth = "2026-09";
+  assert(selectedMonth("Quanto vou ter na conta dia 14/08?", currentMonth) === "2026-08", "data DD/MM precisa focar o mes dela, nao o mes atual");
+  assert(selectedMonth("O que tenho agendado para 05/12?", currentMonth) === "2026-12", "data DD/MM em outro mes tambem precisa mudar o foco");
+  assert(selectedMonth("Quanto gastei em 14/08/2025?", currentMonth) === "2025-08", "data DD/MM/YYYY precisa usar o ano explicito, nao o ano atual");
+  // Uma data ISO completa (YYYY-MM-DD) ja funcionava antes desta correção.
+  assert(selectedMonth("Quanto vou ter em 2026-08-14?", currentMonth) === "2026-08", "data ISO completa continua funcionando");
+});
+
+Deno.test("market_indicators cai primeiro no orcamento em vez de sacrificar contas por ~200 bytes", () => {
+  // Reproduz o caso real: uma conversa sobre um objetivo ("Entrada casa")
+  // que tambem menciona CDB (por isso ganha market_indicators) e tem varias
+  // contas cadastradas. Sem o corte antecipado, esse acrescimo pequeno e
+  // opcional bastava para estourar o orcamento e derrubar contas que caberiam
+  // perfeitamente sozinhas — ou, em casos piores, lancar
+  // FINANCIAL_CONTEXT_BUDGET_EXCEEDED (o erro tecnico visto em producao).
+  const account = (id: number) => ({ id, name: `Conta ${id}`, type: "corrente", balance: 1_234.56 });
+  const category = (id: number) => ({ id, name: `Categoria ${id}`, type: id % 2 ? "despesa" : "receita" });
+  const marketIndicators = {
+    selic_rate_annual: 13.75, selic_reference_date: "2026-09-18",
+    cdi_rate_annual: 13.65, cdi_reference_date: "2026-09-17",
+    ipca_12m_percent: 4.22, ipca_reference_date: "2026-08-01",
+    source: "bcb_sgs",
+  };
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: { type: "active_accounts", account_ids: Array.from({ length: 38 }, (_, index) => index + 1), all_active_account_balance: 9.67 },
+    dataset_complete: { transactions: true, invoice_items: true, accounts_in_context: true, categories_in_context: true },
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40 },
+    monthly_cash_flow: [{ month: "2026-09", realized_income: 100, realized_expense: 55, pending_income: 0, pending_expense: 20, account_balance: 9.67 }],
+    daily_cash_flow: [],
+    market_indicators: marketIndicators,
+    accounts: Array.from({ length: 38 }, (_, index) => account(index + 1)),
+    categories: Array.from({ length: 8 }, (_, index) => category(index + 1)),
+    goals: [{ id: 1, name: "Entrada casa", active: true, balance: 1_550, target: 50_000, target_date: "2027-12-31", expected_by_year_end: 1_550, expected_by_target_date: null }],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: [],
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "o contexto com indicadores de mercado excedeu o teto");
+  const parsed = JSON.parse(encoded);
+  assert(parsed.market_indicators === null, "market_indicators deveria ser o primeiro a cair quando o orcamento aperta");
+  assert(parsed.accounts.length === 38, "contas nao podiam ter sido cortadas por causa de ~200 bytes de indicadores opcionais");
+  assert(parsed.goals.some((goal: FinancialRow) => goal.name === "Entrada casa"), "o objetivo citado precisa continuar presente");
+});
+
+Deno.test("resumo essencial limita scope.account_ids e matched_category_ids, que nunca tinham corte", () => {
+  // Confirmado em produção: FINANCIAL_CONTEXT_BUDGET_EXCEEDED ainda ocorria
+  // depois da correção de market_indicators, porque `scope` (account_ids,
+  // matched_category_ids/goal_ids/card_ids) era copiado sem nenhum limite
+  // até para dentro do resumo essencial de último recurso — muitas contas ou
+  // muitas categorias casadas por nome bastavam para estourar o orçamento
+  // mesmo já sem contas, categorias, goals e cenário.
+  const scenario = (index: number) => ({
+    id: 1_000 + index, type: "despesa", value: 6.5, description: "Refrigerante (Fixa semanal)",
+    status: "pendente", scheduled_date: `2026-09-0${(index % 9) + 1}`, realization_date: null,
+  });
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: {
+      type: "active_accounts",
+      account_ids: Array.from({ length: 300 }, (_, index) => index + 1),
+      all_active_account_balance: 9.67,
+      matched_category_ids: Array.from({ length: 200 }, (_, index) => index + 1),
+      matched_goal_ids: [],
+      matched_card_ids: [],
+    },
+    dataset_complete: { transactions: true, invoice_items: true },
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40 },
+    monthly_cash_flow: [{ month: "2026-09", realized_income: 100, realized_expense: 55, pending_income: 0, pending_expense: 20, account_balance: 9.67 }],
+    daily_cash_flow: [],
+    market_indicators: null,
+    accounts: [],
+    categories: [],
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: Array.from({ length: 12 }, (_, index) => scenario(index)),
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "scope sem limite nao pode mais estourar o orcamento do resumo essencial");
+  const parsed = JSON.parse(encoded);
+  assert(parsed.scope.account_ids.length <= 20, "account_ids precisa ser limitado no resumo essencial");
+  assert(parsed.scope.matched_category_ids.length <= 10, "matched_category_ids precisa ser limitado no resumo essencial");
+});
+
+Deno.test("rede de seguranca final nunca deixa o contexto financeiro falhar por tamanho", () => {
+  // Mesmo um campo fixo e imprevisto (aqui, um month_summary com um valor
+  // absurdamente grande, o que nao deveria acontecer com dados reais) nao
+  // pode mais resultar em FINANCIAL_CONTEXT_BUDGET_EXCEEDED: a rede de
+  // seguranca final descarta tudo que nao seja essencial e sempre cabe.
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: { type: "active_accounts", account_ids: [1], all_active_account_balance: 9.67 },
+    dataset_complete: { transactions: true, invoice_items: true },
+    // Campo pathologicamente grande que nenhum outro corte do pipeline
+    // conhece — simula um contribuinte de tamanho totalmente inesperado.
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40, unexpected_note: "x".repeat(10_000) },
+    monthly_cash_flow: [],
+    daily_cash_flow: [],
+    market_indicators: null,
+    accounts: [],
+    categories: [],
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: [],
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "a rede de seguranca final precisa garantir que o contexto sempre caiba");
+  const parsed = JSON.parse(encoded);
+  assert(parsed.context_budget.truncated === true, "o contexto reduzido pela rede de seguranca ainda precisa ser sinalizado como truncado");
+});
+
+Deno.test("contextNeeds busca os lancamentos quando a pergunta pede quais despesas/receitas, nao so o total", () => {
+  // Bug real: "Quais despesas tenho neste mês?" respondia com o total
+  // agregado (despesas realizadas + pendentes) em vez de listar os
+  // lancamentos, porque "despesa"/"receita" só ativavam categoryDomain
+  // (dados agregados por categoria) e nunca historyDomain — o contexto
+  // simplesmente não trazia relevant_transactions para o modelo listar.
+  const expenseList = contextNeeds("Quais despesas tenho neste mês?", true);
+  assert(expenseList.transactionDetails, "pergunta 'quais despesas' precisa trazer os lancamentos, nao so o agregado");
+
+  const incomeList = contextNeeds("Quais receitas eu tenho essa semana?", true);
+  assert(incomeList.transactionDetails, "pergunta 'quais receitas' tambem precisa trazer os lancamentos");
+
+  // Uma pergunta de total continua funcionando sem exigir a lista (embora
+  // agora também a inclua, o que é inofensivo — o modelo escolhe pelo
+  // prompt qual delas usar).
+  const total = contextNeeds("Quanto gastei de despesas neste mês?", true);
+  assert(total.categories, "pergunta de total continua trazendo o agregado por categoria");
 });

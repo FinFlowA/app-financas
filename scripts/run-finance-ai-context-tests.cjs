@@ -53,7 +53,12 @@ async function main() {
       if (request === "./prompt.ts") return prompt;
       return require(request);
     };
-    const context = evaluateCommonJs(transpile("context.ts"), financeAiRequire);
+    const market = evaluateCommonJs(transpile("market.ts"), financeAiRequire);
+    const financeAiRequireWithMarket = (request) => {
+      if (request === "./market.ts") return market;
+      return financeAiRequire(request);
+    };
+    const context = evaluateCommonJs(transpile("context.ts"), financeAiRequireWithMarket);
     const provider = evaluateCommonJs(transpile("provider.ts"), financeAiRequire);
     const workflow = evaluateCommonJs(transpile("workflow.ts"), financeAiRequire);
     evaluateCommonJs(transpile("contracts_test.ts"), (request) => {
@@ -62,6 +67,10 @@ async function main() {
     });
     evaluateCommonJs(transpile("context_test.ts"), (request) => {
       if (request === "./context.ts") return context;
+      return financeAiRequireWithMarket(request);
+    });
+    evaluateCommonJs(transpile("market_test.ts"), (request) => {
+      if (request === "./market.ts") return market;
       return financeAiRequire(request);
     });
     evaluateCommonJs(transpile("guard_test.ts"), financeAiRequire);

@@ -1,5 +1,5 @@
 import { DIRECT_ACTIONS } from "./contracts.ts";
-import { buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
+import { buildReadOnlySystemPrompt, buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -296,6 +296,94 @@ Deno.test("contexto financeiro inválido falha fechado", () => {
     rejected = error instanceof Error && error.message === "AI_CONTEXT_INVALID";
   }
   assert(rejected, "Contexto malformado não deve ser enviado ao provedor.");
+});
+
+Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiza", () => {
+  // Bug real visto pelo usuario: o modelo escrevia "**Percentual do CDI**"
+  // e "**13,65% ao ano**" na mensagem, e o app (que so destaca valores,
+  // percentuais e datas automaticamente via regex, sem interpretar markdown)
+  // mostrava os asteriscos literalmente na tela, junto com listas numeradas
+  // quebradas por paragrafos soltos no meio.
+  const operational = buildSystemPrompt({ financialContext: "{}", conversationState: {}, analyticsAllowed: true });
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  for (const [label, prompt] of [["operacional", operational], ["somente leitura", readOnly]] as const) {
+    assert(prompt.includes("sem markdown"), `o prompt ${label} precisa proibir explicitamente markdown na mensagem`);
+    assert(prompt.includes("texto corrido"), `o prompt ${label} precisa orientar texto corrido em vez de listas`);
+  }
+});
+
+Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
+  // Bug real: "Quais despesas tenho neste mês?" respondia com o total
+  // agregado em vez de listar os lancamentos individuais. Essa pergunta
+  // nunca é uma mutação, então sempre usa o prompt somente leitura — o
+  // prompt operacional já está perto do teto de caracteres do provedor
+  // (ver "comando natural de criação cabe no contrato operacional
+  // completo" em provider_test.ts) e não recebeu esta regra.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("pedem os itens") && readOnly.includes("list_transactions"),
+    'o prompt somente leitura precisa orientar que "quais/liste/mostre" pedem os itens, nao a soma',
+  );
+});
+
+Deno.test("prompt somente leitura declara escopo basico do FinFlow como sempre permitido", () => {
+  // Regressao: perguntas basicas como "Quanto tenho na conta?" ou "Quanto
+  // vou ter dia 14/08?" foram classificadas como out_of_scope pelo modelo
+  // mesmo sendo o uso mais comum do app. O prompt operacional (mutacoes) ja
+  // tinha uma regra 1 explicita de escopo bem no topo; o prompt somente
+  // leitura dependia so da frase de abertura, um sinal mais fraco. A regra 1
+  // agora declara esse escopo basico de forma explicita e proeminente, no
+  // mesmo espirito da regra de investment_education.
+  const prompt = buildReadOnlySystemPrompt({
+    financialContext: "{}",
+    analyticsAllowed: true,
+  });
+  assert(prompt.startsWith("Você é o Finn"), "sanity check do inicio do prompt");
+  const scopeRule = prompt.split("\n").find((line) => line.startsWith("1. Escopo principal"));
+  assert(scopeRule, "a regra 1 precisa declarar o escopo basico do FinFlow");
+  assert(scopeRule.includes("SEMPRE dentro do escopo") && scopeRule.includes("NUNCA kind=out_of_scope"), "a regra 1 precisa proibir out_of_scope para dados basicos do usuario");
+  assert(scopeRule.includes("saldo") && scopeRule.includes("contas") && scopeRule.includes("fluxo de caixa"), "a regra 1 precisa cobrir os tipos de consulta basica mais comuns");
+});
+
+Deno.test("prompt somente leitura orienta educacao de investimentos sem consultoria personalizada", () => {
+  const withIndicators = buildReadOnlySystemPrompt({
+    financialContext: JSON.stringify({
+      market_indicators: {
+        selic_rate_annual: 13.75,
+        selic_reference_date: "2026-09-18",
+        cdi_rate_annual: 13.65,
+        cdi_reference_date: "2026-09-17",
+        ipca_12m_percent: 4.22,
+        ipca_reference_date: "2026-08-01",
+        source: "bcb_sgs",
+      },
+    }),
+    analyticsAllowed: true,
+  });
+  assert(withIndicators.includes("investment_education"), "o prompt precisa citar a intent investment_education");
+  assert(withIndicators.includes("market_indicators"), "o prompt precisa orientar o uso de market_indicators");
+  assert(
+    withIndicators.includes("não recomendar um ativo"),
+    "o prompt precisa proibir explicitamente recomendacao de ativo especifico",
+  );
+  assert(
+    withIndicators.includes("não pôde ser consultada agora"),
+    "o prompt precisa orientar o que fazer quando o indicador nao estiver disponivel",
+  );
+  // Regressao: uma versao anterior da regra 6 dizia "não forneça ...
+  // investimento personalizado ..." bem antes da regra de investment_education,
+  // e o modelo por vezes lia isso como "investimento é sempre fora de escopo",
+  // classificando perguntas legitimas de educacao financeira como
+  // out_of_scope de forma inconsistente. A regra de escopo geral nunca pode
+  // voltar a mencionar investimento como tema proibido.
+  assert(
+    !withIndicators.includes("investimento personalizado"),
+    "a regra geral de escopo nao pode voltar a citar investimento como assunto restrito",
+  );
+  assert(
+    withIndicators.includes("SEMPRE estão dentro do escopo") && withIndicators.includes("nunca kind=out_of_scope"),
+    "a regra de investimentos precisa deixar explicito que o tema nunca cai em out_of_scope",
+  );
 });
 
 Deno.test("prompt compacto continua documentando as 32 ações financeiras", () => {

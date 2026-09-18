@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.111.0";
 import { redactSensitiveText } from "./guard.ts";
+import { fetchMarketIndicators, type MarketIndicators } from "./market.ts";
 export { redactSensitiveText } from "./guard.ts";
 
 export type FinancialRow = Record<string, unknown>;
@@ -116,6 +117,12 @@ function nextMonth(month: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function previousMonth(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function currentDateInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -125,10 +132,25 @@ function currentDateInSaoPaulo(): string {
   }).format(new Date());
 }
 
-function selectedMonth(request: string, fallback: string): string {
+export function selectedMonth(request: string, fallback: string): string {
   const normalized = normalize(request);
   const explicit = normalized.match(/\b(19\d{2}|20\d{2})-(0[1-9]|1[0-2])\b/);
   if (explicit) return `${explicit[1]}-${explicit[2]}`;
+  // Uma data completa (ex.: "dia 14/08") precisa focar o mês dela, senão o
+  // resto do contexto (fluxo diário, transações do mês) continuava sendo
+  // montado para o mês atual, ficava vazio para a data pedida, e o modelo —
+  // sem nenhum dado relevante para responder — chegava a classificar a
+  // pergunta como fora de escopo.
+  const brazilianDate = normalized.match(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/((?:19|20)\d{2}))?\b/);
+  if (brazilianDate) {
+    const year = brazilianDate[3] ?? fallback.slice(0, 4);
+    return `${year}-${String(Number(brazilianDate[2])).padStart(2, "0")}`;
+  }
+  // Referências relativas precisam ser resolvidas a partir do mês atual
+  // (fallback) antes de qualquer outro critério; sem isso, "mês que vem"
+  // caía no mês em foco por padrão e respondia com os dados do mês atual.
+  if (/\b(mes que vem|proximo mes|mes seguinte|mes que vira)\b/.test(normalized)) return nextMonth(fallback);
+  if (/\b(mes passado|mes anterior|mes retrasado)\b/.test(normalized)) return previousMonth(fallback);
   const year = normalized.match(/\b(19\d{2}|20\d{2})\b/)?.[1] ?? fallback.slice(0, 4);
   for (const [name, month] of Object.entries(MONTHS_PT)) {
     if (new RegExp(`\\b${name}\\b`).test(normalized)) return `${year}-${month}`;
@@ -1167,7 +1189,7 @@ export type FinancialContext = {
 };
 
 type ContextNeeds = {
-  route: "summary" | "history" | "calendar" | "cash_flow" | "categories" | "goals" | "cards" | "mutation";
+  route: "summary" | "history" | "calendar" | "cash_flow" | "categories" | "goals" | "cards" | "mutation" | "investment_education";
   invoiceData: boolean;
   invoiceDetails: boolean;
   transactionDetails: boolean;
@@ -1177,9 +1199,10 @@ type ContextNeeds = {
   categories: boolean;
   goals: boolean;
   cards: boolean;
+  investmentEducation: boolean;
 };
 
-function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
+export function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
   const normalized = normalize(request);
   const mutation = /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized);
   const cardDomain = /(cartao|fatura|compra|parcela|credito)/.test(normalized);
@@ -1187,25 +1210,37 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
   const categoryDomain = /(categoria|gasto|despesa|receita|orcament|analis|econom)/.test(normalized);
   const cashFlowDomain = /(fluxo|projec|previs|cenario|fim do ano|quanto vou|quanto terei)/.test(normalized);
   const calendarDomain = /(calendario|agenda|agendad|programad|dia\s+\d{1,2}|data\s+\d{1,2})/.test(normalized);
-  const historyDomain = /(histor|extrato|lanc|transa|penden|atras|venc|recebi|paguei|gastei)/.test(normalized);
+  // "despes"/"receit" precisam estar aqui, não só em categoryDomain: uma
+  // pergunta como "quais despesas tenho neste mês?" pede os lançamentos em
+  // si, não apenas o agregado por categoria. Sem isso, o contexto não
+  // trazia relevant_transactions e o modelo só tinha o total pronto para
+  // responder — respondia a soma quando a pergunta pedia a lista.
+  const historyDomain = /(histor|extrato|lanc|transa|penden|atras|venc|recebi|paguei|gastei|despes|receit)/.test(normalized);
   const summaryDomain = /(resumo|balanco|resultado|como estao|minha situacao|visao geral)/.test(normalized);
   const transactionMutation = mutation && /(lanc|transa|receita|despesa|transfer|concl|reabr|pague|pagamento)/.test(normalized);
   const spendingDomain = /(gasto|despesa|categoria|orcament|balanco|resultado|resumo|econom)/.test(normalized);
+  // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
+  // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
+  // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
+  // de indicadores públicos do Banco Central para dar contexto factual.
+  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundo imobiliario|\bfii\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
-    : cardDomain
-      ? "cards"
-      : goalDomain
-        ? "goals"
-        : calendarDomain
-          ? "calendar"
-        : cashFlowDomain
-          ? "cash_flow"
-          : categoryDomain
-            ? "categories"
-            : historyDomain
-              ? "history"
-              : "summary";
+    : investmentDomain
+      ? "investment_education"
+      : cardDomain
+        ? "cards"
+        : goalDomain
+          ? "goals"
+          : calendarDomain
+            ? "calendar"
+          : cashFlowDomain
+            ? "cash_flow"
+            : categoryDomain
+              ? "categories"
+              : historyDomain
+                ? "history"
+                : "summary";
   return {
     route,
     invoiceData: cardDomain || spendingDomain || (analyticsAllowed && categoryDomain),
@@ -1217,6 +1252,7 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
     categories: categoryDomain || transactionMutation || cardDomain || summaryDomain,
     goals: goalDomain || summaryDomain,
     cards: cardDomain || spendingDomain || summaryDomain,
+    investmentEducation: investmentDomain,
   };
 }
 
@@ -1248,6 +1284,21 @@ export function serializeContextWithinBudget(
     }
   };
 
+  // market_indicators é enriquecimento opcional (o prompt já sabe explicar
+  // conceitos de investimento sem ele). Descarta primeiro, antes de sacrificar
+  // contas, categorias ou o próprio cenário citado por causa de ~200 bytes.
+  if (encoded.length > maxCharacters && compact.market_indicators) {
+    compact.market_indicators = null;
+    encoded = encode();
+  }
+
+  // scenario_candidates pode ter até 120 itens (uma recorrência semanal tem
+  // dezenas de ocorrências até o fim do ano) e por isso é normalmente o maior
+  // contribuinte de tamanho quando presente. Corta primeiro, preservando o
+  // mínimo já usado pelo resumo essencial mais abaixo, para que contas,
+  // categorias e objetivos — que praticamente toda pergunta usa — não sejam
+  // sacrificados antes por causa de uma única pergunta de cenário.
+  trimArray("scenario_candidates", 12);
   // Detalhes podem ser reconsultados. Totais e séries agregadas têm prioridade.
   trimArray("relevant_invoice_items", 0, "invoice_items", "invoice_items_in_context");
   trimArray("relevant_transactions", 12, "transactions", "transactions_in_context");
@@ -1305,6 +1356,8 @@ export function serializeContextWithinBudget(
   trimArray("invoice_summaries", 0, "invoice_summaries_in_context");
 
   if (encoded.length > maxCharacters) {
+    const rawScope = (compact.scope ?? {}) as Record<string, unknown>;
+    const boundedIds = (value: unknown, limit: number) => Array.isArray(value) ? value.slice(0, limit) : [];
     const essential = {
       current_date: compact.current_date,
       focus_month: compact.focus_month,
@@ -1312,7 +1365,17 @@ export function serializeContextWithinBudget(
       plan: compact.plan,
       analytics_allowed: compact.analytics_allowed,
       personal_data_included: compact.personal_data_included,
-      scope: compact.scope,
+      // scope nunca tinha corte: contas ou correspondências de nome em
+      // excesso (ex.: categorias com nomes curtos e comuns) podiam, sozinhas,
+      // fazer até este resumo essencial estourar o orçamento.
+      scope: {
+        type: rawScope.type,
+        account_ids: boundedIds(rawScope.account_ids, 20),
+        all_active_account_balance: rawScope.all_active_account_balance,
+        matched_category_ids: boundedIds(rawScope.matched_category_ids, 10),
+        matched_goal_ids: boundedIds(rawScope.matched_goal_ids, 10),
+        matched_card_ids: boundedIds(rawScope.matched_card_ids, 10),
+      },
       dataset_complete: {
         ...dataset,
         transactions: false,
@@ -1333,6 +1396,11 @@ export function serializeContextWithinBudget(
         ? compact.monthly_cash_flow.filter((row: Record<string, unknown>) => row.month === compact.focus_month)
         : [],
       daily_cash_flow: Array.isArray(compact.daily_cash_flow) ? compact.daily_cash_flow.slice(0, 1) : [],
+      // Enriquecimento opcional: se o orçamento é tão apertado a ponto de
+      // precisar deste resumo essencial, os indicadores de mercado (que o
+      // prompt já sabe tratar como ausentes) são os primeiros a cair, antes
+      // de arriscar estourar o teto por causa de ~200 bytes de conforto.
+      market_indicators: null,
       scenario_candidates: Array.isArray(compact.scenario_candidates) ? compact.scenario_candidates.slice(0, 12) : [],
       accounts: [],
       categories: [],
@@ -1345,6 +1413,54 @@ export function serializeContextWithinBudget(
       context_budget: { max_characters: maxCharacters, truncated: true },
     };
     encoded = JSON.stringify(essential);
+  }
+
+  // Rede de segurança final: nenhum campo aqui tem tamanho variável, então
+  // esta resposta cabe no orçamento independente do que causou o estouro
+  // acima (inclusive um campo futuro que ainda não tenha corte próprio).
+  // O Finn perde os detalhes desta pergunta, mas nunca mais falha de vez com
+  // "Não consegui processar sua solicitação agora" por causa de tamanho.
+  if (encoded.length > maxCharacters) {
+    // Reconstrói month_summary campo a campo (em vez de copiar o objeto) para
+    // que um contribuinte de tamanho totalmente inesperado em qualquer chave
+    // não numérica nunca chegue a esta rede de segurança.
+    const rawMonthSummary = (compact.month_summary ?? {}) as Record<string, unknown>;
+    const safeMonthNumber = (key: string) => {
+      const value = Number(rawMonthSummary[key]);
+      return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+    };
+    const bareMinimum = {
+      current_date: compact.current_date,
+      focus_month: compact.focus_month,
+      timezone: compact.timezone,
+      plan: compact.plan,
+      analytics_allowed: compact.analytics_allowed,
+      personal_data_included: compact.personal_data_included,
+      scope: { type: (compact.scope as Record<string, unknown> | undefined)?.type ?? "active_accounts" },
+      dataset_complete: { aggregate_source: "database_rpc_v1", cash_aggregates: false, card_aggregates: false },
+      month_summary: {
+        realized_income: safeMonthNumber("realized_income"),
+        realized_expense: safeMonthNumber("realized_expense"),
+        pending_income: safeMonthNumber("pending_income"),
+        pending_expense: safeMonthNumber("pending_expense"),
+        current_account_balance: safeMonthNumber("current_account_balance"),
+        predicted_end_balance: safeMonthNumber("predicted_end_balance"),
+      },
+      monthly_cash_flow: [],
+      daily_cash_flow: [],
+      market_indicators: null,
+      scenario_candidates: [],
+      accounts: [],
+      categories: [],
+      goals: [],
+      cards: [],
+      relevant_transactions: [],
+      relevant_invoice_items: [],
+      invoice_summaries: [],
+      categories_by_year: [],
+      context_budget: { max_characters: maxCharacters, truncated: true },
+    };
+    encoded = JSON.stringify(bareMinimum);
   }
 
   if (encoded.length > maxCharacters) throw new Error("FINANCIAL_CONTEXT_BUDGET_EXCEEDED");
@@ -1395,7 +1511,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1409,6 +1525,7 @@ export async function buildFinancialContext(
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
+    needs.investmentEducation ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1646,6 +1763,7 @@ export async function buildFinancialContext(
     },
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
+    market_indicators: needs.investmentEducation ? marketIndicators : null,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;

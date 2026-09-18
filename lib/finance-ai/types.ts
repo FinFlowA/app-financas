@@ -17,7 +17,7 @@ export const FINANCE_AI_MUTATION_INTENTS = [
 
 export const FINANCE_AI_READ_INTENTS = [
   "casual_conversation", "financial_summary", "list_transactions", "cash_flow", "category_analysis", "budget_analysis",
-  "financial_projection", "card_summary", "goal_progress", "explain_financial_control",
+  "financial_projection", "card_summary", "goal_progress", "explain_financial_control", "investment_education",
 ] as const;
 
 export const FINANCE_AI_NAVIGATION_INTENTS = [
