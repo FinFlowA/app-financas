@@ -136,6 +136,16 @@ export function selectedMonth(request: string, fallback: string): string {
   const normalized = normalize(request);
   const explicit = normalized.match(/\b(19\d{2}|20\d{2})-(0[1-9]|1[0-2])\b/);
   if (explicit) return `${explicit[1]}-${explicit[2]}`;
+  // Uma data completa (ex.: "dia 14/08") precisa focar o mês dela, senão o
+  // resto do contexto (fluxo diário, transações do mês) continuava sendo
+  // montado para o mês atual, ficava vazio para a data pedida, e o modelo —
+  // sem nenhum dado relevante para responder — chegava a classificar a
+  // pergunta como fora de escopo.
+  const brazilianDate = normalized.match(/\b(0?[1-9]|[12]\d|3[01])\/(0?[1-9]|1[0-2])(?:\/((?:19|20)\d{2}))?\b/);
+  if (brazilianDate) {
+    const year = brazilianDate[3] ?? fallback.slice(0, 4);
+    return `${year}-${String(Number(brazilianDate[2])).padStart(2, "0")}`;
+  }
   // Referências relativas precisam ser resolvidas a partir do mês atual
   // (fallback) antes de qualquer outro critério; sem isso, "mês que vem"
   // caía no mês em foco por padrão e respondia com os dados do mês atual.
