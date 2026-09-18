@@ -1341,6 +1341,8 @@ export function serializeContextWithinBudget(
   trimArray("invoice_summaries", 0, "invoice_summaries_in_context");
 
   if (encoded.length > maxCharacters) {
+    const rawScope = (compact.scope ?? {}) as Record<string, unknown>;
+    const boundedIds = (value: unknown, limit: number) => Array.isArray(value) ? value.slice(0, limit) : [];
     const essential = {
       current_date: compact.current_date,
       focus_month: compact.focus_month,
@@ -1348,7 +1350,17 @@ export function serializeContextWithinBudget(
       plan: compact.plan,
       analytics_allowed: compact.analytics_allowed,
       personal_data_included: compact.personal_data_included,
-      scope: compact.scope,
+      // scope nunca tinha corte: contas ou correspondências de nome em
+      // excesso (ex.: categorias com nomes curtos e comuns) podiam, sozinhas,
+      // fazer até este resumo essencial estourar o orçamento.
+      scope: {
+        type: rawScope.type,
+        account_ids: boundedIds(rawScope.account_ids, 20),
+        all_active_account_balance: rawScope.all_active_account_balance,
+        matched_category_ids: boundedIds(rawScope.matched_category_ids, 10),
+        matched_goal_ids: boundedIds(rawScope.matched_goal_ids, 10),
+        matched_card_ids: boundedIds(rawScope.matched_card_ids, 10),
+      },
       dataset_complete: {
         ...dataset,
         transactions: false,
@@ -1386,6 +1398,54 @@ export function serializeContextWithinBudget(
       context_budget: { max_characters: maxCharacters, truncated: true },
     };
     encoded = JSON.stringify(essential);
+  }
+
+  // Rede de segurança final: nenhum campo aqui tem tamanho variável, então
+  // esta resposta cabe no orçamento independente do que causou o estouro
+  // acima (inclusive um campo futuro que ainda não tenha corte próprio).
+  // O Finn perde os detalhes desta pergunta, mas nunca mais falha de vez com
+  // "Não consegui processar sua solicitação agora" por causa de tamanho.
+  if (encoded.length > maxCharacters) {
+    // Reconstrói month_summary campo a campo (em vez de copiar o objeto) para
+    // que um contribuinte de tamanho totalmente inesperado em qualquer chave
+    // não numérica nunca chegue a esta rede de segurança.
+    const rawMonthSummary = (compact.month_summary ?? {}) as Record<string, unknown>;
+    const safeMonthNumber = (key: string) => {
+      const value = Number(rawMonthSummary[key]);
+      return Number.isFinite(value) ? Math.round(value * 100) / 100 : 0;
+    };
+    const bareMinimum = {
+      current_date: compact.current_date,
+      focus_month: compact.focus_month,
+      timezone: compact.timezone,
+      plan: compact.plan,
+      analytics_allowed: compact.analytics_allowed,
+      personal_data_included: compact.personal_data_included,
+      scope: { type: (compact.scope as Record<string, unknown> | undefined)?.type ?? "active_accounts" },
+      dataset_complete: { aggregate_source: "database_rpc_v1", cash_aggregates: false, card_aggregates: false },
+      month_summary: {
+        realized_income: safeMonthNumber("realized_income"),
+        realized_expense: safeMonthNumber("realized_expense"),
+        pending_income: safeMonthNumber("pending_income"),
+        pending_expense: safeMonthNumber("pending_expense"),
+        current_account_balance: safeMonthNumber("current_account_balance"),
+        predicted_end_balance: safeMonthNumber("predicted_end_balance"),
+      },
+      monthly_cash_flow: [],
+      daily_cash_flow: [],
+      market_indicators: null,
+      scenario_candidates: [],
+      accounts: [],
+      categories: [],
+      goals: [],
+      cards: [],
+      relevant_transactions: [],
+      relevant_invoice_items: [],
+      invoice_summaries: [],
+      categories_by_year: [],
+      context_budget: { max_characters: maxCharacters, truncated: true },
+    };
+    encoded = JSON.stringify(bareMinimum);
   }
 
   if (encoded.length > maxCharacters) throw new Error("FINANCIAL_CONTEXT_BUDGET_EXCEEDED");

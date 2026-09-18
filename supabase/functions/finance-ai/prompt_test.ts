@@ -298,6 +298,25 @@ Deno.test("contexto financeiro inválido falha fechado", () => {
   assert(rejected, "Contexto malformado não deve ser enviado ao provedor.");
 });
 
+Deno.test("prompt somente leitura declara escopo basico do FinFlow como sempre permitido", () => {
+  // Regressao: perguntas basicas como "Quanto tenho na conta?" ou "Quanto
+  // vou ter dia 14/08?" foram classificadas como out_of_scope pelo modelo
+  // mesmo sendo o uso mais comum do app. O prompt operacional (mutacoes) ja
+  // tinha uma regra 1 explicita de escopo bem no topo; o prompt somente
+  // leitura dependia so da frase de abertura, um sinal mais fraco. A regra 1
+  // agora declara esse escopo basico de forma explicita e proeminente, no
+  // mesmo espirito da regra de investment_education.
+  const prompt = buildReadOnlySystemPrompt({
+    financialContext: "{}",
+    analyticsAllowed: true,
+  });
+  assert(prompt.startsWith("Você é o Finn"), "sanity check do inicio do prompt");
+  const scopeRule = prompt.split("\n").find((line) => line.startsWith("1. Escopo principal"));
+  assert(scopeRule, "a regra 1 precisa declarar o escopo basico do FinFlow");
+  assert(scopeRule.includes("SEMPRE dentro do escopo") && scopeRule.includes("NUNCA kind=out_of_scope"), "a regra 1 precisa proibir out_of_scope para dados basicos do usuario");
+  assert(scopeRule.includes("saldo") && scopeRule.includes("contas") && scopeRule.includes("fluxo de caixa"), "a regra 1 precisa cobrir os tipos de consulta basica mais comuns");
+});
+
 Deno.test("prompt somente leitura orienta educacao de investimentos sem consultoria personalizada", () => {
   const withIndicators = buildReadOnlySystemPrompt({
     financialContext: JSON.stringify({
