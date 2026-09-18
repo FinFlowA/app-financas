@@ -444,3 +444,59 @@ Deno.test("preserva recurso citado, inclusive arquivado, fora do baseline ao red
   assert(parsed.accounts.some((row: FinancialRow) => row.id === 40), "a conta citada foi podada");
   assert(parsed.categories.some((row: FinancialRow) => row.id === 41 && row.active === false), "a categoria arquivada citada foi podada");
 });
+
+Deno.test("recorrencia semanal com muitas ocorrencias no cenario nao estoura o orcamento nem apaga contas e categorias", () => {
+  // Uma despesa fixa semanal ("Refrigerante") citada numa pergunta de
+  // projeção pode reunir dezenas de ocorrências em scenario_candidates (até
+  // 120, ver context.ts). Sem cortar esse array ANTES dos demais, ele sozinho
+  // já ultrapassa o orçamento (40 itens ~= 6,3 mil caracteres nesta massa),
+  // então nenhum outro corte (contas, categorias) resolve sozinho e o
+  // contexto sempre cai no resumo essencial, que zera contas e categorias
+  // mesmo quando elas caberiam perfeitamente ao lado de uma lista de cenário
+  // já reduzida. Cortando scenario_candidates primeiro, o restante do
+  // contexto (contas, categorias) sobrevive intacto nesta massa de teste.
+  const account = (id: number) => ({ id, name: `Conta ${id}`, type: "corrente", balance: 1_234.56 });
+  const category = (id: number) => ({ id, name: `Categoria ${id}`, type: id % 2 ? "despesa" : "receita" });
+  const scenario = (index: number) => ({
+    id: 1_000 + index,
+    type: "despesa",
+    value: 6.5,
+    description: "Refrigerante (Fixa semanal)",
+    status: index < 20 ? "paga" : "pendente",
+    scheduled_date: `2026-${String(Math.min(12, Math.floor(index / 4) + 1)).padStart(2, "0")}-${String((index % 4) * 7 + 2).padStart(2, "0")}`,
+    realization_date: null,
+  });
+
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: { type: "active_accounts", account_ids: [1, 2, 3, 4], all_active_account_balance: 9.67 },
+    dataset_complete: { transactions: true, invoice_items: true, accounts_in_context: true, categories_in_context: true },
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40 },
+    monthly_cash_flow: [{ month: "2026-09", realized_income: 100, realized_expense: 55, pending_income: 0, pending_expense: 20, account_balance: 9.67 }],
+    daily_cash_flow: [],
+    accounts: Array.from({ length: 4 }, (_, index) => account(index + 1)),
+    categories: Array.from({ length: 6 }, (_, index) => category(index + 1)),
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: Array.from({ length: 40 }, (_, index) => scenario(index)),
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "o cenario com muitas recorrencias excedeu o teto da Groq");
+  const parsed = JSON.parse(encoded);
+  assert(Array.isArray(parsed.scenario_candidates), "scenario_candidates precisa continuar sendo um array valido");
+  assert(parsed.scenario_candidates.length > 0, "a pergunta de cenario nao pode ficar sem nenhuma ocorrencia da recorrencia citada");
+  assert(parsed.scenario_candidates.length <= 40, "o corte precisa reduzir a lista original quando ela nao cabe no orcamento");
+  assert(parsed.accounts.length === 4, "contas nao podiam ter sido zeradas so por causa de uma lista de cenario grande");
+  assert(parsed.categories.length === 6, "categorias nao podiam ter sido zeradas so por causa de uma lista de cenario grande");
+  assert(parsed.context_budget.truncated === true, "o orcamento reduzido ainda precisa ser sinalizado como truncado");
+});

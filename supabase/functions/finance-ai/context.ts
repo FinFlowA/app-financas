@@ -1248,6 +1248,13 @@ export function serializeContextWithinBudget(
     }
   };
 
+  // scenario_candidates pode ter até 120 itens (uma recorrência semanal tem
+  // dezenas de ocorrências até o fim do ano) e por isso é normalmente o maior
+  // contribuinte de tamanho quando presente. Corta primeiro, preservando o
+  // mínimo já usado pelo resumo essencial mais abaixo, para que contas,
+  // categorias e objetivos — que praticamente toda pergunta usa — não sejam
+  // sacrificados antes por causa de uma única pergunta de cenário.
+  trimArray("scenario_candidates", 12);
   // Detalhes podem ser reconsultados. Totais e séries agregadas têm prioridade.
   trimArray("relevant_invoice_items", 0, "invoice_items", "invoice_items_in_context");
   trimArray("relevant_transactions", 12, "transactions", "transactions_in_context");
