@@ -540,6 +540,20 @@ Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual
   assert(selectedMonth("Sem nenhuma referencia de data", currentMonth) === currentMonth, "sem referencia de mes, o fallback deve ser preservado");
 });
 
+Deno.test("selectedMonth foca o mes de uma data DD/MM citada, mesmo fora do mes atual", () => {
+  // Bug real: "Quanto vou ter na conta dia 14/08?" (perguntado em setembro)
+  // nao mudava o foco para agosto. O fluxo diario e as transacoes do
+  // contexto continuavam sendo montados para setembro, ficavam vazios para
+  // a data pedida, e o modelo — sem nenhum dado relevante para responder —
+  // classificava a pergunta como fora de escopo tres vezes seguidas.
+  const currentMonth = "2026-09";
+  assert(selectedMonth("Quanto vou ter na conta dia 14/08?", currentMonth) === "2026-08", "data DD/MM precisa focar o mes dela, nao o mes atual");
+  assert(selectedMonth("O que tenho agendado para 05/12?", currentMonth) === "2026-12", "data DD/MM em outro mes tambem precisa mudar o foco");
+  assert(selectedMonth("Quanto gastei em 14/08/2025?", currentMonth) === "2025-08", "data DD/MM/YYYY precisa usar o ano explicito, nao o ano atual");
+  // Uma data ISO completa (YYYY-MM-DD) ja funcionava antes desta correção.
+  assert(selectedMonth("Quanto vou ter em 2026-08-14?", currentMonth) === "2026-08", "data ISO completa continua funcionando");
+});
+
 Deno.test("market_indicators cai primeiro no orcamento em vez de sacrificar contas por ~200 bytes", () => {
   // Reproduz o caso real: uma conversa sobre um objetivo ("Entrada casa")
   // que tambem menciona CDB (por isso ganha market_indicators) e tem varias
