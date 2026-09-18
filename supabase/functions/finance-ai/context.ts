@@ -1269,6 +1269,14 @@ export function serializeContextWithinBudget(
     }
   };
 
+  // market_indicators é enriquecimento opcional (o prompt já sabe explicar
+  // conceitos de investimento sem ele). Descarta primeiro, antes de sacrificar
+  // contas, categorias ou o próprio cenário citado por causa de ~200 bytes.
+  if (encoded.length > maxCharacters && compact.market_indicators) {
+    compact.market_indicators = null;
+    encoded = encode();
+  }
+
   // scenario_candidates pode ter até 120 itens (uma recorrência semanal tem
   // dezenas de ocorrências até o fim do ano) e por isso é normalmente o maior
   // contribuinte de tamanho quando presente. Corta primeiro, preservando o
@@ -1361,7 +1369,11 @@ export function serializeContextWithinBudget(
         ? compact.monthly_cash_flow.filter((row: Record<string, unknown>) => row.month === compact.focus_month)
         : [],
       daily_cash_flow: Array.isArray(compact.daily_cash_flow) ? compact.daily_cash_flow.slice(0, 1) : [],
-      market_indicators: compact.market_indicators ?? null,
+      // Enriquecimento opcional: se o orçamento é tão apertado a ponto de
+      // precisar deste resumo essencial, os indicadores de mercado (que o
+      // prompt já sabe tratar como ausentes) são os primeiros a cair, antes
+      // de arriscar estourar o teto por causa de ~200 bytes de conforto.
+      market_indicators: null,
       scenario_candidates: Array.isArray(compact.scenario_candidates) ? compact.scenario_candidates.slice(0, 12) : [],
       accounts: [],
       categories: [],

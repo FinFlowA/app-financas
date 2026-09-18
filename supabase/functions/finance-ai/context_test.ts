@@ -539,3 +539,50 @@ Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual
   assert(selectedMonth("Quanto gastei em julho de 2026?", currentMonth) === "2026-07", "mes explicito nomeado continua funcionando");
   assert(selectedMonth("Sem nenhuma referencia de data", currentMonth) === currentMonth, "sem referencia de mes, o fallback deve ser preservado");
 });
+
+Deno.test("market_indicators cai primeiro no orcamento em vez de sacrificar contas por ~200 bytes", () => {
+  // Reproduz o caso real: uma conversa sobre um objetivo ("Entrada casa")
+  // que tambem menciona CDB (por isso ganha market_indicators) e tem varias
+  // contas cadastradas. Sem o corte antecipado, esse acrescimo pequeno e
+  // opcional bastava para estourar o orcamento e derrubar contas que caberiam
+  // perfeitamente sozinhas — ou, em casos piores, lancar
+  // FINANCIAL_CONTEXT_BUDGET_EXCEEDED (o erro tecnico visto em producao).
+  const account = (id: number) => ({ id, name: `Conta ${id}`, type: "corrente", balance: 1_234.56 });
+  const category = (id: number) => ({ id, name: `Categoria ${id}`, type: id % 2 ? "despesa" : "receita" });
+  const marketIndicators = {
+    selic_rate_annual: 13.75, selic_reference_date: "2026-09-18",
+    cdi_rate_annual: 13.65, cdi_reference_date: "2026-09-17",
+    ipca_12m_percent: 4.22, ipca_reference_date: "2026-08-01",
+    source: "bcb_sgs",
+  };
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: { type: "active_accounts", account_ids: Array.from({ length: 38 }, (_, index) => index + 1), all_active_account_balance: 9.67 },
+    dataset_complete: { transactions: true, invoice_items: true, accounts_in_context: true, categories_in_context: true },
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40 },
+    monthly_cash_flow: [{ month: "2026-09", realized_income: 100, realized_expense: 55, pending_income: 0, pending_expense: 20, account_balance: 9.67 }],
+    daily_cash_flow: [],
+    market_indicators: marketIndicators,
+    accounts: Array.from({ length: 38 }, (_, index) => account(index + 1)),
+    categories: Array.from({ length: 8 }, (_, index) => category(index + 1)),
+    goals: [{ id: 1, name: "Entrada casa", active: true, balance: 1_550, target: 50_000, target_date: "2027-12-31", expected_by_year_end: 1_550, expected_by_target_date: null }],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: [],
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "o contexto com indicadores de mercado excedeu o teto");
+  const parsed = JSON.parse(encoded);
+  assert(parsed.market_indicators === null, "market_indicators deveria ser o primeiro a cair quando o orcamento aperta");
+  assert(parsed.accounts.length === 38, "contas nao podiam ter sido cortadas por causa de ~200 bytes de indicadores opcionais");
+  assert(parsed.goals.some((goal: FinancialRow) => goal.name === "Entrada casa"), "o objetivo citado precisa continuar presente");
+});
