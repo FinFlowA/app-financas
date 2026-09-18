@@ -316,12 +316,26 @@ Deno.test("prompt somente leitura orienta educacao de investimentos sem consulto
   assert(withIndicators.includes("investment_education"), "o prompt precisa citar a intent investment_education");
   assert(withIndicators.includes("market_indicators"), "o prompt precisa orientar o uso de market_indicators");
   assert(
-    withIndicators.includes("Nunca recomende um ativo"),
+    withIndicators.includes("não recomendar um ativo"),
     "o prompt precisa proibir explicitamente recomendacao de ativo especifico",
   );
   assert(
     withIndicators.includes("não pôde ser consultada agora"),
     "o prompt precisa orientar o que fazer quando o indicador nao estiver disponivel",
+  );
+  // Regressao: uma versao anterior da regra 6 dizia "não forneça ...
+  // investimento personalizado ..." bem antes da regra de investment_education,
+  // e o modelo por vezes lia isso como "investimento é sempre fora de escopo",
+  // classificando perguntas legitimas de educacao financeira como
+  // out_of_scope de forma inconsistente. A regra de escopo geral nunca pode
+  // voltar a mencionar investimento como tema proibido.
+  assert(
+    !withIndicators.includes("investimento personalizado"),
+    "a regra geral de escopo nao pode voltar a citar investimento como assunto restrito",
+  );
+  assert(
+    withIndicators.includes("SEMPRE estão dentro do escopo") && withIndicators.includes("nunca kind=out_of_scope"),
+    "a regra de investimentos precisa deixar explicito que o tema nunca cai em out_of_scope",
   );
 });
 

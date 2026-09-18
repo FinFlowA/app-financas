@@ -6,6 +6,7 @@ import {
   financialSnapshotFromAggregate,
   MAX_PROVIDER_CONTEXT_CHARS,
   redactSensitiveText,
+  selectedMonth,
   selectRelevantRows,
   serializeContextWithinBudget,
   type FinancialRow,
@@ -523,4 +524,18 @@ Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investi
   const mutation = contextNeeds("Crie uma despesa de investimento de R$ 500", true);
   assert(!mutation.investmentEducation, "uma mutacao nunca deveria ser roteada como educacao de investimentos");
   assert(mutation.route === "mutation", "mutacao continua tendo prioridade sobre qualquer outro dominio");
+});
+
+Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual, nao do foco anterior", () => {
+  const currentMonth = "2026-09";
+  assert(selectedMonth("Qual o valor total que eu irei receber mês que vem?", currentMonth) === "2026-10", "mes que vem deveria ser outubro, nao o mes atual");
+  assert(selectedMonth("Quanto vou gastar no próximo mês?", currentMonth) === "2026-10", "proximo mes deveria avancar um mes a partir do atual");
+  assert(selectedMonth("Como foi meu mês passado?", currentMonth) === "2026-08", "mes passado deveria voltar um mes a partir do atual");
+  assert(selectedMonth("Quanto gastei no mês anterior?", currentMonth) === "2026-08", "mes anterior deveria voltar um mes a partir do atual");
+  // Guarda a virada de ano nos dois sentidos.
+  assert(selectedMonth("mês que vem", "2026-12") === "2027-01", "mes que vem em dezembro deveria virar o ano");
+  assert(selectedMonth("mês passado", "2026-01") === "2025-12", "mes passado em janeiro deveria voltar o ano");
+  // Um mes explicito continua tendo prioridade sobre o fallback do parametro.
+  assert(selectedMonth("Quanto gastei em julho de 2026?", currentMonth) === "2026-07", "mes explicito nomeado continua funcionando");
+  assert(selectedMonth("Sem nenhuma referencia de data", currentMonth) === currentMonth, "sem referencia de mes, o fallback deve ser preservado");
 });
