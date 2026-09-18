@@ -1,5 +1,5 @@
 import { DIRECT_ACTIONS } from "./contracts.ts";
-import { buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
+import { buildReadOnlySystemPrompt, buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -296,6 +296,33 @@ Deno.test("contexto financeiro inválido falha fechado", () => {
     rejected = error instanceof Error && error.message === "AI_CONTEXT_INVALID";
   }
   assert(rejected, "Contexto malformado não deve ser enviado ao provedor.");
+});
+
+Deno.test("prompt somente leitura orienta educacao de investimentos sem consultoria personalizada", () => {
+  const withIndicators = buildReadOnlySystemPrompt({
+    financialContext: JSON.stringify({
+      market_indicators: {
+        selic_rate_annual: 13.75,
+        selic_reference_date: "2026-09-18",
+        cdi_rate_annual: 13.65,
+        cdi_reference_date: "2026-09-17",
+        ipca_12m_percent: 4.22,
+        ipca_reference_date: "2026-08-01",
+        source: "bcb_sgs",
+      },
+    }),
+    analyticsAllowed: true,
+  });
+  assert(withIndicators.includes("investment_education"), "o prompt precisa citar a intent investment_education");
+  assert(withIndicators.includes("market_indicators"), "o prompt precisa orientar o uso de market_indicators");
+  assert(
+    withIndicators.includes("Nunca recomende um ativo"),
+    "o prompt precisa proibir explicitamente recomendacao de ativo especifico",
+  );
+  assert(
+    withIndicators.includes("não pôde ser consultada agora"),
+    "o prompt precisa orientar o que fazer quando o indicador nao estiver disponivel",
+  );
 });
 
 Deno.test("prompt compacto continua documentando as 32 ações financeiras", () => {

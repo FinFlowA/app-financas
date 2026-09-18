@@ -2,6 +2,7 @@ import {
   aggregateScopeArgument,
   calculateDailyCashFlow,
   calculateFinancialSnapshot,
+  contextNeeds,
   financialSnapshotFromAggregate,
   MAX_PROVIDER_CONTEXT_CHARS,
   redactSensitiveText,
@@ -499,4 +500,27 @@ Deno.test("recorrencia semanal com muitas ocorrencias no cenario nao estoura o o
   assert(parsed.accounts.length === 4, "contas nao podiam ter sido zeradas so por causa de uma lista de cenario grande");
   assert(parsed.categories.length === 6, "categorias nao podiam ter sido zeradas so por causa de uma lista de cenario grande");
   assert(parsed.context_budget.truncated === true, "o orcamento reduzido ainda precisa ser sinalizado como truncado");
+});
+
+Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investimentos", () => {
+  const investmentQuestions = [
+    "Onde posso investir o meu dinheiro?",
+    "Qual a diferença entre renda fixa e renda variável?",
+    "O que é um CDB?",
+    "Como funciona o Tesouro Direto?",
+    "É melhor deixar na poupança ou investir em fundo imobiliário?",
+    "Quanto está a Selic hoje?",
+  ];
+  for (const question of investmentQuestions) {
+    const needs = contextNeeds(question, true);
+    assert(needs.investmentEducation, `deveria reconhecer educacao sobre investimentos: "${question}"`);
+    assert(needs.route === "investment_education", `rota deveria ser investment_education para: "${question}"`);
+  }
+
+  const unrelated = contextNeeds("Quanto gastei com mercado este mês?", true);
+  assert(!unrelated.investmentEducation, "pergunta sobre gasto de mercado nao deveria acionar educacao de investimentos");
+
+  const mutation = contextNeeds("Crie uma despesa de investimento de R$ 500", true);
+  assert(!mutation.investmentEducation, "uma mutacao nunca deveria ser roteada como educacao de investimentos");
+  assert(mutation.route === "mutation", "mutacao continua tendo prioridade sobre qualquer outro dominio");
 });

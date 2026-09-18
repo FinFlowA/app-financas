@@ -23,7 +23,8 @@ const POSSESSIVE_CREDENTIAL_REDACTION_PATTERN = new RegExp(
   String.raw`\b(?:minha|meu)\s+${CREDENTIAL_LABEL}\s+(?:(?:[ée]|eh)\s+)?(?:"[^"\r\n]{3,128}"|'[^'\r\n]{3,128}'|[^\r\n,;]{3,128})`,
   "gi",
 );
-const FINANCIAL_TOPIC_PATTERN = /(financ|dinheir|saldo|conta|receit|despes|gast|renda|orcament|balanco|resultado|fluxo|caixa|lanc|transa|transfer|categoria|objetiv|caixinha|cartao|fatura|compra|parcela|pag|receb|pendente|atras|venc|juros|desconto|econom|poup|meta|histor|extrato|realiz|agend|planej|previs|projec|resgat|retir|saqu|aporte|deposit|guard)/;
+const FINANCIAL_TOPIC_PATTERN = /(financ|dinheir|saldo|conta|receit|despes|gast|renda|orcament|balanco|resultado|fluxo|caixa|lanc|transa|transfer|categoria|objetiv|caixinha|cartao|fatura|compra|parcela|pag|receb|pendente|atras|venc|juros|desconto|econom|poup|meta|histor|extrato|realiz|agend|planej|previs|projec|resgat|retir|saqu|aporte|deposit|guard|invest|tesouro|\bcdb\b|\blci\b|\blca\b|fundo imobili|\bfii\b|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|acao|acoes)/;
+const SPECIFIC_INVESTMENT_TICKER_PATTERN = /\b[a-z]{4}\d{1,2}\b/;
 const IMPLICIT_FINANCIAL_PROJECTION_PATTERN = /\b(?:quanto|qual(?:\s+valor)?)\b.{0,35}\b(?:terei|vou\s+ter|vai\s+sobrar|sobrara|ficara)\b.{0,45}\b(?:fim\s+do\s+(?:mes|ano)|final\s+do\s+ano|proximo\s+mes|mes\s+que\s+vem|em\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro))\b/;
 const FORBIDDEN_ACCESS_PATTERN = /(senha|password|biometri|login|email|e-mail|telefone|celular|sms|codigo de verificacao|autenticacao|parceria|vinculo|assinatura|plano).{0,45}(alter|editar|trocar|mudar|excluir|remover|recuper|confirm|criar|cancel)|(?:alter|editar|trocar|mudar|excluir|remover|recuper|confirm|criar|cancel).{0,45}(senha|password|biometri|login|email|e-mail|telefone|celular|sms|autenticacao|parceria|vinculo|assinatura)/;
 const SENSITIVE_ACCOUNT_ACTION_PATTERN = /\b(?:troque|mude|altere|edite|exclua|remova|confirme|crie|cancele)\b.{0,45}\b(?:senha|password|biometria|login|e-?mail|telefone|celular|autenticacao|parceria|vinculo|assinatura|plano)\b|\b(?:senha|password|biometria|login|e-?mail|telefone|celular|autenticacao|parceria|vinculo|assinatura|plano)\b.{0,45}\b(?:troque|mude|altere|edite|exclua|remova|confirme|crie|cancele)\b/;
@@ -198,6 +199,10 @@ export function safeAssistantMessage(
   if (containsFalseExecutionClaim(normalized, kind)) return null;
   if (containsSecurityThreat(normalized)) return null;
   if (intent === "casual_conversation" && kind === "answer") return redacted;
+  // Educação financeira sobre investimentos nunca pode citar um ativo, ticker
+  // ou fundo específico: isso seria consultoria de investimentos, fora do
+  // limite explicitamente definido para essa intent no prompt.
+  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(normalized)) return null;
   if (containsUnsafeOrOutsideTopic(normalized)
     || /\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return null;
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return redacted;

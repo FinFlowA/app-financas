@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2.111.0";
 import { redactSensitiveText } from "./guard.ts";
+import { fetchMarketIndicators, type MarketIndicators } from "./market.ts";
 export { redactSensitiveText } from "./guard.ts";
 
 export type FinancialRow = Record<string, unknown>;
@@ -1167,7 +1168,7 @@ export type FinancialContext = {
 };
 
 type ContextNeeds = {
-  route: "summary" | "history" | "calendar" | "cash_flow" | "categories" | "goals" | "cards" | "mutation";
+  route: "summary" | "history" | "calendar" | "cash_flow" | "categories" | "goals" | "cards" | "mutation" | "investment_education";
   invoiceData: boolean;
   invoiceDetails: boolean;
   transactionDetails: boolean;
@@ -1177,9 +1178,10 @@ type ContextNeeds = {
   categories: boolean;
   goals: boolean;
   cards: boolean;
+  investmentEducation: boolean;
 };
 
-function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
+export function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
   const normalized = normalize(request);
   const mutation = /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized);
   const cardDomain = /(cartao|fatura|compra|parcela|credito)/.test(normalized);
@@ -1191,21 +1193,28 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
   const summaryDomain = /(resumo|balanco|resultado|como estao|minha situacao|visao geral)/.test(normalized);
   const transactionMutation = mutation && /(lanc|transa|receita|despesa|transfer|concl|reabr|pague|pagamento)/.test(normalized);
   const spendingDomain = /(gasto|despesa|categoria|orcament|balanco|resultado|resumo|econom)/.test(normalized);
+  // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
+  // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
+  // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
+  // de indicadores públicos do Banco Central para dar contexto factual.
+  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundo imobiliario|\bfii\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
-    : cardDomain
-      ? "cards"
-      : goalDomain
-        ? "goals"
-        : calendarDomain
-          ? "calendar"
-        : cashFlowDomain
-          ? "cash_flow"
-          : categoryDomain
-            ? "categories"
-            : historyDomain
-              ? "history"
-              : "summary";
+    : investmentDomain
+      ? "investment_education"
+      : cardDomain
+        ? "cards"
+        : goalDomain
+          ? "goals"
+          : calendarDomain
+            ? "calendar"
+          : cashFlowDomain
+            ? "cash_flow"
+            : categoryDomain
+              ? "categories"
+              : historyDomain
+                ? "history"
+                : "summary";
   return {
     route,
     invoiceData: cardDomain || spendingDomain || (analyticsAllowed && categoryDomain),
@@ -1217,6 +1226,7 @@ function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds 
     categories: categoryDomain || transactionMutation || cardDomain || summaryDomain,
     goals: goalDomain || summaryDomain,
     cards: cardDomain || spendingDomain || summaryDomain,
+    investmentEducation: investmentDomain,
   };
 }
 
@@ -1340,6 +1350,7 @@ export function serializeContextWithinBudget(
         ? compact.monthly_cash_flow.filter((row: Record<string, unknown>) => row.month === compact.focus_month)
         : [],
       daily_cash_flow: Array.isArray(compact.daily_cash_flow) ? compact.daily_cash_flow.slice(0, 1) : [],
+      market_indicators: compact.market_indicators ?? null,
       scenario_candidates: Array.isArray(compact.scenario_candidates) ? compact.scenario_candidates.slice(0, 12) : [],
       accounts: [],
       categories: [],
@@ -1402,7 +1413,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1416,6 +1427,7 @@ export async function buildFinancialContext(
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
+    needs.investmentEducation ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1653,6 +1665,7 @@ export async function buildFinancialContext(
     },
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
+    market_indicators: needs.investmentEducation ? marketIndicators : null,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;
