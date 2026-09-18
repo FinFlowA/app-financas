@@ -117,6 +117,12 @@ function nextMonth(month: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function previousMonth(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const date = new Date(Date.UTC(year, monthNumber - 2, 1));
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function currentDateInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -126,10 +132,15 @@ function currentDateInSaoPaulo(): string {
   }).format(new Date());
 }
 
-function selectedMonth(request: string, fallback: string): string {
+export function selectedMonth(request: string, fallback: string): string {
   const normalized = normalize(request);
   const explicit = normalized.match(/\b(19\d{2}|20\d{2})-(0[1-9]|1[0-2])\b/);
   if (explicit) return `${explicit[1]}-${explicit[2]}`;
+  // Referências relativas precisam ser resolvidas a partir do mês atual
+  // (fallback) antes de qualquer outro critério; sem isso, "mês que vem"
+  // caía no mês em foco por padrão e respondia com os dados do mês atual.
+  if (/\b(mes que vem|proximo mes|mes seguinte|mes que vira)\b/.test(normalized)) return nextMonth(fallback);
+  if (/\b(mes passado|mes anterior|mes retrasado)\b/.test(normalized)) return previousMonth(fallback);
   const year = normalized.match(/\b(19\d{2}|20\d{2})\b/)?.[1] ?? fallback.slice(0, 4);
   for (const [name, month] of Object.entries(MONTHS_PT)) {
     if (new RegExp(`\\b${name}\\b`).test(normalized)) return `${year}-${month}`;
