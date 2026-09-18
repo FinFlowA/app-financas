@@ -197,7 +197,10 @@ export default function AssistantChat({
         if (response.messages?.length) setMessages(response.messages.map((message) => ({ id: String(message.id), role: message.role, text: message.text })));
         if (response.quota) setQuota(response.quota);
       })
-      .catch(() => setNotice("Não foi possível carregar o histórico. Você ainda pode tentar uma nova consulta."))
+      .catch(() => {
+        // O histórico é complementar: uma falha silenciosa não deve assustar
+        // nem impedir que a pessoa inicie uma nova conversa com o Finn.
+      })
       .finally(() => {
         if (!active) return;
         setBusy(false);
@@ -302,7 +305,7 @@ export default function AssistantChat({
               <Image src="/finn-chat-header.png" alt="" width={43} height={43} />
             </span>
             <div className="min-w-0">
-              <p className={styles.eyebrow}>Assistente financeira</p>
+              <p className={styles.eyebrow}>Assistente financeiro</p>
               <h1 className={styles.chatTitle}>Finn</h1>
               <p className={styles.quota}>{quotaText}</p>
             </div>

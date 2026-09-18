@@ -785,7 +785,7 @@ export default function ChatIAScreen() {
           <View style={styles.statusRow}>
             <View style={styles.statusPill}>
               <View style={styles.onlineDot} />
-              <Text style={styles.statusText}>Assistente financeira</Text>
+              <Text style={styles.statusText}>Assistente financeiro</Text>
             </View>
             <View style={styles.statusPill}>
               <MaterialIcons name="verified-user" size={14} color="#D9FFF1" />
