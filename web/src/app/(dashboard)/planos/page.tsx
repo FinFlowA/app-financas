@@ -1,7 +1,16 @@
+import { redirect } from "next/navigation";
+
+// Área de Planos temporariamente fora do ar (subiu para produção antes da
+// hora). O código original fica comentado abaixo para o Gabriel retomar:
+// para reativar, descomente o bloco e remova esta função stub.
+export default async function PlansPage() {
+  redirect("/");
+}
+
+/*
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { redirect } from "next/navigation";
 import { normalizePlan } from "@/lib/plan-entitlements";
 import { getPaddleConfig } from "@/lib/paddle/pricing-tiers";
 import { createClient } from "@/lib/supabase/server";
@@ -54,3 +63,4 @@ export default async function PlansPage() {
     </section>
   </div>;
 }
+*/
