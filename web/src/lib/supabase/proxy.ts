@@ -28,6 +28,7 @@ function trustedAppUrl(pathname: string) {
 // evita uma validação remota de autenticação para documentos legais e
 // recursos estáticos usados logo na primeira abertura do site/PWA.
 const PUBLIC_PASSTHROUGH_ROUTES = new Set([
+  "/api/paddle/webhook",
   "/auth/callback",
   "/auth/oauth",
   "/redefinir-senha",
