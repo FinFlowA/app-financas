@@ -8,17 +8,55 @@ import ConfirmationDialog from "@/components/ui/confirmation-dialog";
 import { formatAssistantMessage } from "../../../../../lib/assistant-message-format";
 import { inFinnVoice } from "../../../../../lib/finn-voice";
 import { finnProductGuidance } from "../../../../../lib/finn-product-guidance";
+import { parseFinanceAiHttpResponse } from "../../../../../lib/finance-ai/validation";
+import { FINANCE_AI_MUTATION_INTENTS } from "../../../../../lib/finance-ai/types";
+import type { FinanceAiHttpSuccessResponse } from "../../../../../lib/finance-ai/types";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./assistente.module.css";
 
 type Message = { id: string; role: "user" | "assistant"; text: string };
 type Quota = { plan: string; limit: number; remaining: number; model_limit: number; model_remaining: number };
-type PendingAction = { id: string; confirmationToken: string; actionType: string; expiresAt: string; preview: { title: string; summary: string; consequences: string[] } };
+type PendingActionPreview = { title?: string; summary?: string; consequences?: string[] };
+type PendingAction = { id: string; confirmationToken: string; actionType: string; expiresAt: string; preview?: PendingActionPreview };
 type AiResponse = {
   error?: string; message?: string; kind?: string; conversationId?: string | null; route?: string;
-  pendingAction?: PendingAction; quota?: Quota; cleared?: boolean;
+  pendingAction?: PendingAction; quota?: Quota; cleared?: boolean; choices?: string[]; missingFields?: string[];
   messages?: { id: string; role: "user" | "assistant"; text: string }[];
 };
+
+const INLINE_CHOICE_LIMIT = 4;
+const mutationIntents = new Set<string>(FINANCE_AI_MUTATION_INTENTS);
+
+function normalizeChoice(value: string): string {
+  return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+}
+
+function actionTitle(action: PendingAction): string {
+  return action.preview?.title?.trim() || "Revise a ação financeira";
+}
+
+function actionSummary(action: PendingAction): string {
+  return action.preview?.summary?.trim() || "Confira todas as informações antes de confirmar.";
+}
+
+/** Achata o contrato estrito (por `kind`) no formato interno usado pela tela. */
+function toViewModel(value: FinanceAiHttpSuccessResponse): AiResponse {
+  if ("cleared" in value && value.cleared) return { cleared: true, conversationId: null, messages: [] };
+  if ("kind" in value) {
+    const base: AiResponse = { kind: value.kind, message: value.message };
+    if ("conversationId" in value) base.conversationId = value.conversationId;
+    if ("quota" in value) base.quota = value.quota;
+    if (value.kind === "clarify") {
+      base.choices = value.choices;
+      base.missingFields = value.missingFields;
+    }
+    if (value.kind === "navigate") base.route = value.route;
+    if (value.kind === "proposal") base.pendingAction = value.pendingAction;
+    return base;
+  }
+  // Formato de histórico: { conversationId, messages, quota? }.
+  return { conversationId: value.conversationId, messages: value.messages, quota: value.quota };
+}
 
 function AssistantMessage({ text }: { text: string }) {
   return (
@@ -47,40 +85,40 @@ const NAVIGATION_ROUTES: Readonly<Record<string, string>> = {
   "/categorias": "/categorias",
 };
 
-function validPendingAction(value: unknown): value is PendingAction {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const action = value as Record<string, unknown>;
-  if (!UUID.test(String(action.id)) || !UUID.test(String(action.confirmationToken))) return false;
-  if (typeof action.actionType !== "string" || typeof action.expiresAt !== "string" || !Number.isFinite(Date.parse(action.expiresAt))) return false;
-  if (!action.preview || typeof action.preview !== "object" || Array.isArray(action.preview)) return false;
-  const preview = action.preview as Record<string, unknown>;
-  return typeof preview.title === "string"
-    && typeof preview.summary === "string"
-    && Array.isArray(preview.consequences)
-    && preview.consequences.every((item) => typeof item === "string");
-}
-
+// Checagem leve de integridade do cache local (aba fechada e reaberta, ou uma
+// versão anterior do site). O contrato de rede em si já passou pela validação
+// estrita e completa de `parseFinanceAiHttpResponse` antes de ser salvo aqui.
 function parseStoredPendingAction(value: string | null): PendingAction | null {
   if (!value) return null;
   try {
-    const parsed: unknown = JSON.parse(value);
-    if (!validPendingAction(parsed) || Date.parse(parsed.expiresAt) <= Date.now()) return null;
-    return parsed;
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    const previewRaw = parsed.preview && typeof parsed.preview === "object" && !Array.isArray(parsed.preview)
+      ? parsed.preview as Record<string, unknown>
+      : undefined;
+    const action: PendingAction = {
+      id: typeof parsed.id === "string" ? parsed.id : "",
+      confirmationToken: typeof parsed.confirmationToken === "string" ? parsed.confirmationToken : "",
+      actionType: typeof parsed.actionType === "string" ? parsed.actionType : "",
+      expiresAt: typeof parsed.expiresAt === "string" ? parsed.expiresAt : "",
+      ...(previewRaw ? {
+        preview: {
+          ...(typeof previewRaw.title === "string" ? { title: previewRaw.title } : {}),
+          ...(typeof previewRaw.summary === "string" ? { summary: previewRaw.summary } : {}),
+          ...(Array.isArray(previewRaw.consequences) && previewRaw.consequences.every((item) => typeof item === "string")
+            ? { consequences: previewRaw.consequences.slice(0, 20) as string[] }
+            : {}),
+        },
+      } : {}),
+    };
+    if (!UUID.test(action.id)
+      || !UUID.test(action.confirmationToken)
+      || !mutationIntents.has(action.actionType)
+      || !Number.isFinite(Date.parse(action.expiresAt))
+      || Date.parse(action.expiresAt) <= Date.now()) return null;
+    return action;
   } catch {
     return null;
   }
-}
-
-function validResponse(value: unknown): value is AiResponse {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const row = value as Record<string, unknown>;
-  if (typeof row.error === "string") return !row.message || typeof row.message === "string";
-  if (row.cleared === true) return true;
-  if (Array.isArray(row.messages)) return row.messages.every((message) => !!message && typeof message === "object" && ["user", "assistant"].includes(String((message as Record<string, unknown>).role)) && typeof (message as Record<string, unknown>).text === "string");
-  if (typeof row.kind !== "string" || typeof row.message !== "string") return false;
-  if (row.pendingAction !== undefined && !validPendingAction(row.pendingAction)) return false;
-  if (row.kind === "navigate" && typeof row.route !== "string") return false;
-  return true;
 }
 
 function safeError(body: Record<string, unknown>) {
@@ -131,18 +169,30 @@ export default function AssistantChat({
   const [historyReady, setHistoryReady] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [clarificationChoices, setClarificationChoices] = useState<string[]>([]);
+  const [clarificationField, setClarificationField] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const consumedInitialPrompt = useRef<string | null>(null);
+
+  const autocompleteChoices = useMemo(() => {
+    const query = normalizeChoice(input);
+    if (clarificationChoices.length <= INLINE_CHOICE_LIMIT || !query) return [];
+    return clarificationChoices.filter((choice) => normalizeChoice(choice).includes(query)).slice(0, 6);
+  }, [clarificationChoices, input]);
 
   async function invoke(body: Record<string, unknown>): Promise<AiResponse> {
     const { data, error } = await supabase.functions.invoke("finance-ai", { body });
     if (error) {
-      if (validResponse(data) && data.error) throw new Error(data.message || safeError(body));
+      const parsedErrorBody = parseFinanceAiHttpResponse(data);
+      if (parsedErrorBody.ok && "error" in parsedErrorBody.value) {
+        throw new Error(parsedErrorBody.value.message || safeError(body));
+      }
       throw new Error(await publicFunctionError(error) ?? safeError(body));
     }
-    if (!validResponse(data)) throw new Error(safeError(body));
-    if (data.error) throw new Error(data.message || "A solicitação foi recusada com segurança.");
-    return data;
+    const parsed = parseFinanceAiHttpResponse(data);
+    if (!parsed.ok) throw new Error(safeError(body));
+    if ("error" in parsed.value) throw new Error(parsed.value.message || "A solicitação foi recusada com segurança.");
+    return toViewModel(parsed.value);
   }
 
   function persistPendingAction(action: PendingAction | null) {
@@ -163,6 +213,8 @@ export default function AssistantChat({
     }
     if (response.quota) setQuota(response.quota);
     if (response.message) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: response.message! }]);
+    setClarificationChoices(response.kind === "clarify" && Array.isArray(response.choices) ? response.choices : []);
+    setClarificationField(response.kind === "clarify" && Array.isArray(response.missingFields) ? response.missingFields[0] ?? null : null);
     if (response.pendingAction && UUID.test(response.pendingAction.id) && UUID.test(response.pendingAction.confirmationToken)) persistPendingAction(response.pendingAction);
     if (response.kind === "navigate" && response.route) {
       const destination = NAVIGATION_ROUTES[response.route];
@@ -227,12 +279,22 @@ export default function AssistantChat({
 
   async function send(event?: FormEvent, suggested?: string) {
     event?.preventDefault();
-    const text = (suggested ?? input).trim();
+    const typed = (suggested ?? input).trim();
+    const normalizedTyped = normalizeChoice(typed);
+    // Com muitas opções (ex.: categorias), o texto digitado livremente é
+    // resolvido para a opção exata quando bate com uma única sugestão — o
+    // servidor recebe o texto oficial, não uma variante digitada à mão.
+    const matchingChoices = suggested || clarificationChoices.length <= INLINE_CHOICE_LIMIT || !normalizedTyped
+      ? []
+      : clarificationChoices.filter((choice) => normalizeChoice(choice).includes(normalizedTyped));
+    const text = (suggested ?? (matchingChoices.length === 1 ? matchingChoices[0] : typed)).trim();
     if (!text || busy || pendingAction || !hasAccess) return;
     const productGuidance = finnProductGuidance(text, messages.slice(-4).map((message) => message.text).join("\n"));
     if (productGuidance) {
       setNotice(null);
       setInput("");
+      setClarificationChoices([]);
+      setClarificationField(null);
       setMessages((current) => [
         ...current,
         { id: crypto.randomUUID(), role: "user", text },
@@ -241,6 +303,7 @@ export default function AssistantChat({
       return;
     }
     setBusy(true); setNotice(null); setInput("");
+    setClarificationChoices([]); setClarificationField(null);
     setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", text }]);
     try { apply(await invoke({ mode: "message", message: text, ...(conversationId ? { conversationId } : {}), requestId: crypto.randomUUID() })); }
     catch (error) { setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: error instanceof Error ? error.message : "Não foi possível consultar agora." }]); }
@@ -274,6 +337,8 @@ export default function AssistantChat({
       persistPendingAction(null); setConversationId(null);
       try { localStorage.removeItem(conversationKey); } catch { /* armazenamento indisponível */ }
       setMessages([{ id: "welcome", role: "assistant", text: WELCOME }]);
+      setClarificationChoices([]);
+      setClarificationField(null);
       setConfirmClear(false);
     } catch (error) { setNotice(error instanceof Error ? error.message : "Não foi possível limpar agora."); }
     finally { setBusy(false); }
@@ -344,15 +409,25 @@ export default function AssistantChat({
             {pendingAction && (
               <section className={styles.pendingCard} aria-labelledby="pending-action-title">
                 <p className={styles.pendingEyebrow}>Aguardando sua confirmação</p>
-                <h2 id="pending-action-title" className={styles.pendingTitle}>{pendingAction.preview.title}</h2>
-                <p className={styles.pendingSummary}>{pendingAction.preview.summary}</p>
-                {pendingAction.preview.consequences.length > 0 && (
-                  <ul className={styles.consequences}>{pendingAction.preview.consequences.map((item) => <li key={item}>{item}</li>)}</ul>
+                <h2 id="pending-action-title" className={styles.pendingTitle}>{actionTitle(pendingAction)}</h2>
+                <p className={styles.pendingSummary}>{actionSummary(pendingAction)}</p>
+                {(pendingAction.preview?.consequences?.length ?? 0) > 0 && (
+                  <ul className={styles.consequences}>{pendingAction.preview!.consequences!.map((item) => <li key={item}>{item}</li>)}</ul>
                 )}
                 <p className={styles.safeNotice}>A ação só será executada pelo botão Confirmar abaixo.</p>
                 <div className={styles.pendingActions}>
                   <button type="button" onClick={cancel} disabled={busy} className={styles.cancelButton}>Cancelar</button>
                   <button type="button" onClick={confirmPending} disabled={busy} className={styles.confirmButton}>Confirmar</button>
+                </div>
+              </section>
+            )}
+            {!pendingAction && clarificationChoices.length > 0 && clarificationChoices.length <= INLINE_CHOICE_LIMIT && (
+              <section className={styles.choiceCard} aria-label="Escolha uma opção">
+                <p className={styles.choiceTitle}>Escolha uma opção</p>
+                <div className={styles.choiceGrid}>
+                  {clarificationChoices.map((choice) => (
+                    <button type="button" key={choice} onClick={() => void send(undefined, choice)} disabled={busy} className={styles.choiceButton}>{choice}</button>
+                  ))}
                 </div>
               </section>
             )}
@@ -363,6 +438,13 @@ export default function AssistantChat({
         </div>
 
         <form onSubmit={(event) => void send(event)} className={styles.composer}>
+          {!pendingAction && autocompleteChoices.length > 0 && (
+            <div className={styles.autocompletePanel} role="listbox" aria-label="Sugestões de opções">
+              {autocompleteChoices.map((choice) => (
+                <button type="button" key={choice} onClick={() => void send(undefined, choice)} disabled={busy} className={styles.autocompleteOption}>{choice}</button>
+              ))}
+            </div>
+          )}
           <div className={styles.composerRow}>
             <textarea
               value={input}
@@ -377,7 +459,11 @@ export default function AssistantChat({
               rows={2}
               enterKeyHint="send"
               aria-label="Mensagem para a IA financeira"
-              placeholder={pendingAction ? "Confirme ou cancele a proposta para continuar" : "Pergunte ou peça uma ação financeira"}
+              placeholder={pendingAction
+                ? "Confirme ou cancele a proposta para continuar"
+                : clarificationChoices.length > INLINE_CHOICE_LIMIT
+                  ? `Digite para buscar ${clarificationField === "category_id" ? "uma categoria" : "uma opção"}`
+                  : "Pergunte ou peça uma ação financeira"}
               className={styles.textarea}
             />
             <button type="submit" disabled={busy || !!pendingAction || !input.trim()} className={styles.sendButton}>
