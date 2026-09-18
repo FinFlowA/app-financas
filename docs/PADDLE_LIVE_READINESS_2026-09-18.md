@@ -4,6 +4,31 @@ Data: 18 de setembro de 2026
 Branch: `feature/paddle-live-readiness`  
 Não publicar em produção antes de concluir a verificação e aprovação do domínio live.
 
+## Retomada em outra máquina
+
+1. Clone ou atualize o repositório `FinFlowA/app-financas`.
+2. Abra a branch remota `feature/paddle-live-readiness` no commit mínimo `6b62996`.
+3. Dentro de `web`, execute `npm ci`, `npm test`, `npm run lint` e `npm run build`.
+4. Instale/ative o plugin Paddle e conecte os dois servidores: `paddle-sandbox` e `paddle-live`.
+5. Não copie secrets pelo Git, chat ou arquivos versionados. Reconfigure-os no gerenciador local e na Vercel.
+6. Use Preview/Staging para a primeira configuração live; mantenha Production sem checkout live até a aprovação.
+
+Comandos de referência:
+
+```bash
+git clone https://github.com/FinFlowA/app-financas.git
+cd app-financas
+git fetch origin
+git switch --track origin/feature/paddle-live-readiness
+cd web
+npm ci
+npm test
+npm run lint
+npm run build
+```
+
+Se a branch já existir localmente, use `git switch feature/paddle-live-readiness` e `git pull --ff-only`.
+
 ## Estado confirmado
 
 - O fluxo Paddle sandbox foi concluído de ponta a ponta.
@@ -39,6 +64,32 @@ Não publicar em produção antes de concluir a verificação e aprovação do d
 9. Validar em staging que PricePreview mostra os valores live e que o checkout abre. Não concluir pagamento real antes da verificação da conta.
 10. Confirmar que Termos, Privacidade, Cancelamento/Reembolso, preços, descrição e contato respondem publicamente no domínio aprovado.
 11. Só depois promover as variáveis live para Production, integrar esta branch com a `main` e publicar Planos.
+
+## IDs permanentes do sandbox — não excluir
+
+- Destino de notificação: `ntfset_01m2tr4p5fn4vs3b3xnb4g4cxg`
+- Pro mensal: `pri_01m2t95sany6c2th000xwbjd6p`
+- Pro anual: `pri_01m2t95sffza6sycm34snnw88b`
+- Plus mensal: `pri_01m2t95sxye0jx1awcckf3apra`
+- Plus anual: `pri_01m2t95t3jr4qhtn24xsraz1tw`
+- Transação validada: `txn_01m2tq8468f1beg5cqj1gk679f`
+- Assinatura validada: `sub_01m2tq97bwf5ysqdtepssd406j`
+- Cliente validado: `ctm_01m2tq843xr23h5z83gnsrmfr3`
+
+Esses registros comprovam e sustentam o fluxo de fulfillment testado. Não tratá-los como lixo de teste.
+
+## Critérios para considerar concluído
+
+- Existe mapa documentado dos quatro IDs sandbox para os quatro IDs live.
+- Catálogo e preços live coincidem com a página pública.
+- Token cliente live começa com `live_`; API key e signing secret nunca aparecem no frontend.
+- Webhook live recebe eventos assinados no domínio de staging e rejeita assinatura/IP inválidos.
+- Migration de isolamento por ambiente foi aplicada e clientes sandbox continuam intactos.
+- Portal do cliente abre usando o customer ID live do usuário autenticado.
+- Domínio real está aprovado e é o Default payment link live.
+- `/termos`, `/privacidade`, `/reembolso`, `/precos` e contato são públicos e retornam conteúdo correto.
+- Checkout live abre em staging com os preços corretos; nenhuma compra real é feita antes da verificação.
+- Só após todos os itens acima a branch é atualizada com a main, revisada, mesclada e publicada.
 
 ## Proteção ao trabalho paralelo
 
