@@ -212,6 +212,7 @@ export default async function SettingsPage() {
           <div className="mt-5 grid gap-3">
             <Link href="/privacidade" className="ff-focus rounded-ff-sm border border-border bg-surface-muted px-4 py-3 text-sm font-bold text-foreground hover:border-primary">Política de Privacidade →</Link>
             <Link href="/termos" className="ff-focus rounded-ff-sm border border-border bg-surface-muted px-4 py-3 text-sm font-bold text-foreground hover:border-primary">Termos de Uso →</Link>
+            <Link href="/reembolso" className="ff-focus rounded-ff-sm border border-border bg-surface-muted px-4 py-3 text-sm font-bold text-foreground hover:border-primary">Cancelamento e reembolso →</Link>
             <a href="mailto:Finflowfinancas@gmail.com?subject=%5BFinFlow%20-%20Suporte%5D" className="ff-focus rounded-ff-sm border border-border bg-surface-muted px-4 py-3 text-sm font-bold text-foreground hover:border-primary">Contatar suporte →</a>
           </div>
           <div className="mt-5 border-t border-border pt-5"><SignOutButton /></div>

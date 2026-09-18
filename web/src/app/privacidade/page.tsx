@@ -50,7 +50,7 @@ export default function PrivacyPage() {
           <li><strong className="text-foreground">Supabase:</strong> autenticação e banco de dados;</li>
           <li><strong className="text-foreground">Brevo:</strong> entrega de e-mails transacionais;</li>
           <li><strong className="text-foreground">Expo:</strong> distribuição técnica e atualizações do aplicativo;</li>
-          <li><strong className="text-foreground">Mercado Pago:</strong> checkout, cobrança recorrente e confirmação da assinatura;</li>
+          <li><strong className="text-foreground">Paddle:</strong> checkout, cobrança recorrente, impostos, faturas, portal do cliente e confirmação da assinatura;</li>
           <li><strong className="text-foreground">OpenAI ou Groq:</strong> processamento do assistente, somente quando o recurso for acionado.</li>
         </LegalList>
         <p>Fornecedores podem processar dados fora do Brasil. Nesses casos, são observadas as garantias exigidas pela Lei Geral de Proteção de Dados (LGPD) para transferência internacional, como cláusulas contratuais padrão ou declaração de adequação do país de destino. Dados também podem ser divulgados para cumprir obrigação legal, ordem válida ou proteger direitos e segurança.</p>

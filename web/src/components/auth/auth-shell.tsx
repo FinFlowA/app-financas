@@ -103,6 +103,7 @@ export function AuthShell({ title, description, children, showSplash = false }: 
             <footer className={styles.legalFooter}>
               <Link className={styles.legalLink} href="/termos">Termos de Uso</Link>
               <Link className={styles.legalLink} href="/privacidade">Privacidade</Link>
+              <Link className={styles.legalLink} href="/reembolso">Cancelamento e reembolso</Link>
               <span aria-hidden="true">© {new Date().getFullYear()}</span>
             </footer>
           </div>

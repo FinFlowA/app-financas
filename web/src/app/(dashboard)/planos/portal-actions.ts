@@ -14,6 +14,7 @@ export async function createPortalSessionAction(): Promise<{ url?: string; error
     .from("paddle_customers")
     .select("customer_id")
     .eq("user_id", user.id)
+    .eq("environment", process.env.NEXT_PUBLIC_PADDLE_ENV?.trim())
     .maybeSingle();
   if (!customer?.customer_id) return { error: "Você ainda não possui uma assinatura Paddle vinculada." };
 

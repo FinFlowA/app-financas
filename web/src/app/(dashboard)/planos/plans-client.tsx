@@ -16,12 +16,13 @@ function PlanIcon({ name }: { name: "check" | "crown" | "sparkle" }) {
   </svg>;
 }
 
-export default function PlansClient({ tiers, environment, clientToken, country, customerEmail, userId, currentPlan }: {
+export default function PlansClient({ tiers, environment, clientToken, country, customerEmail, paddleCustomerId, userId, currentPlan }: {
   tiers: Tier[];
   environment: Environments;
   clientToken: string;
   country?: string;
   customerEmail?: string;
+  paddleCustomerId?: string;
   userId: string;
   currentPlan: PlanId;
 }) {
@@ -33,11 +34,15 @@ export default function PlansClient({ tiers, environment, clientToken, country, 
 
   useEffect(() => {
     let active = true;
-    initializePaddle({ token: clientToken, environment }).then((instance) => {
+    initializePaddle({
+      token: clientToken,
+      environment,
+      ...(paddleCustomerId ? { pwCustomer: { id: paddleCustomerId } } : {}),
+    }).then((instance) => {
       if (active && instance) setPaddle(instance);
     }).catch(() => active && setError("Não consegui iniciar o checkout seguro. Atualize a página e tente novamente."));
     return () => { active = false; };
-  }, [clientToken, environment]);
+  }, [clientToken, environment, paddleCustomerId]);
 
   useEffect(() => {
     if (!paddle || priceIds.length === 0) return;

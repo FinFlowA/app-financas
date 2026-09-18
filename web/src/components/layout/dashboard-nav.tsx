@@ -19,7 +19,7 @@ export const NAV_ITEMS = [
   { href: "/assistente", label: "Finn", shortLabel: "Finn", icon: "ai" },
   // Planos temporariamente fora do ar (subiu antes da hora); reative removendo
   // este comentário quando a área estiver pronta para voltar ao ar.
-  // { href: "/planos", label: "Planos", icon: "plans" },
+  { href: "/planos", label: "Planos", icon: "plans" },
   { href: "/configuracoes", label: "Configurações", shortLabel: "Ajustes", icon: "settings" },
 ] as const satisfies ReadonlyArray<{
   href: string;

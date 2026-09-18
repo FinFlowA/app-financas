@@ -26,6 +26,12 @@ function requiredEnv(name: string) {
   return value;
 }
 
+function paddleEnvironment() {
+  const value = requiredEnv("NEXT_PUBLIC_PADDLE_ENV");
+  if (value !== "sandbox" && value !== "production") throw new Error("PADDLE_ENV_INVALID");
+  return value;
+}
+
 function priceMetadata(priceId: string) {
   const prices = new Map([
     [requiredEnv("NEXT_PUBLIC_PADDLE_SMART_MONTHLY_PRICE_ID"), { productCode: "smart_monthly", plan: "smart", cycle: "monthly" }],
@@ -53,10 +59,11 @@ function customUserId(customData: unknown): string | null {
 
 async function handleCustomer(event: CustomerCreatedEvent | CustomerUpdatedEvent) {
   const admin = createAdminClient();
-  const { error } = await admin.rpc("bind_paddle_customer", {
+  const { error } = await admin.rpc("bind_paddle_customer_environment", {
     p_customer_id: event.data.id,
     p_email: event.data.email,
     p_user_id: null,
+    p_environment: paddleEnvironment(),
   });
   if (error) throw new Error("PADDLE_CUSTOMER_SYNC_FAILED");
 }
@@ -73,13 +80,15 @@ async function handleSubscription(event: SubscriptionEvent) {
     .from("paddle_customers")
     .select("email,user_id")
     .eq("customer_id", event.data.customerId)
+    .eq("environment", paddleEnvironment())
     .maybeSingle();
   if (!customer?.email) throw new Error("PADDLE_CUSTOMER_NOT_SYNCED");
 
-  const { data: userId, error: bindError } = await admin.rpc("bind_paddle_customer", {
+  const { data: userId, error: bindError } = await admin.rpc("bind_paddle_customer_environment", {
     p_customer_id: event.data.customerId,
     p_email: customer.email,
     p_user_id: customer.user_id ?? customUserId(event.data.customData),
+    p_environment: paddleEnvironment(),
   });
   if (bindError || typeof userId !== "string") throw new Error("PADDLE_CUSTOMER_NOT_BOUND");
 

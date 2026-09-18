@@ -1,18 +1,10 @@
-import { redirect } from "next/navigation";
-
-// Área de Planos temporariamente fora do ar (subiu para produção antes da
-// hora). O código original fica comentado abaixo para o Gabriel retomar:
-// para reativar, descomente o bloco e remova esta função stub.
-export default async function PlansPage() {
-  redirect("/");
-}
-
-/*
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { normalizePlan } from "@/lib/plan-entitlements";
 import { getPaddleConfig } from "@/lib/paddle/pricing-tiers";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { createClient } from "@/lib/supabase/server";
 import PlansClient from "./plans-client";
 import PortalButton from "./portal-button";
@@ -30,9 +22,16 @@ export default async function PlansPage() {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
-  const [{ data: entitlementData }, requestHeaders] = await Promise.all([
+  const environment = process.env.NEXT_PUBLIC_PADDLE_ENV?.trim();
+  const [{ data: entitlementData }, requestHeaders, customerResult] = await Promise.all([
     supabase.rpc("get_my_entitlement"),
     headers(),
+    createAdminClient()
+      .from("paddle_customers")
+      .select("customer_id")
+      .eq("user_id", user.id)
+      .eq("environment", environment)
+      .maybeSingle(),
   ]);
   const entitlement = Array.isArray(entitlementData) ? entitlementData[0] : entitlementData;
   const currentPlan = normalizePlan(entitlement && typeof entitlement === "object" && "plan" in entitlement ? entitlement.plan : null);
@@ -51,6 +50,7 @@ export default async function PlansPage() {
       clientToken={config.clientToken}
       country={countryFromHeader(requestHeaders.get("x-vercel-ip-country"))}
       customerEmail={user.email}
+      paddleCustomerId={customerResult.data?.customer_id}
       userId={user.id}
       currentPlan={currentPlan}
     />
@@ -58,9 +58,8 @@ export default async function PlansPage() {
     <section className="ff-card p-5 text-sm leading-6 text-foreground-muted sm:p-6">
       <h2 className="text-lg font-extrabold text-foreground">Compra segura com Paddle</h2>
       <p className="mt-2">Os preços e impostos são calculados pela Paddle conforme sua localização. O valor exibido aqui é o mesmo enviado ao checkout.</p>
-      <p className="mt-2">A ativação definitiva do plano será confirmada pelo servidor após o pagamento. Consulte os <Link href="/termos" className="font-bold text-primary hover:underline">Termos de Uso</Link>.</p>
+      <p className="mt-2">A ativação definitiva do plano será confirmada pelo servidor após o pagamento. Consulte os <Link href="/termos" className="font-bold text-primary hover:underline">Termos de Uso</Link> e a <Link href="/reembolso" className="font-bold text-primary hover:underline">Política de Cancelamento e Reembolso</Link>.</p>
       <div className="mt-4"><PortalButton /></div>
     </section>
   </div>;
 }
-*/

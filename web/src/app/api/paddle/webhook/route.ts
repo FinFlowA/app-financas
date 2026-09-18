@@ -1,9 +1,17 @@
 import { getPaddleInstance } from "@/lib/paddle/server";
 import { processPaddleEvent } from "@/lib/paddle/process-webhook";
+import { verifyLivePaddleSource } from "@/lib/paddle/webhook-ip";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  try {
+    if (!(await verifyLivePaddleSource(request))) {
+      return Response.json({ error: "WEBHOOK_SOURCE_DENIED" }, { status: 403 });
+    }
+  } catch {
+    return Response.json({ error: "WEBHOOK_SOURCE_CHECK_UNAVAILABLE" }, { status: 503 });
+  }
   const signature = request.headers.get("paddle-signature") ?? "";
   const rawBody = await request.text();
   const secret = process.env.PADDLE_NOTIFICATION_WEBHOOK_SECRET?.trim() ?? "";
