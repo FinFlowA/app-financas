@@ -1108,8 +1108,57 @@ Deno.serve(async (req) => {
       latencyMs: monitoringLatencyMs(requestStartedAt),
       errorCode: null,
     });
-    const { output: rawOutput, provider, model } = modelResult;
-    const output = enforceActionWorkflow(rawOutput, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+    const { output: rawOutput } = modelResult;
+    let { provider, model } = modelResult;
+    let output = enforceActionWorkflow(rawOutput, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+
+    // O modelo (com esforço de raciocínio baixo) às vezes classifica uma
+    // pergunta legítima sobre os dados do próprio usuário como fora de
+    // escopo na primeira tentativa e acerta ao repetir a mesma pergunta —
+    // confirmado em produção pelo usuário. Uma única tentativa extra,
+    // silenciosa, evita que a pessoa precise reenviar manualmente. Fica
+    // restrito ao modo somente leitura, onde a regra 1 do prompt já proíbe
+    // explicitamente out_of_scope para dados básicos do usuário; mutações
+    // têm cota própria e um escopo operacional testado há mais tempo.
+    if (output.kind === "out_of_scope" && !mutationRequested) {
+      const retryStartedAt = Date.now();
+      let retryUsageId: string | null = null;
+      try {
+        retryUsageId = await reserveModelRequest(admin, user.id, PRE_CONTEXT_MODEL_BUDGET);
+        await adjustModelRequest(admin, retryUsageId, estimateModelTokenBudget(prompt, history));
+        const retryResult = await requestModel(prompt, history, safetyId);
+        await finalizeModelRequest(admin, {
+          usageId: retryUsageId,
+          provider: retryResult.provider,
+          model: retryResult.model,
+          inputTokens: retryResult.usage.inputTokens,
+          outputTokens: retryResult.usage.outputTokens,
+          status: "completed",
+          latencyMs: monitoringLatencyMs(retryStartedAt),
+          errorCode: null,
+        });
+        output = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+        provider = retryResult.provider;
+        model = retryResult.model;
+      } catch (retryError) {
+        if (retryUsageId) {
+          await finalizeModelRequest(admin, {
+            usageId: retryUsageId,
+            provider: "not_called",
+            model: "not_called",
+            inputTokens: 0,
+            outputTokens: 0,
+            status: "failed",
+            latencyMs: monitoringLatencyMs(retryStartedAt),
+            errorCode: monitoringErrorCode(retryError, "AI_PROVIDER_FAILED"),
+          }).catch(() => undefined);
+        }
+        // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
+        // por minuto já consumida pela primeira chamada não pode travar a
+        // solicitação): mantém a resposta original de fora de escopo.
+      }
+    }
+
     const quotaAfterModel = await getQuota(client);
 
     if (output.kind === "out_of_scope") {
