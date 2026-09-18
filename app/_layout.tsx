@@ -67,6 +67,7 @@ import {
 } from "../lib/offline-sync";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
 import { getOptionalNetInfo, getOptionalScreenCapture } from "../lib/optional-native-modules";
+import { formatarEntradaMoeda, valorDaEntradaMoeda } from "../lib/utils";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
@@ -1007,7 +1008,7 @@ export default function RootLayout() {
 
     let saldo: number | null = null;
     if (manter) {
-      saldo = Number(saldoCaixinha.replace(",", "."));
+      saldo = valorDaEntradaMoeda(saldoCaixinha);
       if (!Number.isFinite(saldo) || saldo < 0 || saldo > Number(decisao.saldo_disponivel)) {
         Alert.alert(
           "Saldo inválido",
@@ -1610,26 +1611,30 @@ export default function RootLayout() {
 
             {definindoSaldoCaixinha ? (
               <>
-                <TextInput
+                <View
                   style={{
                     width: "100%",
                     marginTop: 14,
                     borderWidth: 1,
                     borderColor: isDark ? "#444" : "#D4E0DC",
                     backgroundColor: isDark ? "#292929" : "#F8FAF9",
-                    color: isDark ? "#FFF" : "#17212B",
                     borderRadius: 12,
                     paddingHorizontal: 14,
-                    paddingVertical: 12,
-                    fontSize: 16,
+                    flexDirection: "row",
+                    alignItems: "center",
                   }}
-                  placeholder="Saldo que ficará com você"
-                  placeholderTextColor={isDark ? "#888" : "#8A949E"}
-                  keyboardType="decimal-pad"
-                  value={saldoCaixinha}
-                  onChangeText={setSaldoCaixinha}
-                  editable={!resolvendoCaixinha}
-                />
+                >
+                  <Text style={{ color: isDark ? "#AAA" : "#66717D", fontSize: 16, marginRight: 5 }}>R$</Text>
+                  <TextInput
+                    style={{ flex: 1, paddingVertical: 12, fontSize: 16, color: isDark ? "#FFF" : "#17212B" }}
+                    placeholder="0,00"
+                    placeholderTextColor={isDark ? "#888" : "#8A949E"}
+                    keyboardType="decimal-pad"
+                    value={saldoCaixinha}
+                    onChangeText={(texto) => setSaldoCaixinha(formatarEntradaMoeda(texto))}
+                    editable={!resolvendoCaixinha}
+                  />
+                </View>
                 <TouchableOpacity
                   style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F", marginTop: 14 }]}
                   onPress={() => resolverDecisaoCaixinha(true)}
