@@ -13,6 +13,7 @@ import { FINANCE_AI_MUTATION_INTENTS } from "../../../../../lib/finance-ai/types
 import type { FinanceAiHttpSuccessResponse } from "../../../../../lib/finance-ai/types";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./assistente.module.css";
+import stateStyles from "@/app/app-states.module.css";
 
 type Message = { id: string; role: "user" | "assistant"; text: string };
 type Quota = { plan: string; limit: number; remaining: number; model_limit: number; model_remaining: number };
@@ -73,6 +74,16 @@ function AssistantMessage({ text }: { text: string }) {
 }
 
 const WELCOME = "Olá! Eu sou o Finn, seu assistente financeiro no FinFlow. Posso conversar, explicar seus números e preparar ações para você revisar. Nenhuma alteração é feita sem sua confirmação.";
+// Formato de conversa (em vez da grade genérica de cartões) para condizer com
+// o que realmente aparece depois: linhas alternadas simulando trocas entre o
+// Finn e a pessoa, do mesmo jeito que o histórico real vai preencher a tela.
+const HISTORY_SKELETON_ROWS: ReadonlyArray<{ role: "user" | "assistant"; width: string }> = [
+  { role: "assistant", width: "62%" },
+  { role: "user", width: "38%" },
+  { role: "assistant", width: "74%" },
+  { role: "assistant", width: "48%" },
+  { role: "user", width: "30%" },
+];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const NAVIGATION_ROUTES: Readonly<Record<string, string>> = {
   "/": "/",
@@ -391,20 +402,34 @@ export default function AssistantChat({
 
         <div className={styles.messages} aria-live="polite" aria-busy={busy}>
           <div className={styles.messagesInner}>
-            {messages.map((message) => (
-              <div key={message.id} className={styles.messageRow} data-role={message.role}>
-                {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden><Image src="/finn-message-avatar.png" alt="" width={31} height={31} /></span>}
-                <div className={styles.messageBubble}>
-                  {message.role === "assistant" ? <AssistantMessage text={inFinnVoice(message.text)} /> : message.text}
-                </div>
-              </div>
-            ))}
-            {messages.length <= 1 && (
-              <div className={styles.suggestions} aria-label="Sugestões de perguntas">
-                {["Qual é meu saldo atual?", "Quais despesas tenho neste mês?", "Registrar uma despesa", "Criar um objetivo"].map((suggestion) => (
-                  <button type="button" key={suggestion} onClick={() => void send(undefined, suggestion)} className={styles.suggestion}>{suggestion}</button>
+            {!historyReady ? (
+              <div className={styles.historySkeleton} role="status" aria-live="polite" aria-busy="true" aria-label="Carregando conversas anteriores">
+                <span className={stateStyles.srOnly}>Carregando conversas anteriores...</span>
+                {HISTORY_SKELETON_ROWS.map((row, index) => (
+                  <div key={index} className={styles.skeletonRow} data-role={row.role} aria-hidden="true">
+                    {row.role === "assistant" && <span className={`${stateStyles.skeleton} ${styles.skeletonAvatar}`} />}
+                    <span className={`${stateStyles.skeleton} ${styles.skeletonBubble}`} style={{ width: row.width }} />
+                  </div>
                 ))}
               </div>
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <div key={message.id} className={styles.messageRow} data-role={message.role}>
+                    {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden><Image src="/finn-message-avatar.png" alt="" width={31} height={31} /></span>}
+                    <div className={styles.messageBubble}>
+                      {message.role === "assistant" ? <AssistantMessage text={inFinnVoice(message.text)} /> : message.text}
+                    </div>
+                  </div>
+                ))}
+                {messages.length <= 1 && (
+                  <div className={styles.suggestions} aria-label="Sugestões de perguntas">
+                    {["Qual é meu saldo atual?", "Quais despesas tenho neste mês?", "Registrar uma despesa", "Criar um objetivo"].map((suggestion) => (
+                      <button type="button" key={suggestion} onClick={() => void send(undefined, suggestion)} className={styles.suggestion}>{suggestion}</button>
+                    ))}
+                  </div>
+                )}
+              </>
             )}
             {pendingAction && (
               <section className={styles.pendingCard} aria-labelledby="pending-action-title">
