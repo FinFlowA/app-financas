@@ -456,7 +456,7 @@ export default function AssistantChat({
                 </div>
               </section>
             )}
-            {busy && <p role="status" className={styles.typing}>Estou analisando com segurança</p>}
+            {historyReady && busy && <p role="status" className={styles.typing}>Estou analisando com segurança</p>}
             {notice && <p role="alert" className={styles.notice}>{notice}</p>}
             <div ref={bottomRef} />
           </div>
