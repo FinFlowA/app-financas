@@ -312,6 +312,20 @@ Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiz
   }
 });
 
+Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
+  // Bug real: "Quais despesas tenho neste mês?" respondia com o total
+  // agregado em vez de listar os lancamentos individuais. Essa pergunta
+  // nunca é uma mutação, então sempre usa o prompt somente leitura — o
+  // prompt operacional já está perto do teto de caracteres do provedor
+  // (ver "comando natural de criação cabe no contrato operacional
+  // completo" em provider_test.ts) e não recebeu esta regra.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("pedem os itens") && readOnly.includes("list_transactions"),
+    'o prompt somente leitura precisa orientar que "quais/liste/mostre" pedem os itens, nao a soma',
+  );
+});
+
 Deno.test("prompt somente leitura declara escopo basico do FinFlow como sempre permitido", () => {
   // Regressao: perguntas basicas como "Quanto tenho na conta?" ou "Quanto
   // vou ter dia 14/08?" foram classificadas como out_of_scope pelo modelo

@@ -686,3 +686,22 @@ Deno.test("rede de seguranca final nunca deixa o contexto financeiro falhar por 
   const parsed = JSON.parse(encoded);
   assert(parsed.context_budget.truncated === true, "o contexto reduzido pela rede de seguranca ainda precisa ser sinalizado como truncado");
 });
+
+Deno.test("contextNeeds busca os lancamentos quando a pergunta pede quais despesas/receitas, nao so o total", () => {
+  // Bug real: "Quais despesas tenho neste mês?" respondia com o total
+  // agregado (despesas realizadas + pendentes) em vez de listar os
+  // lancamentos, porque "despesa"/"receita" só ativavam categoryDomain
+  // (dados agregados por categoria) e nunca historyDomain — o contexto
+  // simplesmente não trazia relevant_transactions para o modelo listar.
+  const expenseList = contextNeeds("Quais despesas tenho neste mês?", true);
+  assert(expenseList.transactionDetails, "pergunta 'quais despesas' precisa trazer os lancamentos, nao so o agregado");
+
+  const incomeList = contextNeeds("Quais receitas eu tenho essa semana?", true);
+  assert(incomeList.transactionDetails, "pergunta 'quais receitas' tambem precisa trazer os lancamentos");
+
+  // Uma pergunta de total continua funcionando sem exigir a lista (embora
+  // agora também a inclua, o que é inofensivo — o modelo escolhe pelo
+  // prompt qual delas usar).
+  const total = contextNeeds("Quanto gastei de despesas neste mês?", true);
+  assert(total.categories, "pergunta de total continua trazendo o agregado por categoria");
+});
