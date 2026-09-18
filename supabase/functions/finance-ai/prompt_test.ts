@@ -298,6 +298,20 @@ Deno.test("contexto financeiro inválido falha fechado", () => {
   assert(rejected, "Contexto malformado não deve ser enviado ao provedor.");
 });
 
+Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiza", () => {
+  // Bug real visto pelo usuario: o modelo escrevia "**Percentual do CDI**"
+  // e "**13,65% ao ano**" na mensagem, e o app (que so destaca valores,
+  // percentuais e datas automaticamente via regex, sem interpretar markdown)
+  // mostrava os asteriscos literalmente na tela, junto com listas numeradas
+  // quebradas por paragrafos soltos no meio.
+  const operational = buildSystemPrompt({ financialContext: "{}", conversationState: {}, analyticsAllowed: true });
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  for (const [label, prompt] of [["operacional", operational], ["somente leitura", readOnly]] as const) {
+    assert(prompt.includes("sem markdown"), `o prompt ${label} precisa proibir explicitamente markdown na mensagem`);
+    assert(prompt.includes("texto corrido"), `o prompt ${label} precisa orientar texto corrido em vez de listas`);
+  }
+});
+
 Deno.test("prompt somente leitura declara escopo basico do FinFlow como sempre permitido", () => {
   // Regressao: perguntas basicas como "Quanto tenho na conta?" ou "Quanto
   // vou ter dia 14/08?" foram classificadas como out_of_scope pelo modelo
