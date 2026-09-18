@@ -52,7 +52,11 @@ export const MODEL_MAX_SYSTEM_PROMPT_CHARS = 16_600;
 export const MODEL_MAX_HISTORY_CHARS = 400;
 // Modelos com raciocínio contabilizam os tokens internos dentro do teto de
 // conclusão. 512 podia encerrar o JSON estruturado no meio até em comandos
-// curtos (por exemplo, "Gastei 70 reais em um lanche").
+// curtos (por exemplo, "Gastei 70 reais em um lanche"). Subir esse teto ainda
+// mais reduziria a reserva de entrada (ver teste do pior caso abaixo) sem
+// eliminar o risco — um modelo com raciocínio pode "hesitar" por tempo
+// variável e imprevisível. Em vez de perseguir um teto que nunca é garantido,
+// `parsedOrNaturalFallback` cobre esse caso com uma resposta segura.
 export const MODEL_MAX_OUTPUT_TOKENS = 576;
 export const MODEL_PROVIDER_SAFETY_TOKENS = 448;
 // Medida conservadora para o prompt pt-BR/JSON do FinFlow, validada contra a
@@ -196,7 +200,24 @@ export function fallbackProductGuidance(message: string): ModelOutput | null {
   };
 }
 
-function parsedOrNaturalFallback(content: string | undefined, messages: ConversationMessage[]): ModelOutput {
+// Último recurso quando nem o schema estrito nem os atalhos literais acima
+// resolvem: modelos com raciocínio podem consumir todo o teto de saída
+// pensando e não deixar espaço para fechar o JSON (comum em mensagens curtas
+// e fora de escopo, que levam o modelo a "hesitar" antes de responder). Uma
+// pessoa que só mandou um "oi" ou uma pergunta fora do FinFlow não deveria
+// ver um erro técnico por isso — ela só precisa poder tentar de novo. Nunca
+// propõe nem executa nada: kind=out_of_scope não pode carregar uma ação.
+function genericSafeFallback(): ModelOutput {
+  return {
+    kind: "out_of_scope",
+    intent: "out_of_scope",
+    message: "Não consegui organizar minha resposta agora. Pode repetir ou reformular sua mensagem?",
+    missing_fields: [],
+    data: [],
+  };
+}
+
+export function parsedOrNaturalFallback(content: string | undefined, messages: ConversationMessage[]): ModelOutput {
   if (content) {
     try {
       return parseProviderOutput(content);
@@ -206,8 +227,7 @@ function parsedOrNaturalFallback(content: string | undefined, messages: Conversa
   }
   const lastMessage = messages.at(-1)?.content ?? "";
   const fallback = fallbackNaturalTransaction(lastMessage) ?? fallbackProductGuidance(lastMessage);
-  if (fallback) return fallback;
-  throw new Error("AI_PROVIDER_RESPONSE_INVALID");
+  return fallback ?? genericSafeFallback();
 }
 
 export type ProviderHttpFailure = {

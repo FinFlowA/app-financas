@@ -9,6 +9,7 @@ import {
   MODEL_MAX_RESERVED_INPUT_TOKENS,
   MODEL_MAX_SYSTEM_PROMPT_CHARS,
   MODEL_PROVIDER_SAFETY_TOKENS,
+  parsedOrNaturalFallback,
   supportsStrictGroqSchema,
   validatedModelUsage,
 } from "./provider.ts";
@@ -147,6 +148,29 @@ Deno.test("Groq só aceita modelos com Structured Outputs estrito", () => {
   assert(supportsStrictGroqSchema("openai/gpt-oss-120b"), "GPT OSS 120B deve ser aceito.");
   assert(supportsStrictGroqSchema("openai/gpt-oss-20b"), "GPT OSS 20B deve ser aceito.");
   assert(!supportsStrictGroqSchema("llama-3.3-70b-versatile"), "JSON mode não pode substituir schema estrito silenciosamente.");
+});
+
+Deno.test("saida sem JSON valido e fora de escopo cai numa resposta segura, nunca num erro tecnico", () => {
+  const messages = [{ role: "user" as const, content: "Que horas são agora?" }];
+
+  const withoutContent = parsedOrNaturalFallback(undefined, messages);
+  assert(withoutContent.kind === "out_of_scope" && withoutContent.intent === "out_of_scope", "sem conteudo deve virar resposta segura fora de escopo");
+  assert(withoutContent.data.length === 0 && withoutContent.missing_fields.length === 0, "fallback generico nunca inicia escrita nem pede campo");
+  assert(withoutContent.message.trim().length > 0, "fallback generico precisa responder algo à pessoa");
+
+  const truncatedJson = parsedOrNaturalFallback('{"kind":"answer","intent":"casual_con', messages);
+  assert(truncatedJson.kind === "out_of_scope", "JSON truncado por raciocinio tambem cai no fallback seguro");
+
+  const notJson = parsedOrNaturalFallback("Desculpe, não tenho acesso à hora atual.", messages);
+  assert(notJson.kind === "out_of_scope", "texto livre do modelo (sem JSON) tambem cai no fallback seguro");
+});
+
+Deno.test("fallback generico so entra quando os atalhos literais nao resolvem", () => {
+  const expense = parsedOrNaturalFallback(undefined, [{ role: "user", content: "Gastei 70 reais em um lanche" }]);
+  assert(expense.kind === "clarify" && expense.intent === "create_transaction", "comando literal de despesa continua tendo prioridade sobre o fallback generico");
+
+  const guidance = parsedOrNaturalFallback(undefined, [{ role: "user", content: "Como criar uma conta?" }]);
+  assert(guidance.kind === "answer" && guidance.intent === "explain_financial_control", "orientacao de produto continua tendo prioridade sobre o fallback generico");
 });
 
 Deno.test("falhas HTTP do provedor são classificadas sem ler corpo sensível", () => {
