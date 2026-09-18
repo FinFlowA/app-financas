@@ -586,3 +586,89 @@ Deno.test("market_indicators cai primeiro no orcamento em vez de sacrificar cont
   assert(parsed.accounts.length === 38, "contas nao podiam ter sido cortadas por causa de ~200 bytes de indicadores opcionais");
   assert(parsed.goals.some((goal: FinancialRow) => goal.name === "Entrada casa"), "o objetivo citado precisa continuar presente");
 });
+
+Deno.test("resumo essencial limita scope.account_ids e matched_category_ids, que nunca tinham corte", () => {
+  // Confirmado em produção: FINANCIAL_CONTEXT_BUDGET_EXCEEDED ainda ocorria
+  // depois da correção de market_indicators, porque `scope` (account_ids,
+  // matched_category_ids/goal_ids/card_ids) era copiado sem nenhum limite
+  // até para dentro do resumo essencial de último recurso — muitas contas ou
+  // muitas categorias casadas por nome bastavam para estourar o orçamento
+  // mesmo já sem contas, categorias, goals e cenário.
+  const scenario = (index: number) => ({
+    id: 1_000 + index, type: "despesa", value: 6.5, description: "Refrigerante (Fixa semanal)",
+    status: "pendente", scheduled_date: `2026-09-0${(index % 9) + 1}`, realization_date: null,
+  });
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: {
+      type: "active_accounts",
+      account_ids: Array.from({ length: 300 }, (_, index) => index + 1),
+      all_active_account_balance: 9.67,
+      matched_category_ids: Array.from({ length: 200 }, (_, index) => index + 1),
+      matched_goal_ids: [],
+      matched_card_ids: [],
+    },
+    dataset_complete: { transactions: true, invoice_items: true },
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40 },
+    monthly_cash_flow: [{ month: "2026-09", realized_income: 100, realized_expense: 55, pending_income: 0, pending_expense: 20, account_balance: 9.67 }],
+    daily_cash_flow: [],
+    market_indicators: null,
+    accounts: [],
+    categories: [],
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: Array.from({ length: 12 }, (_, index) => scenario(index)),
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "scope sem limite nao pode mais estourar o orcamento do resumo essencial");
+  const parsed = JSON.parse(encoded);
+  assert(parsed.scope.account_ids.length <= 20, "account_ids precisa ser limitado no resumo essencial");
+  assert(parsed.scope.matched_category_ids.length <= 10, "matched_category_ids precisa ser limitado no resumo essencial");
+});
+
+Deno.test("rede de seguranca final nunca deixa o contexto financeiro falhar por tamanho", () => {
+  // Mesmo um campo fixo e imprevisto (aqui, um month_summary com um valor
+  // absurdamente grande, o que nao deveria acontecer com dados reais) nao
+  // pode mais resultar em FINANCIAL_CONTEXT_BUDGET_EXCEEDED: a rede de
+  // seguranca final descarta tudo que nao seja essencial e sempre cabe.
+  const context = {
+    current_date: "2026-09-18",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "premium",
+    analytics_allowed: true,
+    personal_data_included: true,
+    scope: { type: "active_accounts", account_ids: [1], all_active_account_balance: 9.67 },
+    dataset_complete: { transactions: true, invoice_items: true },
+    // Campo pathologicamente grande que nenhum outro corte do pipeline
+    // conhece — simula um contribuinte de tamanho totalmente inesperado.
+    month_summary: { current_account_balance: 9.67, predicted_end_balance: -40, unexpected_note: "x".repeat(10_000) },
+    monthly_cash_flow: [],
+    daily_cash_flow: [],
+    market_indicators: null,
+    accounts: [],
+    categories: [],
+    goals: [],
+    cards: [],
+    relevant_transactions: [],
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: [],
+  };
+
+  const encoded = serializeContextWithinBudget(context);
+  assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "a rede de seguranca final precisa garantir que o contexto sempre caiba");
+  const parsed = JSON.parse(encoded);
+  assert(parsed.context_budget.truncated === true, "o contexto reduzido pela rede de seguranca ainda precisa ser sinalizado como truncado");
+});
