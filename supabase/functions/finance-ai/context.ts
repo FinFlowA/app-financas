@@ -1210,7 +1210,12 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
   const categoryDomain = /(categoria|gasto|despesa|receita|orcament|analis|econom)/.test(normalized);
   const cashFlowDomain = /(fluxo|projec|previs|cenario|fim do ano|quanto vou|quanto terei)/.test(normalized);
   const calendarDomain = /(calendario|agenda|agendad|programad|dia\s+\d{1,2}|data\s+\d{1,2})/.test(normalized);
-  const historyDomain = /(histor|extrato|lanc|transa|penden|atras|venc|recebi|paguei|gastei)/.test(normalized);
+  // "despes"/"receit" precisam estar aqui, não só em categoryDomain: uma
+  // pergunta como "quais despesas tenho neste mês?" pede os lançamentos em
+  // si, não apenas o agregado por categoria. Sem isso, o contexto não
+  // trazia relevant_transactions e o modelo só tinha o total pronto para
+  // responder — respondia a soma quando a pergunta pedia a lista.
+  const historyDomain = /(histor|extrato|lanc|transa|penden|atras|venc|recebi|paguei|gastei|despes|receit)/.test(normalized);
   const summaryDomain = /(resumo|balanco|resultado|como estao|minha situacao|visao geral)/.test(normalized);
   const transactionMutation = mutation && /(lanc|transa|receita|despesa|transfer|concl|reabr|pague|pagamento)/.test(normalized);
   const spendingDomain = /(gasto|despesa|categoria|orcament|balanco|resultado|resumo|econom)/.test(normalized);
