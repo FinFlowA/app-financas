@@ -104,6 +104,8 @@ export function AuthShell({ title, description, children, showSplash = false }: 
               <Link className={styles.legalLink} href="/termos">Termos de Uso</Link>
               <Link className={styles.legalLink} href="/privacidade">Privacidade</Link>
               <Link className={styles.legalLink} href="/reembolso">Cancelamento e reembolso</Link>
+              <Link className={styles.legalLink} href="/precos">Preços</Link>
+              <a className={styles.legalLink} href="mailto:Finflowfinancas@gmail.com?subject=%5BFinFlow%20-%20Contato%5D">Contato</a>
               <span aria-hidden="true">© {new Date().getFullYear()}</span>
             </footer>
           </div>
