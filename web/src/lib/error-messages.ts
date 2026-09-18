@@ -13,6 +13,7 @@ const MENSAGENS: Record<string, string> = {
   OFFLINE_VERSION_CONFLICT: "Este item foi alterado em outro dispositivo. Atualize a página e tente novamente.",
   AI_PARTNERSHIP_NOT_FOUND: "Você precisa ter uma parceria aceita para compartilhar este item.",
   FINFLOW_RESOURCE_ARCHIVED: "Reative o item antes de compartilhá-lo.",
+  FINFLOW_SHARED_LINK_LIMIT: "Você atingiu o limite de vínculos compartilhados do seu plano.",
   AI_ACCOUNT_HAS_TRANSACTIONS: "Esta conta possui lançamentos e será preservada no histórico.",
   AI_CATEGORY_HAS_REFERENCES: "Esta categoria possui lançamentos e será arquivada para preservar o histórico.",
   AI_GOAL_HAS_PENDING_SCHEDULES: "Este objetivo possui agendamentos pendentes e não pode ser excluído agora.",

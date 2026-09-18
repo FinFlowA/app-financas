@@ -40,4 +40,11 @@ describe("Content Security Policy", () => {
     expect(policy).toContain("'unsafe-eval'");
     expect(policy).not.toContain("script-src 'self' 'unsafe-inline'");
   });
+
+  it("autoriza somente os recursos externos necessarios ao checkout Paddle", () => {
+    const policy = buildContentSecurityPolicy("nonce-paddle", false);
+    expect(policy).toContain("connect-src 'self'");
+    expect(policy).toContain("https://*.paddle.com");
+    expect(policy).toContain("frame-src https://*.paddle.com");
+  });
 });

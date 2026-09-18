@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@fontsource/material-icons": "^5.3.0",
+    "@paddle/paddle-js": "^1.6.5",
+    "@paddle/paddle-node-sdk": "^3.10.0",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "next": "16.3.1",

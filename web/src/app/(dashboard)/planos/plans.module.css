@@ -262,6 +262,32 @@
   color: var(--ff-red);
 }
 
+.sandboxNotice {
+  border: 1px solid color-mix(in srgb, var(--ff-orange) 35%, var(--border));
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--ff-orange) 10%, transparent);
+  padding: 0.8rem 1rem;
+  color: var(--foreground);
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.priceSkeleton {
+  display: inline-block;
+  width: 7rem;
+  height: 1.8rem;
+  border-radius: 0.45rem;
+  background: linear-gradient(90deg, var(--surface-muted), var(--border), var(--surface-muted));
+  background-size: 200% 100%;
+  animation: price-loading 1.2s ease-in-out infinite;
+  vertical-align: middle;
+}
+
+@keyframes price-loading {
+  to { background-position: -200% 0; }
+}
+
 .modalBackdrop {
   position: fixed;
   z-index: 100;

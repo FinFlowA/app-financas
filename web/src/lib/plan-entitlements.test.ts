@@ -6,6 +6,9 @@ describe("matriz de planos", () => {
     expect(PLAN_DEFINITIONS.free.limits.transactions).toBe(40);
     expect(PLAN_DEFINITIONS.smart.limits.transactions).toBe(150);
     expect(PLAN_DEFINITIONS.smart.limits.goals).toBe(3);
+    expect(PLAN_DEFINITIONS.free.limits.sharedLinks).toBe(1);
+    expect(PLAN_DEFINITIONS.smart.limits.sharedLinks).toBe(3);
+    expect(PLAN_DEFINITIONS.premium.limits.sharedLinks).toBeNull();
     expect(PLAN_DEFINITIONS.premium.limits.transactions).toBeNull();
   });
 
