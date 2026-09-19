@@ -1231,7 +1231,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
   // recusa/orientação genérica que não cita nenhum número, então buscar e
   // anexar o cartão visual de Selic/CDI/IPCA nesse caso seria irrelevante e
   // confuso para quem está lendo.
-  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|\btaxas?\b.*(?:hoje|atual|agora)|quanto est[aá].*(?:selic|cdi|ipca|taxa|juros)|como est[aá].*(?:mercado|selic|cdi|ipca|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao))/.test(normalized);
+  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|porcentagem|rendimento|rentabilidade|\btaxas?\b.*(?:hoje|atual|agora)|quanto (?:esta|está|rende|paga)|como est[aá].*(?:mercado|selic|cdi|ipca|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao))/.test(normalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
     : investmentDomain

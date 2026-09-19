@@ -550,6 +550,12 @@ Deno.test("contextNeeds so busca indicadores de mercado quando a pergunta pede o
     "O CDI subiu recentemente?",
     "A taxa Selic mudou nos últimos meses?",
     "Qual o IPCA acumulado em 12 meses?",
+    // Bug real: CDB/LCI/LCA nao tem taxa publica propria, mas sao cotados
+    // como % do CDI -- perguntar "a porcentagem" desses produtos deveria
+    // trazer o CDI como referencia, nao responder "nao tenho indicadores".
+    "Como está a porcentagem do CDB?",
+    "Qual o rendimento da LCI hoje?",
+    "Qual a rentabilidade da poupança?",
   ];
   for (const question of indicatorQuestions) {
     const needs = contextNeeds(question, true);

@@ -396,6 +396,13 @@ Deno.test("prompt somente leitura orienta educacao de investimentos sem consulto
     withIndicators.includes("*_previous_*"),
     "o prompt precisa orientar o uso dos campos de valor anterior para perguntas de mudanca recente",
   );
+  // Regressao real: "como esta a porcentagem do CDB?" respondia so o
+  // conceito e dizia que nao tinha indicador disponivel, mesmo o CDI (que
+  // referencia diretamente o rendimento de CDB) estando disponivel.
+  assert(
+    withIndicators.includes("cdi_rate_annual") && withIndicators.includes("pergunte se a pessoa quer ver Selic ou IPCA"),
+    "o prompt precisa orientar o uso do CDI como referencia para CDB/LCI/LCA e oferecer os outros indicadores",
+  );
 });
 
 Deno.test("prompt compacto continua documentando as 32 ações financeiras", () => {
