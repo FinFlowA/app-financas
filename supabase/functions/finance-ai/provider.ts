@@ -290,13 +290,20 @@ async function fetchOnce(url: string, init: RequestInit): Promise<Response> {
   return await fetch(url, { ...init, signal: AbortSignal.timeout(25_000) });
 }
 
-function compactMessages(messages: ConversationMessage[]): ConversationMessage[] {
+export function compactMessages(messages: ConversationMessage[]): ConversationMessage[] {
   const selected: ConversationMessage[] = [];
   let used = 0;
   for (let index = messages.length - 1; index >= 0 && selected.length < 4; index -= 1) {
     const source = messages[index];
     const maximum = selected.length === 0 && source.role === "user" ? 500 : 300;
-    const content = source.content.trim().slice(-maximum);
+    const trimmed = source.content.trim();
+    // Resposta do assistente: mantém o início, onde o tema é apresentado —
+    // um fragmento cortado no meio de uma frase final (ex.: só a conclusão
+    // de uma explicação de investimentos, sem a frase que diz do que se
+    // trata) deixava o histórico confuso e podia levar o modelo a classificar
+    // mal a pergunta seguinte. Mensagem do usuário: mantém o fim, onde
+    // normalmente estão os detalhes concretos (valor, data etc.) de um pedido.
+    const content = source.role === "assistant" ? trimmed.slice(0, maximum) : trimmed.slice(-maximum);
     if (!content) continue;
     if (used + content.length > MODEL_MAX_HISTORY_CHARS && selected.length > 0) break;
     selected.push({ role: source.role, content });
