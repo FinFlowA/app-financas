@@ -384,6 +384,18 @@ Deno.test("prompt somente leitura orienta educacao de investimentos sem consulto
     withIndicators.includes("SEMPRE estão dentro do escopo") && withIndicators.includes("nunca kind=out_of_scope"),
     "a regra de investimentos precisa deixar explicito que o tema nunca cai em out_of_scope",
   );
+  // Regressao real: "como esta a porcentagem do CDB?" caia em out_of_scope
+  // porque CDB nao tem uma taxa publica unica (varia por banco) e o modelo
+  // nao sabia que devia explicar o conceito (ex.: % do CDI) em vez de recusar
+  // por falta de um numero exato para citar.
+  assert(
+    withIndicators.includes("não tem número fixo"),
+    "o prompt precisa orientar que produto sem taxa publica unica ainda deve ser explicado, nao recusado",
+  );
+  assert(
+    withIndicators.includes("*_previous_*"),
+    "o prompt precisa orientar o uso dos campos de valor anterior para perguntas de mudanca recente",
+  );
 });
 
 Deno.test("prompt compacto continua documentando as 32 ações financeiras", () => {
