@@ -88,6 +88,50 @@ function asObject(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
 }
 
+type ClientMarketIndicators = {
+  selic_rate_annual: number | null;
+  selic_reference_date: string | null;
+  cdi_rate_annual: number | null;
+  cdi_reference_date: string | null;
+  ipca_12m_percent: number | null;
+  ipca_reference_date: string | null;
+  source: "bcb_sgs";
+};
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+// market_indicators viaja dentro de compactJson (o texto que o modelo lê),
+// não como campo solto de FinancialContext; o objeto ali pode trazer campos
+// extras (valor/data anteriores) usados só pelo modelo, então o payload para
+// o cliente precisa ser reduzido às 7 chaves que o contrato estrito aceita.
+function clientMarketIndicators(compactJson: string): ClientMarketIndicators | null {
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const raw = parsed.market_indicators;
+  if (!raw || typeof raw !== "object") return null;
+  const source = raw as JsonRecord;
+  if (source.source !== "bcb_sgs") return null;
+  return {
+    selic_rate_annual: numberOrNull(source.selic_rate_annual),
+    selic_reference_date: stringOrNull(source.selic_reference_date),
+    cdi_rate_annual: numberOrNull(source.cdi_rate_annual),
+    cdi_reference_date: stringOrNull(source.cdi_reference_date),
+    ipca_12m_percent: numberOrNull(source.ipca_12m_percent),
+    ipca_reference_date: stringOrNull(source.ipca_reference_date),
+    source: "bcb_sgs",
+  };
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1205,7 +1249,7 @@ Deno.serve(async (req) => {
       // pediu educação sobre investimentos e a consulta ao BCB deu certo.
       // Expostos à parte da mensagem para o cliente poder desenhar um cartão
       // visual em vez de deixar os números presos no texto corrido.
-      const marketIndicators = financialContext.market_indicators ?? null;
+      const marketIndicators = clientMarketIndicators(financialContext.compactJson);
       return json({
         kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel,
         ...(marketIndicators ? { marketIndicators } : {}),
