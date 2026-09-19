@@ -120,11 +120,16 @@ function cancellation(value: unknown): boolean {
 
 function historyMessages(value: unknown): boolean {
   return Array.isArray(value) && value.length <= 200 && value.every((item) => {
-    if (!object(item) || !exactKeys(item, ["id", "role", "text", "createdAt", "intent"])) return false;
+    if (!object(item)) return false;
+    const hasMarketIndicators = Object.prototype.hasOwnProperty.call(item, "marketIndicators");
+    if (!exactKeys(item, hasMarketIndicators
+      ? ["id", "role", "text", "createdAt", "intent", "marketIndicators"]
+      : ["id", "role", "text", "createdAt", "intent"])) return false;
     return typeof item.id === "string" && /^[1-9]\d*$/.test(item.id)
       && (item.role === "user" || item.role === "assistant")
       && text(item.text) && timestamp(item.createdAt)
-      && (item.intent === null || allIntents.has(String(item.intent)));
+      && (item.intent === null || allIntents.has(String(item.intent)))
+      && (!hasMarketIndicators || marketIndicators(item.marketIndicators));
   });
 }
 

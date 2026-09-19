@@ -22,7 +22,7 @@ type PendingAction = { id: string; confirmationToken: string; actionType: string
 type AiResponse = {
   error?: string; message?: string; kind?: string; conversationId?: string | null; route?: string;
   pendingAction?: PendingAction; quota?: Quota; cleared?: boolean; choices?: string[]; missingFields?: string[];
-  messages?: { id: string; role: "user" | "assistant"; text: string }[];
+  messages?: { id: string; role: "user" | "assistant"; text: string; marketIndicators?: FinanceAiMarketIndicators }[];
   marketIndicators?: FinanceAiMarketIndicators;
 };
 
@@ -291,7 +291,7 @@ export default function AssistantChat({
         } else if (id) {
           try { localStorage.removeItem(conversationKey); } catch { /* armazenamento indisponível */ }
         }
-        if (response.messages?.length) setMessages(response.messages.map((message) => ({ id: String(message.id), role: message.role, text: message.text })));
+        if (response.messages?.length) setMessages(response.messages.map((message) => ({ id: String(message.id), role: message.role, text: message.text, marketIndicators: message.marketIndicators })));
         if (response.quota) setQuota(response.quota);
       })
       .catch(() => {

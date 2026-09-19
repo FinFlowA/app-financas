@@ -108,7 +108,10 @@ export type FinanceAiHttpSuccessResponse =
     }
   | {
       conversationId: Uuid | null;
-      messages: { id: string; role: "user" | "assistant"; text: string; createdAt: IsoTimestamp; intent: FinanceAiIntent | null }[];
+      messages: {
+        id: string; role: "user" | "assistant"; text: string; createdAt: IsoTimestamp; intent: FinanceAiIntent | null;
+        marketIndicators?: FinanceAiMarketIndicators;
+      }[];
       quota?: FinanceAiQuota;
     }
   | { cleared: true; conversationId: null; messages: []; quota?: FinanceAiQuota };

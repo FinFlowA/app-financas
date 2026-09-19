@@ -139,6 +139,7 @@ type FinanceAiResponse = {
     role: "user" | "assistant";
     text: string;
     createdAt?: string;
+    marketIndicators?: MarketIndicators;
   }[];
   pendingAction?: PendingAction;
   choices?: string[];
@@ -554,6 +555,7 @@ export default function ChatIAScreen() {
             role: message.role === "user" ? "user" : "assistant",
             text: message.text,
             createdAt: message.createdAt,
+            marketIndicators: message.marketIndicators,
           })));
         } else {
           setMessages([{ id: "welcome", role: "assistant", text: WELCOME_MESSAGE }]);

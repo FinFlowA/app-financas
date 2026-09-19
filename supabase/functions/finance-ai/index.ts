@@ -664,6 +664,7 @@ async function saveMessage(admin: AdminClient, args: {
   intent?: string | null;
   provider?: string | null;
   model?: string | null;
+  marketIndicators?: ClientMarketIndicators | null;
 }): Promise<void> {
   const safeContent = redactSensitiveText(args.content).trim().slice(0, MAX_MESSAGE_CHARS);
   if (!safeContent) throw new Error("AI_HISTORY_FAILED");
@@ -675,6 +676,10 @@ async function saveMessage(admin: AdminClient, args: {
     intent: args.intent ?? null,
     provider: args.provider ?? null,
     model: args.model ?? null,
+    // Mesmo objeto de 7 chaves já exposto ao cliente na resposta ao vivo —
+    // nunca o objeto interno maior com valores anteriores (só para o modelo
+    // responder "mudou recentemente?"); o check da tabela reforça isso.
+    market_indicators: args.marketIndicators ?? null,
   });
   if (error) throw new Error("AI_HISTORY_FAILED");
 }
@@ -761,14 +766,17 @@ function createdTransactionIds(result: JsonRecord): number[] {
 async function handleHistory(admin: AdminClient, userId: string, requestedId?: unknown): Promise<JsonRecord> {
   const conversation = await findConversation(admin, userId, requestedId);
   if (!conversation) return { conversationId: null, messages: [] };
-  const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent")
+  const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent,market_indicators")
     .eq("user_id", userId).eq("conversation_id", conversation.id)
     .gte("created_at", chatRetentionCutoff())
     .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(200);
   if (error) throw new Error("AI_HISTORY_FAILED");
   return {
     conversationId: conversation.id,
-    messages: (data ?? []).reverse().map((row) => ({ id: String(row.id), role: row.role, text: row.content, createdAt: row.created_at, intent: row.intent })),
+    messages: (data ?? []).reverse().map((row) => ({
+      id: String(row.id), role: row.role, text: row.content, createdAt: row.created_at, intent: row.intent,
+      ...(row.market_indicators ? { marketIndicators: row.market_indicators as ClientMarketIndicators } : {}),
+    })),
   };
 }
 
@@ -1244,12 +1252,14 @@ Deno.serve(async (req) => {
 
     if (output.kind === "answer") {
       await updateConversationState(admin, user.id, conversation.id, {});
-      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model });
       // Indicadores de mercado (Selic/CDI/IPCA) só existem quando a pergunta
       // pediu educação sobre investimentos e a consulta ao BCB deu certo.
       // Expostos à parte da mensagem para o cliente poder desenhar um cartão
-      // visual em vez de deixar os números presos no texto corrido.
+      // visual em vez de deixar os números presos no texto corrido. Salvos
+      // junto da mensagem para o cartão continuar aparecendo ao recarregar
+      // o histórico, não só na resposta ao vivo.
       const marketIndicators = clientMarketIndicators(financialContext.compactJson);
+      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model, marketIndicators });
       return json({
         kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel,
         ...(marketIndicators ? { marketIndicators } : {}),
