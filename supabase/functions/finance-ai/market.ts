@@ -33,7 +33,9 @@ const BCB_FETCH_RETRIES = 1;
 // anterior" quase sempre mostra o mesmo número e nunca diz quando a taxa
 // realmente mudou. Uma janela de ~90 dias cobre pelo menos um ciclo cheiro.
 const RATE_LOOKBACK_DAYS = 90;
-const IPCA_LOOKBACK_MONTHS = 2;
+// IPCA é mensal; 100 dias cobre com folga pelo menos 2 divulgações mesmo
+// perto do início de um mês, antes do valor do mês corrente ser publicado.
+const IPCA_LOOKBACK_DAYS = 100;
 
 type SeriesPoint = { date: string; value: number };
 
@@ -44,13 +46,23 @@ function parseBcbDate(value: string): string | null {
   return `${year}-${month}-${day}`;
 }
 
+function formatBcbDate(date: Date): string {
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${day}/${month}/${date.getUTCFullYear()}`;
+}
+
 async function fetchBcbSeriesOnce(
   code: number,
-  count: number,
+  lookbackDays: number,
   fetcher: typeof fetch,
 ): Promise<SeriesPoint[]> {
+  // O endpoint "/dados/ultimos/N" limita N a no máximo 20 valores (erro 400
+  // acima disso), o que não cobre a janela necessária para achar a última
+  // mudança real de séries diárias. "/dados?dataInicial=" não tem esse teto.
+  const startDate = new Date(Date.now() - lookbackDays * 24 * 60 * 60 * 1000);
   const response = await fetcher(
-    `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados/ultimos/${count}?formato=json`,
+    `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados?dataInicial=${formatBcbDate(startDate)}&formato=json`,
     { signal: AbortSignal.timeout(BCB_FETCH_TIMEOUT_MS) },
   );
   if (!response.ok) throw new Error(`BCB_HTTP_${response.status}`);
@@ -72,12 +84,12 @@ async function fetchBcbSeriesOnce(
 
 async function fetchBcbSeriesRecent(
   code: number,
-  count: number,
+  lookbackDays: number,
   fetcher: typeof fetch,
 ): Promise<SeriesPoint[]> {
   for (let attempt = 0; attempt <= BCB_FETCH_RETRIES; attempt++) {
     try {
-      return await fetchBcbSeriesOnce(code, count, fetcher);
+      return await fetchBcbSeriesOnce(code, lookbackDays, fetcher);
     } catch (error) {
       const isLastAttempt = attempt === BCB_FETCH_RETRIES;
       // Log em vez de falhar silenciosamente: sem isso, uma falha real (ex.:
@@ -118,7 +130,7 @@ export async function fetchMarketIndicators(fetcher: typeof fetch = fetch): Prom
   const [selicPoints, cdiPoints, ipcaPoints] = await Promise.all([
     fetchBcbSeriesRecent(BCB_SERIES.selic, RATE_LOOKBACK_DAYS, fetcher),
     fetchBcbSeriesRecent(BCB_SERIES.cdi, RATE_LOOKBACK_DAYS, fetcher),
-    fetchBcbSeriesRecent(BCB_SERIES.ipca12m, IPCA_LOOKBACK_MONTHS, fetcher),
+    fetchBcbSeriesRecent(BCB_SERIES.ipca12m, IPCA_LOOKBACK_DAYS, fetcher),
   ]);
   const selic = latestWithLastChange(selicPoints);
   const cdi = latestWithLastChange(cdiPoints);
