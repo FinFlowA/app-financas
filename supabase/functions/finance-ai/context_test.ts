@@ -4,6 +4,7 @@ import {
   calculateFinancialSnapshot,
   contextNeeds,
   financialSnapshotFromAggregate,
+  informationalRequest,
   MAX_PROVIDER_CONTEXT_CHARS,
   redactSensitiveText,
   selectedMonth,
@@ -524,6 +525,24 @@ Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investi
   const mutation = contextNeeds("Crie uma despesa de investimento de R$ 500", true);
   assert(!mutation.investmentEducation, "uma mutacao nunca deveria ser roteada como educacao de investimentos");
   assert(mutation.route === "mutation", "mutacao continua tendo prioridade sobre qualquer outro dominio");
+});
+
+Deno.test("informationalRequest reconhece pergunta conceitual isolada mas nao uma que pede numero atual", () => {
+  // Bug real: buildFinancialContext chamava informationalRequest() no texto
+  // que concatena ate 3 mensagens anteriores do usuario (usado só para dar
+  // continuidade de domínio em contextNeeds). Como esse texto concatenado
+  // ainda contém "o que e" de um turno anterior ("O que é selic?"), a
+  // pergunta ATUAL pedindo um número real ("Como está a porcentagem do
+  // CDI?") também caía no atalho informativo (sem indicadores, sem dados) --
+  // mesmo essa pergunta, isolada, não devendo cair nesse atalho. A correção
+  // foi buildFinancialContext passar a checar só a mensagem atual aqui, não
+  // o texto concatenado usado por contextNeeds (ver chamada com o parâmetro
+  // currentMessage). Este teste trava o comportamento da função em si.
+  assert(informationalRequest("O que é selic?"), "pergunta conceitual isolada deveria usar o atalho informativo");
+  assert(
+    !informationalRequest("Como esta a porcentagem do CDI?"),
+    "pergunta que pede um numero atual nao pode cair no atalho informativo",
+  );
 });
 
 Deno.test("contextNeeds so busca indicadores de mercado quando a pergunta pede os numeros em si", () => {

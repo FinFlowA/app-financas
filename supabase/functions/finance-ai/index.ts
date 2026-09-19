@@ -976,6 +976,7 @@ Deno.serve(async (req) => {
         plansAreEnforced,
         contextRequest,
         user.id,
+        safeMessage,
       );
       const operationalReferences = mutationRequested
         ? await loadOperationalReferences(client)

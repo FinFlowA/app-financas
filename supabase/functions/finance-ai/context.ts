@@ -374,7 +374,7 @@ export function selectRelevantRows(
   return [...selected.values()];
 }
 
-function informationalRequest(request: string): boolean {
+export function informationalRequest(request: string): boolean {
   const normalized = normalize(request);
   const casual = /^(oi|ola|bom dia|boa tarde|boa noite|obrigad[oa]|valeu|tudo bem|como voce esta|quem e voce|qual e o seu nome|me conte uma piada)[?!.\s]*$/.test(normalized);
   return casual || (/\b(o que e|como funciona|explique|qual a diferenca|para que serve)\b/.test(normalized)
@@ -1482,12 +1482,19 @@ export async function buildFinancialContext(
   limitsEnabled: boolean,
   requestContext = "",
   currentUserId = "",
+  currentMessage = requestContext,
 ): Promise<FinancialContext> {
   const analyticsAllowed = !limitsEnabled || plan === "premium";
   const currentDate = currentDateInSaoPaulo();
   const currentMonth = currentDate.slice(0, 7);
 
-  if (informationalRequest(requestContext)) {
+  // Só a pergunta ATUAL decide o atalho informativo (sem dados pessoais):
+  // requestContext concatena até 3 mensagens anteriores do usuário para dar
+  // continuidade a domínios (ex.: cartão, categoria) em contextNeeds(), mas
+  // se usado aqui, uma pergunta conceitual antiga ("O que é X?") contaminava
+  // a checagem e derrubava até indicadores de mercado da pergunta atual, que
+  // podia ser bem diferente (ex.: "Como está a porcentagem do CDI?").
+  if (informationalRequest(currentMessage)) {
     return {
       compactJson: JSON.stringify({
         current_date: currentDate,
