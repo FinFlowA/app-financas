@@ -1173,16 +1173,23 @@ Deno.serve(async (req) => {
     const { output: rawOutput } = modelResult;
     let { provider, model } = modelResult;
     let output = enforceActionWorkflow(rawOutput, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+    let outputMessage = safeAssistantMessage(output.message, output.intent, output.kind, outputCanary);
 
     // O modelo (com esforço de raciocínio baixo) às vezes classifica uma
     // pergunta legítima sobre os dados do próprio usuário como fora de
     // escopo na primeira tentativa e acerta ao repetir a mesma pergunta —
-    // confirmado em produção pelo usuário. Uma única tentativa extra,
-    // silenciosa, evita que a pessoa precise reenviar manualmente. Fica
-    // restrito ao modo somente leitura, onde a regra 1 do prompt já proíbe
-    // explicitamente out_of_scope para dados básicos do usuário; mutações
-    // têm cota própria e um escopo operacional testado há mais tempo.
-    if (output.kind === "out_of_scope" && !mutationRequested) {
+    // confirmado em produção pelo usuário. O mesmo vale quando a resposta é
+    // kind=answer mas safeAssistantMessage a descarta por violar uma regra
+    // de segurança que nem fazia parte do pedido (ex.: uma explicação sobre
+    // fundos imobiliários que cita um ticker real como exemplo, o que o
+    // guard corretamente bloqueia): sem essa segunda chance, o usuário via
+    // a mesma recusa genérica de "fora de escopo" para um tema que está
+    // explicitamente dentro do escopo. Uma única tentativa extra, silenciosa,
+    // evita que a pessoa precise reenviar manualmente. Fica restrito ao modo
+    // somente leitura, onde a regra 1 do prompt já proíbe explicitamente
+    // out_of_scope para dados básicos do usuário; mutações têm cota própria
+    // e um escopo operacional testado há mais tempo.
+    if ((output.kind === "out_of_scope" || !outputMessage) && !mutationRequested) {
       const retryStartedAt = Date.now();
       let retryUsageId: string | null = null;
       try {
@@ -1199,9 +1206,17 @@ Deno.serve(async (req) => {
           latencyMs: monitoringLatencyMs(retryStartedAt),
           errorCode: null,
         });
-        output = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
-        provider = retryResult.provider;
-        model = retryResult.model;
+        const retryOutput = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+        const retryMessage = safeAssistantMessage(retryOutput.message, retryOutput.intent, retryOutput.kind, outputCanary);
+        // Só adota a segunda tentativa se ela de fato resolveu o problema
+        // (não é out_of_scope e a mensagem passou pelas regras de
+        // segurança); caso contrário mantém a resposta original.
+        if (retryOutput.kind !== "out_of_scope" && retryMessage) {
+          output = retryOutput;
+          outputMessage = retryMessage;
+          provider = retryResult.provider;
+          model = retryResult.model;
+        }
       } catch (retryError) {
         if (retryUsageId) {
           await finalizeModelRequest(admin, {
@@ -1217,20 +1232,13 @@ Deno.serve(async (req) => {
         }
         // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
         // por minuto já consumida pela primeira chamada não pode travar a
-        // solicitação): mantém a resposta original de fora de escopo.
+        // solicitação): mantém a resposta original.
       }
     }
 
     const quotaAfterModel = await getQuota(client);
 
-    if (output.kind === "out_of_scope") {
-      await updateConversationState(admin, user.id, conversation.id, {});
-      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", provider, model });
-      return json({ kind: "answer", conversationId: conversation.id, message: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", quota: quotaAfterModel }, 200, req);
-    }
-
-    const outputMessage = safeAssistantMessage(output.message, output.intent, output.kind, outputCanary);
-    if (!outputMessage) {
+    if (output.kind === "out_of_scope" || !outputMessage) {
       await updateConversationState(admin, user.id, conversation.id, {});
       await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", provider, model });
       return json({ kind: "answer", conversationId: conversation.id, message: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", quota: quotaAfterModel }, 200, req);
