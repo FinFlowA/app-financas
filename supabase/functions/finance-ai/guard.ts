@@ -219,3 +219,35 @@ export function safeAssistantMessage(
     && intent !== "out_of_scope") return redacted;
   return null;
 }
+
+// Diagnóstico temporário: espelha exatamente as checagens de
+// safeAssistantMessage, mas devolve qual regra rejeitou em vez do texto —
+// nunca loga conteúdo da conversa, só um rótulo curto — para descobrir qual
+// guard está descartando respostas legítimas sem expor dado sensível.
+export function debugSafeAssistantMessageRejection(
+  message: string,
+  intent: string,
+  kind?: AssistantOutputKind,
+  outputCanary?: string,
+): string | null {
+  if (outputCanary && String(message).includes(outputCanary)) return "canary";
+  const redacted = redactSensitiveText(redactInternalIdentifiers(message)).trim().slice(0, MAX_MESSAGE_CHARS);
+  if (!redacted) return "empty_after_redaction";
+  if (containsSensitiveData(redacted)) return "sensitive_data";
+  if (INTERNAL_NUMERIC_REFERENCE_PATTERN.test(redacted)) return "internal_numeric_reference";
+  const normalized = normalizeText(redacted);
+  if (INTERNAL_PROMPT_MARKER_PATTERN.test(normalized)) return "internal_prompt_marker";
+  if (SENSITIVE_SOLICITATION_PATTERN.test(normalized)) return "sensitive_solicitation";
+  if (containsFalseExecutionClaim(normalized, kind)) return "false_execution_claim";
+  if (containsSecurityThreat(normalized)) return "security_threat";
+  if (intent === "casual_conversation" && kind === "answer") return null;
+  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return "ticker_pattern";
+  if (containsUnsafeOrOutsideTopic(normalized)) return "unsafe_or_outside_topic";
+  if (/\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return "joke_or_recipe_or_code";
+  if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return null;
+  if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return null;
+  if (kind === "propose_action" && /\b(?:revise|confira|previa|confirmar)\b/i.test(normalized)) return null;
+  if (/^(pronto|feito|concluido|concluído|encontrei|nao encontrei|não encontrei|preciso de mais informacoes|preciso de mais informações)/i.test(redacted)
+    && intent !== "out_of_scope") return null;
+  return "no_matching_allowlist";
+}

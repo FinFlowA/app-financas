@@ -11,6 +11,7 @@ import {
 import { buildFinancialContext } from "./context.ts";
 import {
   containsSensitiveData,
+  debugSafeAssistantMessageRejection,
   isFinancialControlMessage,
   normalizeText,
   redactInternalIdentifiers,
@@ -1248,6 +1249,9 @@ Deno.serve(async (req) => {
         modelKind: output.kind,
         modelIntent: output.intent,
         guardRejectedAnswer: output.kind !== "out_of_scope" && !outputMessage,
+        guardReason: output.kind !== "out_of_scope"
+          ? debugSafeAssistantMessageRejection(output.message, output.intent, output.kind, outputCanary)
+          : null,
       }));
       await updateConversationState(admin, user.id, conversation.id, {});
       await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", provider, model });
