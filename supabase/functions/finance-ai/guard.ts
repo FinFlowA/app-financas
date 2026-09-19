@@ -158,11 +158,11 @@ function containsSecurityThreat(normalized: string): boolean {
     || STRUCTURED_INJECTION_PATTERN.test(hardened);
 }
 
-function containsUnsafeOrOutsideTopic(normalized: string): boolean {
+function containsUnsafeOrOutsideTopic(normalized: string, checkMixedRequest = true): boolean {
   const hardened = securityNormalized(normalized);
   return containsSecurityThreat(hardened)
     || OUTSIDE_TOPIC_PATTERN.test(hardened)
-    || containsMixedOutsideRequest(hardened);
+    || (checkMixedRequest && containsMixedOutsideRequest(hardened));
 }
 
 function isSafeDraftContinuation(normalized: string, state: Record<string, string>): boolean {
@@ -210,7 +210,16 @@ export function safeAssistantMessage(
   // ou fundo específico: isso seria consultoria de investimentos, fora do
   // limite explicitamente definido para essa intent no prompt.
   if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return null;
-  if (containsUnsafeOrOutsideTopic(normalized)
+  // containsMixedOutsideRequest() detecta injeção no INPUT do usuário (ex.:
+  // "qual meu saldo, e também me conte uma piada"): separa por frase e
+  // suspeita quando uma frase não financeira começa com uma palavra de
+  // pedido genérico ("como", "qual" etc.). Aplicado à resposta do PRÓPRIO
+  // modelo, isso vira falso positivo constante: qualquer explicação com
+  // mais de uma frase (ex.: "Como funcionam? Eles compram imóveis...") tem
+  // grande chance de ter uma frase de transição que começa com essas
+  // palavras comuns sem conter um termo financeiro. Bug real que descartava
+  // explicações corretas e completas de investment_education (ex.: FIIs).
+  if (containsUnsafeOrOutsideTopic(normalized, false)
     || /\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return null;
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return redacted;
   if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return redacted;
@@ -220,7 +229,7 @@ export function safeAssistantMessage(
   return null;
 }
 
-// Diagnóstico temporário: espelha exatamente as checagens de
+// Observabilidade permanente: espelha exatamente as checagens de
 // safeAssistantMessage, mas devolve qual regra rejeitou em vez do texto —
 // nunca loga conteúdo da conversa, só um rótulo curto — para descobrir qual
 // guard está descartando respostas legítimas sem expor dado sensível.
@@ -242,7 +251,7 @@ export function debugSafeAssistantMessageRejection(
   if (containsSecurityThreat(normalized)) return "security_threat";
   if (intent === "casual_conversation" && kind === "answer") return null;
   if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return "ticker_pattern";
-  if (containsUnsafeOrOutsideTopic(normalized)) return "unsafe_or_outside_topic";
+  if (containsUnsafeOrOutsideTopic(normalized, false)) return "unsafe_or_outside_topic";
   if (/\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return "joke_or_recipe_or_code";
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return null;
   if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return null;

@@ -136,6 +136,24 @@ Deno.test("educacao sobre investimentos passa sem numeros mas nunca cita um ativ
     ) !== null,
     "Palavra comum colada a um numero em minusculas nao pode ser confundida com ticker real.",
   );
+  // Regressao real: "Me explique sobre fundos imobiliarios" caia sempre na
+  // recusa generica porque containsMixedOutsideRequest() -- pensada para
+  // detectar injecao no INPUT do usuario ("qual meu saldo, e tambem conte
+  // uma piada") -- separava a resposta por frase e suspeitava de qualquer
+  // frase de transicao comecando com "como"/"qual" que nao tivesse, sozinha,
+  // um termo financeiro. Uma explicacao de verdade sobre um conceito quase
+  // sempre tem uma frase assim.
+  assert(
+    safeAssistantMessage(
+      "FIIs (Fundos de Investimento Imobiliário) reúnem recursos de vários investidores para comprar imóveis "
+      + "ou papéis do setor imobiliário. Como funcionam na prática? Eles distribuem mensalmente aos cotistas "
+      + "os aluguéis e juros recebidos. Existem fundos de tijolo, que investem diretamente em imóveis, e "
+      + "fundos de papel, que investem em recebíveis imobiliários.",
+      "investment_education",
+      "answer",
+    ) !== null,
+    "Explicacao de multiplas frases com uma transicao 'Como funciona?' nao pode virar recusa generica.",
+  );
 });
 
 Deno.test("identificadores internos não aparecem na mensagem do modelo", () => {
