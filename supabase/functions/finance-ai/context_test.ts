@@ -512,6 +512,11 @@ Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investi
     "Como funciona o Tesouro Direto?",
     "É melhor deixar na poupança ou investir em fundo imobiliário?",
     "Quanto está a Selic hoje?",
+    // Regressao real: a forma plural, mais natural de perguntar, nao batia
+    // com o regex singular ("fundo imobiliario", "\bfii\b") e a pergunta
+    // ficava sem rota de investimento nem indicadores de mercado.
+    "Me explique sobre fundos imobiliarios",
+    "O que são FIIs?",
   ];
   for (const question of investmentQuestions) {
     const needs = contextNeeds(question, true);

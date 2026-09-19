@@ -1224,7 +1224,11 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
   // de indicadores públicos do Banco Central para dar contexto factual.
-  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundo imobiliario|\bfii\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
+  // "fundos imobiliarios" (plural, a forma mais natural de perguntar) nao
+  // batia com "fundo imobiliario" (singular) nem "fiis" com "\bfii\b" --
+  // bug real que deixava a pergunta sem roteamento de investimento nem
+  // indicadores de mercado, mesmo o tema estando sempre dentro do escopo.
+  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundos? imobili|\bfiis?\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
   // Subconjunto de investmentDomain que pergunta pelos indicadores em si
   // (não qualquer pergunta sobre investir). "Qual o melhor lugar pra
   // investir?" cai em investmentDomain mas não aqui — a resposta é uma

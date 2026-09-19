@@ -363,8 +363,8 @@ Deno.test("prompt somente leitura orienta educacao de investimentos sem consulto
   assert(withIndicators.includes("investment_education"), "o prompt precisa citar a intent investment_education");
   assert(withIndicators.includes("market_indicators"), "o prompt precisa orientar o uso de market_indicators");
   assert(
-    withIndicators.includes("não recomendar um ativo"),
-    "o prompt precisa proibir explicitamente recomendacao de ativo especifico",
+    withIndicators.includes("nunca citar nome, código ou ticker de um ativo"),
+    "o prompt precisa proibir explicitamente citar nome/codigo/ticker de ativo especifico, mesmo como exemplo",
   );
   assert(
     withIndicators.includes("não pôde ser consultada agora"),
