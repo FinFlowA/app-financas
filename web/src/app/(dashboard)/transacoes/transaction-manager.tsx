@@ -585,9 +585,12 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     if (candidate === "overdue") return !summary.isFullyPaid && transaction.data_vencimento < today;
     if (candidate === "today") return !summary.isFullyPaid && transaction.data_vencimento === today;
     if (candidate === "next7") return !summary.isFullyPaid && transaction.data_vencimento >= today && transaction.data_vencimento <= nextSeven;
+    // Pendentes: mostra o que vence no mês selecionado, mais qualquer item
+    // atrasado de meses anteriores que ainda segue pendente — senão ele some
+    // da visão para sempre sem nunca ter sido resolvido.
+    if (candidate === "pending") return !summary.isFullyPaid && (date.startsWith(month) || transaction.data_vencimento < today);
     if (!date.startsWith(month)) return false;
     if (candidate === "completed") return summary.isFullyPaid;
-    if (candidate === "pending") return !summary.isFullyPaid;
     return true;
   }
 
@@ -604,9 +607,9 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     // O app mantém os atalhos de hoje e sete dias para agendamentos. Faturas
     // entram no atalho específico de atraso e na navegação mensal.
     if (candidate === "today" || candidate === "next7") return false;
+    if (candidate === "pending") return !invoice.paid && (invoice.invoiceMonth === month || invoice.dueDate < today);
     if (invoice.invoiceMonth !== month) return false;
     if (candidate === "completed") return invoice.paid;
-    if (candidate === "pending") return !invoice.paid;
     return true;
   }
   const filteredTransactions = basicTransactions.filter((transaction) => matchesPeriod(transaction, period));
@@ -640,9 +643,9 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     if (period === "overdue") return transaction.status === "pendente" && transaction.data_vencimento < today;
     if (period === "today") return transaction.status === "pendente" && transaction.data_vencimento === today;
     if (period === "next7") return transaction.status === "pendente" && transaction.data_vencimento >= today && transaction.data_vencimento <= nextSeven;
+    if (period === "pending") return transaction.status === "pendente" && (eventDate.startsWith(month) || transaction.data_vencimento < today);
     if (!eventDate.startsWith(month)) return false;
     if (period === "completed") return transaction.status === "paga";
-    if (period === "pending") return transaction.status === "pendente";
     return true;
   });
   const totals = historyFinancialTotals(filteredFinancialEvents, filteredInvoices);
