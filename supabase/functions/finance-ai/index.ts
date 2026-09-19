@@ -641,7 +641,7 @@ async function getOrCreateConversation(admin: AdminClient, userId: string, reque
 async function recentMessages(admin: AdminClient, userId: string, conversationId: string): Promise<ConversationMessage[]> {
   const { data, error } = await admin
     .from("ai_messages")
-    .select("role,content")
+    .select("role,content,intent")
     .eq("user_id", userId)
     .eq("conversation_id", conversationId)
     .gte("created_at", chatRetentionCutoff())
@@ -650,10 +650,19 @@ async function recentMessages(admin: AdminClient, userId: string, conversationId
     .order("id", { ascending: false })
     .limit(8);
   if (error) throw new Error("AI_HISTORY_FAILED");
-  return (data ?? []).reverse().map((row) => ({
-    role: row.role === "assistant" ? "assistant" : "user",
-    content: String(row.content).slice(0, MAX_MESSAGE_CHARS),
-  }));
+  return (data ?? [])
+    // Uma recusa de escopo no histórico tende a enviesar o modelo a repetir
+    // o mesmo padrão de recusa nas próximas perguntas da conversa, mesmo
+    // quando a nova pergunta é claramente válida por si só (regressão real:
+    // depois de uma recusa indevida, as perguntas seguintes sobre outros
+    // indicadores também passaram a ser recusadas). Sem conteúdo útil para
+    // continuidade, omitir do histórico enviado ao modelo.
+    .filter((row) => !(row.role === "assistant" && row.intent === "out_of_scope"))
+    .reverse()
+    .map((row) => ({
+      role: row.role === "assistant" ? "assistant" : "user",
+      content: String(row.content).slice(0, MAX_MESSAGE_CHARS),
+    }));
 }
 
 async function saveMessage(admin: AdminClient, args: {

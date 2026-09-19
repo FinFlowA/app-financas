@@ -112,6 +112,30 @@ Deno.test("educacao sobre investimentos passa sem numeros mas nunca cita um ativ
     ) === null,
     "Recomendação de ticker específico nunca pode ser liberada em investment_education.",
   );
+  // Regressao real: uma resposta correta e generica sobre CDI/CDB estava
+  // sendo derrubada para a recusa de fora de escopo porque o filtro de
+  // ticker rodava em minusculas e uma palavra comum do portugues colada a
+  // um numero (ex.: "meta10", "anos12") tem o mesmo formato de um ticker
+  // real (PETR4) sem ser um ticker de verdade.
+  assert(
+    safeAssistantMessage(
+      "O CDB costuma render um percentual do CDI. No momento o CDI está em 13,65% ao ano "
+      + "(referência de 17/09/2026). A Selic está em 13,75% ao ano (referência de 04/11/2026). "
+      + "Como a taxa exata do seu CDB depende do contrato com a instituição, recomendo consultar "
+      + "o extrato ou o banco para saber o percentual aplicado ao seu título.",
+      "investment_education",
+      "answer",
+    ) !== null,
+    "Explicacao correta citando CDI/Selic nao pode ser derrubada para a recusa generica.",
+  );
+  assert(
+    safeAssistantMessage(
+      "Definir uma meta10 anos de prazo ajuda no planejamento, mas isso nao e um ticker.",
+      "investment_education",
+      "answer",
+    ) !== null,
+    "Palavra comum colada a um numero em minusculas nao pode ser confundida com ticker real.",
+  );
 });
 
 Deno.test("identificadores internos não aparecem na mensagem do modelo", () => {
