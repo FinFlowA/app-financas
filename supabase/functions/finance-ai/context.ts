@@ -1200,6 +1200,7 @@ type ContextNeeds = {
   goals: boolean;
   cards: boolean;
   investmentEducation: boolean;
+  marketIndicatorQuery: boolean;
 };
 
 export function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
@@ -1224,6 +1225,13 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
   // de indicadores públicos do Banco Central para dar contexto factual.
   const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundo imobiliario|\bfii\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
+  // Subconjunto de investmentDomain que pergunta pelos indicadores em si
+  // (não qualquer pergunta sobre investir). "Qual o melhor lugar pra
+  // investir?" cai em investmentDomain mas não aqui — a resposta é uma
+  // recusa/orientação genérica que não cita nenhum número, então buscar e
+  // anexar o cartão visual de Selic/CDI/IPCA nesse caso seria irrelevante e
+  // confuso para quem está lendo.
+  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|\btaxas?\b.*(?:hoje|atual|agora)|quanto est[aá].*(?:selic|cdi|ipca|taxa|juros)|como est[aá].*(?:mercado|selic|cdi|ipca|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao))/.test(normalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
     : investmentDomain
@@ -1253,6 +1261,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
     goals: goalDomain || summaryDomain,
     cards: cardDomain || spendingDomain || summaryDomain,
     investmentEducation: investmentDomain,
+    marketIndicatorQuery,
   };
 }
 
@@ -1525,7 +1534,7 @@ export async function buildFinancialContext(
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
-    needs.investmentEducation ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
+    needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1763,7 +1772,7 @@ export async function buildFinancialContext(
     },
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
-    market_indicators: needs.investmentEducation ? marketIndicators : null,
+    market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;

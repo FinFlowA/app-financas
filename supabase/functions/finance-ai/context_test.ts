@@ -526,6 +526,37 @@ Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investi
   assert(mutation.route === "mutation", "mutacao continua tendo prioridade sobre qualquer outro dominio");
 });
 
+Deno.test("contextNeeds so busca indicadores de mercado quando a pergunta pede os numeros em si", () => {
+  // Bug real: "Qual e o melhor lugar pra investir?" cai em investmentDomain
+  // (rota investment_education, resposta generica e sem numeros), mas nao
+  // deveria buscar/anexar Selic-CDI-IPCA -- a resposta do modelo nunca cita
+  // esses valores, entao o cartao visual apareceria sem nenhum motivo.
+  const genericAdviceQuestions = [
+    "Qual é o melhor lugar para investir?",
+    "Onde posso investir o meu dinheiro?",
+    "É melhor deixar na poupança ou investir em fundo imobiliário?",
+    "Como funciona o Tesouro Direto?",
+    "O que é um CDB?",
+  ];
+  for (const question of genericAdviceQuestions) {
+    const needs = contextNeeds(question, true);
+    assert(needs.investmentEducation, `ainda deveria ser educacao de investimentos: "${question}"`);
+    assert(!needs.marketIndicatorQuery, `nao deveria buscar indicadores para uma pergunta generica: "${question}"`);
+  }
+
+  const indicatorQuestions = [
+    "Quanto está a Selic hoje?",
+    "Como está o mercado financeiro?",
+    "O CDI subiu recentemente?",
+    "A taxa Selic mudou nos últimos meses?",
+    "Qual o IPCA acumulado em 12 meses?",
+  ];
+  for (const question of indicatorQuestions) {
+    const needs = contextNeeds(question, true);
+    assert(needs.marketIndicatorQuery, `deveria buscar indicadores para: "${question}"`);
+  }
+});
+
 Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual, nao do foco anterior", () => {
   const currentMonth = "2026-09";
   assert(selectedMonth("Qual o valor total que eu irei receber mês que vem?", currentMonth) === "2026-10", "mes que vem deveria ser outubro, nao o mes atual");
