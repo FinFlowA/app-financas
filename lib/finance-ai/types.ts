@@ -75,8 +75,22 @@ export interface FinanceAiPendingAction {
 
 export type FinanceAiNavigationRoute = "/" | "/transacoes" | "/caixinhas" | "/relatorios" | "/cartoes" | "/?abrirCategorias=1";
 
+/** Indicadores públicos do Banco Central (SGS), anexados a uma resposta sobre
+ * educação de investimentos para o cliente desenhar um cartão visual — nunca
+ * dados financeiros do usuário. Cada taxa pode faltar isoladamente se a
+ * consulta àquela série específica falhar. */
+export interface FinanceAiMarketIndicators {
+  selic_rate_annual: number | null;
+  selic_reference_date: string | null;
+  cdi_rate_annual: number | null;
+  cdi_reference_date: string | null;
+  ipca_12m_percent: number | null;
+  ipca_reference_date: string | null;
+  source: "bcb_sgs";
+}
+
 export type FinanceAiHttpSuccessResponse =
-  | { kind: "answer"; conversationId: Uuid; message: string; intent: FinanceAiReadIntent | "out_of_scope"; quota: FinanceAiQuota }
+  | { kind: "answer"; conversationId: Uuid; message: string; intent: FinanceAiReadIntent | "out_of_scope"; quota: FinanceAiQuota; marketIndicators?: FinanceAiMarketIndicators }
   | { kind: "clarify"; conversationId: Uuid; message: string; intent: Exclude<FinanceAiIntent, "out_of_scope">; missingFields: string[]; choices: string[]; quota: FinanceAiQuota }
   | { kind: "navigate"; conversationId: Uuid; message: string; intent: FinanceAiNavigationIntent; route: FinanceAiNavigationRoute; quota: FinanceAiQuota }
   | { kind: "proposal"; conversationId: Uuid; message: string; intent: FinanceAiMutationIntent; pendingAction: FinanceAiPendingAction; quota: FinanceAiQuota }

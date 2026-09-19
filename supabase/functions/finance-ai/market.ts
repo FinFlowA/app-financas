@@ -17,7 +17,11 @@ const BCB_SERIES = {
   ipca12m: 13522,
 } as const;
 
-const BCB_FETCH_TIMEOUT_MS = 4_000;
+const BCB_FETCH_TIMEOUT_MS = 6_000;
+// A API do BCB ocasionalmente tem uma falha momentânea (rede, cold start).
+// Uma tentativa extra evita que isso apareça como "indicador indisponível"
+// para o usuário quando a causa real foi só uma resposta lenta pontual.
+const BCB_FETCH_RETRIES = 1;
 
 function parseBcbDate(value: string): string | null {
   const match = value.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
@@ -26,29 +30,45 @@ function parseBcbDate(value: string): string | null {
   return `${year}-${month}-${day}`;
 }
 
+async function fetchBcbSeriesOnce(
+  code: number,
+  fetcher: typeof fetch,
+): Promise<{ date: string; value: number } | null> {
+  const response = await fetcher(
+    `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados/ultimos/1?formato=json`,
+    { signal: AbortSignal.timeout(BCB_FETCH_TIMEOUT_MS) },
+  );
+  if (!response.ok) throw new Error(`BCB_HTTP_${response.status}`);
+  const body: unknown = await response.json();
+  const row = Array.isArray(body) ? body[0] : null;
+  if (!row || typeof row !== "object") throw new Error("BCB_EMPTY_BODY");
+  const rawValue = (row as Record<string, unknown>).valor;
+  const rawDate = (row as Record<string, unknown>).data;
+  if (typeof rawValue !== "string" || typeof rawDate !== "string") throw new Error("BCB_MALFORMED_ROW");
+  const value = Number(rawValue.replace(",", "."));
+  const date = parseBcbDate(rawDate);
+  if (!Number.isFinite(value) || !date) throw new Error("BCB_MALFORMED_VALUE");
+  return { date, value: Math.round(value * 100) / 100 };
+}
+
 async function fetchBcbSeriesLatest(
   code: number,
   fetcher: typeof fetch,
 ): Promise<{ date: string; value: number } | null> {
-  try {
-    const response = await fetcher(
-      `https://api.bcb.gov.br/dados/serie/bcdata.sgs.${code}/dados/ultimos/1?formato=json`,
-      { signal: AbortSignal.timeout(BCB_FETCH_TIMEOUT_MS) },
-    );
-    if (!response.ok) return null;
-    const body: unknown = await response.json();
-    const row = Array.isArray(body) ? body[0] : null;
-    if (!row || typeof row !== "object") return null;
-    const rawValue = (row as Record<string, unknown>).valor;
-    const rawDate = (row as Record<string, unknown>).data;
-    if (typeof rawValue !== "string" || typeof rawDate !== "string") return null;
-    const value = Number(rawValue.replace(",", "."));
-    const date = parseBcbDate(rawDate);
-    if (!Number.isFinite(value) || !date) return null;
-    return { date, value: Math.round(value * 100) / 100 };
-  } catch {
-    return null;
+  for (let attempt = 0; attempt <= BCB_FETCH_RETRIES; attempt++) {
+    try {
+      return await fetchBcbSeriesOnce(code, fetcher);
+    } catch (error) {
+      const isLastAttempt = attempt === BCB_FETCH_RETRIES;
+      // Log em vez de falhar silenciosamente: sem isso, uma falha real (ex.:
+      // BCB fora do ar, formato de série mudou) fica invisível para sempre —
+      // o usuário só vê "não foi possível consultar", sem nenhum rastro nos
+      // logs da function para investigar depois.
+      console.error(`[finance-ai/market] série ${code} falhou (tentativa ${attempt + 1}/${BCB_FETCH_RETRIES + 1})`, error);
+      if (isLastAttempt) return null;
+    }
   }
+  return null;
 }
 
 // Indicadores públicos e não personalizados do Banco Central, usados apenas

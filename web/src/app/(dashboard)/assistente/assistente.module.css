@@ -291,6 +291,57 @@
   color: #fff;
 }
 
+.marketIndicators {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+  max-width: min(78%, 720px);
+  margin-top: 6px;
+  margin-left: 38px;
+}
+
+.marketIndicatorCard {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 66%, transparent);
+  padding: 9px 11px;
+}
+
+.marketIndicatorLabel {
+  color: var(--foreground-muted);
+  font-size: 0.66rem;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.marketIndicatorValue {
+  color: var(--ff-primary-dark);
+  font-size: 1.05rem;
+  font-weight: 850;
+  font-variant-numeric: tabular-nums;
+}
+
+.marketIndicatorValue[data-unavailable="true"] {
+  color: var(--foreground-muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.marketIndicatorDate {
+  color: var(--foreground-muted);
+  font-size: 0.62rem;
+}
+
+.marketIndicatorSource {
+  grid-column: 1 / -1;
+  margin-top: 1px;
+  color: var(--foreground-muted);
+  font-size: 0.6rem;
+}
+
 .historySkeleton {
   display: flex;
   width: 100%;

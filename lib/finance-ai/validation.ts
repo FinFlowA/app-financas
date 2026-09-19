@@ -74,6 +74,25 @@ function messageBase(row: Row): boolean {
   return uuid(row.conversationId) && text(row.message) && quota(row.quota);
 }
 
+function rate(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value) && value >= -100 && value <= 1000);
+}
+
+function referenceDate(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function marketIndicators(value: unknown): boolean {
+  if (!object(value) || !exactKeys(value, [
+    "selic_rate_annual", "selic_reference_date", "cdi_rate_annual", "cdi_reference_date",
+    "ipca_12m_percent", "ipca_reference_date", "source",
+  ])) return false;
+  return rate(value.selic_rate_annual) && referenceDate(value.selic_reference_date)
+    && rate(value.cdi_rate_annual) && referenceDate(value.cdi_reference_date)
+    && rate(value.ipca_12m_percent) && referenceDate(value.ipca_reference_date)
+    && value.source === "bcb_sgs";
+}
+
 function preview(value: unknown): boolean {
   if (!object(value) || !exactKeys(value, ["title", "summary", "consequences"])) return false;
   return text(value.title, 200) && text(value.summary, 2_000)
@@ -138,8 +157,12 @@ export function parseFinanceAiHttpResponse(raw: string | unknown): FinanceAiResu
     valid = exactKeys(value, keys) && typeof value.error === "string" && ERROR_CODE.test(value.error)
       && (!Object.prototype.hasOwnProperty.call(value, "message") || text(value.message));
   } else if (value.kind === "answer") {
-    valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "quota"])
-      && messageBase(value) && (reads.has(String(value.intent)) || value.intent === "out_of_scope");
+    const hasMarketIndicators = Object.prototype.hasOwnProperty.call(value, "marketIndicators");
+    valid = exactKeys(value, hasMarketIndicators
+      ? ["kind", "conversationId", "message", "intent", "quota", "marketIndicators"]
+      : ["kind", "conversationId", "message", "intent", "quota"])
+      && messageBase(value) && (reads.has(String(value.intent)) || value.intent === "out_of_scope")
+      && (!hasMarketIndicators || marketIndicators(value.marketIndicators));
   } else if (value.kind === "clarify") {
     valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "missingFields", "choices", "quota"])
       && messageBase(value) && allIntents.has(String(value.intent)) && value.intent !== "out_of_scope"

@@ -1201,7 +1201,15 @@ Deno.serve(async (req) => {
     if (output.kind === "answer") {
       await updateConversationState(admin, user.id, conversation.id, {});
       await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model });
-      return json({ kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel }, 200, req);
+      // Indicadores de mercado (Selic/CDI/IPCA) só existem quando a pergunta
+      // pediu educação sobre investimentos e a consulta ao BCB deu certo.
+      // Expostos à parte da mensagem para o cliente poder desenhar um cartão
+      // visual em vez de deixar os números presos no texto corrido.
+      const marketIndicators = financialContext.market_indicators ?? null;
+      return json({
+        kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel,
+        ...(marketIndicators ? { marketIndicators } : {}),
+      }, 200, req);
     }
 
     if (output.kind === "navigate") {

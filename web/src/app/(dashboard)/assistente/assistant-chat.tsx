@@ -10,12 +10,12 @@ import { inFinnVoice } from "../../../../../lib/finn-voice";
 import { finnProductGuidance } from "../../../../../lib/finn-product-guidance";
 import { parseFinanceAiHttpResponse } from "../../../../../lib/finance-ai/validation";
 import { FINANCE_AI_MUTATION_INTENTS } from "../../../../../lib/finance-ai/types";
-import type { FinanceAiHttpSuccessResponse } from "../../../../../lib/finance-ai/types";
+import type { FinanceAiHttpSuccessResponse, FinanceAiMarketIndicators } from "../../../../../lib/finance-ai/types";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./assistente.module.css";
 import stateStyles from "@/app/app-states.module.css";
 
-type Message = { id: string; role: "user" | "assistant"; text: string };
+type Message = { id: string; role: "user" | "assistant"; text: string; marketIndicators?: FinanceAiMarketIndicators };
 type Quota = { plan: string; limit: number; remaining: number; model_limit: number; model_remaining: number };
 type PendingActionPreview = { title?: string; summary?: string; consequences?: string[] };
 type PendingAction = { id: string; confirmationToken: string; actionType: string; expiresAt: string; preview?: PendingActionPreview };
@@ -23,6 +23,7 @@ type AiResponse = {
   error?: string; message?: string; kind?: string; conversationId?: string | null; route?: string;
   pendingAction?: PendingAction; quota?: Quota; cleared?: boolean; choices?: string[]; missingFields?: string[];
   messages?: { id: string; role: "user" | "assistant"; text: string }[];
+  marketIndicators?: FinanceAiMarketIndicators;
 };
 
 const INLINE_CHOICE_LIMIT = 4;
@@ -47,6 +48,7 @@ function toViewModel(value: FinanceAiHttpSuccessResponse): AiResponse {
     const base: AiResponse = { kind: value.kind, message: value.message };
     if ("conversationId" in value) base.conversationId = value.conversationId;
     if ("quota" in value) base.quota = value.quota;
+    if (value.kind === "answer" && value.marketIndicators) base.marketIndicators = value.marketIndicators;
     if (value.kind === "clarify") {
       base.choices = value.choices;
       base.missingFields = value.missingFields;
@@ -69,6 +71,38 @@ function AssistantMessage({ text }: { text: string }) {
             : <span key={`${partIndex}-${part.text}`}>{part.text}</span>)}
         </p>
       ))}
+    </div>
+  );
+}
+
+function shortReferenceDate(value: string | null): string | null {
+  const match = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  return match ? `${match[3]}/${match[2]}` : null;
+}
+
+function IndicatorTile({ label, rate, referenceDate, suffix = "% a.a." }: { label: string; rate: number | null; referenceDate: string | null; suffix?: string }) {
+  const shortDate = shortReferenceDate(referenceDate);
+  return (
+    <div className={styles.marketIndicatorCard}>
+      <span className={styles.marketIndicatorLabel}>{label}</span>
+      {rate === null
+        ? <span className={styles.marketIndicatorValue} data-unavailable="true">Indisponível</span>
+        : <span className={styles.marketIndicatorValue}>{rate.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{suffix}</span>}
+      {shortDate && <span className={styles.marketIndicatorDate}>ref. {shortDate}</span>}
+    </div>
+  );
+}
+
+/** Cartão visual com os indicadores públicos do BCB citados na resposta — em
+ * vez de deixar os números presos no meio do texto corrido, o que passava
+ * despercebido e era pouco interativo para o usuário. */
+function MarketIndicatorsCard({ indicators }: { indicators: FinanceAiMarketIndicators }) {
+  return (
+    <div className={styles.marketIndicators}>
+      <IndicatorTile label="Selic" rate={indicators.selic_rate_annual} referenceDate={indicators.selic_reference_date} />
+      <IndicatorTile label="CDI" rate={indicators.cdi_rate_annual} referenceDate={indicators.cdi_reference_date} />
+      <IndicatorTile label="IPCA 12m" rate={indicators.ipca_12m_percent} referenceDate={indicators.ipca_reference_date} suffix="%" />
+      <span className={styles.marketIndicatorSource}>Fonte: Banco Central (SGS)</span>
     </div>
   );
 }
@@ -223,7 +257,7 @@ export default function AssistantChat({
       try { localStorage.setItem(conversationKey, response.conversationId); } catch { /* memória da montagem permanece válida */ }
     }
     if (response.quota) setQuota(response.quota);
-    if (response.message) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: response.message! }]);
+    if (response.message) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: response.message!, marketIndicators: response.marketIndicators }]);
     setClarificationChoices(response.kind === "clarify" && Array.isArray(response.choices) ? response.choices : []);
     setClarificationField(response.kind === "clarify" && Array.isArray(response.missingFields) ? response.missingFields[0] ?? null : null);
     if (response.pendingAction && UUID.test(response.pendingAction.id) && UUID.test(response.pendingAction.confirmationToken)) persistPendingAction(response.pendingAction);
@@ -415,11 +449,14 @@ export default function AssistantChat({
             ) : (
               <>
                 {messages.map((message) => (
-                  <div key={message.id} className={styles.messageRow} data-role={message.role}>
-                    {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden><Image src="/finn-message-avatar.png" alt="" width={31} height={31} /></span>}
-                    <div className={styles.messageBubble}>
-                      {message.role === "assistant" ? <AssistantMessage text={inFinnVoice(message.text)} /> : message.text}
+                  <div key={message.id}>
+                    <div className={styles.messageRow} data-role={message.role}>
+                      {message.role === "assistant" && <span className={styles.messageAvatar} aria-hidden><Image src="/finn-message-avatar.png" alt="" width={31} height={31} /></span>}
+                      <div className={styles.messageBubble}>
+                        {message.role === "assistant" ? <AssistantMessage text={inFinnVoice(message.text)} /> : message.text}
+                      </div>
                     </div>
+                    {message.marketIndicators && <MarketIndicatorsCard indicators={message.marketIndicators} />}
                   </div>
                 ))}
                 {messages.length <= 1 && (
