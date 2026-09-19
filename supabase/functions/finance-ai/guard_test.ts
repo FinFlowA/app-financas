@@ -62,6 +62,20 @@ Deno.test("aceita saída casual do Finn sem liberar afirmações de execução",
   assert(safeAssistantMessage("Oi! Como você está?", "casual_conversation", "answer") !== null, "Cumprimento seguro deveria passar.");
   assert(safeAssistantMessage("Eu sou o Finn, seu assistente no FinFlow.", "casual_conversation", "answer") !== null, "Apresentação do Finn deveria passar.");
   assert(safeAssistantMessage("Criei uma despesa para você.", "casual_conversation", "answer") === null, "Conversa casual não pode alegar execução.");
+  // Regressao real: o atalho de casual_conversation vinha ANTES da checagem
+  // de piada/receita/codigo-fonte/assunto externo, entao bastava o modelo
+  // classificar como conversa casual para o Finn fugir do foco financeiro
+  // (ex.: contar uma piada de verdade quando o usuario pediu "me conte uma
+  // piada"). "Conversa leve" (regra 7 do prompt) nao pode significar cumprir
+  // pedidos de conteudo alheio ao FinFlow.
+  assert(
+    safeAssistantMessage(
+      "Claro! Por que o livro de matemática ficou triste? Porque tinha muitos problemas.",
+      "casual_conversation",
+      "answer",
+    ) === null,
+    "Conversa casual nao pode ser usada para realmente contar uma piada.",
+  );
 });
 
 Deno.test("modelo nunca pode alegar que executou uma escrita", () => {

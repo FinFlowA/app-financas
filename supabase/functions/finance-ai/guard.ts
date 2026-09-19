@@ -205,11 +205,6 @@ export function safeAssistantMessage(
   // exclusivamente pelo servidor depois do RPC transacional de confirmação.
   if (containsFalseExecutionClaim(normalized, kind)) return null;
   if (containsSecurityThreat(normalized)) return null;
-  if (intent === "casual_conversation" && kind === "answer") return redacted;
-  // Educação financeira sobre investimentos nunca pode citar um ativo, ticker
-  // ou fundo específico: isso seria consultoria de investimentos, fora do
-  // limite explicitamente definido para essa intent no prompt.
-  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return null;
   // containsMixedOutsideRequest() detecta injeção no INPUT do usuário (ex.:
   // "qual meu saldo, e também me conte uma piada"): separa por frase e
   // suspeita quando uma frase não financeira começa com uma palavra de
@@ -219,8 +214,24 @@ export function safeAssistantMessage(
   // grande chance de ter uma frase de transição que começa com essas
   // palavras comuns sem conter um termo financeiro. Bug real que descartava
   // explicações corretas e completas de investment_education (ex.: FIIs).
+  // Esta checagem (fora do bloco acima) precisa vir ANTES do atalho de
+  // casual_conversation logo abaixo: senão o Finn conseguia fugir do foco
+  // financeiro contando piada, poema, previsão do tempo etc. sempre que o
+  // modelo classificasse a resposta como conversa casual.
+  // Backstop estrutural: o bloqueio acima só pega quem pede uma piada
+  // (a palavra "piada" no pedido), não quem efetivamente CONTA uma —
+  // confirmado em produção: o modelo classificou como casual_conversation e
+  // gerou uma piada de verdade sem citar a palavra "piada". "Por que ...?
+  // Porque ..." é o formato clássico de piada em pt-BR e não tem motivo
+  // para aparecer numa resposta legítima do Finn.
+  if (/\bpor\s+que\b.{0,60}\?.{0,15}\bporque\b/i.test(redacted)) return null;
   if (containsUnsafeOrOutsideTopic(normalized, false)
     || /\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return null;
+  if (intent === "casual_conversation" && kind === "answer") return redacted;
+  // Educação financeira sobre investimentos nunca pode citar um ativo, ticker
+  // ou fundo específico: isso seria consultoria de investimentos, fora do
+  // limite explicitamente definido para essa intent no prompt.
+  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return null;
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return redacted;
   if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return redacted;
   if (kind === "propose_action" && /\b(?:revise|confira|previa|confirmar)\b/i.test(normalized)) return redacted;
@@ -249,10 +260,11 @@ export function debugSafeAssistantMessageRejection(
   if (SENSITIVE_SOLICITATION_PATTERN.test(normalized)) return "sensitive_solicitation";
   if (containsFalseExecutionClaim(normalized, kind)) return "false_execution_claim";
   if (containsSecurityThreat(normalized)) return "security_threat";
-  if (intent === "casual_conversation" && kind === "answer") return null;
-  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return "ticker_pattern";
+  if (/\bpor\s+que\b.{0,60}\?.{0,15}\bporque\b/i.test(redacted)) return "joke_structure";
   if (containsUnsafeOrOutsideTopic(normalized, false)) return "unsafe_or_outside_topic";
   if (/\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return "joke_or_recipe_or_code";
+  if (intent === "casual_conversation" && kind === "answer") return null;
+  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return "ticker_pattern";
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return null;
   if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return null;
   if (kind === "propose_action" && /\b(?:revise|confira|previa|confirmar)\b/i.test(normalized)) return null;
