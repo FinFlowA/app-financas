@@ -1239,6 +1239,16 @@ Deno.serve(async (req) => {
     const quotaAfterModel = await getQuota(client);
 
     if (output.kind === "out_of_scope" || !outputMessage) {
+      // Diagnóstico temporário: nunca loga conteúdo (mensagem, contexto),
+      // só a classificação (kind/intent são enums curtos, não dado
+      // sensível) — para distinguir se a recusa veio do próprio modelo
+      // (kind=out_of_scope) ou de uma regra de segurança descartando uma
+      // resposta kind=answer depois (safeAssistantMessage retornou null).
+      console.error("finance-ai scope rejection", JSON.stringify({
+        modelKind: output.kind,
+        modelIntent: output.intent,
+        guardRejectedAnswer: output.kind !== "out_of_scope" && !outputMessage,
+      }));
       await updateConversationState(admin, user.id, conversation.id, {});
       await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", provider, model });
       return json({ kind: "answer", conversationId: conversation.id, message: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", quota: quotaAfterModel }, 200, req);
