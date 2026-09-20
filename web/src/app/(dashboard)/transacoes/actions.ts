@@ -11,7 +11,7 @@ import {
 import { hojeEmSaoPaulo } from "@/lib/date";
 import { traduzirErro } from "@/lib/error-messages";
 import { parseMoney } from "@/lib/money";
-import { descricaoVisivel, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
+import { descricaoTransferenciaPendenteObjetivo, descricaoVisivel, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import { createClient } from "@/lib/supabase/server";
 
 export type TransactionActionState<T = unknown> = {
@@ -45,6 +45,8 @@ function refreshTransactions() {
   revalidatePath("/transacoes");
   revalidatePath("/contas");
   revalidatePath("/relatorios");
+  revalidatePath("/objetivos");
+  revalidatePath("/calendario");
 }
 
 function validDate(value: string): boolean {
@@ -181,15 +183,51 @@ export async function createTransaction(formData: FormData): Promise<Transaction
   if (kind === "transferencia") {
     if (validId(destinationGoalId)) {
       if (frequency === "parcelada") return { erro: "Transferências para objetivos podem ser únicas ou recorrentes." };
-      if (frequency === "unica" && status !== "paga") return { erro: "Uma transferência única para objetivo deve ser concluída na data." };
-      const goalPayload: Record<string, unknown> = { operation: "guardar", goal_id: destinationGoalId, account_id: accountId, value: totalValue, description, frequency };
-      if (frequency === "unica") goalPayload.realization_date = scheduledDate;
-      else {
-        goalPayload.scheduled_date = scheduledDate;
-        goalPayload.recurrence_count = frequency === "semanal" ? 260 : frequency === "mensal" ? 60 : 5;
+      if (frequency === "unica" && status === "pendente") {
+        const supabase = await createClient();
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) return { erro: "Sua sessão expirou. Entre novamente." };
+
+        const [{ data: account, error: accountError }, { data: goal, error: goalError }] = await Promise.all([
+          supabase.from("contas").select("id, arquivado").eq("id", accountId).maybeSingle(),
+          supabase.from("caixinhas").select("id, nome, arquivado").eq("id", destinationGoalId).maybeSingle(),
+        ]);
+        if (accountError || !account || account.arquivado) return { erro: "A conta de origem não está disponível." };
+        if (goalError || !goal || goal.arquivado) return { erro: "O objetivo de destino não está disponível." };
+
+        const internalDescription = descricaoTransferenciaPendenteObjetivo(description, goal.nome, destinationGoalId, actionId);
+        if (internalDescription.length > 200) return { erro: "Use uma descrição mais curta para esta transferência." };
+        const { data: existing, error: lookupError } = await supabase
+          .from("transacoes")
+          .select("id")
+          .eq("user_id", authData.user.id)
+          .eq("descricao", internalDescription)
+          .maybeSingle();
+        if (lookupError) return { erro: "Não foi possível conferir se esta transferência já foi criada. Tente novamente." };
+        if (!existing) {
+          const { error: insertError } = await supabase.from("transacoes").insert({
+            user_id: authData.user.id,
+            tipo: "despesa",
+            valor: totalValue,
+            descricao: internalDescription,
+            data_vencimento: scheduledDate,
+            data_realizacao: null,
+            status: "pendente",
+            conta_id: accountId,
+            categoria_id: null,
+          });
+          if (insertError) return { erro: "Não foi possível confirmar o agendamento. Confira o Histórico antes de tentar novamente para evitar duplicidade." };
+        }
+      } else {
+        const goalPayload: Record<string, unknown> = { operation: "guardar", goal_id: destinationGoalId, account_id: accountId, value: totalValue, description, frequency };
+        if (frequency === "unica") goalPayload.realization_date = scheduledDate;
+        else {
+          goalPayload.scheduled_date = scheduledDate;
+          goalPayload.recurrence_count = frequency === "semanal" ? 260 : frequency === "mensal" ? 60 : 5;
+        }
+        const result = await executeManualFinancialAction("move_goal", goalPayload, actionId);
+        if (result.erro) return { erro: result.erro };
       }
-      const result = await executeManualFinancialAction("move_goal", goalPayload, actionId);
-      if (result.erro) return { erro: result.erro };
     } else {
       if (!validId(destinationAccountId) || destinationAccountId === accountId) return { erro: "Escolha uma conta ou objetivo de destino." };
       payload.destination_account_id = destinationAccountId;

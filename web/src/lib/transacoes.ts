@@ -26,6 +26,15 @@ export function isTransferencia(descricao?: string | null): boolean {
   return (descricao ?? "").includes("[Transf.]");
 }
 
+export function descricaoTransferenciaPendenteObjetivo(
+  descricao: string,
+  nomeObjetivo: string,
+  objetivoId: number,
+  requestId: string,
+): string {
+  return `[Transf.] ${descricao} · Guardar em: ${nomeObjetivo} [RequestId:${requestId}] [Objetivo:${objetivoId}:guardar]`;
+}
+
 export function isPagamentoFatura(descricao?: string | null): boolean {
   return (descricao ?? "").includes("[PagFatura:");
 }
