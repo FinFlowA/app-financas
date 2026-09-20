@@ -587,6 +587,26 @@ Deno.test("contextNeeds so busca indicadores de mercado quando a pergunta pede o
   }
 });
 
+Deno.test("marketIndicatorQuery usa so a pergunta atual, nao o historico concatenado de turnos", () => {
+  // Bug real: buildFinancialContext passa a contextNeeds() um texto que
+  // concatena ate 3 mensagens anteriores do usuario (para dar continuidade
+  // de dominio, ex.: cartao, categoria). Como Selic/CDI/IPCA de um turno
+  // anterior continuava nesse texto concatenado, uma pergunta seguinte
+  // completamente diferente (ex.: IGP-M, que nem e buscado) ainda vinha
+  // com o cartao visual de Selic/CDI/IPCA "grudado" da pergunta anterior.
+  const concatenatedWithOlderSelicTurn = "Como está o mercado financeiro?\nContinuação do usuário: igpm setembro de 2026";
+  const needsUsingConcatenatedAsCurrent = contextNeeds(concatenatedWithOlderSelicTurn, true);
+  assert(
+    needsUsingConcatenatedAsCurrent.marketIndicatorQuery,
+    "sanity check: o texto concatenado sozinho ainda dispara indicadores (por isso o bug existia)",
+  );
+  const needsWithCurrentMessageSeparated = contextNeeds(concatenatedWithOlderSelicTurn, true, "igpm setembro de 2026");
+  assert(
+    !needsWithCurrentMessageSeparated.marketIndicatorQuery,
+    "a pergunta atual sobre IGP-M nao pode reaproveitar indicadores de um turno anterior sobre Selic",
+  );
+});
+
 Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual, nao do foco anterior", () => {
   const currentMonth = "2026-09";
   assert(selectedMonth("Qual o valor total que eu irei receber mês que vem?", currentMonth) === "2026-10", "mes que vem deveria ser outubro, nao o mes atual");

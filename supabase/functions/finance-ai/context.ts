@@ -1203,8 +1203,15 @@ type ContextNeeds = {
   marketIndicatorQuery: boolean;
 };
 
-export function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
+export function contextNeeds(request: string, analyticsAllowed: boolean, currentMessage = request): ContextNeeds {
   const normalized = normalize(request);
+  // Indicadores de mercado precisam da pergunta ATUAL, não do texto que
+  // concatena até 3 mensagens anteriores (usado pelos outros domínios logo
+  // abaixo para dar continuidade, ex.: cartão, categoria). Sem isso, uma
+  // pergunta antiga sobre Selic/CDI/IPCA mantinha o cartão visual "grudado"
+  // em respostas seguintes completamente diferentes (ex.: perguntar por
+  // IGP-M, que nem é buscado, ainda vinha com o cartão da pergunta anterior).
+  const currentNormalized = normalize(currentMessage);
   const mutation = /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized);
   const cardDomain = /(cartao|fatura|compra|parcela|credito)/.test(normalized);
   const goalDomain = /(objetiv|caixinha|guardar|resgatar|meta)/.test(normalized);
@@ -1235,7 +1242,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
   // recusa/orientação genérica que não cita nenhum número, então buscar e
   // anexar o cartão visual de Selic/CDI/IPCA nesse caso seria irrelevante e
   // confuso para quem está lendo.
-  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|porcentagem|rendimento|rentabilidade|\btaxas?\b.*(?:hoje|atual|agora)|quanto (?:esta|está|rende|paga)|como est[aá].*(?:mercado|selic|cdi|ipca|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao))/.test(normalized);
+  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|porcentagem|rendimento|rentabilidade|\btaxas?\b.*(?:hoje|atual|agora)|quanto (?:esta|está|rende|paga)|como est[aá].*(?:mercado|selic|cdi|ipca|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao))/.test(currentNormalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
     : investmentDomain
@@ -1510,7 +1517,7 @@ export async function buildFinancialContext(
       analyticsAllowed,
     };
   }
-  const needs = contextNeeds(requestContext, analyticsAllowed);
+  const needs = contextNeeds(requestContext, analyticsAllowed, currentMessage);
   const focusMonth = selectedMonth(requestContext, currentMonth);
   const years = selectedYears(requestContext, Number(currentMonth.slice(0, 4)));
   years.add(Number(focusMonth.slice(0, 4)));
