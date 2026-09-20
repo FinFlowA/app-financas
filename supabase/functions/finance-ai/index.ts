@@ -56,6 +56,17 @@ const CHAT_RETENTION_MS = 24 * 60 * 60 * 1_000;
 // tentativa extra já resolvia a maioria dos casos observados e deixa uma
 // folga bem maior para o restante da janela de um minuto.
 const MAX_SCOPE_RETRY_ATTEMPTS = 1;
+// Um limite de taxa (nosso ou da Groq) é uma contenção passageira do
+// provedor/orçamento compartilhado, não um problema com a pergunta em si --
+// o usuário não tem como saber que precisa esperar entre mensagens, então o
+// sistema absorve essa espera sozinho em vez de expor o erro ou depender do
+// usuário espaçar os envios manualmente.
+const RATE_LIMIT_RETRY_CODES = new Set(["AI_RATE_LIMITED", "AI_TEMPORARILY_PAUSED", "AI_PROVIDER_RATE_LIMITED"]);
+const RATE_LIMIT_BACKOFF_MS = 1_500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function chatRetentionCutoff(): string {
   return new Date(Date.now() - CHAT_RETENTION_MS).toISOString();
@@ -1246,56 +1257,76 @@ Deno.serve(async (req) => {
     // somente leitura, onde a regra 1 do prompt já proíbe explicitamente
     // out_of_scope para dados básicos do usuário; mutações têm cota própria
     // e um escopo operacional testado há mais tempo.
+    retryLoop:
     for (
       let retryAttempt = 0;
       (output.kind === "out_of_scope" || !outputMessage) && !mutationRequested && retryAttempt < MAX_SCOPE_RETRY_ATTEMPTS;
       retryAttempt++
     ) {
-      const retryStartedAt = Date.now();
-      let retryUsageId: string | null = null;
-      try {
-        retryUsageId = await reserveModelRequest(admin, user.id, PRE_CONTEXT_MODEL_BUDGET);
-        await adjustModelRequest(admin, retryUsageId, estimateModelTokenBudget(prompt, history));
-        const retryResult = await requestModel(prompt, history, safetyId);
-        await finalizeModelRequest(admin, {
-          usageId: retryUsageId,
-          provider: retryResult.provider,
-          model: retryResult.model,
-          inputTokens: retryResult.usage.inputTokens,
-          outputTokens: retryResult.usage.outputTokens,
-          status: "completed",
-          latencyMs: monitoringLatencyMs(retryStartedAt),
-          errorCode: null,
-        });
-        const retryOutput = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
-        const retryMessage = safeAssistantMessage(retryOutput.message, retryOutput.intent, retryOutput.kind, outputCanary);
-        // Só adota a tentativa extra se ela de fato resolveu o problema
-        // (não é out_of_scope e a mensagem passou pelas regras de
-        // segurança); caso contrário mantém a resposta anterior e, se ainda
-        // houver tentativas disponíveis, o laço tenta de novo.
-        if (retryOutput.kind !== "out_of_scope" && retryMessage) {
-          output = retryOutput;
-          outputMessage = retryMessage;
-          provider = retryResult.provider;
-          model = retryResult.model;
-        }
-      } catch (retryError) {
-        if (retryUsageId) {
+      // Uma tentativa extra pode esbarrar num limite de taxa transitório
+      // (nosso ou da Groq) mesmo quando a pergunta em si está correta --
+      // confirmado em produção. Isso não é o mesmo problema que motivou a
+      // tentativa extra (classificação errada), então ganha uma única
+      // rodada de espera+nova tentativa própria, silenciosa, sem consumir
+      // outra iteração de retryAttempt nem expor o motivo ao usuário.
+      let rateLimitBackoffUsed = false;
+      innerAttempt:
+      while (true) {
+        const retryStartedAt = Date.now();
+        let retryUsageId: string | null = null;
+        try {
+          retryUsageId = await reserveModelRequest(admin, user.id, PRE_CONTEXT_MODEL_BUDGET);
+          await adjustModelRequest(admin, retryUsageId, estimateModelTokenBudget(prompt, history));
+          const retryResult = await requestModel(prompt, history, safetyId);
           await finalizeModelRequest(admin, {
             usageId: retryUsageId,
-            provider: "not_called",
-            model: "not_called",
-            inputTokens: 0,
-            outputTokens: 0,
-            status: "failed",
+            provider: retryResult.provider,
+            model: retryResult.model,
+            inputTokens: retryResult.usage.inputTokens,
+            outputTokens: retryResult.usage.outputTokens,
+            status: "completed",
             latencyMs: monitoringLatencyMs(retryStartedAt),
-            errorCode: monitoringErrorCode(retryError, "AI_PROVIDER_FAILED"),
-          }).catch(() => undefined);
+            errorCode: null,
+          });
+          const retryOutput = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+          const retryMessage = safeAssistantMessage(retryOutput.message, retryOutput.intent, retryOutput.kind, outputCanary);
+          // Só adota a tentativa extra se ela de fato resolveu o problema
+          // (não é out_of_scope e a mensagem passou pelas regras de
+          // segurança); caso contrário mantém a resposta anterior e, se ainda
+          // houver tentativas disponíveis, o laço tenta de novo.
+          if (retryOutput.kind !== "out_of_scope" && retryMessage) {
+            output = retryOutput;
+            outputMessage = retryMessage;
+            provider = retryResult.provider;
+            model = retryResult.model;
+          }
+          break innerAttempt;
+        } catch (retryError) {
+          const errorCode = monitoringErrorCode(retryError, "AI_PROVIDER_FAILED");
+          if (retryUsageId) {
+            await finalizeModelRequest(admin, {
+              usageId: retryUsageId,
+              provider: "not_called",
+              model: "not_called",
+              inputTokens: 0,
+              outputTokens: 0,
+              status: "failed",
+              latencyMs: monitoringLatencyMs(retryStartedAt),
+              errorCode,
+            }).catch(() => undefined);
+          }
+          if (RATE_LIMIT_RETRY_CODES.has(errorCode) && !rateLimitBackoffUsed) {
+            rateLimitBackoffUsed = true;
+            await sleep(RATE_LIMIT_BACKOFF_MS);
+            continue innerAttempt;
+          }
+          // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
+          // por minuto já consumida pela primeira chamada não pode travar a
+          // solicitação, e um limite de taxa persistente mesmo após a espera
+          // não vai se resolver tentando de novo): para de tentar e mantém a
+          // resposta anterior.
+          break retryLoop;
         }
-        // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
-        // por minuto já consumida pela primeira chamada não pode travar a
-        // solicitação): para de tentar e mantém a resposta anterior.
-        break;
       }
     }
 
