@@ -592,19 +592,38 @@ Deno.test("marketIndicatorQuery usa so a pergunta atual, nao o historico concate
   // concatena ate 3 mensagens anteriores do usuario (para dar continuidade
   // de dominio, ex.: cartao, categoria). Como Selic/CDI/IPCA de um turno
   // anterior continuava nesse texto concatenado, uma pergunta seguinte
-  // completamente diferente (ex.: IGP-M, que nem e buscado) ainda vinha
-  // com o cartao visual de Selic/CDI/IPCA "grudado" da pergunta anterior.
-  const concatenatedWithOlderSelicTurn = "Como está o mercado financeiro?\nContinuação do usuário: igpm setembro de 2026";
+  // completamente diferente (ex.: pedir para explicar fundos imobiliarios,
+  // sem pedir nenhum numero) ainda vinha com o cartao visual de Selic/CDI/
+  // IPCA "grudado" da pergunta anterior.
+  const concatenatedWithOlderSelicTurn = "Como está o mercado financeiro?\nContinuação do usuário: Me explique sobre fundos imobiliarios";
   const needsUsingConcatenatedAsCurrent = contextNeeds(concatenatedWithOlderSelicTurn, true);
   assert(
     needsUsingConcatenatedAsCurrent.marketIndicatorQuery,
     "sanity check: o texto concatenado sozinho ainda dispara indicadores (por isso o bug existia)",
   );
-  const needsWithCurrentMessageSeparated = contextNeeds(concatenatedWithOlderSelicTurn, true, "igpm setembro de 2026");
+  const needsWithCurrentMessageSeparated = contextNeeds(concatenatedWithOlderSelicTurn, true, "Me explique sobre fundos imobiliarios");
   assert(
     !needsWithCurrentMessageSeparated.marketIndicatorQuery,
-    "a pergunta atual sobre IGP-M nao pode reaproveitar indicadores de um turno anterior sobre Selic",
+    "a pergunta atual sobre fundos imobiliarios nao pode reaproveitar indicadores de um turno anterior sobre Selic",
   );
+});
+
+Deno.test("marketIndicatorQuery reconhece IGP-M e um pedido de dado natural como continuacao", () => {
+  // IGP-M passou a ser um indicador de verdade (calculado a partir da serie
+  // mensal do SGS via metodo composto); a forma como o usuario digita
+  // ("IGPM", "IGP-M", "igp m") nao pode importar. Um pedido curto de
+  // continuacao ("Preciso da taxa") tambem precisa disparar a busca quando
+  // a conversa ja estabeleceu o dominio de investimento (investmentDomain
+  // vindo do texto concatenado), mesmo sem repetir o nome do indicador.
+  for (const question of ["IGPM setembro de 2026", "IGP-M setembro de 2026", "igp m de setembro"]) {
+    assert(contextNeeds(question, true).marketIndicatorQuery, `deveria reconhecer IGP-M em: "${question}"`);
+  }
+  const followUp = contextNeeds(
+    "Fale sobre o IGP-M\nContinuação do usuário: Preciso da taxa",
+    true,
+    "Preciso da taxa",
+  );
+  assert(followUp.marketIndicatorQuery, "pedido curto de continuacao deveria disparar a busca de indicadores");
 });
 
 Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual, nao do foco anterior", () => {

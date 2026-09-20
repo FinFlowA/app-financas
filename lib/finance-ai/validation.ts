@@ -85,11 +85,12 @@ function referenceDate(value: unknown): value is string | null {
 function marketIndicators(value: unknown): boolean {
   if (!object(value) || !exactKeys(value, [
     "selic_rate_annual", "selic_reference_date", "cdi_rate_annual", "cdi_reference_date",
-    "ipca_12m_percent", "ipca_reference_date", "source",
+    "ipca_12m_percent", "ipca_reference_date", "igpm_12m_percent", "igpm_reference_date", "source",
   ])) return false;
   return rate(value.selic_rate_annual) && referenceDate(value.selic_reference_date)
     && rate(value.cdi_rate_annual) && referenceDate(value.cdi_reference_date)
     && rate(value.ipca_12m_percent) && referenceDate(value.ipca_reference_date)
+    && rate(value.igpm_12m_percent) && referenceDate(value.igpm_reference_date)
     && value.source === "bcb_sgs";
 }
 

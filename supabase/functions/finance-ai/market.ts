@@ -11,16 +11,23 @@ export type MarketIndicators = {
   ipca_reference_date: string | null;
   ipca_previous_12m_percent: number | null;
   ipca_previous_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
+  igpm_previous_12m_percent: number | null;
+  igpm_previous_reference_date: string | null;
   source: "bcb_sgs";
 };
 
 // Séries públicas do SGS (Banco Central): Meta Selic definida pelo Copom,
-// CDI acumulado no mês anualizado e IPCA acumulado em 12 meses — todas em
-// % a.a. (ou % acumulado, no caso do IPCA), sem necessidade de chave de API.
+// CDI acumulado no mês anualizado, IPCA acumulado em 12 meses (calculado
+// pelo IBGE) e IGP-M mensal (calculado pela FGV, sem acumulado de 12 meses
+// pronto no SGS — precisa ser composto a partir da série mensal) — todas
+// em % a.a. (ou % acumulado), sem necessidade de chave de API.
 const BCB_SERIES = {
   selic: 432,
   cdi: 4389,
   ipca12m: 13522,
+  igpmMonthly: 189,
 } as const;
 
 const BCB_FETCH_TIMEOUT_MS = 6_000;
@@ -36,6 +43,11 @@ const RATE_LOOKBACK_DAYS = 90;
 // IPCA é mensal; 100 dias cobre com folga pelo menos 2 divulgações mesmo
 // perto do início de um mês, antes do valor do mês corrente ser publicado.
 const IPCA_LOOKBACK_DAYS = 100;
+// IGP-M não tem uma série "acumulado 12 meses" pronta no SGS como o IPCA;
+// precisa compor a partir da série mensal. 430 dias (~14 meses) garante
+// pelo menos 13 pontos: 12 para o acumulado atual e mais 1 para comparar
+// com o acumulado do mês anterior (ver accumulate12Months).
+const IGPM_LOOKBACK_DAYS = 430;
 
 type SeriesPoint = { date: string; value: number };
 
@@ -121,16 +133,40 @@ function latestWithLastChange(points: SeriesPoint[]): { latest: SeriesPoint; pre
   return { latest, previous };
 }
 
+function compoundPercent(monthlyPoints: SeriesPoint[]): number {
+  const factor = monthlyPoints.reduce((accumulated, point) => accumulated * (1 + point.value / 100), 1);
+  return Math.round((factor - 1) * 100 * 100) / 100;
+}
+
+/** Acumula os últimos 12 meses de uma série mensal (ex.: IGP-M) pelo mesmo
+ * método padrão de juros compostos usado pelo IBGE/FGV para "acumulado em
+ * 12 meses" — o SGS só disponibiliza a variação mês a mês para o IGP-M, ao
+ * contrário do IPCA, que já tem uma série pronta com o acumulado. Também
+ * calcula o acumulado da janela de 12 meses imediatamente anterior, para
+ * responder se o indicador subiu, caiu ou ficou igual. */
+function accumulate12Months(monthlyPoints: SeriesPoint[]): { latest: SeriesPoint; previous: SeriesPoint | null } | null {
+  if (monthlyPoints.length < 12) return null;
+  const currentWindow = monthlyPoints.slice(monthlyPoints.length - 12);
+  const latest = { date: currentWindow[currentWindow.length - 1].date, value: compoundPercent(currentWindow) };
+  let previous: SeriesPoint | null = null;
+  if (monthlyPoints.length >= 13) {
+    const previousWindow = monthlyPoints.slice(monthlyPoints.length - 13, monthlyPoints.length - 1);
+    previous = { date: previousWindow[previousWindow.length - 1].date, value: compoundPercent(previousWindow) };
+  }
+  return { latest, previous };
+}
+
 // Indicadores públicos e não personalizados do Banco Central, usados apenas
 // como contexto factual para educação financeira sobre investimentos. Uma
 // falha (rede, timeout, formato inesperado) nunca pode travar a resposta:
 // o chamador deve continuar explicando os conceitos de forma genérica e
 // informar que a taxa atual não pôde ser consultada agora.
 export async function fetchMarketIndicators(fetcher: typeof fetch = fetch): Promise<MarketIndicators | null> {
-  const [selicPoints, cdiPoints, ipcaPoints] = await Promise.all([
+  const [selicPoints, cdiPoints, ipcaPoints, igpmMonthlyPoints] = await Promise.all([
     fetchBcbSeriesRecent(BCB_SERIES.selic, RATE_LOOKBACK_DAYS, fetcher),
     fetchBcbSeriesRecent(BCB_SERIES.cdi, RATE_LOOKBACK_DAYS, fetcher),
     fetchBcbSeriesRecent(BCB_SERIES.ipca12m, IPCA_LOOKBACK_DAYS, fetcher),
+    fetchBcbSeriesRecent(BCB_SERIES.igpmMonthly, IGPM_LOOKBACK_DAYS, fetcher),
   ]);
   const selic = latestWithLastChange(selicPoints);
   const cdi = latestWithLastChange(cdiPoints);
@@ -139,7 +175,8 @@ export async function fetchMarketIndicators(fetcher: typeof fetch = fetch): Prom
   const ipca = ipcaPoints.length > 0
     ? { latest: ipcaPoints[ipcaPoints.length - 1], previous: ipcaPoints.length > 1 ? ipcaPoints[ipcaPoints.length - 2] : null }
     : null;
-  if (!selic && !cdi && !ipca) return null;
+  const igpm = accumulate12Months(igpmMonthlyPoints);
+  if (!selic && !cdi && !ipca && !igpm) return null;
   return {
     selic_rate_annual: selic?.latest.value ?? null,
     selic_reference_date: selic?.latest.date ?? null,
@@ -153,6 +190,10 @@ export async function fetchMarketIndicators(fetcher: typeof fetch = fetch): Prom
     ipca_reference_date: ipca?.latest.date ?? null,
     ipca_previous_12m_percent: ipca?.previous?.value ?? null,
     ipca_previous_reference_date: ipca?.previous?.date ?? null,
+    igpm_12m_percent: igpm?.latest.value ?? null,
+    igpm_reference_date: igpm?.latest.date ?? null,
+    igpm_previous_12m_percent: igpm?.previous?.value ?? null,
+    igpm_previous_reference_date: igpm?.previous?.date ?? null,
     source: "bcb_sgs",
   };
 }

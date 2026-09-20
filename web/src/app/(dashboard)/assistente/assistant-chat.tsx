@@ -102,6 +102,7 @@ function MarketIndicatorsCard({ indicators }: { indicators: FinanceAiMarketIndic
       <IndicatorTile label="Selic" rate={indicators.selic_rate_annual} referenceDate={indicators.selic_reference_date} />
       <IndicatorTile label="CDI" rate={indicators.cdi_rate_annual} referenceDate={indicators.cdi_reference_date} />
       <IndicatorTile label="IPCA 12m" rate={indicators.ipca_12m_percent} referenceDate={indicators.ipca_reference_date} suffix="%" />
+      <IndicatorTile label="IGP-M 12m" rate={indicators.igpm_12m_percent} referenceDate={indicators.igpm_reference_date} suffix="%" />
       <span className={styles.marketIndicatorSource}>Fonte: Banco Central (SGS)</span>
     </div>
   );

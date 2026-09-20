@@ -86,6 +86,8 @@ export interface FinanceAiMarketIndicators {
   cdi_reference_date: string | null;
   ipca_12m_percent: number | null;
   ipca_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
   source: "bcb_sgs";
 }
 

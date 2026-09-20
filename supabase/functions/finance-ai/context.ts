@@ -1235,14 +1235,14 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   // batia com "fundo imobiliario" (singular) nem "fiis" com "\bfii\b" --
   // bug real que deixava a pergunta sem roteamento de investimento nem
   // indicadores de mercado, mesmo o tema estando sempre dentro do escopo.
-  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundos? imobili|\bfiis?\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
+  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundos? imobili|\bfiis?\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|igp[- ]?m|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
   // Subconjunto de investmentDomain que pergunta pelos indicadores em si
   // (não qualquer pergunta sobre investir). "Qual o melhor lugar pra
   // investir?" cai em investmentDomain mas não aqui — a resposta é uma
   // recusa/orientação genérica que não cita nenhum número, então buscar e
   // anexar o cartão visual de Selic/CDI/IPCA nesse caso seria irrelevante e
   // confuso para quem está lendo.
-  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|porcentagem|rendimento|rentabilidade|\btaxas?\b.*(?:hoje|atual|agora)|quanto (?:esta|está|rende|paga)|como est[aá].*(?:mercado|selic|cdi|ipca|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao))/.test(currentNormalized);
+  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|igp[- ]?m|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|porcentagem|rendimento|rentabilidade|\btaxas?\b.*(?:hoje|atual|agora)|quanto (?:esta|está|rende|paga)|como est[aá].*(?:mercado|selic|cdi|ipca|igp[- ]?m|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao)|\b(?:preciso|quero saber|me (?:diz|informe|passa|fala)|qual)\b.{0,20}\b(?:taxa|valor|numero|percentual|indice)\b)/.test(currentNormalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
     : investmentDomain

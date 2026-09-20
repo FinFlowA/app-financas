@@ -34,6 +34,8 @@ type MarketIndicators = {
   cdi_reference_date: string | null;
   ipca_12m_percent: number | null;
   ipca_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
   source: "bcb_sgs";
 };
 
@@ -80,6 +82,7 @@ function MarketIndicatorsCard({ indicators, theme }: { indicators: MarketIndicat
         <IndicatorTile label="Selic" rate={indicators.selic_rate_annual} referenceDate={indicators.selic_reference_date} theme={theme} />
         <IndicatorTile label="CDI" rate={indicators.cdi_rate_annual} referenceDate={indicators.cdi_reference_date} theme={theme} />
         <IndicatorTile label="IPCA 12m" rate={indicators.ipca_12m_percent} referenceDate={indicators.ipca_reference_date} theme={theme} suffix="%" />
+        <IndicatorTile label="IGP-M 12m" rate={indicators.igpm_12m_percent} referenceDate={indicators.igpm_reference_date} theme={theme} suffix="%" />
       </View>
       <Text style={[styles.marketIndicatorSource, { color: theme.textMuted }]}>Fonte: Banco Central (SGS)</Text>
     </View>

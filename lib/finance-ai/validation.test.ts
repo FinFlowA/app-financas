@@ -35,6 +35,7 @@ const marketIndicators = {
   selic_rate_annual: 13.75, selic_reference_date: "2026-09-18",
   cdi_rate_annual: 13.65, cdi_reference_date: "2026-09-17",
   ipca_12m_percent: 4.22, ipca_reference_date: "2026-08-01",
+  igpm_12m_percent: 2.18, igpm_reference_date: "2026-08-01",
   source: "bcb_sgs" as const,
 };
 expectValid({ kind: "answer", conversationId: id, message: "Selic em 13,75%.", intent: "investment_education", quota, marketIndicators });

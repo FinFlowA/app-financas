@@ -96,6 +96,8 @@ type ClientMarketIndicators = {
   cdi_reference_date: string | null;
   ipca_12m_percent: number | null;
   ipca_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
   source: "bcb_sgs";
 };
 
@@ -110,7 +112,7 @@ function stringOrNull(value: unknown): string | null {
 // market_indicators viaja dentro de compactJson (o texto que o modelo lê),
 // não como campo solto de FinancialContext; o objeto ali pode trazer campos
 // extras (valor/data anteriores) usados só pelo modelo, então o payload para
-// o cliente precisa ser reduzido às 7 chaves que o contrato estrito aceita.
+// o cliente precisa ser reduzido às 9 chaves que o contrato estrito aceita.
 function clientMarketIndicators(compactJson: string): ClientMarketIndicators | null {
   let parsed: JsonRecord;
   try {
@@ -129,6 +131,8 @@ function clientMarketIndicators(compactJson: string): ClientMarketIndicators | n
     cdi_reference_date: stringOrNull(source.cdi_reference_date),
     ipca_12m_percent: numberOrNull(source.ipca_12m_percent),
     ipca_reference_date: stringOrNull(source.ipca_reference_date),
+    igpm_12m_percent: numberOrNull(source.igpm_12m_percent),
+    igpm_reference_date: stringOrNull(source.igpm_reference_date),
     source: "bcb_sgs",
   };
 }
