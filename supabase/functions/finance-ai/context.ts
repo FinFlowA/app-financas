@@ -123,6 +123,12 @@ function previousMonth(month: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function daysBefore(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day - days));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
 function currentDateInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -283,6 +289,41 @@ async function countTransactionsInFocusMonth(
     .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
   if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
   return count ?? 0;
+}
+
+type RecentCategoryWindow = {
+  start_date: string;
+  end_date: string;
+  rows: { categoria_id: number | null; valor: number }[];
+};
+
+/** Total gasto/recebido por categoria nos últimos 7 dias (hoje incluso),
+ * calculado no banco em vez de pedido ao modelo para somar
+ * relevant_transactions de cabeça. Perguntas como "quanto gastei com
+ * alimentação na última semana?" tiveram 3 falhas diferentes só nesta
+ * sessão pedindo pro modelo somar manualmente (pediu pro usuário
+ * reclassificar, excluiu um item em silêncio, e por fim inventou um total
+ * sem relação nenhuma com os dados) -- soma é aritmética determinística,
+ * não deveria depender do modelo acertar. */
+async function fetchRecentCategoryTotals(
+  client: SupabaseClient,
+  currentDate: string,
+  enabled: boolean,
+): Promise<RecentCategoryWindow | null> {
+  if (!enabled) return null;
+  const startDate = daysBefore(currentDate, 6);
+  const { data, error } = await client.from("transacoes")
+    .select("categoria_id,valor,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${startDate},data_vencimento.lte.${currentDate}),and(status.eq.paga,data_realizacao.gte.${startDate},data_realizacao.lte.${currentDate})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  return {
+    start_date: startDate,
+    end_date: currentDate,
+    rows: (data ?? []).map((row) => ({
+      categoria_id: row.categoria_id == null ? null : number(row.categoria_id),
+      valor: number(row.valor),
+    })),
+  };
 }
 
 async function fetchAllCashFlowTransactions(
@@ -1561,7 +1602,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1577,6 +1618,7 @@ export async function buildFinancialContext(
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
     needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
     countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
+    fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1593,6 +1635,21 @@ export async function buildFinancialContext(
       focusMonth,
     ).filter((row) => !requestedDate || row.date === requestedDate)
     : [];
+  const recentCategoryTotals = (() => {
+    if (!recentCategoryWindow) return null;
+    const totals = new Map<number, number>();
+    for (const row of recentCategoryWindow.rows) {
+      if (row.categoria_id == null) continue;
+      totals.set(row.categoria_id, (totals.get(row.categoria_id) ?? 0) + row.valor);
+    }
+    return {
+      start_date: recentCategoryWindow.start_date,
+      end_date: recentCategoryWindow.end_date,
+      by_category: [...totals.entries()]
+        .map(([id, total]) => ({ category: categoryById.get(id) ?? null, total: Math.round(total * 100) / 100 }))
+        .filter((item): item is { category: string; total: number } => item.category !== null),
+    };
+  })();
   // Completo em relação ao MÊS EM FOCO, não ao histórico inteiro da pessoa
   // (aggregate.sourceCounts.transactions soma todas as transações já
   // lançadas desde sempre — quase nunca bate com o que é buscado para uma
@@ -1844,6 +1901,7 @@ export async function buildFinancialContext(
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
     market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
+    recent_week_category_totals: recentCategoryTotals,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;

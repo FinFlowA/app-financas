@@ -328,6 +328,22 @@ Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens
   );
 });
 
+Deno.test("prompt somente leitura usa o total pronto de categoria dos ultimos 7 dias", () => {
+  // Bug real: "Quanto eu gastei com alimentacao na ultima semana?" teve 3
+  // falhas diferentes so nesta sessao pedindo pro modelo somar
+  // relevant_transactions de cabeca (pediu pro usuario reclassificar,
+  // excluiu um lancamento em silencio, e por fim respondeu um total sem
+  // relacao nenhuma com os dados reais). A soma passou a ser calculada no
+  // banco (fetchRecentCategoryTotals/recent_week_category_totals em
+  // context.ts) para essa pergunta nao depender mais da aritmetica do
+  // modelo.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("recent_week_category_totals"),
+    "o prompt somente leitura precisa orientar o uso do total pronto de categoria dos ultimos 7 dias",
+  );
+});
+
 Deno.test("prompt somente leitura esclarece que contas a vencer sao lancamentos pendentes", () => {
   // Bug real: "Quais sao as minhas contas que vencem nos proximos 5 dias?"
   // recebia kind=out_of_scope. "Conta" e ambiguo em portugues (conta
