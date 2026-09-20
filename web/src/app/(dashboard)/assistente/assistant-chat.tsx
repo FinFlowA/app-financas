@@ -10,20 +10,24 @@ import { inFinnVoice } from "../../../../../lib/finn-voice";
 import { finnProductGuidance } from "../../../../../lib/finn-product-guidance";
 import { parseFinanceAiHttpResponse } from "../../../../../lib/finance-ai/validation";
 import { FINANCE_AI_MUTATION_INTENTS } from "../../../../../lib/finance-ai/types";
-import type { FinanceAiHttpSuccessResponse, FinanceAiMarketIndicators } from "../../../../../lib/finance-ai/types";
+import type { FinanceAiAccountBalancesCard, FinanceAiHttpSuccessResponse, FinanceAiMarketIndicators } from "../../../../../lib/finance-ai/types";
 import { createClient } from "@/lib/supabase/client";
 import styles from "./assistente.module.css";
 import stateStyles from "@/app/app-states.module.css";
 
-type Message = { id: string; role: "user" | "assistant"; text: string; marketIndicators?: FinanceAiMarketIndicators };
+type Message = {
+  id: string; role: "user" | "assistant"; text: string;
+  marketIndicators?: FinanceAiMarketIndicators; accountBalances?: FinanceAiAccountBalancesCard;
+};
 type Quota = { plan: string; limit: number; remaining: number; model_limit: number; model_remaining: number };
 type PendingActionPreview = { title?: string; summary?: string; consequences?: string[] };
 type PendingAction = { id: string; confirmationToken: string; actionType: string; expiresAt: string; preview?: PendingActionPreview };
 type AiResponse = {
   error?: string; message?: string; kind?: string; conversationId?: string | null; route?: string;
   pendingAction?: PendingAction; quota?: Quota; cleared?: boolean; choices?: string[]; missingFields?: string[];
-  messages?: { id: string; role: "user" | "assistant"; text: string; marketIndicators?: FinanceAiMarketIndicators }[];
+  messages?: { id: string; role: "user" | "assistant"; text: string; marketIndicators?: FinanceAiMarketIndicators; accountBalances?: FinanceAiAccountBalancesCard }[];
   marketIndicators?: FinanceAiMarketIndicators;
+  accountBalances?: FinanceAiAccountBalancesCard;
 };
 
 const INLINE_CHOICE_LIMIT = 4;
@@ -49,6 +53,7 @@ function toViewModel(value: FinanceAiHttpSuccessResponse): AiResponse {
     if ("conversationId" in value) base.conversationId = value.conversationId;
     if ("quota" in value) base.quota = value.quota;
     if (value.kind === "answer" && value.marketIndicators) base.marketIndicators = value.marketIndicators;
+    if (value.kind === "answer" && value.accountBalances) base.accountBalances = value.accountBalances;
     if (value.kind === "clarify") {
       base.choices = value.choices;
       base.missingFields = value.missingFields;
@@ -104,6 +109,28 @@ function MarketIndicatorsCard({ indicators }: { indicators: FinanceAiMarketIndic
       <IndicatorTile label="IPCA 12m" rate={indicators.ipca_12m_percent} referenceDate={indicators.ipca_reference_date} suffix="%" />
       <IndicatorTile label="IGP-M 12m" rate={indicators.igpm_12m_percent} referenceDate={indicators.igpm_reference_date} suffix="%" />
       <span className={styles.marketIndicatorSource}>Fonte: Banco Central (SGS)</span>
+    </div>
+  );
+}
+
+function formatMoney(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Cartão visual com o saldo por conta — já vem limitado às de maior saldo
+ * (no máximo 6) para não poluir a tela de quem tem muitas contas cadastradas. */
+function AccountBalancesCard({ accounts }: { accounts: FinanceAiAccountBalancesCard }) {
+  return (
+    <div className={styles.accountBalances}>
+      {accounts.accounts.map((account, index) => (
+        <div key={`${account.name}-${index}`} className={styles.accountBalanceCard}>
+          <span className={styles.accountBalanceName}>{account.name}</span>
+          <span className={styles.accountBalanceValue}>{formatMoney(account.balance)}</span>
+        </div>
+      ))}
+      {accounts.hiddenCount > 0 && (
+        <span className={styles.accountBalanceHidden}>+{accounts.hiddenCount} {accounts.hiddenCount === 1 ? "conta" : "contas"}</span>
+      )}
     </div>
   );
 }
@@ -258,7 +285,7 @@ export default function AssistantChat({
       try { localStorage.setItem(conversationKey, response.conversationId); } catch { /* memória da montagem permanece válida */ }
     }
     if (response.quota) setQuota(response.quota);
-    if (response.message) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: response.message!, marketIndicators: response.marketIndicators }]);
+    if (response.message) setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", text: response.message!, marketIndicators: response.marketIndicators, accountBalances: response.accountBalances }]);
     setClarificationChoices(response.kind === "clarify" && Array.isArray(response.choices) ? response.choices : []);
     setClarificationField(response.kind === "clarify" && Array.isArray(response.missingFields) ? response.missingFields[0] ?? null : null);
     if (response.pendingAction && UUID.test(response.pendingAction.id) && UUID.test(response.pendingAction.confirmationToken)) persistPendingAction(response.pendingAction);
@@ -292,7 +319,7 @@ export default function AssistantChat({
         } else if (id) {
           try { localStorage.removeItem(conversationKey); } catch { /* armazenamento indisponível */ }
         }
-        if (response.messages?.length) setMessages(response.messages.map((message) => ({ id: String(message.id), role: message.role, text: message.text, marketIndicators: message.marketIndicators })));
+        if (response.messages?.length) setMessages(response.messages.map((message) => ({ id: String(message.id), role: message.role, text: message.text, marketIndicators: message.marketIndicators, accountBalances: message.accountBalances })));
         if (response.quota) setQuota(response.quota);
       })
       .catch(() => {
@@ -458,6 +485,7 @@ export default function AssistantChat({
                       </div>
                     </div>
                     {message.marketIndicators && <MarketIndicatorsCard indicators={message.marketIndicators} />}
+                    {message.accountBalances && <AccountBalancesCard accounts={message.accountBalances} />}
                   </div>
                 ))}
                 {messages.length <= 1 && (

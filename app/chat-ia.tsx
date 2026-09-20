@@ -39,12 +39,19 @@ type MarketIndicators = {
   source: "bcb_sgs";
 };
 
+type AccountBalancesCardData = {
+  accounts: { name: string; balance: number }[];
+  hiddenCount: number;
+  totalBalance: number;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   createdAt?: string;
   marketIndicators?: MarketIndicators;
+  accountBalances?: AccountBalancesCardData;
 };
 
 function shortReferenceDate(value: string | null): string | null {
@@ -85,6 +92,32 @@ function MarketIndicatorsCard({ indicators, theme }: { indicators: MarketIndicat
         <IndicatorTile label="IGP-M 12m" rate={indicators.igpm_12m_percent} referenceDate={indicators.igpm_reference_date} theme={theme} suffix="%" />
       </View>
       <Text style={[styles.marketIndicatorSource, { color: theme.textMuted }]}>Fonte: Banco Central (SGS)</Text>
+    </View>
+  );
+}
+
+function formatMoney(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Cartão visual com o saldo por conta — já vem limitado às de maior saldo
+ * (no máximo 6) para não poluir a tela de quem tem muitas contas cadastradas. */
+function AccountBalancesCard({ accounts, theme }: { accounts: AccountBalancesCardData; theme: ReturnType<typeof finFlowTheme> }) {
+  return (
+    <View style={styles.accountBalancesWrap}>
+      <View style={styles.accountBalancesRow}>
+        {accounts.accounts.map((account, index) => (
+          <View key={`${account.name}-${index}`} style={[styles.accountBalanceCard, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+            <Text style={[styles.accountBalanceName, { color: theme.textMuted }]} numberOfLines={1}>{account.name}</Text>
+            <Text style={[styles.accountBalanceValue, { color: theme.primaryDark }]}>{formatMoney(account.balance)}</Text>
+          </View>
+        ))}
+        {accounts.hiddenCount > 0 && (
+          <Text style={[styles.accountBalanceHidden, { color: theme.textMuted }]}>
+            +{accounts.hiddenCount} {accounts.hiddenCount === 1 ? "conta" : "contas"}
+          </Text>
+        )}
+      </View>
     </View>
   );
 }
@@ -137,12 +170,14 @@ type FinanceAiResponse = {
   route?: string;
   quota?: AiQuota;
   marketIndicators?: MarketIndicators;
+  accountBalances?: AccountBalancesCardData;
   messages?: {
     id: string;
     role: "user" | "assistant";
     text: string;
     createdAt?: string;
     marketIndicators?: MarketIndicators;
+    accountBalances?: AccountBalancesCardData;
   }[];
   pendingAction?: PendingAction;
   choices?: string[];
@@ -479,8 +514,8 @@ export default function ChatIAScreen() {
       .slice(0, 6);
   }, [clarificationChoices, input]);
 
-  const appendAssistant = useCallback((text: string, marketIndicators?: MarketIndicators) => {
-    setMessages((current) => [...current, { id: makeId("assistant"), role: "assistant", text, marketIndicators }]);
+  const appendAssistant = useCallback((text: string, marketIndicators?: MarketIndicators, accountBalances?: AccountBalancesCardData) => {
+    setMessages((current) => [...current, { id: makeId("assistant"), role: "assistant", text, marketIndicators, accountBalances }]);
   }, []);
 
   const savePendingAction = useCallback(async (action: PendingAction | null) => {
@@ -559,6 +594,7 @@ export default function ChatIAScreen() {
             text: message.text,
             createdAt: message.createdAt,
             marketIndicators: message.marketIndicators,
+            accountBalances: message.accountBalances,
           })));
         } else {
           setMessages([{ id: "welcome", role: "assistant", text: WELCOME_MESSAGE }]);
@@ -590,7 +626,7 @@ export default function ChatIAScreen() {
     }
     if (!operationIsCurrent(operationEpoch, operationUserId)) return;
     if (response.quota) setQuota(response.quota);
-    if (response.message) appendAssistant(response.message, response.marketIndicators);
+    if (response.message) appendAssistant(response.message, response.marketIndicators, response.accountBalances);
     setClarificationChoices(response.kind === "clarify" && Array.isArray(response.choices)
       ? response.choices
       : []);
@@ -906,6 +942,7 @@ export default function ChatIAScreen() {
                   </View>
                 </View>
                 {!isUser && message.marketIndicators && <MarketIndicatorsCard indicators={message.marketIndicators} theme={theme} />}
+                {!isUser && message.accountBalances && <AccountBalancesCard accounts={message.accountBalances} theme={theme} />}
               </View>
             );
           })}
@@ -1174,6 +1211,12 @@ const styles = StyleSheet.create({
   marketIndicatorValueMuted: { fontSize: 11, fontWeight: "700" },
   marketIndicatorDate: { fontSize: 9, fontWeight: "600" },
   marketIndicatorSource: { marginTop: 5, fontSize: 9, fontWeight: "600" },
+  accountBalancesWrap: { marginTop: -6, marginBottom: 13, marginLeft: 42, paddingRight: 36 },
+  accountBalancesRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  accountBalanceCard: { flex: 1, minWidth: "45%", borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
+  accountBalanceName: { fontSize: 9.5, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase" },
+  accountBalanceValue: { fontSize: 14, fontWeight: "900", fontVariant: ["tabular-nums"] },
+  accountBalanceHidden: { alignSelf: "center", fontSize: 10.5, fontWeight: "700", paddingHorizontal: 4 },
   suggestionsWrap: { marginTop: 7, marginBottom: 12 },
   suggestionsTitle: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 9, marginLeft: 2 },
   suggestionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

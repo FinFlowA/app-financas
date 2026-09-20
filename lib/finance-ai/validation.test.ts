@@ -39,6 +39,16 @@ const marketIndicators = {
   source: "bcb_sgs" as const,
 };
 expectValid({ kind: "answer", conversationId: id, message: "Selic em 13,75%.", intent: "investment_education", quota, marketIndicators });
+const accountBalances = {
+  accounts: [
+    { name: "Banco do Brasil", balance: 237.37 },
+    { name: "Itaú", balance: 0 },
+  ],
+  hiddenCount: 2,
+  totalBalance: 237.37,
+};
+expectValid({ kind: "answer", conversationId: id, message: "Saldo total: R$ 237,37.", intent: "financial_summary", quota, accountBalances });
+expectValid({ kind: "answer", conversationId: id, message: "Saldo e Selic.", intent: "investment_education", quota, marketIndicators, accountBalances });
 expectValid({ kind: "clarify", conversationId: id, message: "Qual conta?", intent: "create_transaction", missingFields: ["account_id"], choices: ["Nubank", "Carteira"], quota });
 expectValid({ kind: "navigate", conversationId: id, message: "Abrindo.", intent: "open_history", route: "/transacoes", quota });
 expectValid({
@@ -64,6 +74,10 @@ expectValid({
   conversationId: id,
   messages: [{ id: "1", role: "assistant", text: "Selic em 13,75%.", createdAt: now, intent: "investment_education", marketIndicators }],
 });
+expectValid({
+  conversationId: id,
+  messages: [{ id: "1", role: "assistant", text: "Saldo total: R$ 237,37.", createdAt: now, intent: "financial_summary", accountBalances }],
+});
 expectValid({ cleared: true, conversationId: null, messages: [], quota });
 expectValid({ cleared: true, conversationId: null, messages: [] });
 expectValid({ error: "AI_RATE_LIMITED", message: "Aguarde." });
@@ -81,6 +95,18 @@ expectInvalid({
 expectInvalid({
   conversationId: id,
   messages: [{ id: "1", role: "assistant", text: "Selic em 13,75%.", createdAt: now, intent: "investment_education", marketIndicators: { ...marketIndicators, source: "outro" } }],
+});
+expectInvalid({
+  kind: "answer", conversationId: id, message: "Saldo total.", intent: "financial_summary", quota,
+  accountBalances: { ...accountBalances, accounts: [] },
+});
+expectInvalid({
+  kind: "answer", conversationId: id, message: "Saldo total.", intent: "financial_summary", quota,
+  accountBalances: { ...accountBalances, accounts: Array.from({ length: 7 }, (_, index) => ({ name: `Conta ${index}`, balance: 0 })) },
+});
+expectInvalid({
+  kind: "answer", conversationId: id, message: "Saldo total.", intent: "financial_summary", quota,
+  accountBalances: { ...accountBalances, extra: true },
 });
 expectInvalid({ error: "erro interno" });
 }

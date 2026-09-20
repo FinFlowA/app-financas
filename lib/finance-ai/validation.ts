@@ -94,6 +94,18 @@ function marketIndicators(value: unknown): boolean {
     && value.source === "bcb_sgs";
 }
 
+function accountBalance(value: unknown): boolean {
+  if (!object(value) || !exactKeys(value, ["name", "balance"])) return false;
+  return text(value.name, 120) && typeof value.balance === "number" && Number.isFinite(value.balance);
+}
+
+function accountBalancesCard(value: unknown): boolean {
+  if (!object(value) || !exactKeys(value, ["accounts", "hiddenCount", "totalBalance"])) return false;
+  return Array.isArray(value.accounts) && value.accounts.length >= 1 && value.accounts.length <= 6
+    && value.accounts.every((item) => accountBalance(item))
+    && integer(value.hiddenCount) && typeof value.totalBalance === "number" && Number.isFinite(value.totalBalance);
+}
+
 function preview(value: unknown): boolean {
   if (!object(value) || !exactKeys(value, ["title", "summary", "consequences"])) return false;
   return text(value.title, 200) && text(value.summary, 2_000)
@@ -123,14 +135,18 @@ function historyMessages(value: unknown): boolean {
   return Array.isArray(value) && value.length <= 200 && value.every((item) => {
     if (!object(item)) return false;
     const hasMarketIndicators = Object.prototype.hasOwnProperty.call(item, "marketIndicators");
-    if (!exactKeys(item, hasMarketIndicators
-      ? ["id", "role", "text", "createdAt", "intent", "marketIndicators"]
-      : ["id", "role", "text", "createdAt", "intent"])) return false;
+    const hasAccountBalances = Object.prototype.hasOwnProperty.call(item, "accountBalances");
+    if (!exactKeys(item, [
+        "id", "role", "text", "createdAt", "intent",
+        ...(hasMarketIndicators ? ["marketIndicators"] : []),
+        ...(hasAccountBalances ? ["accountBalances"] : []),
+      ])) return false;
     return typeof item.id === "string" && /^[1-9]\d*$/.test(item.id)
       && (item.role === "user" || item.role === "assistant")
       && text(item.text) && timestamp(item.createdAt)
       && (item.intent === null || allIntents.has(String(item.intent)))
-      && (!hasMarketIndicators || marketIndicators(item.marketIndicators));
+      && (!hasMarketIndicators || marketIndicators(item.marketIndicators))
+      && (!hasAccountBalances || accountBalancesCard(item.accountBalances));
   });
 }
 
@@ -164,11 +180,15 @@ export function parseFinanceAiHttpResponse(raw: string | unknown): FinanceAiResu
       && (!Object.prototype.hasOwnProperty.call(value, "message") || text(value.message));
   } else if (value.kind === "answer") {
     const hasMarketIndicators = Object.prototype.hasOwnProperty.call(value, "marketIndicators");
-    valid = exactKeys(value, hasMarketIndicators
-      ? ["kind", "conversationId", "message", "intent", "quota", "marketIndicators"]
-      : ["kind", "conversationId", "message", "intent", "quota"])
+    const hasAccountBalances = Object.prototype.hasOwnProperty.call(value, "accountBalances");
+    valid = exactKeys(value, [
+        "kind", "conversationId", "message", "intent", "quota",
+        ...(hasMarketIndicators ? ["marketIndicators"] : []),
+        ...(hasAccountBalances ? ["accountBalances"] : []),
+      ])
       && messageBase(value) && (reads.has(String(value.intent)) || value.intent === "out_of_scope")
-      && (!hasMarketIndicators || marketIndicators(value.marketIndicators));
+      && (!hasMarketIndicators || marketIndicators(value.marketIndicators))
+      && (!hasAccountBalances || accountBalancesCard(value.accountBalances));
   } else if (value.kind === "clarify") {
     valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "missingFields", "choices", "quota"])
       && messageBase(value) && allIntents.has(String(value.intent)) && value.intent !== "out_of_scope"

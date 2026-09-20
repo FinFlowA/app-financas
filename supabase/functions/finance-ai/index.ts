@@ -143,6 +143,43 @@ function clientMarketIndicators(compactJson: string): ClientMarketIndicators | n
   };
 }
 
+type ClientAccountBalancesCard = {
+  accounts: { name: string; balance: number }[];
+  hiddenCount: number;
+  totalBalance: number;
+};
+
+// Só perguntas que pedem o saldo discriminado por conta (não qualquer
+// pergunta sobre saldo) acionam o cartão visual — "qual meu saldo?" sozinho
+// já tem uma resposta objetiva em texto e não precisa do cartão.
+const ACCOUNT_BALANCE_QUERY_PATTERN = /\bsaldo\b.{0,30}\bcontas\b|\bcontas\b.{0,30}\bsaldo\b|\bsaldo\b.{0,20}\b(?:cada\s+conta|por\s+conta)\b|\b(?:cada\s+conta|por\s+conta)\b.{0,20}\bsaldo\b|\bquanto\b.{0,20}\btenho\b.{0,20}\bcada\s+conta\b/;
+
+// accounts já está sempre presente em FINFLOW_DATA (nenhuma busca extra
+// precisa ser feita); o cartão só recorta e ordena o que já foi buscado.
+// Limitado às de maior saldo para não poluir a tela de quem tem muitas
+// contas — hiddenCount avisa quantas ficaram de fora, e totalBalance soma
+// TODAS as contas (não só as mostradas), batendo com o texto da resposta.
+function clientAccountBalances(compactJson: string): ClientAccountBalancesCard | null {
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const rawAccounts = parsed.accounts;
+  if (!Array.isArray(rawAccounts)) return null;
+  const accounts = rawAccounts
+    .map((row) => asObject(row))
+    .filter((row) => row.active !== false)
+    .map((row) => ({ name: stringOrNull(row.name) ?? "", balance: numberOrNull(row.balance) ?? 0 }))
+    .filter((row) => row.name.length > 0);
+  if (accounts.length === 0) return null;
+  const totalBalance = Math.round(accounts.reduce((sum, row) => sum + row.balance, 0) * 100) / 100;
+  const sorted = [...accounts].sort((left, right) => right.balance - left.balance);
+  const shown = sorted.slice(0, 6);
+  return { accounts: shown, hiddenCount: Math.max(0, sorted.length - shown.length), totalBalance };
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -685,6 +722,7 @@ async function saveMessage(admin: AdminClient, args: {
   provider?: string | null;
   model?: string | null;
   marketIndicators?: ClientMarketIndicators | null;
+  accountBalances?: ClientAccountBalancesCard | null;
 }): Promise<void> {
   const safeContent = redactSensitiveText(args.content).trim().slice(0, MAX_MESSAGE_CHARS);
   if (!safeContent) throw new Error("AI_HISTORY_FAILED");
@@ -700,6 +738,7 @@ async function saveMessage(admin: AdminClient, args: {
     // nunca o objeto interno maior com valores anteriores (só para o modelo
     // responder "mudou recentemente?"); o check da tabela reforça isso.
     market_indicators: args.marketIndicators ?? null,
+    account_balances: args.accountBalances ?? null,
   });
   if (error) throw new Error("AI_HISTORY_FAILED");
 }
@@ -786,7 +825,7 @@ function createdTransactionIds(result: JsonRecord): number[] {
 async function handleHistory(admin: AdminClient, userId: string, requestedId?: unknown): Promise<JsonRecord> {
   const conversation = await findConversation(admin, userId, requestedId);
   if (!conversation) return { conversationId: null, messages: [] };
-  const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent,market_indicators")
+  const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent,market_indicators,account_balances")
     .eq("user_id", userId).eq("conversation_id", conversation.id)
     .gte("created_at", chatRetentionCutoff())
     .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(200);
@@ -796,6 +835,7 @@ async function handleHistory(admin: AdminClient, userId: string, requestedId?: u
     messages: (data ?? []).reverse().map((row) => ({
       id: String(row.id), role: row.role, text: row.content, createdAt: row.created_at, intent: row.intent,
       ...(row.market_indicators ? { marketIndicators: row.market_indicators as ClientMarketIndicators } : {}),
+      ...(row.account_balances ? { accountBalances: row.account_balances as ClientAccountBalancesCard } : {}),
     })),
   };
 }
@@ -1309,10 +1349,18 @@ Deno.serve(async (req) => {
       // junto da mensagem para o cartão continuar aparecendo ao recarregar
       // o histórico, não só na resposta ao vivo.
       const marketIndicators = clientMarketIndicators(financialContext.compactJson);
-      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model, marketIndicators });
+      // Mesma lógica do cartão de indicadores: só monta quando a pergunta
+      // ATUAL pede o saldo discriminado por conta, nunca a partir do texto
+      // concatenado de turnos anteriores (evitaria o cartão "grudar" em
+      // respostas seguintes sem relação, como já aconteceu com indicadores).
+      const accountBalances = ACCOUNT_BALANCE_QUERY_PATTERN.test(normalizeText(message))
+        ? clientAccountBalances(financialContext.compactJson)
+        : null;
+      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model, marketIndicators, accountBalances });
       return json({
         kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel,
         ...(marketIndicators ? { marketIndicators } : {}),
+        ...(accountBalances ? { accountBalances } : {}),
       }, 200, req);
     }
 
