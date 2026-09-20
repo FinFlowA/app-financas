@@ -46,12 +46,16 @@ const PRE_CONTEXT_MODEL_BUDGET: ModelTokenBudget = {
   maxOutputTokens: 1,
 };
 const CHAT_RETENTION_MS = 24 * 60 * 60 * 1_000;
-// Uma única tentativa extra ainda deixava passar casos em que o modelo
-// erra duas vezes seguidas com a mesma entrada (confirmado em produção:
-// perguntas básicas sobre os dados do próprio usuário precisando de um
-// terceiro envio manual). Cada tentativa soma ~2-5s de latência, mas isso
-// ainda é melhor que o usuário perceber a recusa incorreta e reenviar.
-const MAX_SCOPE_RETRY_ATTEMPTS = 2;
+// Duas tentativas extra (3 chamadas no total) chegaram a reduzir esse teto
+// pela metade sozinhas: confirmado em produção que a segunda tentativa
+// extra de uma mensagem foi rejeitada com AI_PROVIDER_RATE_LIMITED porque
+// as chamadas anteriores (a própria pergunta e a tentativa extra de uma
+// pergunta anterior, em sequência rápida) já tinham consumido a maior
+// parte do teto de 8 mil tokens/minuto da Groq -- pior ainda: isso também
+// rouba orçamento de QUALQUER outra mensagem do mesmo minuto. Uma única
+// tentativa extra já resolvia a maioria dos casos observados e deixa uma
+// folga bem maior para o restante da janela de um minuto.
+const MAX_SCOPE_RETRY_ATTEMPTS = 1;
 
 function chatRetentionCutoff(): string {
   return new Date(Date.now() - CHAT_RETENTION_MS).toISOString();
@@ -1228,16 +1232,17 @@ Deno.serve(async (req) => {
 
     // O modelo (com esforço de raciocínio baixo) às vezes classifica uma
     // pergunta legítima sobre os dados do próprio usuário como fora de
-    // escopo — às vezes até duas vezes seguidas com a mesma entrada,
-    // confirmado em produção (o usuário precisando reenviar manualmente a
-    // mesma pergunta uma terceira vez). O mesmo vale quando a resposta é
-    // kind=answer mas safeAssistantMessage a descarta por violar uma regra
-    // de segurança que nem fazia parte do pedido (ex.: uma explicação sobre
-    // fundos imobiliários que cita um ticker real como exemplo, o que o
-    // guard corretamente bloqueia): sem essa chance extra, o usuário via a
-    // mesma recusa genérica de "fora de escopo" para um tema que está
-    // explicitamente dentro do escopo. Até duas tentativas extra, silenciosas,
-    // evitam que a pessoa precise reenviar manualmente. Fica restrito ao modo
+    // escopo na primeira tentativa e acerta ao repetir a mesma entrada —
+    // confirmado em produção. O mesmo vale quando a resposta é kind=answer
+    // mas safeAssistantMessage a descarta por violar uma regra de segurança
+    // que nem fazia parte do pedido (ex.: uma explicação sobre fundos
+    // imobiliários que cita um ticker real como exemplo, o que o guard
+    // corretamente bloqueia): sem essa chance extra, o usuário via a mesma
+    // recusa genérica de "fora de escopo" para um tema que está
+    // explicitamente dentro do escopo. Uma única tentativa extra, silenciosa,
+    // evita que a pessoa precise reenviar manualmente sem consumir sozinha
+    // boa parte do teto de tokens/minuto compartilhado (ver
+    // MAX_SCOPE_RETRY_ATTEMPTS). Fica restrito ao modo
     // somente leitura, onde a regra 1 do prompt já proíbe explicitamente
     // out_of_scope para dados básicos do usuário; mutações têm cota própria
     // e um escopo operacional testado há mais tempo.
