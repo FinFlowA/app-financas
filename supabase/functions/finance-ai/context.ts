@@ -1668,6 +1668,19 @@ export async function buildFinancialContext(
       }
     }
   }
+  // dataset_complete.transactions mede o MÊS INTEIRO: com mais de 40
+  // lançamentos no mês (comum para usuário ativo), ele é quase sempre false
+  // mesmo quando o recorte pedido (ex.: uma semana, uma categoria) está 100%
+  // presente em relevant_transactions -- confirmado em produção que isso
+  // fazia o modelo recusar somas de recortes pequenos alegando "dataset
+  // incompleto". Este sinal mede só o que de fato bate com a pergunta atual.
+  const matchingTransactionsTotal = transactions.filter((row) => (
+    matchesRequest(row, tokens, requestContext, transactionRelatedText(row))
+  )).length;
+  const matchingTransactionsIncluded = [...selectedTransactions.values()].filter((row) => (
+    matchesRequest(row, tokens, requestContext, transactionRelatedText(row))
+  )).length;
+  const matchingTransactionsComplete = matchingTransactionsTotal === matchingTransactionsIncluded;
 
   const sortedInvoiceItems = [...invoiceItems].sort((left, right) => (
     text(right.mes_fatura, 7).localeCompare(text(left.mes_fatura, 7)) || number(right.id) - number(left.id)
@@ -1789,6 +1802,7 @@ export async function buildFinancialContext(
       card_aggregates: aggregate.aggregateComplete,
       transactions: transactionDetailsComplete && selectedTransactions.size === transactions.length,
       transactions_fetched_complete: transactionDetailsComplete,
+      transactions_matching_query: matchingTransactionsComplete,
       transactions_query_scope: transactionPage.queryScope,
       transactions_total_available: aggregate.sourceCounts.transactions,
       transactions_total_fetched: transactions.length,
