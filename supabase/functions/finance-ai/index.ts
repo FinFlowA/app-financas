@@ -46,6 +46,12 @@ const PRE_CONTEXT_MODEL_BUDGET: ModelTokenBudget = {
   maxOutputTokens: 1,
 };
 const CHAT_RETENTION_MS = 24 * 60 * 60 * 1_000;
+// Uma única tentativa extra ainda deixava passar casos em que o modelo
+// erra duas vezes seguidas com a mesma entrada (confirmado em produção:
+// perguntas básicas sobre os dados do próprio usuário precisando de um
+// terceiro envio manual). Cada tentativa soma ~2-5s de latência, mas isso
+// ainda é melhor que o usuário perceber a recusa incorreta e reenviar.
+const MAX_SCOPE_RETRY_ATTEMPTS = 2;
 
 function chatRetentionCutoff(): string {
   return new Date(Date.now() - CHAT_RETENTION_MS).toISOString();
@@ -1182,19 +1188,24 @@ Deno.serve(async (req) => {
 
     // O modelo (com esforço de raciocínio baixo) às vezes classifica uma
     // pergunta legítima sobre os dados do próprio usuário como fora de
-    // escopo na primeira tentativa e acerta ao repetir a mesma pergunta —
-    // confirmado em produção pelo usuário. O mesmo vale quando a resposta é
+    // escopo — às vezes até duas vezes seguidas com a mesma entrada,
+    // confirmado em produção (o usuário precisando reenviar manualmente a
+    // mesma pergunta uma terceira vez). O mesmo vale quando a resposta é
     // kind=answer mas safeAssistantMessage a descarta por violar uma regra
     // de segurança que nem fazia parte do pedido (ex.: uma explicação sobre
     // fundos imobiliários que cita um ticker real como exemplo, o que o
-    // guard corretamente bloqueia): sem essa segunda chance, o usuário via
-    // a mesma recusa genérica de "fora de escopo" para um tema que está
-    // explicitamente dentro do escopo. Uma única tentativa extra, silenciosa,
-    // evita que a pessoa precise reenviar manualmente. Fica restrito ao modo
+    // guard corretamente bloqueia): sem essa chance extra, o usuário via a
+    // mesma recusa genérica de "fora de escopo" para um tema que está
+    // explicitamente dentro do escopo. Até duas tentativas extra, silenciosas,
+    // evitam que a pessoa precise reenviar manualmente. Fica restrito ao modo
     // somente leitura, onde a regra 1 do prompt já proíbe explicitamente
     // out_of_scope para dados básicos do usuário; mutações têm cota própria
     // e um escopo operacional testado há mais tempo.
-    if ((output.kind === "out_of_scope" || !outputMessage) && !mutationRequested) {
+    for (
+      let retryAttempt = 0;
+      (output.kind === "out_of_scope" || !outputMessage) && !mutationRequested && retryAttempt < MAX_SCOPE_RETRY_ATTEMPTS;
+      retryAttempt++
+    ) {
       const retryStartedAt = Date.now();
       let retryUsageId: string | null = null;
       try {
@@ -1213,9 +1224,10 @@ Deno.serve(async (req) => {
         });
         const retryOutput = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
         const retryMessage = safeAssistantMessage(retryOutput.message, retryOutput.intent, retryOutput.kind, outputCanary);
-        // Só adota a segunda tentativa se ela de fato resolveu o problema
+        // Só adota a tentativa extra se ela de fato resolveu o problema
         // (não é out_of_scope e a mensagem passou pelas regras de
-        // segurança); caso contrário mantém a resposta original.
+        // segurança); caso contrário mantém a resposta anterior e, se ainda
+        // houver tentativas disponíveis, o laço tenta de novo.
         if (retryOutput.kind !== "out_of_scope" && retryMessage) {
           output = retryOutput;
           outputMessage = retryMessage;
@@ -1237,7 +1249,8 @@ Deno.serve(async (req) => {
         }
         // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
         // por minuto já consumida pela primeira chamada não pode travar a
-        // solicitação): mantém a resposta original.
+        // solicitação): para de tentar e mantém a resposta anterior.
+        break;
       }
     }
 
