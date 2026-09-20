@@ -195,6 +195,52 @@ function clientAccountBalances(compactJson: string): ClientAccountBalancesCard |
   return { accounts: shown, hiddenCount: Math.max(0, sorted.length - shown.length), totalBalance };
 }
 
+const WEEKLY_CATEGORY_SPEND_VERB = /\b(?:gastei|gastou|gasto|recebi|recebeu|ganhei|ganhou)\b/;
+const WEEKLY_CATEGORY_SPEND_WINDOW = /\b(?:ultima semana|essa semana|esta semana|semana passada|ultimos 7 dias)\b/;
+
+function formatMoneyBRL(value: number): string {
+  return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// recent_week_category_totals (ver context.ts) já traz o total por categoria
+// dos últimos 7 dias calculado no banco. Resolve a categoria citada na
+// pergunta ATUAL (nunca o histórico concatenado, mesmo motivo do cartão de
+// saldo) e monta a frase aqui — só quando exatamente uma categoria bate,
+// para nunca arriscar citar a errada por ambiguidade.
+function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: string): string | null {
+  if (!/\bquanto\b/.test(normalizedMessage)) return null;
+  if (!WEEKLY_CATEGORY_SPEND_VERB.test(normalizedMessage)) return null;
+  if (!WEEKLY_CATEGORY_SPEND_WINDOW.test(normalizedMessage)) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const rawCategories = parsed.categories;
+  if (!Array.isArray(rawCategories)) return null;
+  const matches = rawCategories
+    .map((row) => asObject(row))
+    .filter((row) => row.active !== false)
+    .map((row) => ({ name: stringOrNull(row.name) ?? "", type: stringOrNull(row.type) ?? "" }))
+    .filter((row) => row.name.length >= 3 && normalizedMessage.includes(normalizeText(row.name)));
+  if (matches.length !== 1) return null;
+  const category = matches[0];
+  const rawWindow = parsed.recent_week_category_totals;
+  if (!rawWindow || typeof rawWindow !== "object") return null;
+  const byCategoryRaw = (rawWindow as JsonRecord).by_category;
+  const byCategory = Array.isArray(byCategoryRaw) ? byCategoryRaw.map((row) => asObject(row)) : [];
+  const entry = byCategory.find((row) => stringOrNull(row.category) === category.name);
+  const total = entry ? numberOrNull(entry.total) ?? 0 : 0;
+  if (total <= 0) {
+    return category.type === "receita"
+      ? `Você não recebeu nada de ${category.name} na última semana.`
+      : `Você não teve gastos com ${category.name} na última semana.`;
+  }
+  const verb = category.type === "receita" ? "recebeu" : "gastou";
+  return `Na última semana você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1205,26 +1251,42 @@ Deno.serve(async (req) => {
       throw preProviderError;
     }
 
-    try {
-      modelResult = await requestModel(prompt, history, safetyId);
-    } catch (providerError) {
-      const providerErrorCode = monitoringErrorCode(providerError, "AI_PROVIDER_FAILED");
-      const providerMetadata = providerFailureMetadata(providerError);
-      const definitelyNotCalled = providerErrorCode === "AI_PROVIDER_NOT_CONFIGURED"
-        || providerErrorCode === "AI_CONTEXT_TOO_LARGE";
-      // Configuração/contexto falham antes do fetch e podem liberar a reserva.
-      // Qualquer outra falha pode ter consumido tokens e preserva o orçamento.
-      await finalizeModelRequest(admin, {
-        usageId,
-        provider: definitelyNotCalled ? "not_called" : providerMetadata?.provider ?? "attempted",
-        model: definitelyNotCalled ? "not_called" : providerMetadata?.model ?? "unknown",
-        inputTokens: 0,
-        outputTokens: 0,
-        status: "failed",
-        latencyMs: monitoringLatencyMs(requestStartedAt),
-        errorCode: providerErrorCode,
-      });
-      throw providerError;
+    // Limite de taxa (nosso ou da Groq) é contenção passageira do orçamento
+    // compartilhado, não um problema com a pergunta em si -- confirmado em
+    // produção que a chamada INICIAL (não só a tentativa extra de escopo, já
+    // tratada mais abaixo) pode esbarrar nisso e devolver
+    // AI_PROVIDER_RATE_LIMITED direto ao usuário. Uma única espera+nova
+    // tentativa aqui evita expor esse detalhe interno sem custar uma segunda
+    // reserva de cota: é a mesma chamada, não uma tentativa de classificação.
+    let usedRateLimitBackoff = false;
+    while (true) {
+      try {
+        modelResult = await requestModel(prompt, history, safetyId);
+        break;
+      } catch (providerError) {
+        const providerErrorCode = monitoringErrorCode(providerError, "AI_PROVIDER_FAILED");
+        if (RATE_LIMIT_RETRY_CODES.has(providerErrorCode) && !usedRateLimitBackoff) {
+          usedRateLimitBackoff = true;
+          await sleep(RATE_LIMIT_BACKOFF_MS);
+          continue;
+        }
+        const providerMetadata = providerFailureMetadata(providerError);
+        const definitelyNotCalled = providerErrorCode === "AI_PROVIDER_NOT_CONFIGURED"
+          || providerErrorCode === "AI_CONTEXT_TOO_LARGE";
+        // Configuração/contexto falham antes do fetch e podem liberar a reserva.
+        // Qualquer outra falha pode ter consumido tokens e preserva o orçamento.
+        await finalizeModelRequest(admin, {
+          usageId,
+          provider: definitelyNotCalled ? "not_called" : providerMetadata?.provider ?? "attempted",
+          model: definitelyNotCalled ? "not_called" : providerMetadata?.model ?? "unknown",
+          inputTokens: 0,
+          outputTokens: 0,
+          status: "failed",
+          latencyMs: monitoringLatencyMs(requestStartedAt),
+          errorCode: providerErrorCode,
+        });
+        throw providerError;
+      }
     }
     await finalizeModelRequest(admin, {
       usageId,
@@ -1327,6 +1389,26 @@ Deno.serve(async (req) => {
           // resposta anterior.
           break retryLoop;
         }
+      }
+    }
+
+    // "Quanto gastei/recebi com <categoria> na última semana?" pediu para o
+    // modelo somar valores de cabeça e falhou de formas diferentes 4 vezes
+    // na mesma sessão (pediu para o usuário reclassificar um lançamento,
+    // excluiu esse lançamento em silêncio, inventou um total sem relação
+    // com os dados, e mesmo com o valor pronto em recent_week_category_totals
+    // continuou errando). Soma é aritmética determinística: para esse padrão
+    // específico e inequívoco (exatamente uma categoria citada, sem
+    // ambiguidade), a resposta é montada aqui a partir do valor já calculado
+    // no banco, sem depender do modelo escrever o número.
+    if (!mutationRequested) {
+      const weeklySpendMessage = weeklyCategorySpendAnswer(financialContext.compactJson, normalizeText(message));
+      const safeWeeklySpendMessage = weeklySpendMessage
+        ? safeAssistantMessage(weeklySpendMessage, "financial_summary", "answer", outputCanary)
+        : null;
+      if (safeWeeklySpendMessage) {
+        output = { kind: "answer", intent: "financial_summary", message: safeWeeklySpendMessage, missing_fields: [], data: [] };
+        outputMessage = safeWeeklySpendMessage;
       }
     }
 
