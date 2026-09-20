@@ -312,6 +312,22 @@ Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiz
   }
 });
 
+Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens", () => {
+  // Bug real visto pelo usuario: ao listar varios lancamentos numa unica
+  // mensagem (ex.: resposta a "Quais os dias?"), o modelo escrevia
+  // "5 de setembro - Pacoca R$ 22,00; 7 de setembro - McDonald's R$ 38,00"
+  // usando travessao como separador -- visualmente identico a uma lista
+  // com marcadores, mesmo sem markdown literal ("**", "-" no inicio da
+  // linha) ou quebra de linha. Restrito ao prompt somente leitura: o
+  // operacional já está no teto de caracteres (MODEL_MAX_SYSTEM_PROMPT_CHARS,
+  // ver provider_test.ts) e respostas de ação raramente listam vários itens.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("hífen ou travessão"),
+    "o prompt somente leitura precisa proibir hífen/travessão como separador de itens numa mensagem",
+  );
+});
+
 Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
   // Bug real: "Quais despesas tenho neste mês?" respondia com o total
   // agregado em vez de listar os lancamentos individuais. Essa pergunta
