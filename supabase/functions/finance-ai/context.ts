@@ -262,6 +262,29 @@ async function fetchTransactionDetails(
   };
 }
 
+/** Quantas transações (agendadas OU pagas) pertencem ao mês em foco — não o
+ * total histórico de todos os tempos. `aggregate.sourceCounts.transactions`
+ * (usado antes aqui) conta TODAS as transações que a pessoa já lançou desde
+ * sempre, então para qualquer usuário ativo com mais de ~140 lançamentos na
+ * vida inteira essa comparação nunca batia, mesmo quando os dados do mês
+ * perguntado estavam 100% completos — o modelo então às vezes obedecia a
+ * regra "avise que os dados estão incompletos" mesmo para perguntas simples
+ * e totalmente respondíveis (ex.: "quanto gastei com alimentação na última
+ * semana?"), de forma inconsistente entre uma pergunta e outra. */
+async function countTransactionsInFocusMonth(
+  client: SupabaseClient,
+  focusMonth: string,
+  enabled: boolean,
+): Promise<number | null> {
+  if (!enabled) return null;
+  const monthStart = `${focusMonth}-01`;
+  const monthEnd = endOfMonth(focusMonth);
+  const { count, error } = await client.from("transacoes").select("id", { count: "exact", head: true })
+    .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  return count ?? 0;
+}
+
 async function fetchAllCashFlowTransactions(
   client: SupabaseClient,
   enabled: boolean,
@@ -1538,7 +1561,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1553,6 +1576,7 @@ export async function buildFinancialContext(
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
     needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
+    countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1569,7 +1593,22 @@ export async function buildFinancialContext(
       focusMonth,
     ).filter((row) => !requestedDate || row.date === requestedDate)
     : [];
-  const transactionDetailsComplete = aggregate.sourceCounts.transactions === transactions.length;
+  // Completo em relação ao MÊS EM FOCO, não ao histórico inteiro da pessoa
+  // (aggregate.sourceCounts.transactions soma todas as transações já
+  // lançadas desde sempre — quase nunca bate com o que é buscado para uma
+  // pergunta pontual, mesmo quando o mês perguntado está 100% coberto).
+  const monthStart = `${focusMonth}-01`;
+  const focusMonthEnd = endOfMonth(focusMonth);
+  const transactionsInFocusMonth = transactions.filter((row) => {
+    const scheduled = String(row.data_vencimento ?? "");
+    const isScheduledInMonth = scheduled >= monthStart && scheduled <= focusMonthEnd;
+    const realized = String(row.data_realizacao ?? "");
+    const isRealizedInMonth = String(row.status ?? "") === "paga" && realized >= monthStart && realized <= focusMonthEnd;
+    return isScheduledInMonth || isRealizedInMonth;
+  }).length;
+  const transactionDetailsComplete = monthlyTransactionCount === null
+    ? aggregate.sourceCounts.transactions === transactions.length
+    : transactionsInFocusMonth === monthlyTransactionCount;
   const invoiceDetailsComplete = aggregate.sourceCounts.invoiceItems === invoiceItems.length;
 
   const contextAccounts = selectRelevantRows(
