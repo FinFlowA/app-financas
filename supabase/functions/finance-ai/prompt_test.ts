@@ -328,6 +328,19 @@ Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens
   );
 });
 
+Deno.test("prompt somente leitura esclarece que contas a vencer sao lancamentos pendentes", () => {
+  // Bug real: "Quais sao as minhas contas que vencem nos proximos 5 dias?"
+  // recebia kind=out_of_scope. "Conta" e ambiguo em portugues (conta
+  // bancaria vs. conta a pagar) e o modelo nao associava "contas que
+  // vencem" a lancamentos pendentes com data_vencimento proxima, mesmo o
+  // roteamento (historyDomain via "venc") ja trazendo os dados certos.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("Contas a vencer/vencendo/que vencem"),
+    "o prompt somente leitura precisa esclarecer que 'contas a vencer' significa lancamentos pendentes, nao contas bancarias",
+  );
+});
+
 Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
   // Bug real: "Quais despesas tenho neste mês?" respondia com o total
   // agregado em vez de listar os lancamentos individuais. Essa pergunta
