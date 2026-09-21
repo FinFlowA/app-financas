@@ -20,10 +20,12 @@ const PUBLIC_ROUTES = new Set([
 
 const AUTH_ENTRY_ROUTES = new Set(["/login", "/cadastro", "/esqueci-senha"]);
 
-function trustedAppUrl(pathname: string) {
-  const configuredOrigin = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
-  const origin = new URL(configuredOrigin).origin;
-  return new URL(pathname, origin);
+function sameOriginUrl(request: NextRequest, pathname: string) {
+  const url = request.nextUrl.clone();
+  url.pathname = pathname;
+  url.search = "";
+  url.hash = "";
+  return url;
 }
 
 // Estas rotas não dependem da sessão. Liberá-las antes de criar o cliente
@@ -77,17 +79,17 @@ export async function updateSession(request: NextRequest, requestHeaders = reque
   const isPublicRoute = PUBLIC_ROUTES.has(pathname);
 
   if (!user && !isPublicRoute) {
-    return NextResponse.redirect(trustedAppUrl("/login"));
+    return NextResponse.redirect(sameOriginUrl(request, "/login"));
   }
 
   if (user && AUTH_ENTRY_ROUTES.has(pathname)) {
-    return NextResponse.redirect(trustedAppUrl("/"));
+    return NextResponse.redirect(sameOriginUrl(request, "/"));
   }
 
   const googleNeedsPassword = user?.app_metadata?.provider === "google"
     && user.user_metadata?.senha_definida !== true;
   if (googleNeedsPassword && pathname !== "/definir-senha") {
-    return NextResponse.redirect(trustedAppUrl("/definir-senha"));
+    return NextResponse.redirect(sameOriginUrl(request, "/definir-senha"));
   }
 
   return supabaseResponse;
