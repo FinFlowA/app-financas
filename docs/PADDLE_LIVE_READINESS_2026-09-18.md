@@ -90,7 +90,7 @@ Criada em 21 de setembro de 2026. Não excluir nem recriar:
 - Plus anual: `pri_01m31z94g75jpbs7wtnwxkbax3`
 - Client-side token: `ctkn_01m31zdgb48gvxf74mddjjb4ef`
 - Destino de notificação: `ntfset_01m31zdgfyrv31vfescqf0tbad`
-- Endpoint: `https://finflow-mauve-chi.vercel.app/api/paddle/webhook`
+- Endpoint temporário de staging: `https://finflow-paddle-live-preview.vercel.app/api/paddle/webhook`
 - Eventos: `subscription.created`, `subscription.updated`, `subscription.canceled`, `customer.created`, `customer.updated` e `transaction.completed`
 
 O valor do client-side token e o signing secret não são versionados. Não havia descontos ativos no live; a leitura de descontos do sandbox ficou indisponível por falta de `discount.read`, portanto nenhum desconto foi inventado ou migrado.
@@ -106,8 +106,11 @@ O valor do client-side token e o signing secret não são versionados. Não havi
 
 ### Bloqueio atual
 
-- Criar manualmente uma API key no Paddle Live; o MCP não oferece essa operação.
-- Depois configurar todas as variáveis Paddle Live juntas no ambiente Vercel Preview, mantendo Production inalterado até aprovação.
+- API key Live criada manualmente e guardada como segredo somente no ambiente Vercel Preview.
+- Migration `20260918000400_paddle_environment_isolation.sql` aplicada e registrada no Supabase em 21 de setembro de 2026.
+- Variáveis Paddle Live configuradas no Preview; Production e Development permanecem inalterados.
+- Domínios `finflow-paddle-live-preview.vercel.app` e `finflow-mauve-chi.vercel.app` enviados para aprovação no Paddle Live; ambos estavam `Pending` em 21 de setembro de 2026.
+- Antes de liberar pagamentos na main, apontar este mesmo webhook para `https://finflow-mauve-chi.vercel.app/api/paddle/webhook` e promover as variáveis Live para Production em conjunto.
 
 ## Critérios para considerar concluído
 
