@@ -78,6 +78,37 @@ Se a branch já existir localmente, use `git switch feature/paddle-live-readines
 
 Esses registros comprovam e sustentam o fluxo de fulfillment testado. Não tratá-los como lixo de teste.
 
+## Infraestrutura permanente do Paddle live
+
+Criada em 21 de setembro de 2026. Não excluir nem recriar:
+
+- Produto Smart/Pro: `pro_01m31z93ww1qx4g75jb3rq6j7f`
+- Produto Premium/Plus: `pro_01m31z940teay8e08grztxx5hz`
+- Pro mensal: `pri_01m31z944w33tbygze6th02t9c`
+- Pro anual: `pri_01m31z9492qvwa1sf7m2kxfy59`
+- Plus mensal: `pri_01m31z94d1ag7nmm99r5bpk6xp`
+- Plus anual: `pri_01m31z94g75jpbs7wtnwxkbax3`
+- Client-side token: `ctkn_01m31zdgb48gvxf74mddjjb4ef`
+- Destino de notificação: `ntfset_01m31zdgfyrv31vfescqf0tbad`
+- Endpoint: `https://finflow-mauve-chi.vercel.app/api/paddle/webhook`
+- Eventos: `subscription.created`, `subscription.updated`, `subscription.canceled`, `customer.created`, `customer.updated` e `transaction.completed`
+
+O valor do client-side token e o signing secret não são versionados. Não havia descontos ativos no live; a leitura de descontos do sandbox ficou indisponível por falta de `discount.read`, portanto nenhum desconto foi inventado ou migrado.
+
+### Mapa sandbox → live
+
+| Plano | Sandbox | Live |
+| --- | --- | --- |
+| Pro mensal | `pri_01m2t95sany6c2th000xwbjd6p` | `pri_01m31z944w33tbygze6th02t9c` |
+| Pro anual | `pri_01m2t95sffza6sycm34snnw88b` | `pri_01m31z9492qvwa1sf7m2kxfy59` |
+| Plus mensal | `pri_01m2t95sxye0jx1awcckf3apra` | `pri_01m31z94d1ag7nmm99r5bpk6xp` |
+| Plus anual | `pri_01m2t95t3jr4qhtn24xsraz1tw` | `pri_01m31z94g75jpbs7wtnwxkbax3` |
+
+### Bloqueio atual
+
+- Criar manualmente uma API key no Paddle Live; o MCP não oferece essa operação.
+- Depois configurar todas as variáveis Paddle Live juntas no ambiente Vercel Preview, mantendo Production inalterado até aprovação.
+
 ## Critérios para considerar concluído
 
 - Existe mapa documentado dos quatro IDs sandbox para os quatro IDs live.
