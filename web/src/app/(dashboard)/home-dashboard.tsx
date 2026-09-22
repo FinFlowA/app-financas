@@ -516,11 +516,26 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
           })}{!upcoming.length && <div className={styles.emptyUpcoming}><span>✓</span><div><strong>Nenhum compromisso próximo</strong><p>Seus próximos sete dias estão livres.</p></div></div>}</div>
         </section>
 
-        <Link href={alerts.overdue ? "/transacoes?quick=overdue" : alerts.today ? "/transacoes?quick=today" : "/transacoes?quick=next7"} className={`${styles.panel} ${styles.alertCard}`}>
-          <span className={alerts.overdue ? styles.alertDanger : styles.alertOkay}><Icon name="bell"/></span>
-          <div><h2>{alerts.overdue ? `${alerts.overdue} ${alerts.overdue === 1 ? "lançamento atrasado" : "lançamentos atrasados"}` : alerts.today ? `${alerts.today} vencendo hoje` : "Agenda sob controle"}</h2><p>{alerts.overdue ? "Revise agora para manter seu planejamento atualizado." : alerts.today ? "Acompanhe os compromissos de hoje." : "Nenhum agendamento vencido nas contas selecionadas."}</p></div>
+        {overdueTransactions.length ? <section className={`${styles.panel} ${styles.upcomingPanel}`}>
+          <div className={styles.panelHeader}>
+            <div><p className={`${styles.sectionKicker} ${styles.overdueKicker}`}>Atenção financeira</p><h2>Lançamentos atrasados</h2></div>
+            <Link href="/transacoes?quick=overdue">Ver todos</Link>
+          </div>
+          <div className={styles.upcomingList}>{overdueTransactions.map((transaction) => {
+            const date = shortDate(transaction.data_vencimento);
+            const category = transaction.categoria_id ? categoriesById.get(transaction.categoria_id) : undefined;
+            return <Link href={`/transacoes?quick=overdue&focus=${transaction.id}`} key={transaction.id} className={styles.upcomingItem}>
+              <span className={`${styles.dateTile} ${styles.overdueDateTile}`}><strong>{date.day}</strong><small>{date.month}</small></span>
+              <span className={styles.upcomingIcon} style={{ "--item-color": safeColor(category?.cor ?? (transaction.tipo === "receita" ? "#56d39b" : "#ee6b63")) } as CSSProperties}>{category?.icone ? <FinancialIcon name={category.icone} /> : transaction.tipo === "receita" ? <Icon name="income"/> : <Icon name="receipt"/>}</span>
+              <span className={styles.upcomingInfo}><strong>{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small>{category?.nome ?? (transaction.tipo === "receita" ? "Receita" : "Despesa")}</small></span>
+              <strong data-private-value="true" className={transaction.tipo === "receita" ? styles.incomeText : styles.expenseText}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>
+            </Link>;
+          })}</div>
+        </section> : <Link href={alerts.today ? "/transacoes?quick=today" : "/transacoes?quick=next7"} className={`${styles.panel} ${styles.alertCard}`}>
+          <span className={styles.alertOkay}><Icon name="bell"/></span>
+          <div><h2>{alerts.today ? `${alerts.today} vencendo hoje` : "Agenda sob controle"}</h2><p>{alerts.today ? "Acompanhe os compromissos de hoje." : "Nenhum agendamento vencido nas contas selecionadas."}</p></div>
           <Icon name="chevron"/>
-        </Link>
+        </Link>}
 
         <section className={`${styles.panel} ${styles.insightCard}`}>
           <div className={styles.insightTitle}><div><span><Icon name="sparkles"/></span><div><p className={styles.sectionKicker}>Leitura dos seus dados</p><h2>Insight financeiro</h2></div></div><small>IA</small></div>
