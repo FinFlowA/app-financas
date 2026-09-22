@@ -1,5 +1,7 @@
 # Assinaturas seguras do FinFlow
 
+> **Documento legado:** descreve a integração histórica do Mercado Pago, que ainda existe no repositório. O checkout web atual usa Paddle. Para o estado vigente, consulte [Pagamentos e planos](./PAGAMENTOS_E_PLANOS.md).
+
 ## Estado inicial
 
 `billing_settings` começa com:
