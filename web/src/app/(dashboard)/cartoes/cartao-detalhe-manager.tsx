@@ -209,6 +209,7 @@ export default function CartaoDetalheManager({
   contas,
   pagamentos,
   mesSelecionado,
+  abrirNovaCompra = false,
 }: {
   cartao: Cartao;
   itens: FaturaItem[];
@@ -216,6 +217,7 @@ export default function CartaoDetalheManager({
   contas: Conta[];
   pagamentos: PagamentoDaFatura[];
   mesSelecionado: string;
+  abrirNovaCompra?: boolean;
 }) {
   const router = useRouter();
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
@@ -342,7 +344,7 @@ export default function CartaoDetalheManager({
 
       {cartao.ativo && (
         <section className={styles.subPanel}>
-          <NovaCompraForm cartaoId={cartao.id} diaFechamento={cartao.dia_fechamento} categorias={categorias} />
+          <NovaCompraForm cartaoId={cartao.id} diaFechamento={cartao.dia_fechamento} categorias={categorias} initiallyOpen={abrirNovaCompra} />
           {!categorias.some((categoria) => Boolean(categoria.ativa)) && <p className={styles.errorText}>Crie uma categoria de despesa ativa antes de adicionar compras.</p>}
         </section>
       )}

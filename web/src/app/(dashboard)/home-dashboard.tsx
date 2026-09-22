@@ -22,7 +22,7 @@ import {
   resumirFluxoMensal,
   transacoesNoEscopo,
 } from "@/lib/transacoes";
-import type { Caixinha, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
+import type { Caixinha, Cartao, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import { NewTransactionDialog } from "./transacoes/transaction-manager";
 import styles from "./home-dashboard.module.css";
 
@@ -33,6 +33,7 @@ type Props = {
   month: string;
   today: string;
   accounts: Conta[];
+  cards: Cartao[];
   goals: Caixinha[];
   transactions: Transacao[];
   categories: Categoria[];
@@ -92,10 +93,11 @@ function SummaryValue({ label, value, tone = "neutral" }: { label: string; value
   </div>;
 }
 
-export default function HomeDashboard({ userId, displayName, greeting, month, today, accounts, goals, transactions, categories, invoiceItems }: Props) {
+export default function HomeDashboard({ userId, displayName, greeting, month, today, accounts, cards, goals, transactions, categories, invoiceItems }: Props) {
   const router = useRouter();
   const [monthPending, startMonthTransition] = useTransition();
   const [newTransactionKind, setNewTransactionKind] = useState<HomeTransactionKind | null>(null);
+  const [payChoiceOpen, setPayChoiceOpen] = useState(false);
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.arquivado), [accounts]);
   const activeIds = useMemo(() => new Set(activeAccounts.map((account) => account.id)), [activeAccounts]);
   const [selectedIds, setSelectedIds] = useState<number[]>(() => activeAccounts.map((account) => account.id));
@@ -444,7 +446,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
 
       <div className={styles.heroActions}>
         <button type="button" onClick={() => setNewTransactionKind("transferencia")} className={styles.actionLink}><span><Icon name="arrow-left-right" size={27}/></span><strong>Transferir</strong></button>
-        <button type="button" onClick={() => setNewTransactionKind("despesa")} className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></button>
+        <button type="button" onClick={() => setPayChoiceOpen(true)} className={styles.actionLink}><span><Icon name="receipt" size={27}/></span><strong>Pagar</strong></button>
         <button type="button" onClick={() => setNewTransactionKind("receita")} className={styles.actionLink}><span><Icon name="plus" size={29}/></span><strong>Receber</strong></button>
       </div>
     </section>
@@ -542,6 +544,16 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
           </footer>}
           {selectedFlowExpenses.length > 0 && selectedFlowIncome.length === 0 && <footer className="mt-5 border-t border-border pt-4"><div className="w-full rounded-xl border border-red/20 bg-red/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-red">Total de despesas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-red">−{formatarReais(selectedFlowExpenseTotal)}</strong></div></footer>}
           {selectedFlowIncome.length > 0 && selectedFlowExpenses.length === 0 && <footer className="mt-5 border-t border-border pt-4"><div className="w-full rounded-xl border border-primary/20 bg-primary/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-primary">Total de receitas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-primary">+{formatarReais(selectedFlowIncomeTotal)}</strong></div></footer>}
+        </div>
+      </section>
+    </div>, document.body)}
+    {payChoiceOpen && createPortal(<div className="fixed inset-0 z-[9999] grid h-[100dvh] w-screen place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => setPayChoiceOpen(false)}>
+      <section role="dialog" aria-modal="true" aria-labelledby="pay-choice-title" onMouseDown={(event) => event.stopPropagation()} className="w-full max-w-lg rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
+        <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-primary">Novo pagamento</p><h2 id="pay-choice-title" className="mt-1 text-xl font-black text-foreground">Como deseja pagar?</h2><p className="mt-1 text-sm text-foreground-muted">Lance uma despesa em conta ou uma compra no cartão.</p></div><button type="button" onClick={() => setPayChoiceOpen(false)} aria-label="Fechar" className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
+        <div className="mt-5 grid gap-3">
+          <button type="button" onClick={() => { setPayChoiceOpen(false); setNewTransactionKind("despesa"); }} className="ff-focus flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-surface-muted px-4 py-3 text-left transition hover:border-primary/45"><span className="grid h-11 w-11 place-items-center rounded-full bg-primary-soft text-primary-dark"><Icon name="wallet" /></span><span><strong className="block text-foreground">Pagar com uma conta</strong><small className="text-foreground-muted">Cria uma despesa no fluxo de caixa</small></span></button>
+          {cards.map((card) => <Link key={card.id} href={`/cartoes/${card.id}?novaCompra=1`} onClick={() => setPayChoiceOpen(false)} className="ff-focus flex min-h-14 items-center gap-3 rounded-2xl border border-border bg-surface-muted px-4 py-3 text-left transition hover:border-primary/45"><span className="grid h-11 w-11 place-items-center rounded-full text-white" style={{ backgroundColor: safeColor(card.cor) }}><Icon name="receipt" /></span><span><strong className="block text-foreground">Comprar no {card.nome}</strong><small className="text-foreground-muted">Adiciona uma compra à fatura</small></span></Link>)}
+          {cards.length === 0 && <p className="rounded-2xl bg-surface-muted px-4 py-3 text-sm text-foreground-muted">Cadastre um cartão para lançar compras por aqui.</p>}
         </div>
       </section>
     </div>, document.body)}

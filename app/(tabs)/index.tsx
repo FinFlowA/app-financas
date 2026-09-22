@@ -2328,7 +2328,7 @@ export default function Dashboard() {
               {qtdVencidasHome > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
                   setModalNotificacoesHome(false);
-                  router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+                  router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E76F5122" }]}><MaterialIcons name="warning-amber" size={20} color="#E76F51" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Lançamentos atrasados</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencidasHome} pendência{qtdVencidasHome === 1 ? "" : "s"} precisa{qtdVencidasHome === 1 ? "" : "m"} de atenção.</Text></View>
@@ -2338,7 +2338,7 @@ export default function Dashboard() {
               {qtdVencendoHoje > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
                   setModalNotificacoesHome(false);
-                  router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
+                  router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: `${novoTema.primary}22` }]}><MaterialIcons name="today" size={20} color={novoTema.primary} /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Agendamentos vencendo hoje</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencendoHoje} lançamento{qtdVencendoHoje === 1 ? "" : "s"} precisa{qtdVencendoHoje === 1 ? "" : "m"} ser acompanhado{qtdVencendoHoje === 1 ? "" : "s"} hoje.</Text></View>
@@ -2348,7 +2348,7 @@ export default function Dashboard() {
               {qtdProximosVencimentos > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
                   setModalNotificacoesHome(false);
-                  router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
+                  router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E9C46A22" }]}><MaterialIcons name="event" size={20} color="#C99B25" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Próximos 7 dias</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdProximosVencimentos} lançamento{qtdProximosVencimentos === 1 ? "" : "s"} pendente{qtdProximosVencimentos === 1 ? "" : "s"}.</Text></View>
@@ -2356,7 +2356,7 @@ export default function Dashboard() {
                 </TouchableOpacity>
               )}
               {temFaturaVencidaHome && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.push("/(tabs)/cartoes" as any); }}>
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.replace("/(tabs)/cartoes" as any); }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#C0392E22" }]}><MaterialIcons name="credit-card" size={20} color="#C0392E" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Fatura vencida</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>Existe uma fatura em aberto após o vencimento.</Text></View>
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
@@ -2373,7 +2373,7 @@ export default function Dashboard() {
 
             <TouchableOpacity style={[styles.notificationSettings, { borderColor: Cores.borda }]} onPress={() => {
               setModalNotificacoesHome(false);
-              router.push({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
+              router.replace({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
             }}>
               <MaterialIcons name="tune" size={18} color={novoTema.primary} />
               <Text style={[styles.notificationSettingsText, { color: novoTema.primary }]}>Configurar notificações</Text>

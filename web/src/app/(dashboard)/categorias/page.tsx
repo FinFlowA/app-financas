@@ -31,6 +31,10 @@ export default async function CategoriasPage() {
           </div>
         </div>
       </header>
+      <aside role="note" className="mb-6 flex items-start gap-3 rounded-2xl border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-foreground">
+        <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-black text-white">i</span>
+        <p className="pt-1"><strong>Como aparece no início:</strong> categorias com o mesmo nome são agrupadas no gráfico da página inicial.</p>
+      </aside>
       <CategoryManager categories={categories} />
     </div>
   );
