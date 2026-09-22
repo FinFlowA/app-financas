@@ -373,7 +373,18 @@ Consulte o [relatório de segurança atual](./docs/security/SECURITY_AUDIT_2026-
 
 ## Estado e continuidade
 
+- [Continuidade atual do projeto](./docs/CONTINUIDADE.md)
+- [Índice da documentação técnica](./docs/README.md)
+
+### Histórico de handoffs
+
+- [Handoff de 19/09/2026](./docs/HANDOFF_2026-09-19.md)
+- [Handoff Paddle de 18/09/2026](./docs/PADDLE_HANDOFF_2026-09-18.md)
 - [Handoff de 15/08/2026](./docs/HANDOFF_2026-08-15.md)
+- [Handoff de 30/07/2026](./docs/HANDOFF_2026-07-30.md)
+
+### Documentos legais
+
 - [Política de Privacidade](./docs/privacy-policy.md)
 - [Termos de Uso](./docs/terms-of-use.md)
 
