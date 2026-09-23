@@ -4,6 +4,17 @@
 
 O código do Android está preparado para vender Pro e Plus como assinaturas da Google Play. A liberação do plano nunca depende apenas do aparelho: o recibo é consultado na Google Play Developer API, persistido no Supabase e só então o app finaliza a transação.
 
+## Regra multiplataforma
+
+O plano pertence ao usuário FinFlow (`auth.users.id`), não ao canal de pagamento. Paddle e Google Play gravam na mesma tabela `subscriptions`, e tanto o site quanto o app leem a RPC `get_my_entitlement`.
+
+- compra feita no site pelo Paddle ativa o mesmo plano no app;
+- compra feita no Android pela Google Play ativa o mesmo plano no site;
+- o usuário precisa entrar com a mesma conta FinFlow nos dois ambientes;
+- se mais de uma assinatura estiver válida, prevalece o plano mais alto;
+- cancelar um provedor não remove o acesso concedido por outra assinatura ainda válida;
+- o app reapura o entitlement ao voltar ao primeiro plano; o site reapura nas páginas dinâmicas e na navegação.
+
 Também estão implementados:
 
 - compra mensal e anual com preço localizado retornado pela loja;

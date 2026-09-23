@@ -1056,6 +1056,17 @@ export default function RootLayout() {
     });
   }, [session?.user?.id]);
 
+  // O plano pertence à conta FinFlow, não ao dispositivo nem ao provedor.
+  // Ao voltar ao app, reapura no Supabase compras feitas no site (Paddle) ou
+  // em outro dispositivo Android (Google Play).
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshEntitlement();
+    });
+    return () => subscription.remove();
+  }, [refreshEntitlement, session?.user?.id]);
+
   // Solicita permissão de notificação na primeira sessão do usuário neste dispositivo
   useEffect(() => {
     if (IS_LOCAL_DEMO) return;
