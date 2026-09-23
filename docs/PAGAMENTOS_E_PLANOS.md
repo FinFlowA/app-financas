@@ -89,4 +89,7 @@ A implementação deve começar quando o aplicativo tiver cadastro e identificad
 7. reconciliar restauração, renovação, cancelamento, grace period e chargeback.
 
 Não abra Paddle dentro do app para vender recursos digitais distribuídos pela Play Store sem confirmar uma exceção vigente das políticas da loja.
+# Assinaturas no Android
+
+O site usa Paddle. O app Android usa Google Play Billing e compartilha o mesmo entitlement no Supabase. O procedimento técnico e o checklist do Play Console estão em [GOOGLE_PLAY_BILLING.md](./GOOGLE_PLAY_BILLING.md).
 

@@ -35,6 +35,12 @@ verify_jwt = true
 [functions.mercado-pago-webhook]
 verify_jwt = false
 
+[functions.google-play-verify-purchase]
+verify_jwt = true
+
+[functions.google-play-rtdn]
+verify_jwt = false
+
 [functions.groq-proxy]
 verify_jwt = true
 

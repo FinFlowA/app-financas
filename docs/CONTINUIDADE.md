@@ -68,4 +68,7 @@ npm run build
 - `security/`: auditorias e provas de conceito datadas.
 
 Handoffs não substituem este documento nem o código atual.
+# Google Play Billing
+
+A preparação da cobrança nativa Android está na branch `feature/paddle-live-readiness`. Antes do lançamento, siga o checklist completo em [GOOGLE_PLAY_BILLING.md](./GOOGLE_PLAY_BILLING.md). A integração ainda não foi publicada no Supabase nem pode ser testada sem o cadastro do app e dos produtos no Play Console.
 

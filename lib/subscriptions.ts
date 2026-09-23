@@ -5,7 +5,7 @@ export type Entitlement = {
   plan: TipoPlano;
   subscriptionStatus: string;
   billingCycle: "monthly" | "annual" | null;
-  provider: "mercado_pago" | "google_play" | "apple" | null;
+  provider: "mercado_pago" | "google_play" | "apple" | "paddle" | null;
   accessUntil: string | null;
   billingEnabled: boolean;
   limitsEnabled: boolean;
