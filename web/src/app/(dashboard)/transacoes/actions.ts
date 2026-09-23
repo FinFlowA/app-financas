@@ -157,6 +157,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
     return { erro: "Use entre 2 e 120 parcelas." };
   }
   if (frequency === "parcelada" && !["total", "parcela"].includes(valueMode)) return { erro: "Escolha se o valor é total ou por parcela." };
+  if (frequency === "unica" && !["paga", "pendente"].includes(requestedStatus)) return { erro: "Escolha se o lançamento foi concluído ou está pendente." };
 
   const status = frequency === "unica" && requestedStatus === "paga" ? "paga" : "pendente";
   if (status === "paga" && scheduledDate > hojeEmSaoPaulo()) return { erro: "Um lançamento futuro deve ficar pendente." };
