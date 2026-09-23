@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import FinancialIcon from "@/components/ui/financial-icon";
 import { formatarReais } from "@/lib/format";
-import { descricaoVisivel, getOperacaoObjetivo, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
+import { dataEfetivaTransacao, descricaoVisivel, getOperacaoObjetivo, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import type { Caixinha, Categoria, Conta, Transacao } from "@/lib/types";
 import TransactionManager, { NewTransactionDialog } from "../transacoes/transaction-manager";
 import type { Cartao, FaturaItem } from "@/lib/types";
@@ -43,7 +43,11 @@ export default function CalendarManager({ userId, today, accounts, goals, catego
   const visibleTransactions = useMemo(() => transactions.filter((transaction) => !isPagamentoFatura(transaction.descricao) && (statusFilter === "all" || (statusFilter === "pending" ? transaction.status === "pendente" : transaction.status === "paga"))), [transactions, statusFilter]);
   const byDate = useMemo(() => {
     const result = new Map<string, Transacao[]>();
-    for (const transaction of visibleTransactions) result.set(transaction.data_vencimento, [...(result.get(transaction.data_vencimento) ?? []), transaction]);
+    for (const transaction of visibleTransactions) {
+      const effectiveDate = dataEfetivaTransacao(transaction).slice(0, 10);
+      if (!effectiveDate) continue;
+      result.set(effectiveDate, [...(result.get(effectiveDate) ?? []), transaction]);
+    }
     return result;
   }, [visibleTransactions]);
   const [year, monthNumber] = month.split("-").map(Number);
