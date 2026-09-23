@@ -6,7 +6,13 @@ import type { PlanId } from "@/lib/plan-entitlements";
 import type { BillingFrequency, Tier } from "@/lib/paddle/pricing-tiers";
 import styles from "./plans.module.css";
 
-type PriceMap = Record<string, string>;
+type PricePreview = { formatted: string; minorUnits: number; currency: string };
+type PriceMap = Record<string, PricePreview>;
+
+function formatMinorUnits(value: number, currency: string, locale?: string) {
+  const divisor = new Set(["CLP", "JPY", "KRW"]).has(currency) ? 1 : 100;
+  return new Intl.NumberFormat(locale, { style: "currency", currency }).format(value / divisor);
+}
 
 function PlanIcon({ name }: { name: "check" | "crown" | "sparkle" }) {
   return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
@@ -58,7 +64,11 @@ export default function PlansClient({ tiers, environment, clientToken, country, 
       if (!active) return;
       const next: PriceMap = {};
       for (const response of responses) {
-        for (const item of response.data.details.lineItems) next[item.price.id] = item.formattedTotals.total;
+        for (const item of response.data.details.lineItems) next[item.price.id] = {
+          formatted: item.formattedTotals.total,
+          minorUnits: Number(item.totals.total),
+          currency: response.data.currencyCode,
+        };
       }
       setPrices(next);
     }).catch(() => active && setError("Não consegui carregar os preços da Paddle agora. Tente novamente em instantes."));
@@ -94,7 +104,15 @@ export default function PlansClient({ tiers, environment, clientToken, country, 
       {tiers.map((tier) => {
         const isCurrent = tier.id === currentPlan;
         const priceId = tier.priceId?.[frequency];
-        const formattedPrice = priceId ? prices[priceId] : null;
+        const price = priceId ? prices[priceId] : null;
+        const monthPrice = tier.priceId ? prices[tier.priceId.month] : null;
+        const yearPrice = tier.priceId ? prices[tier.priceId.year] : null;
+        const annualSavingMinor = monthPrice && yearPrice
+          ? Math.max(0, monthPrice.minorUnits * 12 - yearPrice.minorUnits)
+          : 0;
+        const annualSaving = annualSavingMinor > 0 && yearPrice
+          ? formatMinorUnits(annualSavingMinor, yearPrice.currency)
+          : null;
         return <article key={tier.id} className={`${styles.planCard} ${isCurrent ? styles.planCurrent : ""} ${tier.id === "premium" ? styles.planPremium : ""}`}>
           <div className="mb-4 flex min-h-7 flex-wrap items-center justify-between gap-2">
             {isCurrent ? <span className={styles.badge}><PlanIcon name="check" />Plano atual</span> : <span />}
@@ -103,11 +121,12 @@ export default function PlansClient({ tiers, environment, clientToken, country, 
           <h2 className="text-2xl font-black tracking-tight text-foreground">{tier.name}</h2>
           <p className="mt-1 text-sm text-foreground-muted">{tier.description}</p>
           <div className={styles.priceBlock}>
-            {tier.priceId ? <p className={styles.price}>{formattedPrice ?? <span className={styles.priceSkeleton} aria-label="Carregando preço" />}<span className="ml-1 text-sm font-semibold text-foreground-muted">/{frequency === "month" ? "mês" : "ano"}</span></p> : <p className={styles.price}>Grátis</p>}
+            {tier.priceId ? <><p className={styles.price}>{price?.formatted ?? <span className={styles.priceSkeleton} aria-label="Carregando preço" />}<span className="ml-1 text-sm font-semibold text-foreground-muted">/{frequency === "month" ? "mês" : "ano"}</span></p>
+              {frequency === "year" && annualSaving ? <p className={styles.annualSaving}>Economize {annualSaving} por ano</p> : null}</> : <p className={styles.price}>Grátis</p>}
           </div>
           <ul className={styles.featureList}>{tier.features.map((feature) => <li key={feature} className={styles.featureItem}><span aria-hidden="true" className={styles.check}>✓</span><span>{feature}</span></li>)}</ul>
-          {tier.priceId ? <button type="button" disabled={!paddle || !formattedPrice || isCurrent} onClick={() => subscribe(tier)} className={`ff-focus mt-5 ${styles.checkoutButton}`}>
-            {isCurrent ? "Seu plano atual" : formattedPrice ? `Assinar ${tier.name}` : "Carregando preço..."}
+          {tier.priceId ? <button type="button" disabled={!paddle || !price?.formatted || isCurrent} onClick={() => subscribe(tier)} className={`ff-focus mt-5 ${styles.checkoutButton}`}>
+            {isCurrent ? "Seu plano atual" : price?.formatted ? `Assinar ${tier.name}` : "Carregando preço..."}
           </button> : <p className="mt-5 rounded-ff-sm border border-border bg-surface-muted/70 px-4 py-3 text-center text-sm font-bold text-foreground-muted">{isCurrent ? "Seu plano atual" : "Plano gratuito"}</p>}
         </article>;
       })}

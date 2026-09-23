@@ -88,6 +88,17 @@ export default function GooglePlayBillingPanel(props: Props) {
     ? product.subscriptionOffers.find((offer) => offer.basePlanIdAndroid === targetBasePlan)
     : undefined;
 
+  const annualSavingFor = (product?: ProductSubscription) => {
+    if (cycle !== "annual" || product?.platform !== "android") return null;
+    const monthly = product.subscriptionOffers.find((offer) => offer.basePlanIdAndroid === GOOGLE_PLAY_BASE_PLANS.monthly);
+    const annual = product.subscriptionOffers.find((offer) => offer.basePlanIdAndroid === GOOGLE_PLAY_BASE_PLANS.annual);
+    if (!monthly || !annual || !annual.currency) return null;
+    const saving = monthly.price * 12 - annual.price;
+    if (saving <= 0) return null;
+    try { return new Intl.NumberFormat("pt-BR", { style: "currency", currency: annual.currency }).format(saving); }
+    catch { return `${annual.currency} ${saving.toFixed(2)}`; }
+  };
+
   const buy = async (productId: string) => {
     if (!props.userId || !props.billingEnabled) return;
     const offer = offerFor(byId.get(productId));
@@ -137,11 +148,13 @@ export default function GooglePlayBillingPanel(props: Props) {
     {plans.map((plan) => {
       const product = byId.get(plan.id);
       const offer = offerFor(product);
+      const annualSaving = annualSavingFor(product);
       const isCurrent = (plan.id === GOOGLE_PLAY_PRODUCTS.smart && props.currentPlan === "smart") || (plan.id === GOOGLE_PLAY_PRODUCTS.premium && props.currentPlan === "premium");
       return <View key={plan.id} style={[styles.planRow, { borderColor: colors.border }]}>
         <View style={styles.planCopy}>
           <Text style={[styles.planName, { color: colors.text }]}>{plan.name}</Text>
           <Text style={[styles.price, { color: colors.muted }]}>{offer?.displayPrice ?? "Aguardando cadastro na Play Store"}</Text>
+          {annualSaving ? <Text style={styles.saving}>Economize {annualSaving} por ano</Text> : null}
         </View>
         <Pressable
           accessibilityRole="button"
@@ -172,6 +185,7 @@ const styles = StyleSheet.create({
   segmentText: { fontSize: 14, fontWeight: "800" },
   planRow: { minHeight: 72, borderTopWidth: 1, flexDirection: "row", alignItems: "center", gap: 12 },
   planCopy: { flex: 1 }, planName: { fontSize: 17, fontWeight: "900" }, price: { marginTop: 3, fontSize: 13 },
+  saving: { marginTop: 4, color: "#2A9D8F", fontSize: 12, fontWeight: "900" },
   buyButton: { minWidth: 104, minHeight: 48, paddingHorizontal: 16, borderRadius: 12, alignItems: "center", justifyContent: "center" },
   buyText: { color: "#071B19", fontSize: 14, fontWeight: "900" },
   restore: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },

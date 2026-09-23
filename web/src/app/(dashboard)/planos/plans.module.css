@@ -165,6 +165,15 @@
   line-height: 1;
 }
 
+.annualSaving {
+  margin-top: 0.55rem;
+  color: var(--ff-primary-dark);
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
 .featureList {
   display: grid;
   flex: 1;
