@@ -22,12 +22,14 @@ export default function NovaCompraForm({
   cartaoId,
   diaFechamento,
   categorias,
+  initiallyOpen = false,
 }: {
   cartaoId: number;
   diaFechamento: number;
   categorias: Categoria[];
+  initiallyOpen?: boolean;
 }) {
-  const [aberto, setAberto] = useState(false);
+  const [aberto, setAberto] = useState(initiallyOpen);
   const [erro, setErro] = useState<string | null>(null);
   const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "mensal">("unica");
   const [modoValor, setModoValor] = useState<"total" | "parcela">("total");

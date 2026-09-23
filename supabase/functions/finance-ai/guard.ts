@@ -24,7 +24,14 @@ const POSSESSIVE_CREDENTIAL_REDACTION_PATTERN = new RegExp(
   "gi",
 );
 const FINANCIAL_TOPIC_PATTERN = /(financ|dinheir|saldo|conta|receit|despes|gast|renda|orcament|balanco|resultado|fluxo|caixa|lanc|transa|transfer|categoria|objetiv|caixinha|cartao|fatura|compra|parcela|pag|receb|pendente|atras|venc|juros|desconto|econom|poup|meta|histor|extrato|realiz|agend|planej|previs|projec|resgat|retir|saqu|aporte|deposit|guard|invest|tesouro|\bcdb\b|\blci\b|\blca\b|fundo imobili|\bfii\b|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|acao|acoes)/;
-const SPECIFIC_INVESTMENT_TICKER_PATTERN = /\b[a-z]{4}\d{1,2}\b/;
+// Ticker de ação/FII na B3 é sempre 4 letras maiúsculas + 1-2 dígitos (ex.:
+// PETR4, VALE3, MXRF11). Checar em maiúsculas (antes da normalização, que
+// tudo deixa minúsculo) evita falso positivo: várias palavras comuns do
+// português coladas a um número (ex.: "meta12", "anos10") bateriam com a
+// versão minúscula sem nenhum ticker real estar presente — bug real que
+// derrubava respostas corretas de investment_education (ex.: citando CDI/
+// Selic) para a recusa genérica de fora de escopo.
+const SPECIFIC_INVESTMENT_TICKER_PATTERN = /\b[A-Z]{4}\d{1,2}\b/;
 const IMPLICIT_FINANCIAL_PROJECTION_PATTERN = /\b(?:quanto|qual(?:\s+valor)?)\b.{0,35}\b(?:terei|vou\s+ter|vai\s+sobrar|sobrara|ficara)\b.{0,45}\b(?:fim\s+do\s+(?:mes|ano)|final\s+do\s+ano|proximo\s+mes|mes\s+que\s+vem|em\s+(?:janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro))\b/;
 const FORBIDDEN_ACCESS_PATTERN = /(senha|password|biometri|login|email|e-mail|telefone|celular|sms|codigo de verificacao|autenticacao|parceria|vinculo|assinatura|plano).{0,45}(alter|editar|trocar|mudar|excluir|remover|recuper|confirm|criar|cancel)|(?:alter|editar|trocar|mudar|excluir|remover|recuper|confirm|criar|cancel).{0,45}(senha|password|biometri|login|email|e-mail|telefone|celular|sms|autenticacao|parceria|vinculo|assinatura)/;
 const SENSITIVE_ACCOUNT_ACTION_PATTERN = /\b(?:troque|mude|altere|edite|exclua|remova|confirme|crie|cancele)\b.{0,45}\b(?:senha|password|biometria|login|e-?mail|telefone|celular|autenticacao|parceria|vinculo|assinatura|plano)\b|\b(?:senha|password|biometria|login|e-?mail|telefone|celular|autenticacao|parceria|vinculo|assinatura|plano)\b.{0,45}\b(?:troque|mude|altere|edite|exclua|remova|confirme|crie|cancele)\b/;
@@ -151,11 +158,11 @@ function containsSecurityThreat(normalized: string): boolean {
     || STRUCTURED_INJECTION_PATTERN.test(hardened);
 }
 
-function containsUnsafeOrOutsideTopic(normalized: string): boolean {
+function containsUnsafeOrOutsideTopic(normalized: string, checkMixedRequest = true): boolean {
   const hardened = securityNormalized(normalized);
   return containsSecurityThreat(hardened)
     || OUTSIDE_TOPIC_PATTERN.test(hardened)
-    || containsMixedOutsideRequest(hardened);
+    || (checkMixedRequest && containsMixedOutsideRequest(hardened));
 }
 
 function isSafeDraftContinuation(normalized: string, state: Record<string, string>): boolean {
@@ -198,17 +205,70 @@ export function safeAssistantMessage(
   // exclusivamente pelo servidor depois do RPC transacional de confirmação.
   if (containsFalseExecutionClaim(normalized, kind)) return null;
   if (containsSecurityThreat(normalized)) return null;
+  // containsMixedOutsideRequest() detecta injeção no INPUT do usuário (ex.:
+  // "qual meu saldo, e também me conte uma piada"): separa por frase e
+  // suspeita quando uma frase não financeira começa com uma palavra de
+  // pedido genérico ("como", "qual" etc.). Aplicado à resposta do PRÓPRIO
+  // modelo, isso vira falso positivo constante: qualquer explicação com
+  // mais de uma frase (ex.: "Como funcionam? Eles compram imóveis...") tem
+  // grande chance de ter uma frase de transição que começa com essas
+  // palavras comuns sem conter um termo financeiro. Bug real que descartava
+  // explicações corretas e completas de investment_education (ex.: FIIs).
+  // Esta checagem (fora do bloco acima) precisa vir ANTES do atalho de
+  // casual_conversation logo abaixo: senão o Finn conseguia fugir do foco
+  // financeiro contando piada, poema, previsão do tempo etc. sempre que o
+  // modelo classificasse a resposta como conversa casual.
+  // Backstop estrutural: o bloqueio acima só pega quem pede uma piada
+  // (a palavra "piada" no pedido), não quem efetivamente CONTA uma —
+  // confirmado em produção: o modelo classificou como casual_conversation e
+  // gerou uma piada de verdade sem citar a palavra "piada". "Por que ...?
+  // Porque ..." é o formato clássico de piada em pt-BR e não tem motivo
+  // para aparecer numa resposta legítima do Finn.
+  if (/\bpor\s+que\b.{0,60}\?.{0,15}\bporque\b/i.test(redacted)) return null;
+  if (containsUnsafeOrOutsideTopic(normalized, false)
+    || /\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return null;
   if (intent === "casual_conversation" && kind === "answer") return redacted;
   // Educação financeira sobre investimentos nunca pode citar um ativo, ticker
   // ou fundo específico: isso seria consultoria de investimentos, fora do
   // limite explicitamente definido para essa intent no prompt.
-  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(normalized)) return null;
-  if (containsUnsafeOrOutsideTopic(normalized)
-    || /\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return null;
+  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return null;
   if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return redacted;
   if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return redacted;
   if (kind === "propose_action" && /\b(?:revise|confira|previa|confirmar)\b/i.test(normalized)) return redacted;
   if (/^(pronto|feito|concluido|concluído|encontrei|nao encontrei|não encontrei|preciso de mais informacoes|preciso de mais informações)/i.test(redacted)
     && intent !== "out_of_scope") return redacted;
   return null;
+}
+
+// Observabilidade permanente: espelha exatamente as checagens de
+// safeAssistantMessage, mas devolve qual regra rejeitou em vez do texto —
+// nunca loga conteúdo da conversa, só um rótulo curto — para descobrir qual
+// guard está descartando respostas legítimas sem expor dado sensível.
+export function debugSafeAssistantMessageRejection(
+  message: string,
+  intent: string,
+  kind?: AssistantOutputKind,
+  outputCanary?: string,
+): string | null {
+  if (outputCanary && String(message).includes(outputCanary)) return "canary";
+  const redacted = redactSensitiveText(redactInternalIdentifiers(message)).trim().slice(0, MAX_MESSAGE_CHARS);
+  if (!redacted) return "empty_after_redaction";
+  if (containsSensitiveData(redacted)) return "sensitive_data";
+  if (INTERNAL_NUMERIC_REFERENCE_PATTERN.test(redacted)) return "internal_numeric_reference";
+  const normalized = normalizeText(redacted);
+  if (INTERNAL_PROMPT_MARKER_PATTERN.test(normalized)) return "internal_prompt_marker";
+  if (SENSITIVE_SOLICITATION_PATTERN.test(normalized)) return "sensitive_solicitation";
+  if (containsFalseExecutionClaim(normalized, kind)) return "false_execution_claim";
+  if (containsSecurityThreat(normalized)) return "security_threat";
+  if (/\bpor\s+que\b.{0,60}\?.{0,15}\bporque\b/i.test(redacted)) return "joke_structure";
+  if (containsUnsafeOrOutsideTopic(normalized, false)) return "unsafe_or_outside_topic";
+  if (/\b(piada|receita culinaria|codigo fonte)\b/.test(normalized)) return "joke_or_recipe_or_code";
+  if (intent === "casual_conversation" && kind === "answer") return null;
+  if (intent === "investment_education" && SPECIFIC_INVESTMENT_TICKER_PATTERN.test(redacted)) return "ticker_pattern";
+  if (FINANCIAL_TOPIC_PATTERN.test(normalized) || /(?:r\$|\d+[,.]\d{2}|\d+%|\d{4}-\d{2})/i.test(redacted)) return null;
+  if (kind === "clarify" && /^(?:qual|quais|quando|quant[oa]s?|em qual|aplicar|mostrar)\b/i.test(normalized)) return null;
+  if (kind === "propose_action" && /\b(?:revise|confira|previa|confirmar)\b/i.test(normalized)) return null;
+  if (/^(pronto|feito|concluido|concluído|encontrei|nao encontrei|não encontrei|preciso de mais informacoes|preciso de mais informações)/i.test(redacted)
+    && intent !== "out_of_scope") return null;
+  return "no_matching_allowlist";
 }

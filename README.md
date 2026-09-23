@@ -63,15 +63,15 @@ O histórico técnico permanece disponível em [commits](https://github.com/FinF
 | Backend | Supabase Auth, PostgreSQL, RLS, RPCs e Edge Functions |
 | Persistência local | Expo SecureStore, SQLite e AsyncStorage limitado a preferências/cache |
 | IA | Edge Function `finance-ai`, OpenAI ou Groq configurado apenas no servidor |
-| Pagamentos | Mercado Pago por Edge Functions e webhook validado no backend |
+| Pagamentos | Paddle Billing no site; Google Play Billing planejado para o app Android |
 | Distribuição mobile | EAS Build e EAS Update |
 
 ```text
 Aplicativo Expo ─┐
                  ├── Supabase Auth + RLS + RPCs ── PostgreSQL
-Painel Next.js ──┘                 │
-                                   ├── Edge Function da IA
-                                   └── Edge Functions de cobrança
+Painel Next.js ──┘                 │                    │
+       │                           └── Edge Function IA └── assinaturas
+       └── Paddle Checkout + webhook verificado
 ```
 
 ## Estrutura do repositório
@@ -95,6 +95,24 @@ docs/                        setup, handoffs, políticas e auditorias
 scripts/                     testes e verificações de segurança
 constants/                   catálogos compartilhados entre app e site
 ```
+
+## Documentação técnica
+
+A referência atual está no [índice de documentação](./docs/README.md):
+
+- [Arquitetura](./docs/ARQUITETURA.md)
+- [Ambientes e variáveis](./docs/AMBIENTES_E_VARIAVEIS.md)
+- [Banco de dados](./docs/BANCO_DE_DADOS.md)
+- [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md)
+- [Pagamentos e planos](./docs/PAGAMENTOS_E_PLANOS.md)
+- [Assistente Finn](./docs/ASSISTENTE_FINN.md)
+- [Rotas e telas](./docs/ROTAS_E_TELAS.md)
+- [Deploy e operação](./docs/DEPLOY_E_OPERACAO.md)
+- [Segurança](./docs/SEGURANCA.md)
+- [Testes](./docs/TESTES.md)
+- [Continuidade](./docs/CONTINUIDADE.md)
+
+Handoffs datados são históricos. Em caso de divergência, prevalecem o código e as migrations da `main`, seguidos pelos documentos acima.
 
 ## Desenvolvimento local
 
@@ -142,7 +160,7 @@ cd web
 npm install
 ```
 
-Copie `web/.env.local.example` para `web/.env.local`:
+Copie `web/.env.local.example` para `web/.env.local`. Além do Supabase e da URL do site, a página de planos requer as variáveis Paddle públicas e server-side descritas em [Ambientes e variáveis](./docs/AMBIENTES_E_VARIAVEIS.md).
 
 ```dotenv
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
@@ -163,7 +181,8 @@ Abra [http://localhost:3100](http://localhost:3100). Consulte também [web/READM
 As migrations de `supabase/migrations/` são a fonte versionada do banco. Aplique-as na ordem antes de liberar operações financeiras novas. Os guias específicos estão em:
 
 - [Configuração da IA](./docs/ai-setup.md)
-- [Configuração de pagamentos](./docs/billing-setup.md)
+- [Pagamentos e planos atuais](./docs/PAGAMENTOS_E_PLANOS.md)
+- [Configuração legada de pagamentos](./docs/billing-setup.md)
 - [Testes de segurança](./docs/security-testing.md)
 - [Modo offline](./docs/offline-mode-security.md)
 
@@ -354,7 +373,18 @@ Consulte o [relatório de segurança atual](./docs/security/SECURITY_AUDIT_2026-
 
 ## Estado e continuidade
 
+- [Continuidade atual do projeto](./docs/CONTINUIDADE.md)
+- [Índice da documentação técnica](./docs/README.md)
+
+### Histórico de handoffs
+
+- [Handoff de 19/09/2026](./docs/HANDOFF_2026-09-19.md)
+- [Handoff Paddle de 18/09/2026](./docs/PADDLE_HANDOFF_2026-09-18.md)
 - [Handoff de 15/08/2026](./docs/HANDOFF_2026-08-15.md)
+- [Handoff de 30/07/2026](./docs/HANDOFF_2026-07-30.md)
+
+### Documentos legais
+
 - [Política de Privacidade](./docs/privacy-policy.md)
 - [Termos de Uso](./docs/terms-of-use.md)
 

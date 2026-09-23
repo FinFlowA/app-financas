@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
-import type { Caixinha, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
+import type { Caixinha, Cartao, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import HomeDashboard from "./home-dashboard";
 
 const MONTH_PATTERN = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -11,7 +11,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const parameters = await searchParams;
   const month = parameters.month && MONTH_PATTERN.test(parameters.month) ? parameters.month : mesAtualEmSaoPaulo();
   const supabase = await createClient();
-  const [{ data: authData }, accountsResult, goalsResult, transactionsResult, categoriesResult, invoiceItemsResult] = await Promise.all([
+  const [{ data: authData }, accountsResult, goalsResult, transactionsResult, categoriesResult, invoiceItemsResult, cardsResult] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").order("id"),
     supabase.from("caixinhas").select("id,user_id,nome,meta_valor,saldo_atual,cor,icone,compartilhado,data_prazo,arquivado,version").order("nome"),
@@ -27,6 +27,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .eq("mes_fatura", month)
       .order("id")
       .range(from, to)),
+    supabase.from("cartoes").select("id, user_id, nome, cor, limite, dia_vencimento, dia_fechamento, ativo, version").eq("ativo", true).order("nome"),
   ]);
   if (!authData.user) redirect("/login");
   const queryErrors = [
@@ -35,6 +36,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
     ["transactions", transactionsResult.error],
     ["categories", categoriesResult.error],
     ["invoice_items", invoiceItemsResult.error],
+    ["cards", cardsResult.error],
   ] as const;
   const failedQueries = queryErrors
     .filter((entry) => entry[1])
@@ -51,5 +53,5 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       : authData.user.email?.split("@")[0] ?? "Usuário";
   const hour = Number(new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", hour12: false, timeZone: "America/Sao_Paulo" }).format(new Date()));
   const greeting = hour < 12 ? "Bom dia" : hour < 18 ? "Boa tarde" : "Boa noite";
-  return <HomeDashboard userId={authData.user.id} displayName={displayName} greeting={greeting} month={month} today={hojeEmSaoPaulo()} accounts={(accountsResult.data ?? []) as Conta[]} goals={(goalsResult.data ?? []) as Caixinha[]} transactions={(transactionsResult.data ?? []) as Transacao[]} categories={(categoriesResult.data ?? []) as Categoria[]} invoiceItems={(invoiceItemsResult.data ?? []) as FaturaItem[]} />;
+  return <HomeDashboard userId={authData.user.id} displayName={displayName} greeting={greeting} month={month} today={hojeEmSaoPaulo()} accounts={(accountsResult.data ?? []) as Conta[]} cards={(cardsResult.data ?? []) as Cartao[]} goals={(goalsResult.data ?? []) as Caixinha[]} transactions={(transactionsResult.data ?? []) as Transacao[]} categories={(categoriesResult.data ?? []) as Categoria[]} invoiceItems={(invoiceItemsResult.data ?? []) as FaturaItem[]} />;
 }

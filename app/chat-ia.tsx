@@ -27,12 +27,100 @@ import { getOptionalSecureStore } from "../lib/optional-native-modules";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
 
+type MarketIndicators = {
+  selic_rate_annual: number | null;
+  selic_reference_date: string | null;
+  cdi_rate_annual: number | null;
+  cdi_reference_date: string | null;
+  ipca_12m_percent: number | null;
+  ipca_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
+  source: "bcb_sgs";
+};
+
+type AccountBalancesCardData = {
+  accounts: { name: string; balance: number }[];
+  hiddenCount: number;
+  totalBalance: number;
+};
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   text: string;
   createdAt?: string;
+  marketIndicators?: MarketIndicators;
+  accountBalances?: AccountBalancesCardData;
 };
+
+function shortReferenceDate(value: string | null): string | null {
+  const match = value ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(value) : null;
+  return match ? `${match[3]}/${match[2]}` : null;
+}
+
+function IndicatorTile({
+  label, rate, referenceDate, theme, suffix = "% a.a.",
+}: {
+  label: string;
+  rate: number | null;
+  referenceDate: string | null;
+  theme: ReturnType<typeof finFlowTheme>;
+  suffix?: string;
+}) {
+  const shortDate = shortReferenceDate(referenceDate);
+  return (
+    <View style={[styles.marketIndicatorCard, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+      <Text style={[styles.marketIndicatorLabel, { color: theme.textMuted }]}>{label}</Text>
+      {rate === null
+        ? <Text style={[styles.marketIndicatorValueMuted, { color: theme.textMuted }]}>Indisponível</Text>
+        : <Text style={[styles.marketIndicatorValue, { color: theme.primaryDark }]}>{rate.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}{suffix}</Text>}
+      {shortDate && <Text style={[styles.marketIndicatorDate, { color: theme.textMuted }]}>ref. {shortDate}</Text>}
+    </View>
+  );
+}
+
+/** Cartão visual com os indicadores públicos do BCB citados na resposta — em
+ * vez de deixar os números presos no meio do texto corrido. */
+function MarketIndicatorsCard({ indicators, theme }: { indicators: MarketIndicators; theme: ReturnType<typeof finFlowTheme> }) {
+  return (
+    <View style={styles.marketIndicatorsWrap}>
+      <View style={styles.marketIndicatorsRow}>
+        <IndicatorTile label="Selic" rate={indicators.selic_rate_annual} referenceDate={indicators.selic_reference_date} theme={theme} />
+        <IndicatorTile label="CDI" rate={indicators.cdi_rate_annual} referenceDate={indicators.cdi_reference_date} theme={theme} />
+        <IndicatorTile label="IPCA 12m" rate={indicators.ipca_12m_percent} referenceDate={indicators.ipca_reference_date} theme={theme} suffix="%" />
+        <IndicatorTile label="IGP-M 12m" rate={indicators.igpm_12m_percent} referenceDate={indicators.igpm_reference_date} theme={theme} suffix="%" />
+      </View>
+      <Text style={[styles.marketIndicatorSource, { color: theme.textMuted }]}>Fonte: Banco Central (SGS)</Text>
+    </View>
+  );
+}
+
+function formatMoney(value: number): string {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
+/** Cartão visual com o saldo por conta — já vem limitado às de maior saldo
+ * (no máximo 6) para não poluir a tela de quem tem muitas contas cadastradas. */
+function AccountBalancesCard({ accounts, theme }: { accounts: AccountBalancesCardData; theme: ReturnType<typeof finFlowTheme> }) {
+  return (
+    <View style={styles.accountBalancesWrap}>
+      <View style={styles.accountBalancesRow}>
+        {accounts.accounts.map((account, index) => (
+          <View key={`${account.name}-${index}`} style={[styles.accountBalanceCard, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+            <Text style={[styles.accountBalanceName, { color: theme.textMuted }]} numberOfLines={1}>{account.name}</Text>
+            <Text style={[styles.accountBalanceValue, { color: theme.primaryDark }]}>{formatMoney(account.balance)}</Text>
+          </View>
+        ))}
+        {accounts.hiddenCount > 0 && (
+          <Text style={[styles.accountBalanceHidden, { color: theme.textMuted }]}>
+            +{accounts.hiddenCount} {accounts.hiddenCount === 1 ? "conta" : "contas"}
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
 
 function AssistantMessageText({ text, color }: { text: string; color: string }) {
   const blocks = formatAssistantMessage(text);
@@ -81,11 +169,15 @@ type FinanceAiResponse = {
   message?: string;
   route?: string;
   quota?: AiQuota;
+  marketIndicators?: MarketIndicators;
+  accountBalances?: AccountBalancesCardData;
   messages?: {
     id: string;
     role: "user" | "assistant";
     text: string;
     createdAt?: string;
+    marketIndicators?: MarketIndicators;
+    accountBalances?: AccountBalancesCardData;
   }[];
   pendingAction?: PendingAction;
   choices?: string[];
@@ -422,8 +514,8 @@ export default function ChatIAScreen() {
       .slice(0, 6);
   }, [clarificationChoices, input]);
 
-  const appendAssistant = useCallback((text: string) => {
-    setMessages((current) => [...current, { id: makeId("assistant"), role: "assistant", text }]);
+  const appendAssistant = useCallback((text: string, marketIndicators?: MarketIndicators, accountBalances?: AccountBalancesCardData) => {
+    setMessages((current) => [...current, { id: makeId("assistant"), role: "assistant", text, marketIndicators, accountBalances }]);
   }, []);
 
   const savePendingAction = useCallback(async (action: PendingAction | null) => {
@@ -501,6 +593,8 @@ export default function ChatIAScreen() {
             role: message.role === "user" ? "user" : "assistant",
             text: message.text,
             createdAt: message.createdAt,
+            marketIndicators: message.marketIndicators,
+            accountBalances: message.accountBalances,
           })));
         } else {
           setMessages([{ id: "welcome", role: "assistant", text: WELCOME_MESSAGE }]);
@@ -532,7 +626,7 @@ export default function ChatIAScreen() {
     }
     if (!operationIsCurrent(operationEpoch, operationUserId)) return;
     if (response.quota) setQuota(response.quota);
-    if (response.message) appendAssistant(response.message);
+    if (response.message) appendAssistant(response.message, response.marketIndicators, response.accountBalances);
     setClarificationChoices(response.kind === "clarify" && Array.isArray(response.choices)
       ? response.choices
       : []);
@@ -821,30 +915,34 @@ export default function ChatIAScreen() {
           {messages.map((message) => {
             const isUser = message.role === "user";
             return (
-              <View key={message.id} style={[styles.messageRow, isUser && styles.messageRowUser]}>
-                {!isUser && (
-                  <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
-                    <Image
-                      source={require("../assets/images/finn-message-avatar.png")}
-                      style={styles.avatarFinn}
-                      contentFit="cover"
-                      accessibilityLabel="Finn, assistente financeiro do FinFlow"
-                    />
+              <View key={message.id}>
+                <View style={[styles.messageRow, isUser && styles.messageRowUser]}>
+                  {!isUser && (
+                    <View style={[styles.avatar, { backgroundColor: theme.primarySoft }]}>
+                      <Image
+                        source={require("../assets/images/finn-message-avatar.png")}
+                        style={styles.avatarFinn}
+                        contentFit="cover"
+                        accessibilityLabel="Finn, assistente financeiro do FinFlow"
+                      />
+                    </View>
+                  )}
+                  <View
+                    style={[
+                      styles.bubble,
+                      isUser
+                        ? { backgroundColor: theme.primary, borderBottomRightRadius: 6 }
+                        : { backgroundColor: theme.surface, borderColor: theme.border, borderBottomLeftRadius: 6 },
+                      !isUser && styles.assistantBubble,
+                    ]}
+                  >
+                    {isUser
+                      ? <Text style={[styles.messageText, { color: "#FFF" }]}>{message.text}</Text>
+                      : <AssistantMessageText text={inFinnVoice(message.text)} color={theme.text} />}
                   </View>
-                )}
-                <View
-                  style={[
-                    styles.bubble,
-                    isUser
-                      ? { backgroundColor: theme.primary, borderBottomRightRadius: 6 }
-                      : { backgroundColor: theme.surface, borderColor: theme.border, borderBottomLeftRadius: 6 },
-                    !isUser && styles.assistantBubble,
-                  ]}
-                >
-                  {isUser
-                    ? <Text style={[styles.messageText, { color: "#FFF" }]}>{message.text}</Text>
-                    : <AssistantMessageText text={inFinnVoice(message.text)} color={theme.text} />}
                 </View>
+                {!isUser && message.marketIndicators && <MarketIndicatorsCard indicators={message.marketIndicators} theme={theme} />}
+                {!isUser && message.accountBalances && <AccountBalancesCard accounts={message.accountBalances} theme={theme} />}
               </View>
             );
           })}
@@ -1105,6 +1203,20 @@ const styles = StyleSheet.create({
   messageText: { fontSize: 14, lineHeight: 20.5, fontWeight: "500" },
   assistantMessageContent: { gap: 8 },
   messageEmphasis: { fontWeight: "900", fontVariant: ["tabular-nums"] },
+  marketIndicatorsWrap: { marginTop: -6, marginBottom: 13, marginLeft: 42, paddingRight: 36 },
+  marketIndicatorsRow: { flexDirection: "row", gap: 7 },
+  marketIndicatorCard: { flex: 1, minWidth: 0, borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
+  marketIndicatorLabel: { fontSize: 9.5, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase" },
+  marketIndicatorValue: { fontSize: 14, fontWeight: "900", fontVariant: ["tabular-nums"] },
+  marketIndicatorValueMuted: { fontSize: 11, fontWeight: "700" },
+  marketIndicatorDate: { fontSize: 9, fontWeight: "600" },
+  marketIndicatorSource: { marginTop: 5, fontSize: 9, fontWeight: "600" },
+  accountBalancesWrap: { marginTop: -6, marginBottom: 13, marginLeft: 42, paddingRight: 36 },
+  accountBalancesRow: { flexDirection: "row", flexWrap: "wrap", gap: 7 },
+  accountBalanceCard: { flex: 1, minWidth: "45%", borderWidth: 1, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 8, gap: 2 },
+  accountBalanceName: { fontSize: 9.5, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase" },
+  accountBalanceValue: { fontSize: 14, fontWeight: "900", fontVariant: ["tabular-nums"] },
+  accountBalanceHidden: { alignSelf: "center", fontSize: 10.5, fontWeight: "700", paddingHorizontal: 4 },
   suggestionsWrap: { marginTop: 7, marginBottom: 12 },
   suggestionsTitle: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 9, marginLeft: 2 },
   suggestionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

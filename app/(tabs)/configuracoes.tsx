@@ -136,7 +136,7 @@ export default function ConfiguracoesScreen() {
   const [loadingPerfil, setLoadingPerfil] = useState(false);
 
   const [modalConfirmarAcao, setModalConfirmarAcao] = useState<{
-    titulo: string; mensagem: string; labelConfirm: string; cor?: string;
+    titulo: string; mensagem: string; labelConfirm: string; cor?: string; aviso?: string;
     onConfirm: () => void;
   } | null>(null);
 
@@ -508,7 +508,8 @@ export default function ConfiguracoesScreen() {
   const confirmarApagarConta = () => {
     setModalConfirmarAcao({
       titulo: "Apagar Conta",
-      mensagem: "⚠️ Esta ação é irreversível!\n\nTodos os seus dados serão permanentemente apagados.\n\nTem certeza absoluta?",
+      aviso: "Esta ação é irreversível!",
+      mensagem: "Todos os seus dados serão permanentemente apagados.\n\nTem certeza absoluta?",
       labelConfirm: "Sim, apagar tudo",
       cor: "#FF4444",
       onConfirm: async () => {
@@ -1008,7 +1009,7 @@ export default function ConfiguracoesScreen() {
             onPress={() => router.push("/planos" as any)}
             activeOpacity={0.8}
           >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+            <View style={{ flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 12 }}>
               <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: plano === "premium" ? "rgba(244,162,97,0.2)" : plano === "smart" ? "rgba(42,157,143,0.2)" : "rgba(150,150,150,0.2)", alignItems: "center", justifyContent: "center" }}>
                 <MaterialIcons
                   name="workspace-premium"
@@ -1016,16 +1017,16 @@ export default function ConfiguracoesScreen() {
                   color={plano === "premium" ? "#F4A261" : plano === "smart" ? "#2A9D8F" : "#999"}
                 />
               </View>
-              <View>
+              <View style={{ flex: 1, minWidth: 0 }}>
                 <Text style={[{ color: Cores.texto, fontWeight: "bold", fontSize: 16 }]}>
                   Plano {plano === "free" ? "Free" : plano === "smart" ? "Smart" : "Premium"}
                 </Text>
-                <Text style={[{ color: Cores.secundario, fontSize: 12 }]}>
+                <Text numberOfLines={2} style={[{ color: Cores.secundario, fontSize: 12, lineHeight: 17, flexShrink: 1 }]}>
                   {!limitsEnabled ? "Todas as funções liberadas durante o desenvolvimento" : plano === "free" ? "Gratuito · Toque para fazer upgrade" : plano === "smart" ? "R$ 9,90/mês · Smart" : "R$ 19,90/mês · Premium"}
                 </Text>
               </View>
             </View>
-            <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />
+            <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} style={{ marginLeft: 10 }} />
           </TouchableOpacity>
 
           {/* LINKS LEGAIS */}
@@ -1321,25 +1322,29 @@ export default function ConfiguracoesScreen() {
       {/* MODAL CONFIRMAÇÃO */}
       {modalConfirmarAcao && (
         <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalConfirmarAcao(null)}>
-          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", alignItems: "center", padding: 24 }}>
-            <View style={{ width: "100%", backgroundColor: Cores.card, borderRadius: 16, padding: 25, borderTopWidth: 4, borderTopColor: modalConfirmarAcao.cor ?? "#2A9D8F" }}>
-              <Text style={{ color: Cores.texto, fontSize: 18, fontWeight: "bold", marginBottom: 12, textAlign: "center" }}>
+          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.78)", justifyContent: "center", alignItems: "center", padding: 24 }}>
+            <View style={{ width: "100%", maxWidth: 520, backgroundColor: Cores.card, borderRadius: 24, paddingHorizontal: 24, paddingTop: 30, paddingBottom: 24, borderTopWidth: 4, borderTopColor: modalConfirmarAcao.cor ?? "#2A9D8F" }}>
+              <Text style={{ color: Cores.texto, fontSize: 24, fontWeight: "800", marginBottom: modalConfirmarAcao.aviso ? 16 : 18, textAlign: "center" }}>
                 {modalConfirmarAcao.titulo}
               </Text>
-              <Text style={{ color: Cores.secundario, fontSize: 14, textAlign: "center", marginBottom: 24, lineHeight: 20 }}>
+              {modalConfirmarAcao.aviso && <View style={{ flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 7, marginBottom: 18 }}>
+                <MaterialIcons name="warning-amber" size={24} color="#F4B740" />
+                <Text style={{ color: Cores.secundario, fontSize: 17, fontWeight: "600" }}>{modalConfirmarAcao.aviso}</Text>
+              </View>}
+              <Text style={{ color: Cores.secundario, fontSize: 17, textAlign: "center", marginBottom: 26, lineHeight: 25 }}>
                 {modalConfirmarAcao.mensagem}
               </Text>
               <TouchableOpacity
-                style={{ backgroundColor: modalConfirmarAcao.cor ?? "#2A9D8F", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 10 }}
+                style={{ minHeight: 54, justifyContent: "center", backgroundColor: modalConfirmarAcao.cor ?? "#2A9D8F", paddingVertical: 14, borderRadius: 14, alignItems: "center", marginBottom: 12 }}
                 onPress={modalConfirmarAcao.onConfirm}
               >
-                <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>{modalConfirmarAcao.labelConfirm}</Text>
+                <Text style={{ color: "#FFF", fontWeight: "800", fontSize: 17 }}>{modalConfirmarAcao.labelConfirm}</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={{ backgroundColor: Cores.pillFundo, paddingVertical: 14, borderRadius: 10, alignItems: "center" }}
+                style={{ minHeight: 54, justifyContent: "center", backgroundColor: Cores.pillFundo, paddingVertical: 14, borderRadius: 14, alignItems: "center" }}
                 onPress={() => setModalConfirmarAcao(null)}
               >
-                <Text style={{ color: Cores.secundario, fontWeight: "bold" }}>Cancelar</Text>
+                <Text style={{ color: Cores.secundario, fontWeight: "800", fontSize: 17 }}>Cancelar</Text>
               </TouchableOpacity>
             </View>
           </View>

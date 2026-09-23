@@ -312,6 +312,51 @@ Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiz
   }
 });
 
+Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens", () => {
+  // Bug real visto pelo usuario: ao listar varios lancamentos numa unica
+  // mensagem (ex.: resposta a "Quais os dias?"), o modelo escrevia
+  // "5 de setembro - Pacoca R$ 22,00; 7 de setembro - McDonald's R$ 38,00"
+  // usando travessao como separador -- visualmente identico a uma lista
+  // com marcadores, mesmo sem markdown literal ("**", "-" no inicio da
+  // linha) ou quebra de linha. Restrito ao prompt somente leitura: o
+  // operacional já está no teto de caracteres (MODEL_MAX_SYSTEM_PROMPT_CHARS,
+  // ver provider_test.ts) e respostas de ação raramente listam vários itens.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("hífen ou travessão"),
+    "o prompt somente leitura precisa proibir hífen/travessão como separador de itens numa mensagem",
+  );
+});
+
+Deno.test("prompt somente leitura usa o total pronto de categoria dos ultimos 7 dias", () => {
+  // Bug real: "Quanto eu gastei com alimentacao na ultima semana?" teve 3
+  // falhas diferentes so nesta sessao pedindo pro modelo somar
+  // relevant_transactions de cabeca (pediu pro usuario reclassificar,
+  // excluiu um lancamento em silencio, e por fim respondeu um total sem
+  // relacao nenhuma com os dados reais). A soma passou a ser calculada no
+  // banco (fetchRecentCategoryTotals/recent_week_category_totals em
+  // context.ts) para essa pergunta nao depender mais da aritmetica do
+  // modelo.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("recent_week_category_totals"),
+    "o prompt somente leitura precisa orientar o uso do total pronto de categoria dos ultimos 7 dias",
+  );
+});
+
+Deno.test("prompt somente leitura esclarece que contas a vencer sao lancamentos pendentes", () => {
+  // Bug real: "Quais sao as minhas contas que vencem nos proximos 5 dias?"
+  // recebia kind=out_of_scope. "Conta" e ambiguo em portugues (conta
+  // bancaria vs. conta a pagar) e o modelo nao associava "contas que
+  // vencem" a lancamentos pendentes com data_vencimento proxima, mesmo o
+  // roteamento (historyDomain via "venc") ja trazendo os dados certos.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("Contas a vencer/vencendo/que vencem"),
+    "o prompt somente leitura precisa esclarecer que 'contas a vencer' significa lancamentos pendentes, nao contas bancarias",
+  );
+});
+
 Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
   // Bug real: "Quais despesas tenho neste mês?" respondia com o total
   // agregado em vez de listar os lancamentos individuais. Essa pergunta
@@ -363,8 +408,8 @@ Deno.test("prompt somente leitura orienta educacao de investimentos sem consulto
   assert(withIndicators.includes("investment_education"), "o prompt precisa citar a intent investment_education");
   assert(withIndicators.includes("market_indicators"), "o prompt precisa orientar o uso de market_indicators");
   assert(
-    withIndicators.includes("não recomendar um ativo"),
-    "o prompt precisa proibir explicitamente recomendacao de ativo especifico",
+    withIndicators.includes("nunca citar nome, código ou ticker de um ativo"),
+    "o prompt precisa proibir explicitamente citar nome/codigo/ticker de ativo especifico, mesmo como exemplo",
   );
   assert(
     withIndicators.includes("não pôde ser consultada agora"),
@@ -383,6 +428,25 @@ Deno.test("prompt somente leitura orienta educacao de investimentos sem consulto
   assert(
     withIndicators.includes("SEMPRE estão dentro do escopo") && withIndicators.includes("nunca kind=out_of_scope"),
     "a regra de investimentos precisa deixar explicito que o tema nunca cai em out_of_scope",
+  );
+  // Regressao real: "como esta a porcentagem do CDB?" caia em out_of_scope
+  // porque CDB nao tem uma taxa publica unica (varia por banco) e o modelo
+  // nao sabia que devia explicar o conceito (ex.: % do CDI) em vez de recusar
+  // por falta de um numero exato para citar.
+  assert(
+    withIndicators.includes("não tem número fixo"),
+    "o prompt precisa orientar que produto sem taxa publica unica ainda deve ser explicado, nao recusado",
+  );
+  assert(
+    withIndicators.includes("*_previous_*"),
+    "o prompt precisa orientar o uso dos campos de valor anterior para perguntas de mudanca recente",
+  );
+  // Regressao real: "como esta a porcentagem do CDB?" respondia so o
+  // conceito e dizia que nao tinha indicador disponivel, mesmo o CDI (que
+  // referencia diretamente o rendimento de CDB) estando disponivel.
+  assert(
+    withIndicators.includes("cdi_rate_annual") && withIndicators.includes("pergunte se a pessoa quer ver Selic ou IPCA"),
+    "o prompt precisa orientar o uso do CDI como referencia para CDB/LCI/LCA e oferecer os outros indicadores",
   );
 });
 

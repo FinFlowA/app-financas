@@ -74,6 +74,38 @@ function messageBase(row: Row): boolean {
   return uuid(row.conversationId) && text(row.message) && quota(row.quota);
 }
 
+function rate(value: unknown): value is number | null {
+  return value === null || (typeof value === "number" && Number.isFinite(value) && value >= -100 && value <= 1000);
+}
+
+function referenceDate(value: unknown): value is string | null {
+  return value === null || (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value));
+}
+
+function marketIndicators(value: unknown): boolean {
+  if (!object(value) || !exactKeys(value, [
+    "selic_rate_annual", "selic_reference_date", "cdi_rate_annual", "cdi_reference_date",
+    "ipca_12m_percent", "ipca_reference_date", "igpm_12m_percent", "igpm_reference_date", "source",
+  ])) return false;
+  return rate(value.selic_rate_annual) && referenceDate(value.selic_reference_date)
+    && rate(value.cdi_rate_annual) && referenceDate(value.cdi_reference_date)
+    && rate(value.ipca_12m_percent) && referenceDate(value.ipca_reference_date)
+    && rate(value.igpm_12m_percent) && referenceDate(value.igpm_reference_date)
+    && value.source === "bcb_sgs";
+}
+
+function accountBalance(value: unknown): boolean {
+  if (!object(value) || !exactKeys(value, ["name", "balance"])) return false;
+  return text(value.name, 120) && typeof value.balance === "number" && Number.isFinite(value.balance);
+}
+
+function accountBalancesCard(value: unknown): boolean {
+  if (!object(value) || !exactKeys(value, ["accounts", "hiddenCount", "totalBalance"])) return false;
+  return Array.isArray(value.accounts) && value.accounts.length >= 1 && value.accounts.length <= 6
+    && value.accounts.every((item) => accountBalance(item))
+    && integer(value.hiddenCount) && typeof value.totalBalance === "number" && Number.isFinite(value.totalBalance);
+}
+
 function preview(value: unknown): boolean {
   if (!object(value) || !exactKeys(value, ["title", "summary", "consequences"])) return false;
   return text(value.title, 200) && text(value.summary, 2_000)
@@ -101,11 +133,20 @@ function cancellation(value: unknown): boolean {
 
 function historyMessages(value: unknown): boolean {
   return Array.isArray(value) && value.length <= 200 && value.every((item) => {
-    if (!object(item) || !exactKeys(item, ["id", "role", "text", "createdAt", "intent"])) return false;
+    if (!object(item)) return false;
+    const hasMarketIndicators = Object.prototype.hasOwnProperty.call(item, "marketIndicators");
+    const hasAccountBalances = Object.prototype.hasOwnProperty.call(item, "accountBalances");
+    if (!exactKeys(item, [
+        "id", "role", "text", "createdAt", "intent",
+        ...(hasMarketIndicators ? ["marketIndicators"] : []),
+        ...(hasAccountBalances ? ["accountBalances"] : []),
+      ])) return false;
     return typeof item.id === "string" && /^[1-9]\d*$/.test(item.id)
       && (item.role === "user" || item.role === "assistant")
       && text(item.text) && timestamp(item.createdAt)
-      && (item.intent === null || allIntents.has(String(item.intent)));
+      && (item.intent === null || allIntents.has(String(item.intent)))
+      && (!hasMarketIndicators || marketIndicators(item.marketIndicators))
+      && (!hasAccountBalances || accountBalancesCard(item.accountBalances));
   });
 }
 
@@ -138,8 +179,16 @@ export function parseFinanceAiHttpResponse(raw: string | unknown): FinanceAiResu
     valid = exactKeys(value, keys) && typeof value.error === "string" && ERROR_CODE.test(value.error)
       && (!Object.prototype.hasOwnProperty.call(value, "message") || text(value.message));
   } else if (value.kind === "answer") {
-    valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "quota"])
-      && messageBase(value) && (reads.has(String(value.intent)) || value.intent === "out_of_scope");
+    const hasMarketIndicators = Object.prototype.hasOwnProperty.call(value, "marketIndicators");
+    const hasAccountBalances = Object.prototype.hasOwnProperty.call(value, "accountBalances");
+    valid = exactKeys(value, [
+        "kind", "conversationId", "message", "intent", "quota",
+        ...(hasMarketIndicators ? ["marketIndicators"] : []),
+        ...(hasAccountBalances ? ["accountBalances"] : []),
+      ])
+      && messageBase(value) && (reads.has(String(value.intent)) || value.intent === "out_of_scope")
+      && (!hasMarketIndicators || marketIndicators(value.marketIndicators))
+      && (!hasAccountBalances || accountBalancesCard(value.accountBalances));
   } else if (value.kind === "clarify") {
     valid = exactKeys(value, ["kind", "conversationId", "message", "intent", "missingFields", "choices", "quota"])
       && messageBase(value) && allIntents.has(String(value.intent)) && value.intent !== "out_of_scope"

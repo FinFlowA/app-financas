@@ -123,6 +123,12 @@ function previousMonth(month: string): string {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+function daysBefore(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1, day - days));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
 function currentDateInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -262,6 +268,64 @@ async function fetchTransactionDetails(
   };
 }
 
+/** Quantas transações (agendadas OU pagas) pertencem ao mês em foco — não o
+ * total histórico de todos os tempos. `aggregate.sourceCounts.transactions`
+ * (usado antes aqui) conta TODAS as transações que a pessoa já lançou desde
+ * sempre, então para qualquer usuário ativo com mais de ~140 lançamentos na
+ * vida inteira essa comparação nunca batia, mesmo quando os dados do mês
+ * perguntado estavam 100% completos — o modelo então às vezes obedecia a
+ * regra "avise que os dados estão incompletos" mesmo para perguntas simples
+ * e totalmente respondíveis (ex.: "quanto gastei com alimentação na última
+ * semana?"), de forma inconsistente entre uma pergunta e outra. */
+async function countTransactionsInFocusMonth(
+  client: SupabaseClient,
+  focusMonth: string,
+  enabled: boolean,
+): Promise<number | null> {
+  if (!enabled) return null;
+  const monthStart = `${focusMonth}-01`;
+  const monthEnd = endOfMonth(focusMonth);
+  const { count, error } = await client.from("transacoes").select("id", { count: "exact", head: true })
+    .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  return count ?? 0;
+}
+
+type RecentCategoryWindow = {
+  start_date: string;
+  end_date: string;
+  rows: { categoria_id: number | null; valor: number }[];
+};
+
+/** Total gasto/recebido por categoria nos últimos 7 dias (hoje incluso),
+ * calculado no banco em vez de pedido ao modelo para somar
+ * relevant_transactions de cabeça. Perguntas como "quanto gastei com
+ * alimentação na última semana?" tiveram 3 falhas diferentes só nesta
+ * sessão pedindo pro modelo somar manualmente (pediu pro usuário
+ * reclassificar, excluiu um item em silêncio, e por fim inventou um total
+ * sem relação nenhuma com os dados) -- soma é aritmética determinística,
+ * não deveria depender do modelo acertar. */
+async function fetchRecentCategoryTotals(
+  client: SupabaseClient,
+  currentDate: string,
+  enabled: boolean,
+): Promise<RecentCategoryWindow | null> {
+  if (!enabled) return null;
+  const startDate = daysBefore(currentDate, 6);
+  const { data, error } = await client.from("transacoes")
+    .select("categoria_id,valor,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${startDate},data_vencimento.lte.${currentDate}),and(status.eq.paga,data_realizacao.gte.${startDate},data_realizacao.lte.${currentDate})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  return {
+    start_date: startDate,
+    end_date: currentDate,
+    rows: (data ?? []).map((row) => ({
+      categoria_id: row.categoria_id == null ? null : number(row.categoria_id),
+      valor: number(row.valor),
+    })),
+  };
+}
+
 async function fetchAllCashFlowTransactions(
   client: SupabaseClient,
   enabled: boolean,
@@ -374,7 +438,7 @@ export function selectRelevantRows(
   return [...selected.values()];
 }
 
-function informationalRequest(request: string): boolean {
+export function informationalRequest(request: string): boolean {
   const normalized = normalize(request);
   const casual = /^(oi|ola|bom dia|boa tarde|boa noite|obrigad[oa]|valeu|tudo bem|como voce esta|quem e voce|qual e o seu nome|me conte uma piada)[?!.\s]*$/.test(normalized);
   return casual || (/\b(o que e|como funciona|explique|qual a diferenca|para que serve)\b/.test(normalized)
@@ -1200,10 +1264,18 @@ type ContextNeeds = {
   goals: boolean;
   cards: boolean;
   investmentEducation: boolean;
+  marketIndicatorQuery: boolean;
 };
 
-export function contextNeeds(request: string, analyticsAllowed: boolean): ContextNeeds {
+export function contextNeeds(request: string, analyticsAllowed: boolean, currentMessage = request): ContextNeeds {
   const normalized = normalize(request);
+  // Indicadores de mercado precisam da pergunta ATUAL, não do texto que
+  // concatena até 3 mensagens anteriores (usado pelos outros domínios logo
+  // abaixo para dar continuidade, ex.: cartão, categoria). Sem isso, uma
+  // pergunta antiga sobre Selic/CDI/IPCA mantinha o cartão visual "grudado"
+  // em respostas seguintes completamente diferentes (ex.: perguntar por
+  // IGP-M, que nem é buscado, ainda vinha com o cartão da pergunta anterior).
+  const currentNormalized = normalize(currentMessage);
   const mutation = /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized);
   const cardDomain = /(cartao|fatura|compra|parcela|credito)/.test(normalized);
   const goalDomain = /(objetiv|caixinha|guardar|resgatar|meta)/.test(normalized);
@@ -1223,7 +1295,18 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
   // de indicadores públicos do Banco Central para dar contexto factual.
-  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundo imobiliario|\bfii\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
+  // "fundos imobiliarios" (plural, a forma mais natural de perguntar) nao
+  // batia com "fundo imobiliario" (singular) nem "fiis" com "\bfii\b" --
+  // bug real que deixava a pergunta sem roteamento de investimento nem
+  // indicadores de mercado, mesmo o tema estando sempre dentro do escopo.
+  const investmentDomain = !mutation && /(invest|onde (?:investir|aplicar)|aplicacao financeira|aplicacoes financeiras|renda fixa|renda variavel|tesouro direto|\bcdb\b|\blci\b|\blca\b|fundos? imobili|\bfiis?\b|poupanca|\bselic\b|\bcdi\b|\bipca\b|igp[- ]?m|bolsa de valores|mercado financeiro|\backoes\b)/.test(normalized);
+  // Subconjunto de investmentDomain que pergunta pelos indicadores em si
+  // (não qualquer pergunta sobre investir). "Qual o melhor lugar pra
+  // investir?" cai em investmentDomain mas não aqui — a resposta é uma
+  // recusa/orientação genérica que não cita nenhum número, então buscar e
+  // anexar o cartão visual de Selic/CDI/IPCA nesse caso seria irrelevante e
+  // confuso para quem está lendo.
+  const marketIndicatorQuery = investmentDomain && /(\bselic\b|\bcdi\b|\bipca\b|igp[- ]?m|taxa (?:de juros|basica)|juros b[aá]sicos?|indicador(?:es)? econ|mercado financeiro|porcentagem|rendimento|rentabilidade|\btaxas?\b.*(?:hoje|atual|agora)|quanto (?:esta|está|rende|paga)|como est[aá].*(?:mercado|selic|cdi|ipca|igp[- ]?m|taxa|juros)|mud(?:ou|ando|anca)|subiu|caiu|aument(?:ou|o)|diminuiu|alter(?:ou|acao)|\b(?:preciso|quero saber|me (?:diz|informe|passa|fala)|qual)\b.{0,20}\b(?:taxa|valor|numero|percentual|indice)\b)/.test(currentNormalized);
   const route: ContextNeeds["route"] = mutation
     ? "mutation"
     : investmentDomain
@@ -1253,6 +1336,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean): Contex
     goals: goalDomain || summaryDomain,
     cards: cardDomain || spendingDomain || summaryDomain,
     investmentEducation: investmentDomain,
+    marketIndicatorQuery,
   };
 }
 
@@ -1473,12 +1557,19 @@ export async function buildFinancialContext(
   limitsEnabled: boolean,
   requestContext = "",
   currentUserId = "",
+  currentMessage = requestContext,
 ): Promise<FinancialContext> {
   const analyticsAllowed = !limitsEnabled || plan === "premium";
   const currentDate = currentDateInSaoPaulo();
   const currentMonth = currentDate.slice(0, 7);
 
-  if (informationalRequest(requestContext)) {
+  // Só a pergunta ATUAL decide o atalho informativo (sem dados pessoais):
+  // requestContext concatena até 3 mensagens anteriores do usuário para dar
+  // continuidade a domínios (ex.: cartão, categoria) em contextNeeds(), mas
+  // se usado aqui, uma pergunta conceitual antiga ("O que é X?") contaminava
+  // a checagem e derrubava até indicadores de mercado da pergunta atual, que
+  // podia ser bem diferente (ex.: "Como está a porcentagem do CDI?").
+  if (informationalRequest(currentMessage)) {
     return {
       compactJson: JSON.stringify({
         current_date: currentDate,
@@ -1490,7 +1581,7 @@ export async function buildFinancialContext(
       analyticsAllowed,
     };
   }
-  const needs = contextNeeds(requestContext, analyticsAllowed);
+  const needs = contextNeeds(requestContext, analyticsAllowed, currentMessage);
   const focusMonth = selectedMonth(requestContext, currentMonth);
   const years = selectedYears(requestContext, Number(currentMonth.slice(0, 4)));
   years.add(Number(focusMonth.slice(0, 4)));
@@ -1511,7 +1602,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1525,7 +1616,9 @@ export async function buildFinancialContext(
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
-    needs.investmentEducation ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
+    needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
+    countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
+    fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1542,7 +1635,37 @@ export async function buildFinancialContext(
       focusMonth,
     ).filter((row) => !requestedDate || row.date === requestedDate)
     : [];
-  const transactionDetailsComplete = aggregate.sourceCounts.transactions === transactions.length;
+  const recentCategoryTotals = (() => {
+    if (!recentCategoryWindow) return null;
+    const totals = new Map<number, number>();
+    for (const row of recentCategoryWindow.rows) {
+      if (row.categoria_id == null) continue;
+      totals.set(row.categoria_id, (totals.get(row.categoria_id) ?? 0) + row.valor);
+    }
+    return {
+      start_date: recentCategoryWindow.start_date,
+      end_date: recentCategoryWindow.end_date,
+      by_category: [...totals.entries()]
+        .map(([id, total]) => ({ category: categoryById.get(id) ?? null, total: Math.round(total * 100) / 100 }))
+        .filter((item): item is { category: string; total: number } => item.category !== null),
+    };
+  })();
+  // Completo em relação ao MÊS EM FOCO, não ao histórico inteiro da pessoa
+  // (aggregate.sourceCounts.transactions soma todas as transações já
+  // lançadas desde sempre — quase nunca bate com o que é buscado para uma
+  // pergunta pontual, mesmo quando o mês perguntado está 100% coberto).
+  const monthStart = `${focusMonth}-01`;
+  const focusMonthEnd = endOfMonth(focusMonth);
+  const transactionsInFocusMonth = transactions.filter((row) => {
+    const scheduled = String(row.data_vencimento ?? "");
+    const isScheduledInMonth = scheduled >= monthStart && scheduled <= focusMonthEnd;
+    const realized = String(row.data_realizacao ?? "");
+    const isRealizedInMonth = String(row.status ?? "") === "paga" && realized >= monthStart && realized <= focusMonthEnd;
+    return isScheduledInMonth || isRealizedInMonth;
+  }).length;
+  const transactionDetailsComplete = monthlyTransactionCount === null
+    ? aggregate.sourceCounts.transactions === transactions.length
+    : transactionsInFocusMonth === monthlyTransactionCount;
   const invoiceDetailsComplete = aggregate.sourceCounts.invoiceItems === invoiceItems.length;
 
   const contextAccounts = selectRelevantRows(
@@ -1602,6 +1725,19 @@ export async function buildFinancialContext(
       }
     }
   }
+  // dataset_complete.transactions mede o MÊS INTEIRO: com mais de 40
+  // lançamentos no mês (comum para usuário ativo), ele é quase sempre false
+  // mesmo quando o recorte pedido (ex.: uma semana, uma categoria) está 100%
+  // presente em relevant_transactions -- confirmado em produção que isso
+  // fazia o modelo recusar somas de recortes pequenos alegando "dataset
+  // incompleto". Este sinal mede só o que de fato bate com a pergunta atual.
+  const matchingTransactionsTotal = transactions.filter((row) => (
+    matchesRequest(row, tokens, requestContext, transactionRelatedText(row))
+  )).length;
+  const matchingTransactionsIncluded = [...selectedTransactions.values()].filter((row) => (
+    matchesRequest(row, tokens, requestContext, transactionRelatedText(row))
+  )).length;
+  const matchingTransactionsComplete = matchingTransactionsTotal === matchingTransactionsIncluded;
 
   const sortedInvoiceItems = [...invoiceItems].sort((left, right) => (
     text(right.mes_fatura, 7).localeCompare(text(left.mes_fatura, 7)) || number(right.id) - number(left.id)
@@ -1723,6 +1859,7 @@ export async function buildFinancialContext(
       card_aggregates: aggregate.aggregateComplete,
       transactions: transactionDetailsComplete && selectedTransactions.size === transactions.length,
       transactions_fetched_complete: transactionDetailsComplete,
+      transactions_matching_query: matchingTransactionsComplete,
       transactions_query_scope: transactionPage.queryScope,
       transactions_total_available: aggregate.sourceCounts.transactions,
       transactions_total_fetched: transactions.length,
@@ -1763,7 +1900,8 @@ export async function buildFinancialContext(
     },
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
-    market_indicators: needs.investmentEducation ? marketIndicators : null,
+    market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
+    recent_week_category_totals: recentCategoryTotals,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;

@@ -4,6 +4,7 @@ import {
   calculateFinancialSnapshot,
   contextNeeds,
   financialSnapshotFromAggregate,
+  informationalRequest,
   MAX_PROVIDER_CONTEXT_CHARS,
   redactSensitiveText,
   selectedMonth,
@@ -511,6 +512,11 @@ Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investi
     "Como funciona o Tesouro Direto?",
     "É melhor deixar na poupança ou investir em fundo imobiliário?",
     "Quanto está a Selic hoje?",
+    // Regressao real: a forma plural, mais natural de perguntar, nao batia
+    // com o regex singular ("fundo imobiliario", "\bfii\b") e a pergunta
+    // ficava sem rota de investimento nem indicadores de mercado.
+    "Me explique sobre fundos imobiliarios",
+    "O que são FIIs?",
   ];
   for (const question of investmentQuestions) {
     const needs = contextNeeds(question, true);
@@ -524,6 +530,100 @@ Deno.test("contextNeeds reconhece perguntas de educacao financeira sobre investi
   const mutation = contextNeeds("Crie uma despesa de investimento de R$ 500", true);
   assert(!mutation.investmentEducation, "uma mutacao nunca deveria ser roteada como educacao de investimentos");
   assert(mutation.route === "mutation", "mutacao continua tendo prioridade sobre qualquer outro dominio");
+});
+
+Deno.test("informationalRequest reconhece pergunta conceitual isolada mas nao uma que pede numero atual", () => {
+  // Bug real: buildFinancialContext chamava informationalRequest() no texto
+  // que concatena ate 3 mensagens anteriores do usuario (usado só para dar
+  // continuidade de domínio em contextNeeds). Como esse texto concatenado
+  // ainda contém "o que e" de um turno anterior ("O que é selic?"), a
+  // pergunta ATUAL pedindo um número real ("Como está a porcentagem do
+  // CDI?") também caía no atalho informativo (sem indicadores, sem dados) --
+  // mesmo essa pergunta, isolada, não devendo cair nesse atalho. A correção
+  // foi buildFinancialContext passar a checar só a mensagem atual aqui, não
+  // o texto concatenado usado por contextNeeds (ver chamada com o parâmetro
+  // currentMessage). Este teste trava o comportamento da função em si.
+  assert(informationalRequest("O que é selic?"), "pergunta conceitual isolada deveria usar o atalho informativo");
+  assert(
+    !informationalRequest("Como esta a porcentagem do CDI?"),
+    "pergunta que pede um numero atual nao pode cair no atalho informativo",
+  );
+});
+
+Deno.test("contextNeeds so busca indicadores de mercado quando a pergunta pede os numeros em si", () => {
+  // Bug real: "Qual e o melhor lugar pra investir?" cai em investmentDomain
+  // (rota investment_education, resposta generica e sem numeros), mas nao
+  // deveria buscar/anexar Selic-CDI-IPCA -- a resposta do modelo nunca cita
+  // esses valores, entao o cartao visual apareceria sem nenhum motivo.
+  const genericAdviceQuestions = [
+    "Qual é o melhor lugar para investir?",
+    "Onde posso investir o meu dinheiro?",
+    "É melhor deixar na poupança ou investir em fundo imobiliário?",
+    "Como funciona o Tesouro Direto?",
+    "O que é um CDB?",
+  ];
+  for (const question of genericAdviceQuestions) {
+    const needs = contextNeeds(question, true);
+    assert(needs.investmentEducation, `ainda deveria ser educacao de investimentos: "${question}"`);
+    assert(!needs.marketIndicatorQuery, `nao deveria buscar indicadores para uma pergunta generica: "${question}"`);
+  }
+
+  const indicatorQuestions = [
+    "Quanto está a Selic hoje?",
+    "Como está o mercado financeiro?",
+    "O CDI subiu recentemente?",
+    "A taxa Selic mudou nos últimos meses?",
+    "Qual o IPCA acumulado em 12 meses?",
+    // Bug real: CDB/LCI/LCA nao tem taxa publica propria, mas sao cotados
+    // como % do CDI -- perguntar "a porcentagem" desses produtos deveria
+    // trazer o CDI como referencia, nao responder "nao tenho indicadores".
+    "Como está a porcentagem do CDB?",
+    "Qual o rendimento da LCI hoje?",
+    "Qual a rentabilidade da poupança?",
+  ];
+  for (const question of indicatorQuestions) {
+    const needs = contextNeeds(question, true);
+    assert(needs.marketIndicatorQuery, `deveria buscar indicadores para: "${question}"`);
+  }
+});
+
+Deno.test("marketIndicatorQuery usa so a pergunta atual, nao o historico concatenado de turnos", () => {
+  // Bug real: buildFinancialContext passa a contextNeeds() um texto que
+  // concatena ate 3 mensagens anteriores do usuario (para dar continuidade
+  // de dominio, ex.: cartao, categoria). Como Selic/CDI/IPCA de um turno
+  // anterior continuava nesse texto concatenado, uma pergunta seguinte
+  // completamente diferente (ex.: pedir para explicar fundos imobiliarios,
+  // sem pedir nenhum numero) ainda vinha com o cartao visual de Selic/CDI/
+  // IPCA "grudado" da pergunta anterior.
+  const concatenatedWithOlderSelicTurn = "Como está o mercado financeiro?\nContinuação do usuário: Me explique sobre fundos imobiliarios";
+  const needsUsingConcatenatedAsCurrent = contextNeeds(concatenatedWithOlderSelicTurn, true);
+  assert(
+    needsUsingConcatenatedAsCurrent.marketIndicatorQuery,
+    "sanity check: o texto concatenado sozinho ainda dispara indicadores (por isso o bug existia)",
+  );
+  const needsWithCurrentMessageSeparated = contextNeeds(concatenatedWithOlderSelicTurn, true, "Me explique sobre fundos imobiliarios");
+  assert(
+    !needsWithCurrentMessageSeparated.marketIndicatorQuery,
+    "a pergunta atual sobre fundos imobiliarios nao pode reaproveitar indicadores de um turno anterior sobre Selic",
+  );
+});
+
+Deno.test("marketIndicatorQuery reconhece IGP-M e um pedido de dado natural como continuacao", () => {
+  // IGP-M passou a ser um indicador de verdade (calculado a partir da serie
+  // mensal do SGS via metodo composto); a forma como o usuario digita
+  // ("IGPM", "IGP-M", "igp m") nao pode importar. Um pedido curto de
+  // continuacao ("Preciso da taxa") tambem precisa disparar a busca quando
+  // a conversa ja estabeleceu o dominio de investimento (investmentDomain
+  // vindo do texto concatenado), mesmo sem repetir o nome do indicador.
+  for (const question of ["IGPM setembro de 2026", "IGP-M setembro de 2026", "igp m de setembro"]) {
+    assert(contextNeeds(question, true).marketIndicatorQuery, `deveria reconhecer IGP-M em: "${question}"`);
+  }
+  const followUp = contextNeeds(
+    "Fale sobre o IGP-M\nContinuação do usuário: Preciso da taxa",
+    true,
+    "Preciso da taxa",
+  );
+  assert(followUp.marketIndicatorQuery, "pedido curto de continuacao deveria disparar a busca de indicadores");
 });
 
 Deno.test("selectedMonth resolve mes que vem e mes passado a partir do mes atual, nao do foco anterior", () => {

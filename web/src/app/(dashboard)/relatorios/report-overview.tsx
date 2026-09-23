@@ -72,12 +72,24 @@ export default function ReportOverview({
 
   const activePoint = balances[activeMonthIndex];
   const isCurrentMonth = year === currentYear && activeMonthIndex === currentMonthIndex;
-  const displayedBalance = isCurrentMonth ? currentBalance : activePoint?.saldo ?? initialBalance;
-  const balanceLabel = isCurrentMonth
-    ? "Saldo atual das contas"
-    : activePoint?.projetado
-      ? `Saldo previsto no fim de ${months[activeMonthIndex]?.label.split(" ")[0] ?? "mês"}`
-      : `Saldo realizado no fim de ${months[activeMonthIndex]?.label.split(" ")[0] ?? "mês"}`;
+  const activeDayPoint = dailyBalances[activeDayIndex];
+  const selectedDay = new Date(year, selectedMonthIndex, activeDayIndex + 1);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  selectedDay.setHours(0, 0, 0, 0);
+  const isToday = selectedDay.getTime() === today.getTime();
+  const displayedBalance = view === "daily"
+    ? activeDayPoint?.saldo ?? initialBalance
+    : isCurrentMonth ? currentBalance : activePoint?.saldo ?? initialBalance;
+  const balanceLabel = view === "daily"
+    ? isToday
+      ? "Saldo atual das contas"
+      : selectedDay > today ? "Saldo previsto na data" : "Saldo realizado na data"
+    : isCurrentMonth
+      ? "Saldo atual das contas"
+      : activePoint?.projetado
+        ? `Saldo previsto no fim de ${months[activeMonthIndex]?.label.split(" ")[0] ?? "mês"}`
+        : `Saldo realizado no fim de ${months[activeMonthIndex]?.label.split(" ")[0] ?? "mês"}`;
 
   function selectMonth(index: number) {
     setSelection({ sourceYear: year, sourceMonthIndex: selectedMonthIndex, activeMonthIndex: index });
@@ -120,7 +132,7 @@ export default function ReportOverview({
           >
             {formatarReais(displayedBalance)}
           </p>
-          <p className={styles.heroDescription}>Selecione um mês no gráfico para conferir o saldo daquele período. Transferências para objetivos não são tratadas como despesas.</p>
+          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Transferências para objetivos não são tratadas como despesas.</p>
         </div>
         <div className={styles.heroMetrics} aria-label="Resumo do mês atual">
           {metrics.map((metric) => (

@@ -11,6 +11,7 @@ import {
 import { buildFinancialContext } from "./context.ts";
 import {
   containsSensitiveData,
+  debugSafeAssistantMessageRejection,
   isFinancialControlMessage,
   normalizeText,
   redactInternalIdentifiers,
@@ -45,6 +46,27 @@ const PRE_CONTEXT_MODEL_BUDGET: ModelTokenBudget = {
   maxOutputTokens: 1,
 };
 const CHAT_RETENTION_MS = 24 * 60 * 60 * 1_000;
+// Duas tentativas extra (3 chamadas no total) chegaram a reduzir esse teto
+// pela metade sozinhas: confirmado em produção que a segunda tentativa
+// extra de uma mensagem foi rejeitada com AI_PROVIDER_RATE_LIMITED porque
+// as chamadas anteriores (a própria pergunta e a tentativa extra de uma
+// pergunta anterior, em sequência rápida) já tinham consumido a maior
+// parte do teto de 8 mil tokens/minuto da Groq -- pior ainda: isso também
+// rouba orçamento de QUALQUER outra mensagem do mesmo minuto. Uma única
+// tentativa extra já resolvia a maioria dos casos observados e deixa uma
+// folga bem maior para o restante da janela de um minuto.
+const MAX_SCOPE_RETRY_ATTEMPTS = 1;
+// Um limite de taxa (nosso ou da Groq) é uma contenção passageira do
+// provedor/orçamento compartilhado, não um problema com a pergunta em si --
+// o usuário não tem como saber que precisa esperar entre mensagens, então o
+// sistema absorve essa espera sozinho em vez de expor o erro ou depender do
+// usuário espaçar os envios manualmente.
+const RATE_LIMIT_RETRY_CODES = new Set(["AI_RATE_LIMITED", "AI_TEMPORARILY_PAUSED", "AI_PROVIDER_RATE_LIMITED"]);
+const RATE_LIMIT_BACKOFF_MS = 1_500;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function chatRetentionCutoff(): string {
   return new Date(Date.now() - CHAT_RETENTION_MS).toISOString();
@@ -86,6 +108,137 @@ function optionalSecret(name: string): string {
 
 function asObject(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : {};
+}
+
+type ClientMarketIndicators = {
+  selic_rate_annual: number | null;
+  selic_reference_date: string | null;
+  cdi_rate_annual: number | null;
+  cdi_reference_date: string | null;
+  ipca_12m_percent: number | null;
+  ipca_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
+  source: "bcb_sgs";
+};
+
+function numberOrNull(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
+}
+
+// market_indicators viaja dentro de compactJson (o texto que o modelo lê),
+// não como campo solto de FinancialContext; o objeto ali pode trazer campos
+// extras (valor/data anteriores) usados só pelo modelo, então o payload para
+// o cliente precisa ser reduzido às 9 chaves que o contrato estrito aceita.
+function clientMarketIndicators(compactJson: string): ClientMarketIndicators | null {
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const raw = parsed.market_indicators;
+  if (!raw || typeof raw !== "object") return null;
+  const source = raw as JsonRecord;
+  if (source.source !== "bcb_sgs") return null;
+  return {
+    selic_rate_annual: numberOrNull(source.selic_rate_annual),
+    selic_reference_date: stringOrNull(source.selic_reference_date),
+    cdi_rate_annual: numberOrNull(source.cdi_rate_annual),
+    cdi_reference_date: stringOrNull(source.cdi_reference_date),
+    ipca_12m_percent: numberOrNull(source.ipca_12m_percent),
+    ipca_reference_date: stringOrNull(source.ipca_reference_date),
+    igpm_12m_percent: numberOrNull(source.igpm_12m_percent),
+    igpm_reference_date: stringOrNull(source.igpm_reference_date),
+    source: "bcb_sgs",
+  };
+}
+
+type ClientAccountBalancesCard = {
+  accounts: { name: string; balance: number }[];
+  hiddenCount: number;
+  totalBalance: number;
+};
+
+// Só perguntas que pedem o saldo discriminado por conta (não qualquer
+// pergunta sobre saldo) acionam o cartão visual — "qual meu saldo?" sozinho
+// já tem uma resposta objetiva em texto e não precisa do cartão.
+const ACCOUNT_BALANCE_QUERY_PATTERN = /\bsaldo\b.{0,30}\bcontas\b|\bcontas\b.{0,30}\bsaldo\b|\bsaldo\b.{0,20}\b(?:cada\s+conta|por\s+conta)\b|\b(?:cada\s+conta|por\s+conta)\b.{0,20}\bsaldo\b|\bquanto\b.{0,20}\btenho\b.{0,20}\bcada\s+conta\b/;
+
+// accounts já está sempre presente em FINFLOW_DATA (nenhuma busca extra
+// precisa ser feita); o cartão só recorta e ordena o que já foi buscado.
+// Limitado às de maior saldo para não poluir a tela de quem tem muitas
+// contas — hiddenCount avisa quantas ficaram de fora, e totalBalance soma
+// TODAS as contas (não só as mostradas), batendo com o texto da resposta.
+function clientAccountBalances(compactJson: string): ClientAccountBalancesCard | null {
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const rawAccounts = parsed.accounts;
+  if (!Array.isArray(rawAccounts)) return null;
+  const accounts = rawAccounts
+    .map((row) => asObject(row))
+    .filter((row) => row.active !== false)
+    .map((row) => ({ name: stringOrNull(row.name) ?? "", balance: numberOrNull(row.balance) ?? 0 }))
+    .filter((row) => row.name.length > 0);
+  if (accounts.length === 0) return null;
+  const totalBalance = Math.round(accounts.reduce((sum, row) => sum + row.balance, 0) * 100) / 100;
+  const sorted = [...accounts].sort((left, right) => right.balance - left.balance);
+  const shown = sorted.slice(0, 6);
+  return { accounts: shown, hiddenCount: Math.max(0, sorted.length - shown.length), totalBalance };
+}
+
+const WEEKLY_CATEGORY_SPEND_VERB = /\b(?:gastei|gastou|gasto|recebi|recebeu|ganhei|ganhou)\b/;
+const WEEKLY_CATEGORY_SPEND_WINDOW = /\b(?:ultima semana|essa semana|esta semana|semana passada|ultimos 7 dias)\b/;
+
+function formatMoneyBRL(value: number): string {
+  return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// recent_week_category_totals (ver context.ts) já traz o total por categoria
+// dos últimos 7 dias calculado no banco. Resolve a categoria citada na
+// pergunta ATUAL (nunca o histórico concatenado, mesmo motivo do cartão de
+// saldo) e monta a frase aqui — só quando exatamente uma categoria bate,
+// para nunca arriscar citar a errada por ambiguidade.
+function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: string): string | null {
+  if (!/\bquanto\b/.test(normalizedMessage)) return null;
+  if (!WEEKLY_CATEGORY_SPEND_VERB.test(normalizedMessage)) return null;
+  if (!WEEKLY_CATEGORY_SPEND_WINDOW.test(normalizedMessage)) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const rawCategories = parsed.categories;
+  if (!Array.isArray(rawCategories)) return null;
+  const matches = rawCategories
+    .map((row) => asObject(row))
+    .filter((row) => row.active !== false)
+    .map((row) => ({ name: stringOrNull(row.name) ?? "", type: stringOrNull(row.type) ?? "" }))
+    .filter((row) => row.name.length >= 3 && normalizedMessage.includes(normalizeText(row.name)));
+  if (matches.length !== 1) return null;
+  const category = matches[0];
+  const rawWindow = parsed.recent_week_category_totals;
+  if (!rawWindow || typeof rawWindow !== "object") return null;
+  const byCategoryRaw = (rawWindow as JsonRecord).by_category;
+  const byCategory = Array.isArray(byCategoryRaw) ? byCategoryRaw.map((row) => asObject(row)) : [];
+  const entry = byCategory.find((row) => stringOrNull(row.category) === category.name);
+  const total = entry ? numberOrNull(entry.total) ?? 0 : 0;
+  if (total <= 0) {
+    return category.type === "receita"
+      ? `Você não recebeu nada de ${category.name} na última semana.`
+      : `Você não teve gastos com ${category.name} na última semana.`;
+  }
+  const verb = category.type === "receita" ? "recebeu" : "gastou";
+  return `Na última semana você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
 }
 
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
@@ -597,7 +750,7 @@ async function getOrCreateConversation(admin: AdminClient, userId: string, reque
 async function recentMessages(admin: AdminClient, userId: string, conversationId: string): Promise<ConversationMessage[]> {
   const { data, error } = await admin
     .from("ai_messages")
-    .select("role,content")
+    .select("role,content,intent")
     .eq("user_id", userId)
     .eq("conversation_id", conversationId)
     .gte("created_at", chatRetentionCutoff())
@@ -606,10 +759,19 @@ async function recentMessages(admin: AdminClient, userId: string, conversationId
     .order("id", { ascending: false })
     .limit(8);
   if (error) throw new Error("AI_HISTORY_FAILED");
-  return (data ?? []).reverse().map((row) => ({
-    role: row.role === "assistant" ? "assistant" : "user",
-    content: String(row.content).slice(0, MAX_MESSAGE_CHARS),
-  }));
+  return (data ?? [])
+    // Uma recusa de escopo no histórico tende a enviesar o modelo a repetir
+    // o mesmo padrão de recusa nas próximas perguntas da conversa, mesmo
+    // quando a nova pergunta é claramente válida por si só (regressão real:
+    // depois de uma recusa indevida, as perguntas seguintes sobre outros
+    // indicadores também passaram a ser recusadas). Sem conteúdo útil para
+    // continuidade, omitir do histórico enviado ao modelo.
+    .filter((row) => !(row.role === "assistant" && row.intent === "out_of_scope"))
+    .reverse()
+    .map((row) => ({
+      role: row.role === "assistant" ? "assistant" : "user",
+      content: String(row.content).slice(0, MAX_MESSAGE_CHARS),
+    }));
 }
 
 async function saveMessage(admin: AdminClient, args: {
@@ -620,6 +782,8 @@ async function saveMessage(admin: AdminClient, args: {
   intent?: string | null;
   provider?: string | null;
   model?: string | null;
+  marketIndicators?: ClientMarketIndicators | null;
+  accountBalances?: ClientAccountBalancesCard | null;
 }): Promise<void> {
   const safeContent = redactSensitiveText(args.content).trim().slice(0, MAX_MESSAGE_CHARS);
   if (!safeContent) throw new Error("AI_HISTORY_FAILED");
@@ -631,6 +795,11 @@ async function saveMessage(admin: AdminClient, args: {
     intent: args.intent ?? null,
     provider: args.provider ?? null,
     model: args.model ?? null,
+    // Mesmo objeto de 7 chaves já exposto ao cliente na resposta ao vivo —
+    // nunca o objeto interno maior com valores anteriores (só para o modelo
+    // responder "mudou recentemente?"); o check da tabela reforça isso.
+    market_indicators: args.marketIndicators ?? null,
+    account_balances: args.accountBalances ?? null,
   });
   if (error) throw new Error("AI_HISTORY_FAILED");
 }
@@ -717,14 +886,18 @@ function createdTransactionIds(result: JsonRecord): number[] {
 async function handleHistory(admin: AdminClient, userId: string, requestedId?: unknown): Promise<JsonRecord> {
   const conversation = await findConversation(admin, userId, requestedId);
   if (!conversation) return { conversationId: null, messages: [] };
-  const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent")
+  const { data, error } = await admin.from("ai_messages").select("id,role,content,created_at,intent,market_indicators,account_balances")
     .eq("user_id", userId).eq("conversation_id", conversation.id)
     .gte("created_at", chatRetentionCutoff())
     .order("created_at", { ascending: false }).order("id", { ascending: false }).limit(200);
   if (error) throw new Error("AI_HISTORY_FAILED");
   return {
     conversationId: conversation.id,
-    messages: (data ?? []).reverse().map((row) => ({ id: String(row.id), role: row.role, text: row.content, createdAt: row.created_at, intent: row.intent })),
+    messages: (data ?? []).reverse().map((row) => ({
+      id: String(row.id), role: row.role, text: row.content, createdAt: row.created_at, intent: row.intent,
+      ...(row.market_indicators ? { marketIndicators: row.market_indicators as ClientMarketIndicators } : {}),
+      ...(row.account_balances ? { accountBalances: row.account_balances as ClientAccountBalancesCard } : {}),
+    })),
   };
 }
 
@@ -915,6 +1088,7 @@ Deno.serve(async (req) => {
         plansAreEnforced,
         contextRequest,
         user.id,
+        safeMessage,
       );
       const operationalReferences = mutationRequested
         ? await loadOperationalReferences(client)
@@ -1077,26 +1251,42 @@ Deno.serve(async (req) => {
       throw preProviderError;
     }
 
-    try {
-      modelResult = await requestModel(prompt, history, safetyId);
-    } catch (providerError) {
-      const providerErrorCode = monitoringErrorCode(providerError, "AI_PROVIDER_FAILED");
-      const providerMetadata = providerFailureMetadata(providerError);
-      const definitelyNotCalled = providerErrorCode === "AI_PROVIDER_NOT_CONFIGURED"
-        || providerErrorCode === "AI_CONTEXT_TOO_LARGE";
-      // Configuração/contexto falham antes do fetch e podem liberar a reserva.
-      // Qualquer outra falha pode ter consumido tokens e preserva o orçamento.
-      await finalizeModelRequest(admin, {
-        usageId,
-        provider: definitelyNotCalled ? "not_called" : providerMetadata?.provider ?? "attempted",
-        model: definitelyNotCalled ? "not_called" : providerMetadata?.model ?? "unknown",
-        inputTokens: 0,
-        outputTokens: 0,
-        status: "failed",
-        latencyMs: monitoringLatencyMs(requestStartedAt),
-        errorCode: providerErrorCode,
-      });
-      throw providerError;
+    // Limite de taxa (nosso ou da Groq) é contenção passageira do orçamento
+    // compartilhado, não um problema com a pergunta em si -- confirmado em
+    // produção que a chamada INICIAL (não só a tentativa extra de escopo, já
+    // tratada mais abaixo) pode esbarrar nisso e devolver
+    // AI_PROVIDER_RATE_LIMITED direto ao usuário. Uma única espera+nova
+    // tentativa aqui evita expor esse detalhe interno sem custar uma segunda
+    // reserva de cota: é a mesma chamada, não uma tentativa de classificação.
+    let usedRateLimitBackoff = false;
+    while (true) {
+      try {
+        modelResult = await requestModel(prompt, history, safetyId);
+        break;
+      } catch (providerError) {
+        const providerErrorCode = monitoringErrorCode(providerError, "AI_PROVIDER_FAILED");
+        if (RATE_LIMIT_RETRY_CODES.has(providerErrorCode) && !usedRateLimitBackoff) {
+          usedRateLimitBackoff = true;
+          await sleep(RATE_LIMIT_BACKOFF_MS);
+          continue;
+        }
+        const providerMetadata = providerFailureMetadata(providerError);
+        const definitelyNotCalled = providerErrorCode === "AI_PROVIDER_NOT_CONFIGURED"
+          || providerErrorCode === "AI_CONTEXT_TOO_LARGE";
+        // Configuração/contexto falham antes do fetch e podem liberar a reserva.
+        // Qualquer outra falha pode ter consumido tokens e preserva o orçamento.
+        await finalizeModelRequest(admin, {
+          usageId,
+          provider: definitelyNotCalled ? "not_called" : providerMetadata?.provider ?? "attempted",
+          model: definitelyNotCalled ? "not_called" : providerMetadata?.model ?? "unknown",
+          inputTokens: 0,
+          outputTokens: 0,
+          status: "failed",
+          latencyMs: monitoringLatencyMs(requestStartedAt),
+          errorCode: providerErrorCode,
+        });
+        throw providerError;
+      }
     }
     await finalizeModelRequest(admin, {
       usageId,
@@ -1111,64 +1301,134 @@ Deno.serve(async (req) => {
     const { output: rawOutput } = modelResult;
     let { provider, model } = modelResult;
     let output = enforceActionWorkflow(rawOutput, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+    let outputMessage = safeAssistantMessage(output.message, output.intent, output.kind, outputCanary);
 
     // O modelo (com esforço de raciocínio baixo) às vezes classifica uma
     // pergunta legítima sobre os dados do próprio usuário como fora de
-    // escopo na primeira tentativa e acerta ao repetir a mesma pergunta —
-    // confirmado em produção pelo usuário. Uma única tentativa extra,
-    // silenciosa, evita que a pessoa precise reenviar manualmente. Fica
-    // restrito ao modo somente leitura, onde a regra 1 do prompt já proíbe
-    // explicitamente out_of_scope para dados básicos do usuário; mutações
-    // têm cota própria e um escopo operacional testado há mais tempo.
-    if (output.kind === "out_of_scope" && !mutationRequested) {
-      const retryStartedAt = Date.now();
-      let retryUsageId: string | null = null;
-      try {
-        retryUsageId = await reserveModelRequest(admin, user.id, PRE_CONTEXT_MODEL_BUDGET);
-        await adjustModelRequest(admin, retryUsageId, estimateModelTokenBudget(prompt, history));
-        const retryResult = await requestModel(prompt, history, safetyId);
-        await finalizeModelRequest(admin, {
-          usageId: retryUsageId,
-          provider: retryResult.provider,
-          model: retryResult.model,
-          inputTokens: retryResult.usage.inputTokens,
-          outputTokens: retryResult.usage.outputTokens,
-          status: "completed",
-          latencyMs: monitoringLatencyMs(retryStartedAt),
-          errorCode: null,
-        });
-        output = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
-        provider = retryResult.provider;
-        model = retryResult.model;
-      } catch (retryError) {
-        if (retryUsageId) {
+    // escopo na primeira tentativa e acerta ao repetir a mesma entrada —
+    // confirmado em produção. O mesmo vale quando a resposta é kind=answer
+    // mas safeAssistantMessage a descarta por violar uma regra de segurança
+    // que nem fazia parte do pedido (ex.: uma explicação sobre fundos
+    // imobiliários que cita um ticker real como exemplo, o que o guard
+    // corretamente bloqueia): sem essa chance extra, o usuário via a mesma
+    // recusa genérica de "fora de escopo" para um tema que está
+    // explicitamente dentro do escopo. Uma única tentativa extra, silenciosa,
+    // evita que a pessoa precise reenviar manualmente sem consumir sozinha
+    // boa parte do teto de tokens/minuto compartilhado (ver
+    // MAX_SCOPE_RETRY_ATTEMPTS). Fica restrito ao modo
+    // somente leitura, onde a regra 1 do prompt já proíbe explicitamente
+    // out_of_scope para dados básicos do usuário; mutações têm cota própria
+    // e um escopo operacional testado há mais tempo.
+    retryLoop:
+    for (
+      let retryAttempt = 0;
+      (output.kind === "out_of_scope" || !outputMessage) && !mutationRequested && retryAttempt < MAX_SCOPE_RETRY_ATTEMPTS;
+      retryAttempt++
+    ) {
+      // Uma tentativa extra pode esbarrar num limite de taxa transitório
+      // (nosso ou da Groq) mesmo quando a pergunta em si está correta --
+      // confirmado em produção. Isso não é o mesmo problema que motivou a
+      // tentativa extra (classificação errada), então ganha uma única
+      // rodada de espera+nova tentativa própria, silenciosa, sem consumir
+      // outra iteração de retryAttempt nem expor o motivo ao usuário.
+      let rateLimitBackoffUsed = false;
+      innerAttempt:
+      while (true) {
+        const retryStartedAt = Date.now();
+        let retryUsageId: string | null = null;
+        try {
+          retryUsageId = await reserveModelRequest(admin, user.id, PRE_CONTEXT_MODEL_BUDGET);
+          await adjustModelRequest(admin, retryUsageId, estimateModelTokenBudget(prompt, history));
+          const retryResult = await requestModel(prompt, history, safetyId);
           await finalizeModelRequest(admin, {
             usageId: retryUsageId,
-            provider: "not_called",
-            model: "not_called",
-            inputTokens: 0,
-            outputTokens: 0,
-            status: "failed",
+            provider: retryResult.provider,
+            model: retryResult.model,
+            inputTokens: retryResult.usage.inputTokens,
+            outputTokens: retryResult.usage.outputTokens,
+            status: "completed",
             latencyMs: monitoringLatencyMs(retryStartedAt),
-            errorCode: monitoringErrorCode(retryError, "AI_PROVIDER_FAILED"),
-          }).catch(() => undefined);
+            errorCode: null,
+          });
+          const retryOutput = enforceActionWorkflow(retryResult.output, existingState, workflowContextJson, history.at(-1)?.content ?? "");
+          const retryMessage = safeAssistantMessage(retryOutput.message, retryOutput.intent, retryOutput.kind, outputCanary);
+          // Só adota a tentativa extra se ela de fato resolveu o problema
+          // (não é out_of_scope e a mensagem passou pelas regras de
+          // segurança); caso contrário mantém a resposta anterior e, se ainda
+          // houver tentativas disponíveis, o laço tenta de novo.
+          if (retryOutput.kind !== "out_of_scope" && retryMessage) {
+            output = retryOutput;
+            outputMessage = retryMessage;
+            provider = retryResult.provider;
+            model = retryResult.model;
+          }
+          break innerAttempt;
+        } catch (retryError) {
+          const errorCode = monitoringErrorCode(retryError, "AI_PROVIDER_FAILED");
+          if (retryUsageId) {
+            await finalizeModelRequest(admin, {
+              usageId: retryUsageId,
+              provider: "not_called",
+              model: "not_called",
+              inputTokens: 0,
+              outputTokens: 0,
+              status: "failed",
+              latencyMs: monitoringLatencyMs(retryStartedAt),
+              errorCode,
+            }).catch(() => undefined);
+          }
+          if (RATE_LIMIT_RETRY_CODES.has(errorCode) && !rateLimitBackoffUsed) {
+            rateLimitBackoffUsed = true;
+            await sleep(RATE_LIMIT_BACKOFF_MS);
+            continue innerAttempt;
+          }
+          // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
+          // por minuto já consumida pela primeira chamada não pode travar a
+          // solicitação, e um limite de taxa persistente mesmo após a espera
+          // não vai se resolver tentando de novo): para de tentar e mantém a
+          // resposta anterior.
+          break retryLoop;
         }
-        // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
-        // por minuto já consumida pela primeira chamada não pode travar a
-        // solicitação): mantém a resposta original de fora de escopo.
+      }
+    }
+
+    // "Quanto gastei/recebi com <categoria> na última semana?" pediu para o
+    // modelo somar valores de cabeça e falhou de formas diferentes 4 vezes
+    // na mesma sessão (pediu para o usuário reclassificar um lançamento,
+    // excluiu esse lançamento em silêncio, inventou um total sem relação
+    // com os dados, e mesmo com o valor pronto em recent_week_category_totals
+    // continuou errando). Soma é aritmética determinística: para esse padrão
+    // específico e inequívoco (exatamente uma categoria citada, sem
+    // ambiguidade), a resposta é montada aqui a partir do valor já calculado
+    // no banco, sem depender do modelo escrever o número.
+    if (!mutationRequested) {
+      const weeklySpendMessage = weeklyCategorySpendAnswer(financialContext.compactJson, normalizeText(message));
+      const safeWeeklySpendMessage = weeklySpendMessage
+        ? safeAssistantMessage(weeklySpendMessage, "financial_summary", "answer", outputCanary)
+        : null;
+      if (safeWeeklySpendMessage) {
+        output = { kind: "answer", intent: "financial_summary", message: safeWeeklySpendMessage, missing_fields: [], data: [] };
+        outputMessage = safeWeeklySpendMessage;
       }
     }
 
     const quotaAfterModel = await getQuota(client);
 
-    if (output.kind === "out_of_scope") {
-      await updateConversationState(admin, user.id, conversation.id, {});
-      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", provider, model });
-      return json({ kind: "answer", conversationId: conversation.id, message: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", quota: quotaAfterModel }, 200, req);
-    }
-
-    const outputMessage = safeAssistantMessage(output.message, output.intent, output.kind, outputCanary);
-    if (!outputMessage) {
+    if (output.kind === "out_of_scope" || !outputMessage) {
+      // Observabilidade permanente: nunca loga conteúdo (mensagem, contexto),
+      // só a classificação (kind/intent são enums curtos, não dado sensível)
+      // e o rótulo do guard que rejeitou — para distinguir se a recusa veio
+      // do próprio modelo (kind=out_of_scope) ou de uma regra de segurança
+      // descartando depois uma resposta kind=answer (safeAssistantMessage
+      // retornou null), sem precisar reproduzir o caso manualmente de novo.
+      console.error("finance-ai scope rejection", JSON.stringify({
+        modelKind: output.kind,
+        modelIntent: output.intent,
+        guardRejectedAnswer: output.kind !== "out_of_scope" && !outputMessage,
+        guardReason: output.kind !== "out_of_scope"
+          ? debugSafeAssistantMessageRejection(output.message, output.intent, output.kind, outputCanary)
+          : null,
+      }));
       await updateConversationState(admin, user.id, conversation.id, {});
       await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", provider, model });
       return json({ kind: "answer", conversationId: conversation.id, message: OUT_OF_SCOPE_MESSAGE, intent: "out_of_scope", quota: quotaAfterModel }, 200, req);
@@ -1200,8 +1460,26 @@ Deno.serve(async (req) => {
 
     if (output.kind === "answer") {
       await updateConversationState(admin, user.id, conversation.id, {});
-      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model });
-      return json({ kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel }, 200, req);
+      // Indicadores de mercado (Selic/CDI/IPCA) só existem quando a pergunta
+      // pediu educação sobre investimentos e a consulta ao BCB deu certo.
+      // Expostos à parte da mensagem para o cliente poder desenhar um cartão
+      // visual em vez de deixar os números presos no texto corrido. Salvos
+      // junto da mensagem para o cartão continuar aparecendo ao recarregar
+      // o histórico, não só na resposta ao vivo.
+      const marketIndicators = clientMarketIndicators(financialContext.compactJson);
+      // Mesma lógica do cartão de indicadores: só monta quando a pergunta
+      // ATUAL pede o saldo discriminado por conta, nunca a partir do texto
+      // concatenado de turnos anteriores (evitaria o cartão "grudar" em
+      // respostas seguintes sem relação, como já aconteceu com indicadores).
+      const accountBalances = ACCOUNT_BALANCE_QUERY_PATTERN.test(normalizeText(message))
+        ? clientAccountBalances(financialContext.compactJson)
+        : null;
+      await saveMessageBestEffort(admin, { userId: user.id, conversationId: conversation.id, role: "assistant", content: outputMessage, intent: output.intent, provider, model, marketIndicators, accountBalances });
+      return json({
+        kind: "answer", conversationId: conversation.id, message: outputMessage, intent: output.intent, quota: quotaAfterModel,
+        ...(marketIndicators ? { marketIndicators } : {}),
+        ...(accountBalances ? { accountBalances } : {}),
+      }, 200, req);
     }
 
     if (output.kind === "navigate") {

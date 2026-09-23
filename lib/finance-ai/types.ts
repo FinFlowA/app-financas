@@ -75,8 +75,42 @@ export interface FinanceAiPendingAction {
 
 export type FinanceAiNavigationRoute = "/" | "/transacoes" | "/caixinhas" | "/relatorios" | "/cartoes" | "/?abrirCategorias=1";
 
+/** Indicadores públicos do Banco Central (SGS), anexados a uma resposta sobre
+ * educação de investimentos para o cliente desenhar um cartão visual — nunca
+ * dados financeiros do usuário. Cada taxa pode faltar isoladamente se a
+ * consulta àquela série específica falhar. */
+export interface FinanceAiMarketIndicators {
+  selic_rate_annual: number | null;
+  selic_reference_date: string | null;
+  cdi_rate_annual: number | null;
+  cdi_reference_date: string | null;
+  ipca_12m_percent: number | null;
+  ipca_reference_date: string | null;
+  igpm_12m_percent: number | null;
+  igpm_reference_date: string | null;
+  source: "bcb_sgs";
+}
+
+/** Saldo por conta, anexado a uma resposta que fala do saldo em todas as
+ * contas do usuário — para o cliente desenhar um cartão visual em vez de
+ * deixar os números presos no texto corrido. `accounts` já vem limitado às
+ * de maior saldo (no máximo 6): para quem tem mais contas que isso,
+ * `hiddenCount` diz quantas ficaram de fora, evitando um cartão poluído. */
+export interface FinanceAiAccountBalance {
+  name: string;
+  balance: number;
+}
+export interface FinanceAiAccountBalancesCard {
+  accounts: FinanceAiAccountBalance[];
+  hiddenCount: number;
+  totalBalance: number;
+}
+
 export type FinanceAiHttpSuccessResponse =
-  | { kind: "answer"; conversationId: Uuid; message: string; intent: FinanceAiReadIntent | "out_of_scope"; quota: FinanceAiQuota }
+  | {
+      kind: "answer"; conversationId: Uuid; message: string; intent: FinanceAiReadIntent | "out_of_scope"; quota: FinanceAiQuota;
+      marketIndicators?: FinanceAiMarketIndicators; accountBalances?: FinanceAiAccountBalancesCard;
+    }
   | { kind: "clarify"; conversationId: Uuid; message: string; intent: Exclude<FinanceAiIntent, "out_of_scope">; missingFields: string[]; choices: string[]; quota: FinanceAiQuota }
   | { kind: "navigate"; conversationId: Uuid; message: string; intent: FinanceAiNavigationIntent; route: FinanceAiNavigationRoute; quota: FinanceAiQuota }
   | { kind: "proposal"; conversationId: Uuid; message: string; intent: FinanceAiMutationIntent; pendingAction: FinanceAiPendingAction; quota: FinanceAiQuota }
@@ -94,7 +128,10 @@ export type FinanceAiHttpSuccessResponse =
     }
   | {
       conversationId: Uuid | null;
-      messages: { id: string; role: "user" | "assistant"; text: string; createdAt: IsoTimestamp; intent: FinanceAiIntent | null }[];
+      messages: {
+        id: string; role: "user" | "assistant"; text: string; createdAt: IsoTimestamp; intent: FinanceAiIntent | null;
+        marketIndicators?: FinanceAiMarketIndicators; accountBalances?: FinanceAiAccountBalancesCard;
+      }[];
       quota?: FinanceAiQuota;
     }
   | { cleared: true; conversationId: null; messages: []; quota?: FinanceAiQuota };

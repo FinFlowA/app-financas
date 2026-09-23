@@ -15,7 +15,8 @@ export default function DefinePasswordScreen() {
   const theme = finFlowTheme(isDark);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [visible, setVisible] = useState(false);
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmationVisible, setConfirmationVisible] = useState(false);
   const [loading, setLoading] = useState(false);
 
   async function savePassword() {
@@ -43,12 +44,17 @@ export default function DefinePasswordScreen() {
           <Text style={[styles.title, { color: theme.text }]}>Defina sua senha</Text>
           <Text style={[styles.subtitle, { color: theme.textMuted }]}>Seu acesso pelo Google já está confirmado. Crie também uma senha para recuperar e acessar sua conta com segurança.</Text>
           <View style={[styles.inputRow, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}>
-            <TextInput value={password} onChangeText={setPassword} secureTextEntry={!visible} placeholder="Nova senha" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" autoComplete="new-password" />
-            <TouchableOpacity onPress={() => setVisible((value) => !value)} accessibilityLabel={visible ? "Ocultar senha" : "Mostrar senha"} style={styles.eye}>
-              <MaterialIcons name={visible ? "visibility-off" : "visibility"} size={22} color={theme.textMuted} />
+            <TextInput value={password} onChangeText={setPassword} secureTextEntry={!passwordVisible} placeholder="Nova senha" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" autoComplete="new-password" />
+            <TouchableOpacity onPress={() => setPasswordVisible((value) => !value)} accessibilityRole="button" accessibilityLabel={passwordVisible ? "Ocultar senha" : "Mostrar senha"} accessibilityState={{ selected: passwordVisible }} style={styles.eye}>
+              <MaterialIcons name={passwordVisible ? "visibility-off" : "visibility"} size={22} color={theme.textMuted} />
             </TouchableOpacity>
           </View>
-          <TextInput value={confirmation} onChangeText={setConfirmation} secureTextEntry={!visible} placeholder="Confirme a senha" placeholderTextColor={theme.textMuted} style={[styles.inputSingle, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceMuted }]} autoCapitalize="none" autoComplete="new-password" />
+          <View style={[styles.inputRow, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}>
+            <TextInput value={confirmation} onChangeText={setConfirmation} secureTextEntry={!confirmationVisible} placeholder="Confirme a senha" placeholderTextColor={theme.textMuted} style={[styles.input, { color: theme.text }]} autoCapitalize="none" autoComplete="new-password" />
+            <TouchableOpacity onPress={() => setConfirmationVisible((value) => !value)} accessibilityRole="button" accessibilityLabel={confirmationVisible ? "Ocultar confirmação da senha" : "Mostrar confirmação da senha"} accessibilityState={{ selected: confirmationVisible }} style={styles.eye}>
+              <MaterialIcons name={confirmationVisible ? "visibility-off" : "visibility"} size={22} color={theme.textMuted} />
+            </TouchableOpacity>
+          </View>
           <Text style={[styles.requirements, { color: theme.textMuted }]}>{PASSWORD_REQUIREMENTS_MESSAGE}</Text>
           <Button title={loading ? "Salvando..." : "Criar senha e continuar"} onPress={() => void savePassword()} disabled={loading} color={theme.primary} style={styles.button} />
         </View>
@@ -67,7 +73,6 @@ const styles = StyleSheet.create({
   inputRow: { minHeight: 54, borderWidth: 1, borderRadius: 14, flexDirection: "row", alignItems: "center", marginBottom: 12 },
   input: { flex: 1, minHeight: 52, paddingHorizontal: 16, fontSize: 16 },
   eye: { width: 48, minHeight: 48, alignItems: "center", justifyContent: "center" },
-  inputSingle: { minHeight: 54, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, fontSize: 16 },
   requirements: { fontSize: 12, lineHeight: 18, marginTop: 10, marginBottom: 20 },
   button: { minHeight: 52 },
 });

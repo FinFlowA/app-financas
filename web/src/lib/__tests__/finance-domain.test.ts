@@ -24,6 +24,7 @@ import type { Cartao, FaturaItem } from "../types";
 import {
   calcularSaldosPorConta,
   dataEfetivaTransacao,
+  descricaoTransferenciaPendenteObjetivo,
   descricaoVisivel,
   getContaDestinoTransferencia,
   getReferenciaPagamentoFatura,
@@ -92,6 +93,17 @@ describe("transferências e objetivos", () => {
   it("reconhece objetivo como movimento interno", () => {
     expect(isMovimentoObjetivo("[Transf.] Guardar em: Notebook [Objetivo:7:guardar]")).toBe(true);
     expect(isMovimentoObjetivo("Aluguel")).toBe(false);
+  });
+
+  it("mantém transferência única para objetivo pendente sem afetar o saldo atual", () => {
+    const descricao = descricaoTransferenciaPendenteObjetivo(
+      "Guardar de volta - gasto com lanche", "Projeto vectra", 7,
+      "84ce43be-3a54-48e9-b31e-164d811bccd5",
+    );
+    const pendente = { ...transfer, descricao, valor: 60, status: "pendente", data_realizacao: null };
+    expect(descricaoVisivel(descricao)).toBe("Guardar de volta - gasto com lanche · Guardar em: Projeto vectra");
+    expect(isMovimentoObjetivo(descricao)).toBe(true);
+    expect(calcularSaldosPorConta([{ id: 1, saldo_inicial: 100 }], [pendente]).get(1)).toBe(100);
   });
 });
 

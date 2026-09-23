@@ -662,6 +662,8 @@
 .dateTile { display: grid; width: 2.35rem; height: 2.65rem; place-items: center; align-content: center; border: 1px solid var(--home-line); border-radius: .55rem; background: var(--surface-muted); line-height: 1; }
 .dateTile strong { font-size: .83rem; font-weight: 850; }
 .dateTile small { margin-top: .2rem; color: var(--foreground-muted); font-size: .48rem; font-weight: 800; }
+.overdueKicker { color: var(--ff-red); }
+.overdueDateTile { border-color: color-mix(in srgb, var(--ff-red) 30%, var(--home-line)); background: color-mix(in srgb, var(--ff-red) 9%, var(--surface-muted)); }
 .upcomingIcon { display: grid; width: 2.05rem; height: 2.05rem; place-items: center; border: 1px solid color-mix(in srgb, var(--item-color) 40%, transparent); border-radius: .55rem; background: color-mix(in srgb, var(--item-color) 16%, transparent); color: var(--item-color); }
 .upcomingInfo { min-width: 0; }
 .upcomingInfo strong,

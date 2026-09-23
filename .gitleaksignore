@@ -1,2 +1,6 @@
+# Paddle client-side token: identificador público destinado ao navegador.
+c35d258960574b3a77563e3d6cd14830979f27de:docs/PADDLE_LIVE_READINESS_2026-09-18.md:generic-api-key:91
+
+# Chave Supabase anon legada: credencial pública do cliente, protegida por RLS.
 5a40d46598b1edc3726e26434ca7256a2ea7edc7:lib/supabase.ts:jwt:8
 fc30f527404e3500b165b1a2ed1082c020861fd1:lib/supabase.ts:generic-api-key:7

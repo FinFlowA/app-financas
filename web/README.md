@@ -18,7 +18,7 @@ mobile. A interface usa Next.js 16, React 19, TypeScript e `@supabase/ssr`.
 - Fluxo de caixa consolidado por ano e por múltiplas contas.
 - Assistente financeiro com prévia e confirmação explícita antes de cada ação.
 - Perfil, segurança, tema, privacidade de valores, notificações e conta conjunta.
-- Planos e checkout pelo backend seguro do Mercado Pago.
+- Planos, preços localizados, checkout e portal do cliente com Paddle.
 - Termos de Uso e Política de Privacidade.
 - PWA instalável, aviso de conexão e alertas financeiros locais enquanto o
   site está aberto. Dados financeiros privados não são armazenados no cache
@@ -37,10 +37,14 @@ Crie `web/.env.local` a partir de `.env.local.example`:
 NEXT_PUBLIC_SUPABASE_URL=https://seu-projeto.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=sua-chave-publicavel
 NEXT_PUBLIC_SITE_URL=http://localhost:3100
+NEXT_PUBLIC_PADDLE_ENV=sandbox
+NEXT_PUBLIC_PADDLE_CLIENT_TOKEN=seu-token-publicavel
 ```
 
-Não use `service_role` nem chaves de IA/pagamentos no site. Esses segredos
-pertencem exclusivamente às Edge Functions.
+Consulte `.env.local.example` para a lista completa de IDs de preço e variáveis
+server-side. O navegador nunca recebe `service_role`, API key Paddle, signing
+secret ou chaves de IA. A rota server-only do webhook usa os segredos da
+Vercel somente depois de verificar a assinatura Paddle.
 
 ```bash
 cd web
@@ -79,7 +83,7 @@ https://seu-dominio/auth/callback?flow=email-change
 
 Também configure `NEXT_PUBLIC_SITE_URL` no provedor de hospedagem. Checkout,
 assinaturas e IA dependem das Edge Functions e secrets documentados em
-`../docs/billing-setup.md` e `../docs/ai-setup.md`.
+`../docs/PAGAMENTOS_E_PLANOS.md` e `../docs/ASSISTENTE_FINN.md`.
 
 Os alertas locais dependem de o site estar aberto, online e autorizado pelo
 navegador. Alertas com o navegador fechado exigem uma integração Web Push/VAPID

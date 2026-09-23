@@ -1,0 +1,70 @@
+name: Backup do banco (Supabase Postgres)
+
+# Dump diario do Postgres do Supabase, guardado numa branch separada do mesmo
+# repositorio privado. Custo zero: usa os minutos gratuitos do GitHub Actions
+# e o espaco do proprio repo, sem nenhum servico externo. So faz leitura no
+# banco (pg_dump) -- nao altera nada no Supabase nem no app.
+#
+# Configuracao unica necessaria: criar o secret SUPABASE_DB_URL (Settings >
+# Secrets and variables > Actions) com a connection string do Postgres,
+# disponivel em Project Settings > Database, no painel do Supabase. Use a
+# porta 5432 (conexao direta) ou 6543 com "?sslmode=require" se usar o
+# connection pooler.
+
+on:
+  schedule:
+    - cron: '0 6 * * *' # 03:00 America/Sao_Paulo (sem horario de verao)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: db-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Instalar cliente Postgres 17 (compativel com o servidor)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Preparar branch de backups
+        run: |
+          git config user.name "backup-bot"
+          git config user.email "backup-bot@users.noreply.github.com"
+          if git ls-remote --exit-code --heads origin db-backups > /dev/null 2>&1; then
+            git fetch origin db-backups
+            git checkout db-backups
+          else
+            git checkout --orphan db-backups
+            git rm -rf . > /dev/null 2>&1 || true
+          fi
+
+      - name: Gerar dump
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          mkdir -p backups
+          STAMP=$(date -u +'%Y-%m-%dT%H%M%SZ')
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges \
+            --file="backups/finflow-${STAMP}.dump"
+          echo "arquivo gerado: backups/finflow-${STAMP}.dump ($(du -h "backups/finflow-${STAMP}.dump" | cut -f1))"
+
+      - name: Apagar backups com mais de 30 dias
+        run: find backups -name '*.dump' -mtime +30 -delete || true
+
+      - name: Commit e push
+        run: |
+          git add backups
+          git commit -m "backup: $(date -u +'%Y-%m-%d %H:%M UTC')" || echo "nada novo para commitar"
+          git push origin HEAD:db-backups

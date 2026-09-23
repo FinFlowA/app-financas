@@ -1,6 +1,7 @@
 import { buildSystemPrompt } from "./prompt.ts";
 import {
   classifyProviderHttpFailure,
+  compactMessages,
   estimateModelTokenBudget,
   fallbackProductGuidance,
   fallbackNaturalTransaction,
@@ -115,6 +116,39 @@ Deno.test("pior request aceito preserva margem dentro dos 8K TPM", () => {
       <= GROQ_COMPATIBLE_TPM_LIMIT,
     "o pior request aceito precisa permanecer abaixo de 8 mil tokens",
   );
+});
+
+Deno.test("historico compactado preserva o inicio da resposta do assistente, nao o fim cortado", () => {
+  // Bug real: uma explicacao longa do assistente (ex.: sobre CDB/CDI) virava,
+  // no historico enviado ao modelo, so os ultimos ~300 caracteres -- um
+  // fragmento cortado no meio de frase, sem a sentenca que apresentava o
+  // tema. Isso deixava o contexto confuso e o modelo classificava mal a
+  // pergunta seguinte (ex.: um simples "O que e selic?" virava out_of_scope).
+  const longAnswer = "O CDB costuma render um percentual do CDI. "
+    + "No momento o CDI está em 13,65% ao ano (referência de 17/09/2026). "
+    + "A Selic, que costuma servir de referência para a taxa básica, está em 13,75% ao ano. "
+    + "Como a taxa exata do seu CDB depende do contrato com a instituição, recomendo consultar "
+    + "o extrato ou o banco para saber o percentual aplicado ao seu título. "
+    + "Precisa de mais alguma informação sobre esses indicadores?";
+  const compacted = compactMessages([
+    { role: "user", content: "Como está a porcentagem do CDB?" },
+    { role: "assistant", content: longAnswer },
+  ]);
+  const assistantEntry = compacted.find((message) => message.role === "assistant");
+  assert(assistantEntry, "a resposta do assistente precisa continuar no historico compactado");
+  assert(
+    assistantEntry.content.startsWith("O CDB costuma render um percentual do CDI."),
+    "deveria manter o inicio da explicacao (onde o tema e apresentado), nao um fragmento do fim",
+  );
+});
+
+Deno.test("historico compactado mantem o fim de uma mensagem longa do usuario", () => {
+  // Mensagens do usuario tendem a ter o detalhe concreto (valor, item) no
+  // final de uma frase mais longa -- esse comportamento nao deveria mudar.
+  const longUserMessage = "Ontem depois do trabalho passei no mercado perto de casa e "
+    + "comprei alguns itens para o jantar, o total ficou em 87 reais e 40 centavos";
+  const compacted = compactMessages([{ role: "user", content: longUserMessage }]);
+  assert(compacted[0].content.endsWith("87 reais e 40 centavos"), "deveria manter o fim da mensagem do usuario");
 });
 
 Deno.test("texto multibyte adversarial que excede o orçamento falha antes do fetch", () => {

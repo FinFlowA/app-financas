@@ -7,7 +7,7 @@ import CartaoDetalheManager, { type PagamentoDaFatura } from "../cartao-detalhe-
 
 type CartaoDetalhePageProps = {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ fatura?: string | string[] }>;
+  searchParams: Promise<{ fatura?: string | string[]; novaCompra?: string | string[] }>;
 };
 
 // Entrada limitada pelo banco e expressão ancorada; não há texto livre sem limite.
@@ -114,6 +114,7 @@ export default async function CartaoDetalhePage({ params, searchParams }: Cartao
           modo: pagamento.modo,
         }))}
       mesSelecionado={mesSelecionado}
+      abrirNovaCompra={(Array.isArray(query.novaCompra) ? query.novaCompra[0] : query.novaCompra) === "1"}
     />
   );
 }
