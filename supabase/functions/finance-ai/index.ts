@@ -8,7 +8,7 @@ import {
   type ConversationMessage,
   type NavigationIntent,
 } from "./contracts.ts";
-import { buildFinancialContext } from "./context.ts";
+import { buildFinancialContext, MAX_PROVIDER_CONTEXT_CHARS, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY } from "./context.ts";
 import {
   containsSensitiveData,
   debugSafeAssistantMessageRejection,
@@ -1089,6 +1089,15 @@ Deno.serve(async (req) => {
         contextRequest,
         user.id,
         safeMessage,
+        // O caminho operacional (mutationRequested) embute este JSON dentro
+        // de buildSystemPrompt, que já está perto do teto de caracteres do
+        // provedor sozinho -- precisa do teto apertado de 4K. O prompt
+        // somente-leitura (buildReadOnlySystemPrompt) é bem mais enxuto e
+        // sobrava muito espaço não usado com o mesmo teto de 4K, a ponto de
+        // a rede de segurança final de serializeContextWithinBudget zerar
+        // categories/recent_week_category_totals para contas com mais de
+        // um ano de histórico mesmo sem o pedido precisar de tanto dado.
+        mutationRequested ? MAX_PROVIDER_CONTEXT_CHARS : MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
       );
       const operationalReferences = mutationRequested
         ? await loadOperationalReferences(client)
