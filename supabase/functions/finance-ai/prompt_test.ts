@@ -344,6 +344,21 @@ Deno.test("prompt somente leitura usa o total pronto de categoria dos ultimos 7 
   );
 });
 
+Deno.test("prompt somente leitura restringe o detalhamento de um total semanal a mesma janela", () => {
+  // Bug real: depois de responder corretamente "Na ultima semana voce gastou
+  // R$ 68,00 com Alimentacao" (usando recent_week_category_totals), a
+  // pergunta de acompanhamento "Quais os dias que eu gastei?" nao repete
+  // "ultima semana" e cai fora do atalho deterministico de
+  // weeklyCategorySpendAnswer() (que exige "quanto"). O modelo respondeu
+  // listando lancamentos de ate 2 semanas atras (R$ 94,00 no total),
+  // contradizendo o total de R$ 68,00 que ele mesmo acabara de informar.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("recent_week_category_totals.start_date"),
+    "o prompt somente leitura precisa restringir o detalhamento de um total semanal a mesma janela de start_date/end_date",
+  );
+});
+
 Deno.test("prompt somente leitura esclarece que contas a vencer sao lancamentos pendentes", () => {
   // Bug real: "Quais sao as minhas contas que vencem nos proximos 5 dias?"
   // recebia kind=out_of_scope. "Conta" e ambiguo em portugues (conta
