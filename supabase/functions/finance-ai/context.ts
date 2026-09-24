@@ -336,6 +336,40 @@ async function fetchRecentCategoryTotals(
   };
 }
 
+type CategoryTotalsWindow = {
+  start_date: string;
+  end_date: string;
+  rows: { categoria_id: number | null; valor: number }[];
+};
+
+/** "Comparando com o mês passado, meus gastos com transporte aumentaram ou
+ * diminuíram?" precisa do total por categoria em DOIS meses específicos --
+ * dado que não existe em nenhum outro agregado (categories_by_year soma o
+ * ANO inteiro por categoria; month_summary não abre por categoria).
+ * Calculado no banco (soma determinística por categoria, uma vez por mês)
+ * em vez de pedido ao modelo para separar e somar relevant_transactions de
+ * cabeça em duas janelas distintas. */
+async function fetchCategoryTotalsWindow(
+  client: SupabaseClient,
+  startDate: string,
+  endDate: string,
+  enabled: boolean,
+): Promise<CategoryTotalsWindow | null> {
+  if (!enabled) return null;
+  const { data, error } = await client.from("transacoes")
+    .select("categoria_id,valor,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${startDate},data_vencimento.lte.${endDate}),and(status.eq.paga,data_realizacao.gte.${startDate},data_realizacao.lte.${endDate})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  return {
+    start_date: startDate,
+    end_date: endDate,
+    rows: (data ?? []).map((row) => ({
+      categoria_id: row.categoria_id == null ? null : number(row.categoria_id),
+      valor: number(row.valor),
+    })),
+  };
+}
+
 type MonthlyExtremeTransaction = {
   id: number;
   description: string;
@@ -1343,6 +1377,7 @@ type ContextNeeds = {
   investmentEducation: boolean;
   marketIndicatorQuery: boolean;
   monthlyExtremeTransaction: boolean;
+  categoryMonthComparison: boolean;
 };
 
 export function contextNeeds(request: string, analyticsAllowed: boolean, currentMessage = request): ContextNeeds {
@@ -1388,6 +1423,14 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   // a mensagem anterior como reforço quando a atual não é suficiente, então
   // manter isto ligado ao histórico concatenado é seguro.
   const monthlyExtremeTransaction = superlativeTransactionDomain;
+  // "Comparando com o mês passado, meus gastos com transporte aumentaram ou
+  // diminuíram?" precisa do total por categoria em dois meses específicos:
+  // nenhum agregado existente cobre isso (categories_by_year soma o ANO
+  // inteiro por categoria; month_summary não abre por categoria) -- bug
+  // real: o modelo respondia que não tinha os dados do mês anterior para
+  // comparar, mesmo eles existindo no banco.
+  const categoryMonthComparison = /\bmes\s+(?:passado|anterior)\b/.test(normalized)
+    && /\b(?:compar|aument|diminui|subiu|subir|caiu|cair|cresceu|reduziu|variacao|diferenca)\w*\b/.test(normalized);
   // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
@@ -1435,6 +1478,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
     investmentEducation: investmentDomain,
     marketIndicatorQuery,
     monthlyExtremeTransaction,
+    categoryMonthComparison,
   };
 }
 
@@ -1711,7 +1755,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow, monthlyExtremes] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow, monthlyExtremes, currentMonthCategoryWindow, previousMonthCategoryWindow] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1729,6 +1773,8 @@ export async function buildFinancialContext(
     countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
     fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
     fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
+    fetchCategoryTotalsWindow(client, `${currentMonth}-01`, endOfMonth(currentMonth), needs.categoryMonthComparison),
+    fetchCategoryTotalsWindow(client, `${previousMonth(currentMonth)}-01`, endOfMonth(previousMonth(currentMonth)), needs.categoryMonthComparison),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1745,21 +1791,27 @@ export async function buildFinancialContext(
       focusMonth,
     ).filter((row) => !requestedDate || row.date === requestedDate)
     : [];
-  const recentCategoryTotals = (() => {
-    if (!recentCategoryWindow) return null;
+  const categoryTotalsByWindow = (window: { start_date: string; end_date: string; rows: { categoria_id: number | null; valor: number }[] }) => {
     const totals = new Map<number, number>();
-    for (const row of recentCategoryWindow.rows) {
+    for (const row of window.rows) {
       if (row.categoria_id == null) continue;
       totals.set(row.categoria_id, (totals.get(row.categoria_id) ?? 0) + row.valor);
     }
     return {
-      start_date: recentCategoryWindow.start_date,
-      end_date: recentCategoryWindow.end_date,
+      start_date: window.start_date,
+      end_date: window.end_date,
       by_category: [...totals.entries()]
         .map(([id, total]) => ({ category: categoryById.get(id) ?? null, total: Math.round(total * 100) / 100 }))
         .filter((item): item is { category: string; total: number } => item.category !== null),
     };
-  })();
+  };
+  const recentCategoryTotals = recentCategoryWindow ? categoryTotalsByWindow(recentCategoryWindow) : null;
+  const categoryMonthComparisonResult = currentMonthCategoryWindow && previousMonthCategoryWindow
+    ? {
+      current_month: categoryTotalsByWindow(currentMonthCategoryWindow),
+      previous_month: categoryTotalsByWindow(previousMonthCategoryWindow),
+    }
+    : null;
   // Completo em relação ao MÊS EM FOCO, não ao histórico inteiro da pessoa
   // (aggregate.sourceCounts.transactions soma todas as transações já
   // lançadas desde sempre — quase nunca bate com o que é buscado para uma
@@ -2019,6 +2071,7 @@ export async function buildFinancialContext(
     market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
     recent_week_category_totals: recentCategoryTotals,
     month_extreme_transactions: monthlyExtremes,
+    category_month_comparison: categoryMonthComparisonResult,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;

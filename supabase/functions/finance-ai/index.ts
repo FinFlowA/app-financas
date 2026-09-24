@@ -333,6 +333,66 @@ function monthlyExtremeTransactionAnswer(compactJson: string, normalizedMessage:
   return `Sua ${superlative} ${noun}${monthLabel} foi "${description}", de ${formatMoneyBRL(value)}, em ${displayDateBR(date)}.`;
 }
 
+const CATEGORY_MONTH_COMPARISON_PREVIOUS_MONTH = /\bmes\s+(?:passado|anterior)\b/;
+const CATEGORY_MONTH_COMPARISON_VERB = /\b(?:compar|aument|diminui|subiu|subir|caiu|cair|cresceu|reduziu|variacao|diferenca)\w*\b/;
+
+// category_month_comparison (ver context.ts) já traz o total por categoria
+// do mês atual e do mês passado calculado no banco -- nenhum outro agregado
+// cobre isso (categories_by_year soma o ANO inteiro por categoria;
+// month_summary não abre por categoria). Resolve a categoria citada na
+// pergunta ATUAL (mesmo motivo dos outros atalhos determinísticos) e monta
+// a comparação a partir dos totais já calculados, sem depender do modelo
+// separar e somar relevant_transactions de cabeça em duas janelas.
+function categoryMonthComparisonAnswer(compactJson: string, normalizedMessage: string): string | null {
+  if (!CATEGORY_MONTH_COMPARISON_PREVIOUS_MONTH.test(normalizedMessage)) return null;
+  if (!CATEGORY_MONTH_COMPARISON_VERB.test(normalizedMessage)) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const rawCategories = parsed.categories;
+  if (!Array.isArray(rawCategories)) return null;
+  const matches = rawCategories
+    .map((row) => asObject(row))
+    .filter((row) => row.active !== false)
+    .map((row) => ({ name: stringOrNull(row.name) ?? "", type: stringOrNull(row.type) ?? "" }))
+    .filter((row) => row.name.length >= 3 && normalizedMessage.includes(normalizeText(row.name)));
+  if (matches.length !== 1) return null;
+  const category = matches[0];
+  const comparison = asObject(parsed.category_month_comparison);
+  const currentMonthData = asObject(comparison.current_month);
+  const previousMonthData = asObject(comparison.previous_month);
+  const currentByCategoryRaw = currentMonthData.by_category;
+  const previousByCategoryRaw = previousMonthData.by_category;
+  if (!Array.isArray(currentByCategoryRaw) || !Array.isArray(previousByCategoryRaw)) return null;
+  const currentByCategory = currentByCategoryRaw.map((row) => asObject(row));
+  const previousByCategory = previousByCategoryRaw.map((row) => asObject(row));
+  const currentEntry = currentByCategory.find((row) => stringOrNull(row.category) === category.name);
+  const previousEntry = previousByCategory.find((row) => stringOrNull(row.category) === category.name);
+  const currentTotal = currentEntry ? numberOrNull(currentEntry.total) ?? 0 : 0;
+  const previousTotal = previousEntry ? numberOrNull(previousEntry.total) ?? 0 : 0;
+  const noun = category.type === "receita" ? "recebimentos" : "gastos";
+  if (currentTotal <= 0 && previousTotal <= 0) {
+    return `Você não teve ${noun} com ${category.name} neste mês nem no mês passado.`;
+  }
+  if (previousTotal <= 0) {
+    return `No mês passado você não teve ${noun} com ${category.name}; neste mês, o total foi ${formatMoneyBRL(currentTotal)}.`;
+  }
+  if (currentTotal <= 0) {
+    return `Neste mês você ainda não teve ${noun} com ${category.name}, contra ${formatMoneyBRL(previousTotal)} no mês passado.`;
+  }
+  const delta = currentTotal - previousTotal;
+  const percent = (Math.abs(delta) / previousTotal) * 100;
+  const percentLabel = percent.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  if (delta === 0) {
+    return `Seus ${noun} com ${category.name} ficaram iguais em relação ao mês passado: ${formatMoneyBRL(currentTotal)} nos dois meses.`;
+  }
+  const direction = delta > 0 ? "aumentaram" : "diminuíram";
+  return `Seus ${noun} com ${category.name} ${direction} ${percentLabel}% em relação ao mês passado: ${formatMoneyBRL(currentTotal)} neste mês contra ${formatMoneyBRL(previousTotal)} no mês passado.`;
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1521,6 +1581,15 @@ Deno.serve(async (req) => {
         if (safeExtremeMessage) {
           output = { kind: "answer", intent: "financial_summary", message: safeExtremeMessage, missing_fields: [], data: [] };
           outputMessage = safeExtremeMessage;
+        } else {
+          const comparisonMessage = categoryMonthComparisonAnswer(financialContext.compactJson, normalizeText(message));
+          const safeComparisonMessage = comparisonMessage
+            ? safeAssistantMessage(comparisonMessage, "financial_summary", "answer", outputCanary)
+            : null;
+          if (safeComparisonMessage) {
+            output = { kind: "answer", intent: "financial_summary", message: safeComparisonMessage, missing_fields: [], data: [] };
+            outputMessage = safeComparisonMessage;
+          }
         }
       }
     }
