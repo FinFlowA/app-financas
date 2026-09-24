@@ -8,6 +8,7 @@ import {
   MAX_PROVIDER_CONTEXT_CHARS,
   MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
   redactSensitiveText,
+  fetchMonthlyExtremeTransactions,
   selectedMonth,
   selectRelevantRows,
   serializeContextWithinBudget,
@@ -973,4 +974,37 @@ Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes so
   const sortedByFocusMonth = [...rows].sort(transactionRelevanceSort("2026-08-15"));
   const augustInTop24ByFocusMonth = sortedByFocusMonth.slice(0, 24).filter((row) => String(row.data_vencimento).startsWith("2026-08")).length;
   assert(augustInTop24ByFocusMonth === 2, "ancorado no meio do mes em foco, os 2 lancamentos de agosto devem caber nos 24 primeiros");
+});
+
+Deno.test("fetchMonthlyExtremeTransactions ignora transferencias, movimentacoes de objetivo e pagamentos de fatura", async () => {
+  // Bug real: "Qual foi o meu menor gasto no mês de agosto?" respondeu
+  // "Guardar em: TESTEEE" (um aporte de R$ 1,00 num objetivo/caixinha) como
+  // se fosse uma despesa comum -- o banco grava esses aportes como
+  // tipo=despesa, mas calculateFinancialSnapshot já exclui transferências,
+  // movimentações de objetivo e pagamentos de fatura dos agregados de
+  // categoria; o cálculo do extremo do mês precisa da mesma exclusão.
+  const rows = [
+    // Descrições reais confirmadas no banco: aportes/resgates de objetivo
+    // carregam tanto o prefixo legado [Transf.] quanto a marcação nova
+    // [Objetivo:ID:guardar|resgatar].
+    { id: 1, tipo: "despesa", valor: 1, descricao: "[Transf.] Guardar em: TESTEEE [Objetivo:58:guardar]", status: "paga", data_vencimento: "2026-08-19", data_realizacao: "2026-08-19" },
+    { id: 2, tipo: "despesa", valor: 2, descricao: "Conta [Transf.] [Destino:5]", status: "paga", data_vencimento: "2026-08-12", data_realizacao: "2026-08-12" },
+    { id: 3, tipo: "despesa", valor: 3, descricao: "Pagamento fatura [PagFatura:1:2026-08:full]", status: "paga", data_vencimento: "2026-08-05", data_realizacao: "2026-08-05" },
+    { id: 4, tipo: "despesa", valor: 5, descricao: "Anime (Fixa)", status: "paga", data_vencimento: "2026-08-10", data_realizacao: "2026-08-05" },
+    { id: 5, tipo: "despesa", valor: 559.99, descricao: "Denylson  (1/5)", status: "paga", data_vencimento: "2026-08-10", data_realizacao: "2026-08-06" },
+  ];
+  const fakeClient = {
+    from: () => ({
+      select: () => ({
+        or: () => Promise.resolve({ data: rows, error: null }),
+      }),
+    }),
+  };
+
+  const extremes = await fetchMonthlyExtremeTransactions(fakeClient as never, "2026-08", true);
+  assert(extremes !== null, "extremos deveriam ser calculados quando enabled=true");
+  assert(extremes!.expense_min?.description === "Anime (Fixa)", "a menor despesa real deveria ignorar o aporte em objetivo de R$ 1,00");
+  assert(extremes!.expense_min?.value === 5, "o valor da menor despesa real deveria ser R$ 5,00, nao o aporte de R$ 1,00");
+  assert(extremes!.expense_max?.description === "Denylson  (1/5)", "a maior despesa real deveria continuar sendo identificada normalmente");
+  assert(extremes!.expense_max?.value === 559.99, "o valor da maior despesa deveria ser R$ 559,99");
 });

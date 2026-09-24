@@ -355,8 +355,15 @@ type MonthlyExtremes = {
  * por orçamento de contexto, e um mês ativo pode ter bem mais lançamentos
  * que isso -- o de maior valor podia nem estar na amostra enviada ao
  * modelo. Calculado no banco (min/max determinístico) em vez de pedido ao
- * modelo para "adivinhar" a partir de uma lista parcial. */
-async function fetchMonthlyExtremeTransactions(
+ * modelo para "adivinhar" a partir de uma lista parcial.
+ *
+ * Transferências entre contas, movimentações de objetivo e pagamentos de
+ * fatura usam tipo=despesa/receita no banco mas não são gasto/receita reais
+ * do dia a dia -- mesma exclusão já aplicada em calculateFinancialSnapshot
+ * para os agregados por categoria. Bug real: "Qual foi meu menor gasto em
+ * agosto?" respondeu "Guardar em: TESTEEE" (um aporte em objetivo de R$
+ * 1,00) como se fosse uma despesa comum. */
+export async function fetchMonthlyExtremeTransactions(
   client: SupabaseClient,
   focusMonth: string,
   enabled: boolean,
@@ -368,10 +375,13 @@ async function fetchMonthlyExtremeTransactions(
     .select("id,tipo,valor,descricao,status,data_vencimento,data_realizacao")
     .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
   if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
-  const rows = data ?? [];
+  const genuineRows = (data ?? []).filter((row) => {
+    const description = text(row.descricao, 500);
+    return !isInternalTransfer(description) && !parseGoalMovement(description) && !isInvoicePayment(description);
+  });
   const pick = (type: "despesa" | "receita", mode: "max" | "min"): MonthlyExtremeTransaction | null => {
     let best: FinancialRow | null = null;
-    for (const row of rows) {
+    for (const row of genuineRows) {
       if (row.tipo !== type) continue;
       const value = number(row.valor);
       const bestValue = best ? number(best.valor) : null;
