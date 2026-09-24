@@ -393,6 +393,64 @@ function categoryMonthComparisonAnswer(compactJson: string, normalizedMessage: s
   return `Seus ${noun} com ${category.name} ${direction} ${percentLabel}% em relação ao mês passado: ${formatMoneyBRL(currentTotal)} neste mês contra ${formatMoneyBRL(previousTotal)} no mês passado.`;
 }
 
+const CUT_SPENDING_VERB = /\b(?:cortar|corte|reduzir|reduza|diminuir|diminua|economizar|economize)\w*\b/;
+const SPENDING_AREA_NOUN = /\b(?:area|areas|categoria|categorias|gasto|gastos|despesa|despesas)\b/;
+const CATEGORY_RANKING_COUNT_WORDS: Record<string, number> = {
+  uma: 1, um: 1, duas: 2, dois: 2, tres: 3, quatro: 4, cinco: 5, seis: 6,
+};
+
+function parseRequestedCategoryCount(normalizedMessage: string): number {
+  const digitMatch = normalizedMessage.match(/\b([1-9])\b/);
+  if (digitMatch) return Number(digitMatch[1]);
+  for (const [word, value] of Object.entries(CATEGORY_RANKING_COUNT_WORDS)) {
+    if (new RegExp(`\\b${word}\\b`).test(normalizedMessage)) return value;
+  }
+  return 3;
+}
+
+// "Identifique três áreas onde eu posso cortar gastos para economizar no
+// próximo mês" pede um RANKING de categorias por gasto do mês -- não existe
+// em nenhum agregado pronto (categories_by_year soma o ANO inteiro por
+// categoria; month_summary não abre por categoria). Sem um ranking
+// calculado, o modelo tenta montar a lista sozinho a partir dos números
+// disponíveis e erra a seleção (bug real: recomendou uma categoria que era
+// só a 5ª maior, pulando duas categorias maiores que ele tinha o dado mas
+// não usou). Reaproveita o mesmo total por categoria do mês atual já
+// calculado para category_month_comparison, só que para TODAS as
+// categorias de despesa em vez de uma específica, ordenadas aqui de forma
+// determinística.
+function categorySpendRankingAnswer(compactJson: string, normalizedMessage: string): string | null {
+  if (!CUT_SPENDING_VERB.test(normalizedMessage)) return null;
+  if (!SPENDING_AREA_NOUN.test(normalizedMessage)) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const byCategoryRaw = asObject(asObject(parsed.category_month_comparison).current_month).by_category;
+  if (!Array.isArray(byCategoryRaw)) return null;
+  const rawCategories = parsed.categories;
+  if (!Array.isArray(rawCategories)) return null;
+  const expenseCategoryNames = new Set(
+    rawCategories
+      .map((row) => asObject(row))
+      .filter((row) => row.active !== false && row.type === "despesa")
+      .map((row) => stringOrNull(row.name))
+      .filter((name): name is string => Boolean(name)),
+  );
+  const ranked = byCategoryRaw
+    .map((row) => asObject(row))
+    .map((row) => ({ category: stringOrNull(row.category) ?? "", total: numberOrNull(row.total) ?? 0 }))
+    .filter((row) => expenseCategoryNames.has(row.category) && row.total > 0)
+    .sort((left, right) => right.total - left.total);
+  if (ranked.length === 0) return null;
+  const requestedCount = parseRequestedCategoryCount(normalizedMessage);
+  const top = ranked.slice(0, Math.min(requestedCount, ranked.length, 10));
+  const items = top.map((row) => `${row.category} (${formatMoneyBRL(row.total)})`).join(", ");
+  return `As categorias com maior gasto neste mês são: ${items}. Considere cortar ou reduzir gastos nessas áreas primeiro.`;
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1589,6 +1647,15 @@ Deno.serve(async (req) => {
           if (safeComparisonMessage) {
             output = { kind: "answer", intent: "financial_summary", message: safeComparisonMessage, missing_fields: [], data: [] };
             outputMessage = safeComparisonMessage;
+          } else {
+            const rankingMessage = categorySpendRankingAnswer(financialContext.compactJson, normalizeText(message));
+            const safeRankingMessage = rankingMessage
+              ? safeAssistantMessage(rankingMessage, "financial_summary", "answer", outputCanary)
+              : null;
+            if (safeRankingMessage) {
+              output = { kind: "answer", intent: "financial_summary", message: safeRankingMessage, missing_fields: [], data: [] };
+              outputMessage = safeRankingMessage;
+            }
           }
         }
       }

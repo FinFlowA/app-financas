@@ -1429,8 +1429,19 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   // inteiro por categoria; month_summary não abre por categoria) -- bug
   // real: o modelo respondia que não tinha os dados do mês anterior para
   // comparar, mesmo eles existindo no banco.
-  const categoryMonthComparison = /\bmes\s+(?:passado|anterior)\b/.test(normalized)
+  const previousMonthComparisonDomain = /\bmes\s+(?:passado|anterior)\b/.test(normalized)
     && /\b(?:compar|aument|diminui|subiu|subir|caiu|cair|cresceu|reduziu|variacao|diferenca)\w*\b/.test(normalized);
+  // "Identifique três áreas onde eu posso cortar gastos para economizar no
+  // próximo mês" pede um RANKING de categorias por gasto do mês -- mesmo
+  // dado que category_month_comparison.current_month.by_category já traz
+  // (total por categoria do mês atual), só que aqui para TODAS as
+  // categorias, não uma específica. Sem um ranking calculado no banco, o
+  // modelo tenta montar a lista sozinho a partir dos números disponíveis e
+  // erra a seleção -- bug real: recomendou uma categoria que era só a 5ª
+  // maior, pulando duas categorias maiores que ele tinha o dado mas não usou.
+  const categorySpendRankingDomain = /\b(?:cortar|corte|reduzir|reduza|diminuir|diminua|economizar|economize)\w*\b/.test(normalized)
+    && /\b(?:area|areas|categoria|categorias|gasto|gastos|despesa|despesas)\b/.test(normalized);
+  const categoryMonthComparison = previousMonthComparisonDomain || categorySpendRankingDomain;
   // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa

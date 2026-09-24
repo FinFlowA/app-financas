@@ -978,6 +978,30 @@ Deno.test("contextNeeds busca o total por categoria em dois meses quando a pergu
   assert(!compareCategories.categoryMonthComparison, "comparacao sem mencionar o mes passado/anterior nao deveria acionar a comparacao de meses");
 });
 
+Deno.test("contextNeeds busca o total por categoria do mes quando a pergunta pede areas para cortar gastos", () => {
+  // Bug real: "Identifique tres areas onde eu posso cortar gastos para
+  // economizar no proximo mes" recebeu os totais certos de cada categoria,
+  // mas o proprio modelo errou a SELECAO do top-3 (pulou Educacao e Moradia,
+  // maiores que Alimentacao, que ele escolheu). Precisa do mesmo agregado de
+  // totais por categoria do mes (usado na comparacao com o mes passado) para
+  // que o ranking seja calculado de forma deterministica, direto do banco.
+  const cutSpending = contextNeeds("Identifique três áreas onde eu posso cortar gastos para economizar no próximo mês.", true);
+  assert(cutSpending.categoryMonthComparison, "pedido para cortar gastos por area precisa buscar os totais por categoria do mes");
+
+  const reduceExpenses = contextNeeds("Onde eu posso reduzir minhas despesas?", true);
+  assert(reduceExpenses.categoryMonthComparison, "'reduzir despesas' tambem deve acionar a busca dos totais por categoria");
+
+  // Verbo de corte/reducao sozinho, sem falar de area/categoria/gasto, nao
+  // deveria acionar (ex.: cortar um cartao, reduzir uma meta).
+  const unrelatedVerb = contextNeeds("Quero cortar meu cartão de crédito adicional.", true);
+  assert(!unrelatedVerb.categoryMonthComparison, "verbo de corte sem mencionar area/categoria/gasto nao deveria acionar o ranking");
+
+  // Substantivo de area/gasto sozinho, sem verbo de corte/reducao, tambem
+  // nao deveria acionar (ja coberto por outras necessidades, ex.: resumo).
+  const unrelatedNoun = contextNeeds("Quais são minhas categorias de despesa?", true);
+  assert(!unrelatedNoun.categoryMonthComparison, "substantivo de area/gasto sem verbo de corte/reducao nao deveria acionar o ranking");
+});
+
 Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes sobre o mes atual", () => {
   // Bug real: a amostra de relevant_transactions sempre ordenava por
   // proximidade a HOJE, mesmo perguntando por um mes diferente do atual.
