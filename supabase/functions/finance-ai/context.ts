@@ -336,6 +336,63 @@ async function fetchRecentCategoryTotals(
   };
 }
 
+type MonthlyExtremeTransaction = {
+  id: number;
+  description: string;
+  value: number;
+  date: string;
+};
+
+type MonthlyExtremes = {
+  expense_max: MonthlyExtremeTransaction | null;
+  expense_min: MonthlyExtremeTransaction | null;
+  income_max: MonthlyExtremeTransaction | null;
+  income_min: MonthlyExtremeTransaction | null;
+};
+
+/** "Qual foi meu maior gasto em agosto?" precisa do lançamento individual
+ * exato, não de uma amostra: relevant_transactions cabe só ~24-40 itens
+ * por orçamento de contexto, e um mês ativo pode ter bem mais lançamentos
+ * que isso -- o de maior valor podia nem estar na amostra enviada ao
+ * modelo. Calculado no banco (min/max determinístico) em vez de pedido ao
+ * modelo para "adivinhar" a partir de uma lista parcial. */
+async function fetchMonthlyExtremeTransactions(
+  client: SupabaseClient,
+  focusMonth: string,
+  enabled: boolean,
+): Promise<MonthlyExtremes | null> {
+  if (!enabled) return null;
+  const monthStart = `${focusMonth}-01`;
+  const monthEnd = endOfMonth(focusMonth);
+  const { data, error } = await client.from("transacoes")
+    .select("id,tipo,valor,descricao,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  const rows = data ?? [];
+  const pick = (type: "despesa" | "receita", mode: "max" | "min"): MonthlyExtremeTransaction | null => {
+    let best: FinancialRow | null = null;
+    for (const row of rows) {
+      if (row.tipo !== type) continue;
+      const value = number(row.valor);
+      const bestValue = best ? number(best.valor) : null;
+      if (bestValue === null || (mode === "max" ? value > bestValue : value < bestValue)) best = row;
+    }
+    if (!best) return null;
+    return {
+      id: number(best.id),
+      description: visibleDescription(best.descricao),
+      value: number(best.valor),
+      date: effectiveDate(best),
+    };
+  };
+  return {
+    expense_max: pick("despesa", "max"),
+    expense_min: pick("despesa", "min"),
+    income_max: pick("receita", "max"),
+    income_min: pick("receita", "min"),
+  };
+}
+
 async function fetchAllCashFlowTransactions(
   client: SupabaseClient,
   enabled: boolean,
@@ -1236,7 +1293,7 @@ export function aggregateScopeArgument(ids: Iterable<number>): number[] | null {
   return explicit;
 }
 
-function transactionRelevanceSort(currentDate: string) {
+export function transactionRelevanceSort(currentDate: string) {
   const timestamp = (date: string): number => {
     if (!validDate(date)) return Number.NaN;
     const [year, month, day] = date.split("-").map(Number);
@@ -1275,6 +1332,7 @@ type ContextNeeds = {
   cards: boolean;
   investmentEducation: boolean;
   marketIndicatorQuery: boolean;
+  monthlyExtremeTransaction: boolean;
 };
 
 export function contextNeeds(request: string, analyticsAllowed: boolean, currentMessage = request): ContextNeeds {
@@ -1308,7 +1366,13 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   // modelo não tinha como identificar qual lançamento foi o maior -- bug
   // real: "Qual foi meu maior gasto em agosto?" respondia que os
   // lançamentos completos do mês não estavam disponíveis.
-  const superlativeTransactionDomain = /\b(?:maior|menor|mais car[oa]|mais barat[oa])\b.{0,25}\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b|\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b.{0,25}\b(?:maior|menor)\b/.test(normalized);
+  const superlativeTransactionPattern = /\b(?:maior|menor|mais car[oa]|mais barat[oa])\b.{0,25}\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b|\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b.{0,25}\b(?:maior|menor|mais car[oa]|mais barat[oa])\b/;
+  const superlativeTransactionDomain = superlativeTransactionPattern.test(normalized);
+  // O agregado (fetchMonthlyExtremeTransactions) só vale a pena buscar
+  // quando a pergunta ATUAL pede o extremo, não em qualquer continuação da
+  // conversa que ainda carregue "maior gasto" no histórico concatenado --
+  // mesmo motivo de marketIndicatorQuery usar currentNormalized.
+  const monthlyExtremeTransaction = superlativeTransactionPattern.test(currentNormalized);
   // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
@@ -1355,6 +1419,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
     cards: cardDomain || spendingDomain || summaryDomain,
     investmentEducation: investmentDomain,
     marketIndicatorQuery,
+    monthlyExtremeTransaction,
   };
 }
 
@@ -1604,6 +1669,16 @@ export async function buildFinancialContext(
   const focusMonth = selectedMonth(requestContext, currentMonth);
   const years = selectedYears(requestContext, Number(currentMonth.slice(0, 4)));
   years.add(Number(focusMonth.slice(0, 4)));
+  // A seleção de relevant_transactions usava sempre a proximidade com HOJE
+  // para escolher as 24 iniciais, mesmo quando o mês em foco é outro (ex.:
+  // "Qual foi meu maior gasto em agosto?" com hoje em setembro). Como o mês
+  // perguntado fica sempre mais distante de hoje do que o mês atual, seus
+  // lançamentos nunca entravam nem pelo preenchimento inicial nem pela
+  // correspondência de termos genéricos -- bug real: a pergunta buscava os
+  // dados (transactionDetails=true), mas relevant_transactions só trazia
+  // lançamentos de setembro. Ancorar num dia do mês em foco corrige isso
+  // sem alterar nada quando o mês perguntado já é o atual.
+  const transactionRelevanceAnchor = focusMonth === currentMonth ? currentDate : `${focusMonth}-15`;
 
   const [accounts, categories, goals, cards] = await Promise.all([
     selectOrThrow(client.from("contas").select("id,nome,saldo_inicial,cor,arquivado,compartilhado,user_id").order("nome").limit(ACCOUNT_LIMIT)),
@@ -1621,7 +1696,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow, monthlyExtremes] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1638,6 +1713,7 @@ export async function buildFinancialContext(
     needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
     countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
     fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
+    fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1733,7 +1809,7 @@ export async function buildFinancialContext(
       movementGoalId ? goalById.get(movementGoalId) : movement?.legacyName,
     ].filter(Boolean).join(" ");
   };
-  const sortedTransactions = [...transactions].sort(transactionRelevanceSort(currentDate));
+  const sortedTransactions = [...transactions].sort(transactionRelevanceSort(transactionRelevanceAnchor));
   const selectedTransactions = new Map<number, FinancialRow>();
   if (needs.transactionDetails) {
     sortedTransactions.slice(0, 24).forEach((row) => selectedTransactions.set(number(row.id), row));
@@ -1770,12 +1846,18 @@ export async function buildFinancialContext(
       if (matchesRequest(row, tokens, requestContext, related)) selectedInvoiceItems.set(number(row.id), row);
     }
   }
+  // scenario_candidates permanece ancorado em HOJE (recorrências futuras),
+  // mas a ordenação final de relevant_transactions usa o mesmo ancoragem do
+  // mês em foco: como o serializador corta arrays pelo fim quando o
+  // orçamento aperta, um lançamento de agosto ordenado por proximidade a
+  // setembro iria parar no fim da lista e seria o primeiro a ser cortado.
   const relevanceComparator = transactionRelevanceSort(currentDate);
+  const transactionFocusComparator = transactionRelevanceSort(transactionRelevanceAnchor);
   const selectedTransactionRows = [...selectedTransactions.values()].sort((left, right) => {
     const leftMatches = matchesRequest(left, tokens, requestContext, transactionRelatedText(left));
     const rightMatches = matchesRequest(right, tokens, requestContext, transactionRelatedText(right));
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1;
-    return relevanceComparator(left, right);
+    return transactionFocusComparator(left, right);
   });
   const selectedInvoiceRows = [...selectedInvoiceItems.values()].sort((left, right) => {
     const leftRelated = `${cardById.get(number(left.cartao_id)) ?? ""} ${categoryById.get(number(left.categoria_id)) ?? ""}`;
@@ -1921,6 +2003,7 @@ export async function buildFinancialContext(
     daily_cash_flow: dailyCashFlow,
     market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
     recent_week_category_totals: recentCategoryTotals,
+    month_extreme_transactions: monthlyExtremes,
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;
