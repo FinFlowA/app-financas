@@ -908,3 +908,24 @@ Deno.test("contextNeeds busca os lancamentos quando a pergunta pede quais despes
   const total = contextNeeds("Quanto gastei de despesas neste mês?", true);
   assert(total.categories, "pergunta de total continua trazendo o agregado por categoria");
 });
+
+Deno.test("contextNeeds busca os lancamentos quando a pergunta pede o maior/menor gasto especifico", () => {
+  // Bug real: "Qual foi o meu maior gasto no mês de agosto?" respondeu que
+  // os lançamentos completos de agosto não estavam disponíveis, porque
+  // "gasto" (sem o "-ei" de "gastei") só ativava categoryDomain (agregado
+  // por categoria) — o contexto trazia o total por categoria, mas nunca os
+  // lançamentos individuais necessários para apontar qual foi o maior.
+  const biggestExpense = contextNeeds("Qual foi o meu maior gasto no mês de agosto?", true);
+  assert(biggestExpense.transactionDetails, "pergunta pelo maior gasto precisa trazer os lancamentos individuais do mes");
+
+  const smallestExpense = contextNeeds("Qual foi minha menor despesa em setembro?", true);
+  assert(smallestExpense.transactionDetails, "pergunta pela menor despesa tambem precisa trazer os lancamentos");
+
+  const mostExpensivePurchase = contextNeeds("Qual foi a compra mais cara do mês?", true);
+  assert(mostExpensivePurchase.transactionDetails, "pergunta pela compra mais cara precisa trazer os lancamentos");
+
+  // Uma pergunta agregada por categoria (sem pedir um lançamento específico)
+  // não precisa da lista individual — continua só com o agregado.
+  const categoryBreakdown = contextNeeds("Como estão meus gastos por categoria?", true);
+  assert(!categoryBreakdown.transactionDetails, "pergunta agregada por categoria nao deveria exigir os lancamentos individuais");
+});
