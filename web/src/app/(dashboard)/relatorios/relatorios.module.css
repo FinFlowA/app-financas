@@ -173,6 +173,7 @@
 }
 
 .yearFilter {
+  position: relative;
   display: grid;
   gap: 6px;
 }
@@ -213,6 +214,92 @@
 .yearArrow:disabled {
   cursor: not-allowed;
   opacity: 0.32;
+}
+
+.periodPickerButton {
+  display: inline-flex;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: var(--foreground);
+  font: inherit;
+  font-weight: 800;
+}
+
+.periodPickerButton:hover,
+.periodPickerButton:focus-visible {
+  background: color-mix(in srgb, var(--ff-primary) 10%, transparent);
+}
+
+.periodPickerChevron {
+  color: var(--ff-primary-bright);
+  font-size: .85rem;
+}
+
+.periodPicker {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(330px, calc(100vw - 40px));
+  max-height: min(390px, calc(100dvh - 40px));
+  overflow-y: auto;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 28%, var(--border));
+  border-radius: 17px;
+  background: var(--surface-raised);
+  padding: 12px;
+  box-shadow: 0 24px 60px -24px rgb(var(--shadow-color) / .8);
+}
+
+.periodPickerHeader {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+.periodPickerHeader button,
+.monthPickerGrid button,
+.yearPickerGrid button {
+  min-height: 42px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--foreground-muted);
+  font: inherit;
+  font-size: .78rem;
+  font-weight: 780;
+}
+
+.periodPickerHeader button:hover:not(:disabled),
+.monthPickerGrid button:hover,
+.yearPickerGrid button:hover {
+  border-color: var(--border);
+  background: var(--surface-muted);
+  color: var(--foreground);
+}
+
+.periodPickerHeader button:disabled {
+  opacity: .32;
+}
+
+.monthPickerGrid,
+.yearPickerGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.monthPickerGrid button[data-active="true"],
+.yearPickerGrid button[data-active="true"] {
+  border-color: var(--ff-primary);
+  background: var(--ff-primary);
+  color: #fff;
 }
 
 .accountsFilter {

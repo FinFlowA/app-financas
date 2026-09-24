@@ -19,6 +19,7 @@ import {
   type OfflineQueuePanelSnapshot,
 } from "./offline-queue-view";
 import { createSupabaseOfflineExecutor } from "./offline-queue-supabase";
+import { randomUuidCompat } from "./optional-native-modules";
 import {
   buildOfflineUpdateCommand,
   offlineQueueItemTargetsUpdate,
@@ -67,37 +68,30 @@ async function canAttemptSync(): Promise<boolean> {
 }
 
 export async function dispositivoSemConexao(): Promise<boolean> {
-  if (IS_LOCAL_DEMO) return false;
-  try {
-    const netInfo = getOptionalNetInfo();
-    if (!netInfo) return false;
-    return !conexaoPermiteSincronizacao(await netInfo.fetch());
-  } catch {
-    return false;
-  }
+  return false;
 }
 
 async function salvarAcaoFinanceira(
   actionType: OfflineActionType,
   payload: Record<string, unknown>,
 ): Promise<OfflineActionResult> {
-  const item = await enfileirarAcaoOffline({ actionType, payload } satisfies OfflineEnqueueInput);
-  await sincronizarFilaFinanceiraOffline();
-  const { data: currentSession } = await supabase.auth.getSession();
-  if (currentSession.session?.user.id.toLowerCase() !== item.userId) {
-    return { state: "uncertain" };
-  }
-  const pendingItem = (await listarAcoesOffline()).find((candidate) => candidate.id === item.id);
-  if (!pendingItem) return { state: "synced" };
-  if (pendingItem.status === "failed") {
-    const errorCode = pendingItem.lastErrorCode ?? "OFFLINE_SERVER_REJECTED";
+  const { data, error } = await supabase.auth.getUser();
+  if (error || !data.user) return { state: "rejected", errorCode: "AUTH_REQUIRED" };
+  const resultado = await executor({
+    actionType,
+    payload,
+    userId: data.user.id.toLowerCase(),
+    idempotencyKey: randomUuidCompat(),
+    createdAt: new Date().toISOString(),
+  });
+  if (!resultado.ok) {
+    const errorCode = resultado.errorCode;
     // Esta tentativa aconteceu com a tela ainda aberta e o formulário intacto.
     // Removê-la permite que o usuário corrija e reenvie sem manter uma cópia
     // definitivamente rejeitada ocupando a fila.
-    await removerAcaoOfflineFalha(pendingItem.id);
     return { state: "rejected", errorCode };
   }
-  return { state: "queued" };
+  return { state: "synced" };
 }
 
 export async function salvarCriacaoFinanceira(
@@ -123,19 +117,11 @@ export async function salvarEdicaoFinanceira(
     };
   }
 
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  const userId = data.session?.user.id.toLowerCase();
-  if (!userId) return { state: "rejected", errorCode: "OFFLINE_AUTH_REQUIRED" };
-  const targetKey = `${userId}:${command.actionType}:${command.resourceId}`;
+  const targetKey = `${command.actionType}:${command.resourceId}`;
   const active = activeUpdateTargets.get(targetKey);
   if (active) return active;
 
   const promise = (async (): Promise<OfflineActionResult> => {
-    await removerAcoesOfflineExpiradas();
-    const existing = (await listarAcoesOffline()).some((item) =>
-      offlineQueueItemTargetsUpdate(item, command));
-    if (existing) return { state: "rejected", errorCode: "OFFLINE_UPDATE_ALREADY_PENDING" };
     return salvarAcaoFinanceira(command.actionType, command.payload);
   })();
   activeUpdateTargets.set(targetKey, promise);
@@ -160,43 +146,11 @@ export function mensagemFalhaEdicaoOffline(errorCode: string): string {
 }
 
 export async function sincronizarFilaFinanceiraOffline(): Promise<OfflineSyncSummary | null> {
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  const userId = data.session?.user.id.toLowerCase();
-  if (!userId) return null;
-
-  if (activeSync) {
-    if (activeSync.userId === userId) return activeSync.promise;
-    await activeSync.promise.catch(() => null);
-    return sincronizarFilaFinanceiraOffline();
-  }
-
-  const promise = (async () => {
-    const expired = await removerAcoesOfflineExpiradas();
-    if (!(await canAttemptSync())) {
-      return expired > 0 ? {
-        processed: 0,
-        succeeded: 0,
-        retrying: 0,
-        failed: expired,
-        skipped: 0,
-        stoppedBecause: "none" as const,
-      } : null;
-    }
-    const summary = await sincronizarAcoesOffline(executor);
-    return expired > 0 ? { ...summary, failed: summary.failed + expired } : summary;
-  })();
-  activeSync = { userId, promise };
-  try {
-    return await promise;
-  } finally {
-    if (activeSync?.promise === promise) activeSync = null;
-  }
+  return null;
 }
 
 export async function obterResumoFilaFinanceiraOffline(): Promise<OfflineQueuePanelSnapshot> {
-  await removerAcoesOfflineExpiradas();
-  return buildOfflineQueuePanelSnapshot(await listarAcoesOffline());
+  return { queued: 0, failed: 0, items: [] };
 }
 
 export async function removerItemFalhoDaFilaFinanceira(itemId: string): Promise<boolean> {

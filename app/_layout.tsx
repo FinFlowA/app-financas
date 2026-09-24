@@ -25,6 +25,7 @@ import {
   Animated,
   AppState,
   DeviceEventEmitter,
+  Easing,
   Platform,
   ScrollView,
   StyleSheet,
@@ -208,6 +209,8 @@ export default function RootLayout() {
   // de claro para escuro (ou o contrário) enquanto está aberto.
   const [temaManual, setTemaManual] = useState<boolean | null>(null);
   const isDark = temaManual ?? (systemTheme === "dark");
+  const themeTransitionOpacity = useRef(new Animated.Value(0)).current;
+  const [themeTransitionColor, setThemeTransitionColor] = useState("#F7F9F9");
   const [isBiometricEnabled, setIsBiometricEnabled] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [autenticandoBiometria, setAutenticandoBiometria] = useState(false);
@@ -1217,16 +1220,27 @@ export default function RootLayout() {
 
   const toggleTheme = useCallback(async () => {
     const newValue = !isDark;
+    setThemeTransitionColor(finFlowTheme(isDark).background);
+    themeTransitionOpacity.stopAnimation();
+    themeTransitionOpacity.setValue(0.72);
     if (newValue === (systemTheme === "dark")) {
       // A escolha ficou igual ao aparelho: volta a acompanhar o sistema,
       // então uma futura troca de claro/escuro no aparelho volta a valer.
       setTemaManual(null);
       await AsyncStorage.removeItem("@dark_mode");
-      return;
+    } else {
+      setTemaManual(newValue);
+      await AsyncStorage.setItem("@dark_mode", newValue ? "true" : "false");
     }
-    setTemaManual(newValue);
-    await AsyncStorage.setItem("@dark_mode", newValue ? "true" : "false");
-  }, [isDark, systemTheme]);
+    requestAnimationFrame(() => {
+      Animated.timing(themeTransitionOpacity, {
+        toValue: 0,
+        duration: 420,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    });
+  }, [isDark, systemTheme, themeTransitionOpacity]);
 
   const toggleBiometric = useCallback(async (value: boolean) => {
     setIsBiometricEnabled(value);
@@ -1387,6 +1401,16 @@ export default function RootLayout() {
           </ThemeProvider>
         </ThemeContext.Provider>
       </ErrorBoundary>
+
+      <Animated.View
+        pointerEvents="none"
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={[
+          styles.themeTransitionOverlay,
+          { backgroundColor: themeTransitionColor, opacity: themeTransitionOpacity },
+        ]}
+      />
 
       <FinFlowAlertHost isDark={isDark} />
 
@@ -1946,6 +1970,11 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
+  themeTransitionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 10000,
+    elevation: 10000,
+  },
   localDemoBadge: {
     position: "absolute",
     top: 10,

@@ -903,7 +903,7 @@ export default function ConfiguracoesScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* SINCRONIZAÇÃO OFFLINE */}
+          {false && <>{/* SINCRONIZAÇÃO OFFLINE */}
           <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>SINCRONIZAÇÃO</Text>
           <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>
             <TouchableOpacity
@@ -932,6 +932,8 @@ export default function ConfiguracoesScreen() {
                 : <MaterialIcons name="chevron-right" size={22} color={Cores.secundario} />}
             </TouchableOpacity>
           </View>
+
+          </>}
 
           {/* CONTA CONJUNTA */}
           <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>CONTA CONJUNTA (PARCEIRO)</Text>
@@ -1079,7 +1081,7 @@ export default function ConfiguracoesScreen() {
         </Animated.ScrollView>
       </View>
 
-      {modalFilaOfflineVisivel && (
+      {false && modalFilaOfflineVisivel && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalFilaOfflineVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.offlineQueueModal, { backgroundColor: Cores.card, borderColor: Cores.borda }]}>

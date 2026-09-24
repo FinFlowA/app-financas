@@ -2,11 +2,14 @@ import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
+import { Image } from "expo-image";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
+  Animated,
   AppState,
   DeviceEventEmitter,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -253,7 +256,6 @@ export default function Dashboard() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
   const [modalIaEmBreve, setModalIaEmBreve] = useState(false);
   const [atualizandoTela, setAtualizandoTela] = useState(false);
 
@@ -367,6 +369,10 @@ export default function Dashboard() {
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [modalBalancoAtualVisivel, setModalBalancoAtualVisivel] = useState(false);
   const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
+  const [modalAgendaVisivel, setModalAgendaVisivel] = useState(false);
+  const [dataAgenda, setDataAgenda] = useState(() => new Date());
+  const [filtroAgenda, setFiltroAgenda] = useState<"todos" | "concluidos" | "pendentes">("todos");
+  const [seletorPeriodoAgendaVisivel, setSeletorPeriodoAgendaVisivel] = useState(false);
   // Começa oculto para uma preferência salva como privada nunca piscar na tela.
   const [valoresVisiveis, setValoresVisiveis] = useState(false);
   const [assinaturaAvisosVisualizada, setAssinaturaAvisosVisualizada] = useState("");
@@ -381,6 +387,28 @@ export default function Dashboard() {
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
   const [confirmarEdicaoSaldo, setConfirmarEdicaoSaldo] = useState(false);
   const [qtdVencidas, setQtdVencidas] = useState(0);
+  const movimentoOndasHero = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    const animacao = Animated.loop(
+      Animated.sequence([
+        Animated.timing(movimentoOndasHero, {
+          toValue: 1,
+          duration: 9000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(movimentoOndasHero, {
+          toValue: 0,
+          duration: 9000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animacao.start();
+    return () => animacao.stop();
+  }, [movimentoOndasHero]);
 
   // --- Cálculos ---
   const contasAtivas = useMemo(() => contas.filter((conta) => !conta.arquivado), [contas]);
@@ -563,6 +591,66 @@ export default function Dashboard() {
   const mostrarBadgeAvisos = leituraAvisosCarregada
     && temAvisosFinanceiros
     && assinaturaAvisosVisualizada !== assinaturaAvisosAtual;
+
+  const chaveDataAgenda = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dataAgenda.getDate()).padStart(2, "0")}`;
+  const itensAgendaPorData = useMemo(() => {
+    const itensTransacoes = transacoesEscopoHome
+      .filter((transacao) => dataEfetivaTransacao(transacao).slice(0, 10) === chaveDataAgenda)
+      .map((transacao) => ({
+        id: `transacao-${transacao.id}`,
+        descricao: transacao.descricao,
+        valor: Number(transacao.valor),
+        tipo: transacao.tipo === "receita" ? "receita" as const : "despesa" as const,
+        status: transacao.status === "paga" ? "Concluído" : "Pendente",
+        concluido: transacao.status === "paga",
+        origem: contas.find((conta) => conta.id === transacao.conta_id)?.nome ?? "Conta",
+      }));
+    const itensCartao = escopoHomeEhTodas
+      ? comprasCartao
+        .filter((compra) => compra.data_compra.slice(0, 10) === chaveDataAgenda && !isInvoicePaymentAdjustment(compra.descricao))
+        .map((compra) => ({
+          id: `cartao-${compra.id}`,
+          descricao: compra.descricao,
+          valor: Number(compra.valor),
+          tipo: "despesa" as const,
+          status: compra.pago ? "Concluído" : "Na fatura",
+          concluido: compra.pago,
+          origem: "Cartão de crédito",
+        }))
+      : [];
+    return [...itensTransacoes, ...itensCartao].filter((item) =>
+      filtroAgenda === "todos"
+      || (filtroAgenda === "concluidos" && item.concluido)
+      || (filtroAgenda === "pendentes" && !item.concluido));
+  }, [chaveDataAgenda, comprasCartao, contas, escopoHomeEhTodas, filtroAgenda, transacoesEscopoHome]);
+
+  const datasComAgenda = useMemo(() => {
+    const datas = new Set<string>();
+    transacoesEscopoHome.forEach((transacao) => {
+      const concluido = transacao.status === "paga";
+      if (filtroAgenda === "todos" || (filtroAgenda === "concluidos" && concluido) || (filtroAgenda === "pendentes" && !concluido)) {
+        datas.add(dataEfetivaTransacao(transacao).slice(0, 10));
+      }
+    });
+    if (escopoHomeEhTodas) comprasCartao.forEach((compra) => {
+      if (!isInvoicePaymentAdjustment(compra.descricao)
+        && (filtroAgenda === "todos" || (filtroAgenda === "concluidos" && compra.pago) || (filtroAgenda === "pendentes" && !compra.pago))) {
+        datas.add(compra.data_compra.slice(0, 10));
+      }
+    });
+    return datas;
+  }, [comprasCartao, escopoHomeEhTodas, filtroAgenda, transacoesEscopoHome]);
+
+  const diasCalendarioAgenda = useMemo(() => {
+    const ano = dataAgenda.getFullYear();
+    const mes = dataAgenda.getMonth();
+    const primeiroDia = new Date(ano, mes, 1).getDay();
+    const totalDias = new Date(ano, mes + 1, 0).getDate();
+    return [
+      ...Array.from({ length: primeiroDia }, () => null),
+      ...Array.from({ length: totalDias }, (_, indice) => indice + 1),
+    ];
+  }, [dataAgenda]);
 
   React.useEffect(() => {
     let efeitoAtivo = true;
@@ -768,7 +856,6 @@ export default function Dashboard() {
       const temParc = resParceria.data ? resParceria.data.length > 0 : false;
       setTemParceiro(temParc);
 
-      setIsOffline(false);
       cacheHomePorUsuario.set(session.user.id, {
         categorias: categoriasCarregadas,
         contas: contasCarregadas,
@@ -820,26 +907,16 @@ export default function Dashboard() {
     } catch (error) {
       if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
       if (__DEV__) console.error("Falha ao atualizar a Home:", error);
-      const cache = cacheHomePorUsuario.get(session.user.id);
-      if (cache) {
-        setCategorias(cache.categorias);
-        setContas(cache.contas);
-        setTransacoes(cache.transacoes);
-        setCaixinhas(cache.caixinhas);
-        setTemParceiro(cache.temParceiro);
-      } else {
-        setCategorias([]);
-        setContas([]);
-        setTransacoes([]);
-        setCaixinhas([]);
-        setComprasCartao([]);
-        setTemParceiro(false);
-      }
+      setCategorias([]);
+      setContas([]);
+      setTransacoes([]);
+      setCaixinhas([]);
+      setComprasCartao([]);
+      setTemParceiro(false);
       void AsyncStorage.multiRemove(CHAVES_CACHE_HOME_LEGADO).catch(() => {});
       // Uma falha de consulta também pode vir do servidor, de permissão ou de
       // um recurso temporariamente indisponível. Só apresente o estado offline
       // quando o monitor do dispositivo confirmar ausência de conexão.
-      setIsOffline(await dispositivoSemConexao());
     }
   }, [notificacoesAtivas, session?.user?.id]);
 
@@ -1868,9 +1945,27 @@ export default function Dashboard() {
       >
         <View style={[styles.homeHero, { backgroundColor: novoTema.header }]}>
           <View pointerEvents="none" style={styles.homeHeroWaves}>
-            <View style={[styles.homeHeroWave, styles.homeHeroWaveOne]} />
-            <View style={[styles.homeHeroWave, styles.homeHeroWaveTwo]} />
-            <View style={[styles.homeHeroWave, styles.homeHeroWaveThree]} />
+            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveOne, {
+              transform: [
+                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-18, 22] }) },
+                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-5, 8] }) },
+                { rotate: "-10deg" },
+              ],
+            }]} />
+            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveTwo, {
+              transform: [
+                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [20, -15] }) },
+                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [7, -6] }) },
+                { rotate: "12deg" },
+              ],
+            }]} />
+            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveThree, {
+              transform: [
+                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-10, 16] }) },
+                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [4, -5] }) },
+                { rotate: "-7deg" },
+              ],
+            }]} />
           </View>
           <View style={styles.homeHeroContent}>
           <View style={styles.homeHeroTop}>
@@ -1917,11 +2012,22 @@ export default function Dashboard() {
             { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => setModalTransVisivel(true) },
             { label: "Categorias", icon: "category", color: "#4D76E8", action: () => setModalGerenciarCatVisivel(true) },
             { label: "Cartões", icon: "credit-card", color: "#C0392E", action: () => router.push("/(tabs)/cartoes" as any) },
-            { label: "IA", icon: "auto-awesome", color: "#805AD5", action: () => router.push("/chat-ia") },
+            { label: "IA", icon: "auto-awesome", color: "#805AD5", finn: true, action: () => router.push("/chat-ia") },
           ].map((item) => (
             <TouchableOpacity key={item.label} style={styles.homeActionItem} onPress={item.action}>
               <View style={[styles.homeActionIcon, { backgroundColor: `${item.color}1F` }]}>
-                <MaterialIcons name={item.icon as any} size={23} color={item.color} />
+                {item.finn ? (
+                  <View style={styles.homeActionFinnPortrait}>
+                    <Image
+                      source={require("../../assets/images/finn-home-avatar.png")}
+                      style={styles.homeActionFinnPortraitImage}
+                      contentFit="contain"
+                      accessibilityLabel="Finn, assistente do FinFlow"
+                    />
+                  </View>
+                ) : (
+                  <MaterialIcons name={item.icon as any} size={23} color={item.color} />
+                )}
                 {item.label === "Cartões" && temFaturaVencidaHome && <View style={styles.homeActionAlert} />}
               </View>
               <Text style={[styles.homeActionLabel, { color: novoTema.text }]}>{item.label}</Text>
@@ -1932,7 +2038,21 @@ export default function Dashboard() {
         <View style={[styles.homeMonthCard, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
           <View style={styles.homeSectionTop}>
             <Text style={[styles.homeSectionTitle, { color: novoTema.text }]}>Visão do mês</Text>
-            <View style={[styles.homeCalendarIcon, { backgroundColor: novoTema.surfaceMuted }]}><MaterialIcons name="calendar-today" size={15} color={novoTema.textMuted} /></View>
+            <TouchableOpacity
+              style={[styles.homeCalendarIcon, { backgroundColor: `${novoTema.primary}1F`, borderColor: `${novoTema.primary}55` }]}
+              onPress={() => {
+                const hoje = new Date();
+                const ultimoDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0).getDate();
+                setDataAgenda(new Date(mesAtual.getFullYear(), mesAtual.getMonth(), Math.min(hoje.getDate(), ultimoDia)));
+                setFiltroAgenda("todos");
+                setSeletorPeriodoAgendaVisivel(false);
+                setModalAgendaVisivel(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir agenda por data"
+            >
+              <MaterialIcons name="calendar-month" size={19} color={novoTema.primary} />
+            </TouchableOpacity>
           </View>
           <View style={styles.homeMonthMetrics}>
             <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(receitasDoMes)}</Text></View>
@@ -1985,7 +2105,7 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {isOffline && (
+        {false && (
           <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F59E0B22", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: "#F59E0B55" }}>
             <MaterialIcons name="wifi-off" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
             <Text style={{ color: "#B45309", fontSize: 13, fontWeight: "600", flex: 1 }}>Sem conexão — exibindo os dados salvos neste dispositivo</Text>
@@ -2137,6 +2257,8 @@ export default function Dashboard() {
       {modalContasHomeVisivel && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalContasHomeVisivel(false)}>
         <View style={styles.modalOverlay}>
+          <View style={styles.accountScopePageShell}>
+          <View style={styles.accountScopeCenterStage}>
           <View style={[styles.accountScopePanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.accountScopeHeader}>
               <View style={[styles.accountScopeHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
@@ -2274,6 +2396,8 @@ export default function Dashboard() {
               </TouchableOpacity>
             </View>
           </View>
+          </View>
+          </View>
         </View>
       </Modal>
       )}
@@ -2308,6 +2432,8 @@ export default function Dashboard() {
       {modalNotificacoesHome && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalNotificacoesHome(false)}>
         <View style={styles.modalOverlay}>
+          <View style={styles.notificationPageShell}>
+          <View style={styles.notificationCenterStage}>
           <View style={[styles.notificationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.notificationHeader}>
               <View style={[styles.notificationHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
@@ -2379,6 +2505,8 @@ export default function Dashboard() {
               <Text style={[styles.notificationSettingsText, { color: novoTema.primary }]}>Configurar notificações</Text>
             </TouchableOpacity>
           </View>
+          </View>
+          </View>
         </View>
       </Modal>
       )}
@@ -2429,6 +2557,8 @@ export default function Dashboard() {
       {mostrarPickerMesAno && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setMostrarPickerMesAno(false)}>
         <View style={styles.modalOverlay}>
+          <View style={styles.pickerPageShell}>
+          <View style={styles.pickerCenterStage}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "85%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Selecionar Mês e Ano</Text>
 
@@ -2469,6 +2599,8 @@ export default function Dashboard() {
                 setMostrarPickerMesAno(false);
               }} />
             </View>
+          </View>
+          </View>
           </View>
         </View>
       </Modal>
@@ -2867,6 +2999,98 @@ export default function Dashboard() {
       </Modal>
       )}
 
+      {modalAgendaVisivel && (
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalAgendaVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.agendaPanel, FinFlowShadow, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
+            <View style={styles.agendaHeader}>
+              <View style={[styles.agendaHeaderIcon, { backgroundColor: `${novoTema.primary}1F` }]}>
+                <MaterialIcons name="calendar-month" size={23} color={novoTema.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.agendaTitle, { color: novoTema.text }]}>Agenda financeira</Text>
+                <Text style={[styles.agendaSubtitle, { color: novoTema.textMuted }]}>Consulte os lançamentos de cada data.</Text>
+              </View>
+              <TouchableOpacity style={styles.agendaClose} onPress={() => setModalAgendaVisivel(false)} accessibilityLabel="Fechar agenda">
+                <MaterialIcons name="close" size={21} color={novoTema.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.agendaCalendar, { backgroundColor: novoTema.surfaceMuted, borderColor: novoTema.border }]}>
+              <View style={styles.agendaMonthRow}>
+                <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear(), data.getMonth() - 1, 1))} accessibilityLabel="Mês anterior"><MaterialIcons name="chevron-left" size={22} color={novoTema.text} /></TouchableOpacity>
+                <TouchableOpacity style={[styles.agendaPeriodButton, { borderColor: novoTema.border }]} onPress={() => setSeletorPeriodoAgendaVisivel((visivel) => !visivel)} accessibilityLabel="Selecionar mês e ano">
+                  <Text style={[styles.agendaMonthTitle, { color: novoTema.text }]}>{mesesEmPortugues[dataAgenda.getMonth()]} {dataAgenda.getFullYear()}</Text>
+                  <MaterialIcons name={seletorPeriodoAgendaVisivel ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={18} color={novoTema.textMuted} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear(), data.getMonth() + 1, 1))} accessibilityLabel="Próximo mês"><MaterialIcons name="chevron-right" size={22} color={novoTema.text} /></TouchableOpacity>
+              </View>
+              {seletorPeriodoAgendaVisivel ? (
+                <View>
+                  <View style={styles.agendaYearRow}>
+                    <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear() - 1, data.getMonth(), 1))} accessibilityLabel="Ano anterior"><MaterialIcons name="chevron-left" size={23} color={novoTema.text} /></TouchableOpacity>
+                    <Text style={[styles.agendaYearText, { color: novoTema.text }]}>{dataAgenda.getFullYear()}</Text>
+                    <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear() + 1, data.getMonth(), 1))} accessibilityLabel="Próximo ano"><MaterialIcons name="chevron-right" size={23} color={novoTema.text} /></TouchableOpacity>
+                  </View>
+                  <View style={styles.agendaMonthGrid}>
+                    {mesesEmPortugues.map((mes, indice) => {
+                      const ativo = indice === dataAgenda.getMonth();
+                      return <TouchableOpacity key={mes} style={[styles.agendaMonthOption, ativo && { backgroundColor: novoTema.primary }]} onPress={() => { setDataAgenda((data) => new Date(data.getFullYear(), indice, 1)); setSeletorPeriodoAgendaVisivel(false); }}><Text style={[styles.agendaMonthOptionText, { color: ativo ? "#FFF" : novoTema.text }]}>{mes.slice(0, 3)}</Text></TouchableOpacity>;
+                    })}
+                  </View>
+                </View>
+              ) : (<>
+              <View style={styles.agendaWeekRow}>{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <Text key={`${dia}-${indice}`} style={[styles.agendaWeekDay, { color: novoTema.textMuted }]}>{dia}</Text>)}</View>
+              <View style={styles.agendaDaysGrid}>
+                {diasCalendarioAgenda.map((dia, indice) => {
+                  if (dia === null) return <View key={`vazio-${indice}`} style={styles.agendaDayCell} />;
+                  const chave = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+                  const selecionado = dia === dataAgenda.getDate();
+                  return (
+                    <TouchableOpacity key={chave} style={styles.agendaDayCell} onPress={() => setDataAgenda((data) => new Date(data.getFullYear(), data.getMonth(), dia))} accessibilityLabel={`Selecionar dia ${dia}`}>
+                      <View style={[styles.agendaDayCircle, selecionado && { backgroundColor: novoTema.primary }]}><Text style={[styles.agendaDayText, { color: selecionado ? "#FFF" : novoTema.text }]}>{dia}</Text></View>
+                      {datasComAgenda.has(chave) && <View style={[styles.agendaDayDot, { backgroundColor: selecionado ? "#FFF" : novoTema.primary }]} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              </>)}
+            </View>
+            {!seletorPeriodoAgendaVisivel && (<>
+            <View style={[styles.agendaFilters, { backgroundColor: novoTema.surfaceMuted, borderColor: novoTema.border }]}>
+              {([
+                ["todos", "Todos"],
+                ["concluidos", "Concluídos"],
+                ["pendentes", "Pendentes"],
+              ] as const).map(([valor, rotulo]) => {
+                const ativo = filtroAgenda === valor;
+                return <TouchableOpacity key={valor} style={[styles.agendaFilterOption, ativo && { backgroundColor: novoTema.primary }]} onPress={() => setFiltroAgenda(valor)}><Text style={[styles.agendaFilterText, { color: ativo ? "#FFF" : novoTema.textMuted }]}>{rotulo}</Text></TouchableOpacity>;
+              })}
+            </View>
+            <Text style={[styles.agendaSelectedTitle, { color: novoTema.text }]}>{dataAgenda.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</Text>
+            <ScrollView style={styles.agendaItems} contentContainerStyle={itensAgendaPorData.length === 0 ? styles.agendaEmptyContent : undefined} showsVerticalScrollIndicator={false}>
+              {itensAgendaPorData.length === 0 ? (
+                <View style={styles.agendaEmpty}>
+                  <MaterialIcons name="event-available" size={28} color={novoTema.textMuted} />
+                  <Text style={[styles.agendaEmptyTitle, { color: novoTema.text }]}>Nada nesta data</Text>
+                  <Text style={[styles.agendaEmptyText, { color: novoTema.textMuted }]}>Não há lançamentos ou compras registrados.</Text>
+                </View>
+              ) : itensAgendaPorData.map((item) => (
+                <View key={item.id} style={[styles.agendaItem, { backgroundColor: novoTema.surfaceMuted, borderColor: novoTema.border }]}>
+                  <View style={[styles.agendaItemIcon, { backgroundColor: item.tipo === "receita" ? "#24A87320" : "#C0392E20" }]}><MaterialIcons name={item.tipo === "receita" ? "arrow-downward" : "arrow-upward"} size={18} color={item.tipo === "receita" ? "#24A873" : "#C0392E"} /></View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.agendaItemTitle, { color: novoTema.text }]} numberOfLines={1}>{item.descricao}</Text>
+                    <Text style={[styles.agendaItemMeta, { color: novoTema.textMuted }]}>{item.origem} · {item.status}</Text>
+                  </View>
+                  <Text style={[styles.agendaItemValue, { color: item.tipo === "receita" ? "#24A873" : "#C0392E" }]}>{item.tipo === "receita" ? "+" : "−"}{formatarValorPrivado(item.valor)}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            </>)}
+          </View>
+        </View>
+      </FinFlowPopup>
+      )}
+
       {/* MODAL LANÇAMENTOS VENCIDOS */}
       {modalVencidosVisivel && !temPopupPrioritario && (
       <FinFlowPopup
@@ -3109,6 +3333,20 @@ export default function Dashboard() {
 
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
+                {contasAtivas.length === 0 && (
+                  <TouchableOpacity
+                    style={[styles.transactionEmptyAction, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
+                    onPress={() => setModalContaVisivel(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Criar minha primeira conta"
+                  >
+                    <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
+                      <MaterialIcons name="add" size={19} color={novoTema.primary} />
+                    </View>
+                    <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira conta</Text>
+                    <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
+                  </TouchableOpacity>
+                )}
                 {contasAtivas.map((conta) => (
                   <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
                     <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
@@ -3141,6 +3379,23 @@ export default function Dashboard() {
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Categoria</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
+                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).length === 0 && (
+                      <TouchableOpacity
+                        style={[styles.transactionEmptyAction, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
+                        onPress={() => {
+                          setTipoNovaCategoria(tipoTransacao);
+                          setModalCatVisivel(true);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Criar minha primeira categoria"
+                      >
+                        <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
+                          <MaterialIcons name="add" size={19} color={novoTema.primary} />
+                        </View>
+                        <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira categoria</Text>
+                        <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
+                      </TouchableOpacity>
+                    )}
                     {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).map((cat) => (
                       <TouchableOpacity key={cat.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: catSelecionadaId === cat.id ? corTipoTransacao : Cores.borda }]} onPress={() => setCatSelecionadaId(cat.id)}>
                         <View style={[styles.colorDot, { backgroundColor: cat.cor }]} />
@@ -3191,9 +3446,9 @@ const styles = StyleSheet.create({
   homeHero: { borderRadius: 24, padding: 20, paddingBottom: 24, overflow: "hidden", minHeight: 190 },
   homeHeroWaves: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
   homeHeroWave: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.08)" },
-  homeHeroWaveOne: { width: 420, height: 155, right: -175, top: 45, transform: [{ rotate: "-10deg" }] },
-  homeHeroWaveTwo: { width: 390, height: 135, left: -205, top: 92, backgroundColor: "rgba(255,255,255,0.06)", transform: [{ rotate: "12deg" }] },
-  homeHeroWaveThree: { width: 330, height: 105, right: -105, bottom: -58, backgroundColor: "rgba(0,55,48,0.10)", transform: [{ rotate: "-7deg" }] },
+  homeHeroWaveOne: { width: 420, height: 155, right: -175, top: 45 },
+  homeHeroWaveTwo: { width: 390, height: 135, left: -205, top: 92, backgroundColor: "rgba(255,255,255,0.06)" },
+  homeHeroWaveThree: { width: 330, height: 105, right: -105, bottom: -58, backgroundColor: "rgba(0,55,48,0.10)" },
   homeHeroContent: { zIndex: 2 },
   homeHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   homeHeroGreeting: { color: "#FFF", fontSize: 20, fontWeight: "800" },
@@ -3208,14 +3463,16 @@ const styles = StyleSheet.create({
   homeHeroTrend: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 9, backgroundColor: "rgba(0,0,0,0.13)", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, alignSelf: "flex-start" },
   homeHeroTrendText: { color: "#B8F4D7", fontSize: 10, fontWeight: "600" },
   homeActions: { marginHorizontal: 10, marginTop: -12, borderRadius: 20, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 8, flexDirection: "row", justifyContent: "space-around", elevation: 6 },
-  homeActionItem: { flex: 1, alignItems: "center", gap: 7 },
+  homeActionItem: { flex: 1, alignItems: "center", gap: 7, overflow: "visible" },
   homeActionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  homeActionFinnPortrait: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: "#6EA8FF", backgroundColor: "#102A45", overflow: "visible", alignItems: "center", justifyContent: "center" },
+  homeActionFinnPortraitImage: { width: 55, height: 55, marginTop: -7 },
   homeActionLabel: { fontSize: 11, fontWeight: "700" },
   homeActionAlert: { position: "absolute", right: 1, top: 1, width: 9, height: 9, borderRadius: 5, backgroundColor: "#EE4B4B", borderWidth: 1.5, borderColor: "#FFF" },
   homeMonthCard: { marginTop: 14, borderRadius: 20, borderWidth: 1, padding: 16, elevation: 2 },
   homeSectionTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
   homeSectionTitle: { fontSize: 15, fontWeight: "800" },
-  homeCalendarIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  homeCalendarIcon: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   homeMonthMetrics: { flexDirection: "row", justifyContent: "space-between" },
   homeMetricColumn: { flex: 1, minWidth: 0 },
   homeMetricInfoButton: { borderRadius: 10, paddingVertical: 2 },
@@ -3223,6 +3480,43 @@ const styles = StyleSheet.create({
   homeMetricLabel: { fontSize: 10, marginBottom: 4 },
   homeMetricValue: { fontSize: 14, fontWeight: "800" },
   homeMonthTrack: { height: 5, borderRadius: 3, overflow: "hidden", flexDirection: "row", marginTop: 14 },
+  agendaPanel: { width: "92%", maxWidth: 520, maxHeight: "88%", borderRadius: 24, borderWidth: 1, padding: 18, elevation: 12 },
+  agendaHeader: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 15 },
+  agendaHeaderIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  agendaTitle: { fontSize: 18, fontWeight: "900" },
+  agendaSubtitle: { fontSize: 11, marginTop: 2 },
+  agendaClose: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  agendaCalendar: { borderWidth: 1, borderRadius: 18, padding: 11 },
+  agendaMonthRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  agendaMonthArrow: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  agendaPeriodButton: { minHeight: 35, minWidth: 150, borderRadius: 12, borderWidth: 1, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
+  agendaMonthTitle: { fontSize: 14, fontWeight: "900", textTransform: "capitalize" },
+  agendaYearRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 22, marginBottom: 8 },
+  agendaYearText: { fontSize: 17, fontWeight: "900", minWidth: 56, textAlign: "center" },
+  agendaMonthGrid: { flexDirection: "row", flexWrap: "wrap", rowGap: 7 },
+  agendaMonthOption: { width: "25%", height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  agendaMonthOptionText: { fontSize: 11, fontWeight: "800", textTransform: "capitalize" },
+  agendaWeekRow: { flexDirection: "row" },
+  agendaWeekDay: { width: `${100 / 7}%`, textAlign: "center", fontSize: 9, fontWeight: "900", paddingVertical: 4 },
+  agendaDaysGrid: { flexDirection: "row", flexWrap: "wrap" },
+  agendaDayCell: { width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center" },
+  agendaDayCircle: { width: 29, height: 29, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  agendaDayText: { fontSize: 12, fontWeight: "700" },
+  agendaDayDot: { position: "absolute", bottom: 1, width: 4, height: 4, borderRadius: 2 },
+  agendaFilters: { minHeight: 42, borderRadius: 14, borderWidth: 1, padding: 3, flexDirection: "row", marginTop: 10 },
+  agendaFilterOption: { flex: 1, minWidth: 0, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
+  agendaFilterText: { fontSize: 10, fontWeight: "800" },
+  agendaSelectedTitle: { fontSize: 13, fontWeight: "900", textTransform: "capitalize", marginTop: 15, marginBottom: 8 },
+  agendaItems: { maxHeight: 190 },
+  agendaItem: { minHeight: 58, borderRadius: 15, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  agendaItemIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  agendaItemTitle: { fontSize: 13, fontWeight: "800" },
+  agendaItemMeta: { fontSize: 10, marginTop: 3 },
+  agendaItemValue: { fontSize: 12, fontWeight: "900" },
+  agendaEmptyContent: { flexGrow: 1 },
+  agendaEmpty: { alignItems: "center", justifyContent: "center", paddingVertical: 18 },
+  agendaEmptyTitle: { fontSize: 14, fontWeight: "800", marginTop: 5 },
+  agendaEmptyText: { fontSize: 11, textAlign: "center", marginTop: 3 },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 16, backgroundColor: "#15966E", padding: 18, borderRadius: 22, minHeight: 104 },
   greeting: { fontSize: 24, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 2 },
@@ -3269,6 +3563,8 @@ const styles = StyleSheet.create({
   graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
+  pickerPageShell: { flex: 1, width: "100%" },
+  pickerCenterStage: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingVertical: 72 },
   modalContent: { width: "92%", maxWidth: 520, padding: 22, borderRadius: 22, elevation: 10 },
   balanceExplanationPanel: { width: "92%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 22, elevation: 12 },
   balanceExplanationIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 14 },
@@ -3324,10 +3620,15 @@ const styles = StyleSheet.create({
   transactionPlainInput: { minHeight: 52, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 14, fontSize: 15, marginBottom: 14 },
   transactionChipRow: { paddingRight: 12 },
   transactionChip: { minHeight: 42, borderWidth: 1.5, paddingHorizontal: 13, marginRight: 9 },
+  transactionEmptyAction: { minHeight: 50, minWidth: 245, borderWidth: 1.5, borderRadius: 15, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 9, marginRight: 9 },
+  transactionEmptyActionIcon: { width: 32, height: 32, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  transactionEmptyActionText: { flex: 1, fontSize: 13, fontWeight: "900" },
   transactionActions: { flexDirection: "row", gap: 10, marginTop: "auto", paddingTop: 18 },
   transactionActionButton: { flex: 1, minWidth: 0, borderRadius: FinFlowRadius.medium },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  notificationPanel: { width: "92%", maxWidth: 520, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  notificationPageShell: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, paddingVertical: 24 },
+  notificationCenterStage: { width: "100%", maxWidth: 520, alignItems: "center", justifyContent: "center" },
+  notificationPanel: { width: "100%", borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
   notificationHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
   notificationHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   notificationTitle: { fontSize: 18, fontWeight: "900" },
@@ -3344,6 +3645,8 @@ const styles = StyleSheet.create({
   notificationSettings: { minHeight: 46, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 17 },
   notificationSettingsText: { fontSize: 13, fontWeight: "800" },
   accountScopePanel: { width: "92%", maxWidth: 520, maxHeight: "90%", flexShrink: 1, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  accountScopePageShell: { flex: 1, width: "100%" },
+  accountScopeCenterStage: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingVertical: 68 },
   accountScopeHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
   accountScopeHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   accountScopeTitle: { fontSize: 18, fontWeight: "900" },

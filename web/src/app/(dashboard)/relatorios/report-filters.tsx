@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { nextReportAccountSelection } from "@/lib/report-scope";
 import styles from "./relatorios.module.css";
 
@@ -22,6 +22,9 @@ export default function ReportFilters({
 }) {
   const router = useRouter();
   const [draftAccounts, setDraftAccounts] = useState(selected);
+  const [periodPickerOpen, setPeriodPickerOpen] = useState(false);
+  const [pickerYear, setPickerYear] = useState(year);
+  const periodPickerRef = useRef<HTMLDivElement>(null);
   const currentYear = new Date().getFullYear();
   const minimumYear = currentYear - 10;
   const maximumYear = currentYear + 10;
@@ -49,6 +52,27 @@ export default function ReportFilters({
     ));
   }
 
+  useEffect(() => {
+    if (!periodPickerOpen) return;
+    function close(event: PointerEvent) {
+      if (!periodPickerRef.current?.contains(event.target as Node)) setPeriodPickerOpen(false);
+    }
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setPeriodPickerOpen(false);
+    }
+    document.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [periodPickerOpen]);
+
+  function selectPeriod(nextYear: number, nextMonth = month) {
+    setPeriodPickerOpen(false);
+    router.push(urlFor(nextYear, nextMonth, selected));
+  }
+
   const allDraftSelected = accounts.length > 0 && draftAccounts.length === accounts.length
     && accounts.every((account) => draftAccounts.includes(account.id));
   return (
@@ -58,7 +82,7 @@ export default function ReportFilters({
       <input type="hidden" name="accounts" value={draftAccounts.join(",")} />
       {view === "daily" && <input type="hidden" name="view" value="daily" />}
       <div className={styles.filtersRow}>
-        <div className={styles.yearFilter}>
+        <div className={styles.yearFilter} ref={periodPickerRef}>
           <span className={styles.filterLabel}>{view === "daily" ? "Mês" : "Ano"}</span>
           <div className={styles.yearStepper} aria-label={view === "daily" ? `Mês analisado: ${month + 1} de ${year}` : `Ano analisado: ${year}`}>
             <button
@@ -70,7 +94,16 @@ export default function ReportFilters({
             >
               <span aria-hidden>‹</span>
             </button>
-            <strong aria-live="polite">{view === "daily" ? `${["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"][month]} ${year}` : year}</strong>
+            <button
+              type="button"
+              className={styles.periodPickerButton}
+              aria-haspopup="dialog"
+              aria-expanded={periodPickerOpen}
+              onClick={() => { setPickerYear(year); setPeriodPickerOpen((open) => !open); }}
+            >
+              <span aria-live="polite">{view === "daily" ? `${["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"][month]} ${year}` : year}</span>
+              <span aria-hidden className={styles.periodPickerChevron}>⌄</span>
+            </button>
             <button
               type="button"
               aria-label="Ver próximo ano"
@@ -81,6 +114,26 @@ export default function ReportFilters({
               <span aria-hidden>›</span>
             </button>
           </div>
+          {periodPickerOpen && (
+            <section className={styles.periodPicker} role="dialog" aria-label={view === "daily" ? "Selecionar mês e ano" : "Selecionar ano"}>
+              {view === "daily" && (
+                <div className={styles.periodPickerHeader}>
+                  <button type="button" disabled={pickerYear <= minimumYear} onClick={() => setPickerYear((value) => value - 1)} aria-label="Ano anterior">‹</button>
+                  <strong>{pickerYear}</strong>
+                  <button type="button" disabled={pickerYear >= maximumYear} onClick={() => setPickerYear((value) => value + 1)} aria-label="Próximo ano">›</button>
+                </div>
+              )}
+              <div className={view === "daily" ? styles.monthPickerGrid : styles.yearPickerGrid}>
+                {view === "daily"
+                  ? ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].map((label, index) => (
+                    <button type="button" key={label} data-active={pickerYear === year && index === month} onClick={() => selectPeriod(pickerYear, index)}>{label}</button>
+                  ))
+                  : Array.from({ length: maximumYear - minimumYear + 1 }, (_, index) => minimumYear + index).map((optionYear) => (
+                    <button type="button" key={optionYear} data-active={optionYear === year} onClick={() => selectPeriod(optionYear)}>{optionYear}</button>
+                  ))}
+              </div>
+            </section>
+          )}
         </div>
         <fieldset className={styles.accountsFilter}>
           <legend className={styles.filterLegend}>Contas incluídas</legend>

@@ -4,7 +4,10 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Animated,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -410,6 +413,7 @@ export default function ChatIAScreen() {
   const router = useRouter();
   const { isDark, session, limites, limitsEnabled, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
+  const entranceProgress = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
   const sendingRef = useRef(false);
@@ -437,6 +441,20 @@ export default function ChatIAScreen() {
     limitsEnabled && limites.iaOperacional,
     limitsEnabled,
   );
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (!active) return;
+      Animated.timing(entranceProgress, {
+        toValue: 1,
+        duration: reduceMotion ? 1 : 460,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => { active = false; };
+  }, [entranceProgress]);
 
   const [messages, setMessages] = useState<ChatMessage[]>([
     { id: "welcome", role: "assistant", text: WELCOME_MESSAGE },
@@ -843,6 +861,10 @@ export default function ChatIAScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={["top", "bottom"]}>
+      <Animated.View style={[styles.flex, {
+        opacity: entranceProgress,
+        transform: [{ translateY: entranceProgress.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+      }]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -854,14 +876,19 @@ export default function ChatIAScreen() {
               <MaterialIcons name="arrow-back" size={23} color="#FFF" />
             </TouchableOpacity>
             <View style={styles.headerIdentity}>
-              <View style={styles.headerFinnAvatar}>
+              <Animated.View style={[styles.headerFinnAvatar, {
+                transform: [
+                  { translateY: entranceProgress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [12, -3, 0] }) },
+                  { scale: entranceProgress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [0.7, 1.08, 1] }) },
+                ],
+              }]}>
                 <Image
                   source={require("../assets/images/finn-chat-header.png")}
                   style={styles.headerFinnImage}
                   contentFit="contain"
                   accessibilityLabel="Finn, mascote do FinFlow"
                 />
-              </View>
+              </Animated.View>
               <View>
                 <Text style={styles.headerTitle}>Finn</Text>
                 <Text style={styles.headerSubtitle}>Controle financeiro protegido</Text>
@@ -1101,6 +1128,7 @@ export default function ChatIAScreen() {
           <Text style={[styles.disclaimer, { color: theme.textMuted }]}>Revise valores e datas. A IA não substitui orientação profissional.</Text>
         </View>
       </KeyboardAvoidingView>
+      </Animated.View>
 
       <Modal
         visible={clearModalVisible}

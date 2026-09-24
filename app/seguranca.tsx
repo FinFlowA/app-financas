@@ -2,8 +2,11 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
+  Animated,
   AppState,
+  Easing,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -118,6 +121,7 @@ export default function SegurancaScreen() {
   const router = useRouter();
   const { isDark, session, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
+  const entranceProgress = useRef(new Animated.Value(0)).current;
 
   const currentEmail = session?.user?.email?.trim() ?? "";
   const metadataPhone = typeof session?.user?.user_metadata?.telefone === "string"
@@ -149,6 +153,20 @@ export default function SegurancaScreen() {
   const securityDeadlineRef = useRef(0);
   const securityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const verifiedPasswordRef = useRef("");
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (!active) return;
+      Animated.timing(entranceProgress, {
+        toValue: 1,
+        duration: reduceMotion ? 1 : 420,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => { active = false; };
+  }, [entranceProgress]);
 
   const lockSecurity = useCallback(() => {
     if (securityTimerRef.current) {
@@ -387,6 +405,10 @@ export default function SegurancaScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <Animated.View style={[styles.container, {
+        opacity: entranceProgress,
+        transform: [{ translateY: entranceProgress.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+      }]}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
@@ -416,9 +438,11 @@ export default function SegurancaScreen() {
               <View style={[styles.hero, { backgroundColor: theme.header }]}>
                 <View style={styles.heroDecorationLarge} />
                 <View style={styles.heroDecorationSmall} />
-                <View style={styles.heroIcon}>
+                <Animated.View style={[styles.heroIcon, {
+                  transform: [{ scale: entranceProgress.interpolate({ inputRange: [0, 0.75, 1], outputRange: [0.82, 1.06, 1] }) }],
+                }]}>
                   <MaterialIcons name="password" size={37} color={theme.primaryDark} />
-                </View>
+                </Animated.View>
                 <Text style={styles.heroEyebrow}>ÁREA PROTEGIDA</Text>
                 <Text style={styles.heroTitle}>Confirme que é você</Text>
                 <Text style={styles.heroSubtitle}>A senha atual é obrigatória. A biometria não libera esta área.</Text>
@@ -642,6 +666,7 @@ export default function SegurancaScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      </Animated.View>
     </SafeAreaView>
   );
 }

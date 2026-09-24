@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PanResponder,
   Platform,
@@ -19,6 +19,7 @@ import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
+import FinFlowPopup from "../../components/FinFlowPopup";
 import {
   dataEfetivaTransacao,
   getMovimentoObjetivo,
@@ -120,13 +121,16 @@ export default function RelatoriosScreen() {
   const mesAtualIdx = hoje.getMonth();
 
   const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
+  const [seletorAnoAberto, setSeletorAnoAberto] = useState(false);
   const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
   const [chartCardHeight, setChartCardHeight] = useState(0);
   const [chartChromeHeight, setChartChromeHeight] = useState(0);
+  const [chartViewportWidth, setChartViewportWidth] = useState(0);
   const [detailHeight, setDetailHeight] = useState(0);
   const [atualizandoTela, setAtualizandoTela] = useState(false);
 
   const projScrollRef = useRef<ScrollView>(null);
+  const chartInitialPositionDoneRef = useRef(false);
   const chartScrollXRef = useRef(0);
   const chartDragStartXRef = useRef(0);
   const chartDragResponder = useRef(
@@ -385,6 +389,21 @@ export default function RelatoriosScreen() {
   const barWidth = barSectionWidth * 0.28;
   const chartContentWidth = barSectionWidth * 12;
 
+  useEffect(() => {
+    if (chartViewportWidth <= 0) return;
+
+    const monthCenter = (mesProjSelecionado + 0.5) * barSectionWidth;
+    const maxOffset = Math.max(0, chartContentWidth + 8 - chartViewportWidth);
+    const centeredOffset = Math.max(0, Math.min(monthCenter - chartViewportWidth / 2, maxOffset));
+    const animated = chartInitialPositionDoneRef.current;
+
+    requestAnimationFrame(() => {
+      projScrollRef.current?.scrollTo({ x: centeredOffset, animated });
+      chartScrollXRef.current = centeredOffset;
+      chartInitialPositionDoneRef.current = true;
+    });
+  }, [barSectionWidth, chartContentWidth, chartViewportWidth, mesProjSelecionado]);
+
   const getY = (val: number) => chartHeight - ((val - chartMin) / chartRange) * chartHeight;
   const getBarH = (val: number) => Math.max(0, (val / chartRange) * chartHeight);
   const zeroY = getY(0);
@@ -408,12 +427,44 @@ export default function RelatoriosScreen() {
       : contasFiltradas.length === 1
         ? contasFiltradas[0].nome
         : `${contasFiltradas.length} contas selecionadas`;
+  const anosDisponiveis = Array.from({ length: 21 }, (_, index) => anoAtualNum - 10 + index);
 
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
       style={[styles.safe, { backgroundColor: Cores.fundo }]}
     >
+      <FinFlowPopup visible={seletorAnoAberto} transparent animationType="fade" onRequestClose={() => setSeletorAnoAberto(false)}>
+        <TouchableOpacity activeOpacity={1} style={styles.periodModalBackdrop} onPress={() => setSeletorAnoAberto(false)} accessibilityLabel="Fechar seleção de ano">
+          <TouchableOpacity activeOpacity={1} style={[styles.periodModalCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]} onPress={() => undefined} accessible={false}>
+            <View style={styles.periodModalHeader}>
+              <View>
+                <Text style={[styles.periodModalEyebrow, { color: novoTema.primary }]}>FLUXO DE CAIXA</Text>
+                <Text style={[styles.periodModalTitle, { color: Cores.textoPrincipal }]}>Selecione o ano</Text>
+              </View>
+              <TouchableOpacity onPress={() => setSeletorAnoAberto(false)} style={[styles.periodModalClose, { backgroundColor: Cores.pillFundo }]} accessibilityLabel="Fechar">
+                <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+            <View style={styles.yearGrid}>
+              {anosDisponiveis.map((optionYear) => {
+                const active = optionYear === anoSelecionado;
+                return (
+                  <TouchableOpacity
+                    key={optionYear}
+                    onPress={() => { setAnoSelecionado(optionYear); setMesProjSelecionado(optionYear === anoAtualNum ? mesAtualIdx : 0); setSeletorAnoAberto(false); }}
+                    style={[styles.yearOption, { borderColor: active ? novoTema.primary : Cores.borda, backgroundColor: active ? novoTema.primary : Cores.pillFundo }]}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                  >
+                    <Text style={[styles.yearOptionText, { color: active ? "#FFF" : Cores.textoPrincipal }]}>{optionYear}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </FinFlowPopup>
       <View style={[styles.header, { backgroundColor: novoTema.header }]}>
         <View style={styles.headerTitleRow}>
           <Text style={[styles.title, { color: "#FFF" }]}>Fluxo de caixa</Text>
@@ -421,8 +472,11 @@ export default function RelatoriosScreen() {
             <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.headerYearButton} accessibilityLabel="Ano anterior">
               <MaterialIcons name="chevron-left" size={20} color="#FFF" />
             </TouchableOpacity>
-            <MaterialIcons name="calendar-today" size={12} color="rgba(255,255,255,0.76)" />
-            <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
+            <TouchableOpacity onPress={() => setSeletorAnoAberto(true)} style={styles.headerPeriodButton} accessibilityRole="button" accessibilityLabel={`Selecionar ano. Ano atual ${anoSelecionado}`}>
+              <MaterialIcons name="calendar-today" size={12} color="rgba(255,255,255,0.76)" />
+              <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
+              <MaterialIcons name="arrow-drop-down" size={16} color="rgba(255,255,255,0.76)" />
+            </TouchableOpacity>
             <TouchableOpacity onPress={() => alterarAno(1)} style={styles.headerYearButton} accessibilityLabel="Próximo ano">
               <MaterialIcons name="chevron-right" size={20} color="#FFF" />
             </TouchableOpacity>
@@ -559,6 +613,7 @@ export default function RelatoriosScreen() {
 
           <View
             {...chartDragResponder.panHandlers}
+            onLayout={({ nativeEvent }) => setChartViewportWidth(nativeEvent.layout.width)}
             style={[
               styles.chartDragViewport,
               Platform.OS === "web" && ({ cursor: "grab" } as any),
@@ -886,6 +941,7 @@ const styles = StyleSheet.create({
   headerTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerYearSelector: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 3, paddingVertical: 2, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.15)" },
   headerYearButton: { width: 27, height: 27, alignItems: "center", justifyContent: "center", borderRadius: 14 },
+  headerPeriodButton: { minHeight: 32, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 5, borderRadius: 14 },
   headerPeriodText: { color: "#FFF", fontSize: 12, fontWeight: "700", minWidth: 35, textAlign: "center" },
   headerBalanceLabel: { color: "rgba(255,255,255,0.68)", fontSize: 10, lineHeight: 12, marginTop: 3 },
   headerBalanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 1 },
@@ -933,4 +989,13 @@ const styles = StyleSheet.create({
   detalheLabel: { flex: 1, fontSize: 11, lineHeight: 14 },
   detalheVal: { fontSize: 11, lineHeight: 14, fontWeight: "600" },
   detalheSep: { height: 1, marginVertical: 3 },
+  periodModalBackdrop: { flex: 1, justifyContent: "center", paddingHorizontal: 20, backgroundColor: "rgba(0,9,12,0.78)" },
+  periodModalCard: { width: "100%", maxWidth: 420, alignSelf: "center", borderWidth: 1, borderRadius: 24, padding: 18, elevation: 18 },
+  periodModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 },
+  periodModalEyebrow: { fontSize: 10, lineHeight: 13, fontWeight: "900", letterSpacing: 1.2 },
+  periodModalTitle: { marginTop: 3, fontSize: 20, lineHeight: 25, fontWeight: "900" },
+  periodModalClose: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22 },
+  yearGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  yearOption: { width: "30.8%", minHeight: 46, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 13 },
+  yearOptionText: { fontSize: 14, fontWeight: "800" },
 });
