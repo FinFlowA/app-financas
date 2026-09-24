@@ -955,6 +955,29 @@ Deno.test("contextNeeds busca os lancamentos quando a pergunta pede o maior/meno
   assert(followUp.monthlyExtremeTransaction, "continuacao 'E a menor?' precisa manter o calculo do extremo ligado via o historico concatenado");
 });
 
+Deno.test("contextNeeds busca o total por categoria em dois meses quando a pergunta compara com o mes passado", () => {
+  // Bug real: "Comparando com o mês passado, meus gastos com transporte
+  // aumentaram ou diminuíram?" respondeu que não tinha os dados do mês
+  // anterior -- nenhum agregado existente cobre "total de uma categoria em
+  // dois meses especificos" (categories_by_year soma o ANO inteiro por
+  // categoria; month_summary não abre por categoria).
+  const comparison = contextNeeds("Comparando com o mês passado, meus gastos com transporte aumentaram ou diminuíram?", true);
+  assert(comparison.categoryMonthComparison, "pergunta de comparacao com o mes passado precisa buscar o total por categoria dos dois meses");
+
+  const comparisonAlt = contextNeeds("Minha receita de salário subiu ou caiu em relação ao mês anterior?", true);
+  assert(comparisonAlt.categoryMonthComparison, "'mes anterior' e outros verbos de variacao (subiu/caiu) tambem devem acionar a comparacao");
+
+  // Só "mês passado" sozinho (sem verbo de comparação) não é o suficiente
+  // -- pode ser só uma pergunta pelo total do mês anterior, sem comparar.
+  const justPreviousMonth = contextNeeds("Quanto eu gastei com transporte no mês passado?", true);
+  assert(!justPreviousMonth.categoryMonthComparison, "pergunta so pelo total do mes passado, sem verbo de comparacao, nao deveria acionar a comparacao");
+
+  // E um verbo de comparação sozinho, sem menção ao mês passado/anterior,
+  // também não deveria acionar (ex.: comparar duas categorias entre si).
+  const compareCategories = contextNeeds("Comparando categoria de alimentação com transporte, qual é maior?", true);
+  assert(!compareCategories.categoryMonthComparison, "comparacao sem mencionar o mes passado/anterior nao deveria acionar a comparacao de meses");
+});
+
 Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes sobre o mes atual", () => {
   // Bug real: a amostra de relevant_transactions sempre ordenava por
   // proximidade a HOJE, mesmo perguntando por um mes diferente do atual.
