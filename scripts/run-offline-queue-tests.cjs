@@ -420,7 +420,16 @@ async function run() {
   const syncSource = fs.readFileSync(path.join(root, "lib", "offline-sync.ts"), "utf8");
   assert.match(syncSource, /Salvo no dispositivo\. Sincronizaremos automaticamente quando a conexão voltar\./);
   assert.match(syncSource, /IS_LOCAL_DEMO/);
-  assert.match(syncSource, /sincronizarAcoesOffline\(executor\)/);
+  assert.match(
+    syncSource,
+    /export async function sincronizarFilaFinanceiraOffline\(\): Promise<OfflineSyncSummary \| null> \{\s*return null;\s*\}/,
+    "A sincronizacao offline deve permanecer desativada no app.",
+  );
+  assert.doesNotMatch(
+    syncSource,
+    /sincronizarAcoesOffline\(executor\)/,
+    "O app nao deve voltar a processar automaticamente a fila offline.",
+  );
   assert.match(syncSource, /if \(!item \|\| !canRemoveOfflineQueueItem\(item\)\) return false/,
     "A camada de serviço deve impedir a remoção de itens que ainda aguardam sincronização.");
 
@@ -434,20 +443,10 @@ async function run() {
   const settingsSource = fs.readFileSync(path.join(root, "app", "(tabs)", "configuracoes.tsx"), "utf8");
   assert.match(settingsSource, /limparFilaFinanceiraDoUsuario\(meuId\)/,
     "Exclusão explícita da conta deve remover sua fila local.");
-  const panelStart = settingsSource.indexOf("{modalFilaOfflineVisivel && (");
-  const panelEnd = settingsSource.indexOf("{modalPreferenciasNotificacoes && (", panelStart);
-  assert(panelStart >= 0 && panelEnd > panelStart, "O modal da fila offline deve existir em Ajustes.");
-  const panelSource = settingsSource.slice(panelStart, panelEnd);
-  assert.match(panelSource, /Sincronizar agora/);
-  assert.match(panelSource, /resumoFilaOffline\.queued/);
-  assert.match(panelSource, /resumoFilaOffline\.failed/);
-  assert.match(panelSource, /confirmarRemocaoItemOffline\(item\)/);
-  assert.match(settingsSource, /Esta ação local será descartada e não chegará ao servidor/,
-    "Remover uma falha exige confirmação destrutiva explícita.");
-  assert.doesNotMatch(panelSource, /payload|lastErrorCode|idempotencyKey|userId/,
-    "O painel não pode acessar nem renderizar dados internos da fila.");
-  assert.doesNotMatch(panelSource, /Limpar tudo|limparAcoesOfflineDoUsuarioAtual/,
-    "O painel não pode oferecer limpeza total silenciosa.");
+  assert.match(settingsSource, /\{false && <>\{\/\* SINCRONIZA/,
+    "A secao de sincronizacao offline deve permanecer oculta em Ajustes.");
+  assert.match(settingsSource, /\{false && modalFilaOfflineVisivel && \(/,
+    "O modal da fila offline nao deve ser renderizado.");
 
   const creationSources = [
     path.join(root, "app", "(tabs)", "index.tsx"),
