@@ -1301,6 +1301,14 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   const summaryDomain = /(resumo|balanco|resultado|como estao|minha situacao|visao geral)/.test(normalized);
   const transactionMutation = mutation && /(lanc|transa|receita|despesa|transfer|concl|reabr|pague|pagamento)/.test(normalized);
   const spendingDomain = /(gasto|despesa|categoria|orcament|balanco|resultado|resumo|econom)/.test(normalized);
+  // "Maior/menor gasto/despesa/receita/compra" pede o lançamento
+  // individual específico (ex.: qual foi a única compra mais cara do mês),
+  // não o agregado por categoria. "gasto" sozinho só ativava categoryDomain
+  // (agregado), então o contexto nunca trazia relevant_transactions e o
+  // modelo não tinha como identificar qual lançamento foi o maior -- bug
+  // real: "Qual foi meu maior gasto em agosto?" respondia que os
+  // lançamentos completos do mês não estavam disponíveis.
+  const superlativeTransactionDomain = /\b(?:maior|menor|mais car[oa]|mais barat[oa])\b.{0,25}\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b|\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b.{0,25}\b(?:maior|menor)\b/.test(normalized);
   // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
@@ -1338,7 +1346,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
     route,
     invoiceData: cardDomain || spendingDomain || (analyticsAllowed && categoryDomain),
     invoiceDetails: cardDomain,
-    transactionDetails: historyDomain || transactionMutation || goalDomain || cardDomain || cashFlowDomain || calendarDomain,
+    transactionDetails: historyDomain || transactionMutation || goalDomain || cardDomain || cashFlowDomain || calendarDomain || superlativeTransactionDomain,
     monthlyCashFlow: cashFlowDomain,
     dailyCashFlow: cashFlowDomain || calendarDomain,
     categoryAnalytics: analyticsAllowed && (categoryDomain || summaryDomain),
