@@ -62,7 +62,15 @@ const MAX_SCOPE_RETRY_ATTEMPTS = 1;
 // sistema absorve essa espera sozinho em vez de expor o erro ou depender do
 // usuário espaçar os envios manualmente.
 const RATE_LIMIT_RETRY_CODES = new Set(["AI_RATE_LIMITED", "AI_TEMPORARILY_PAUSED", "AI_PROVIDER_RATE_LIMITED"]);
-const RATE_LIMIT_BACKOFF_MS = 1_500;
+// Uma única espera de 1,5s nem sempre bastava: confirmado em produção que
+// duas tentativas seguidas (a chamada inicial e a única espera+retentativa)
+// devolveram AI_PROVIDER_RATE_LIMITED em sequência, obrigando o usuário a
+// reenviar a mesma pergunta manualmente. O teto de tokens/minuto da Groq é
+// compartilhado por toda a base e sua janela pode levar dezenas de segundos
+// para liberar espaço. Um backoff crescente ao longo de até ~18s cobre a
+// maioria dos picos transitórios sem expor o erro, mantendo o total baixo o
+// bastante para não parecer que o app travou (a tela já mostra "digitando").
+const RATE_LIMIT_BACKOFF_SCHEDULE_MS = [1_500, 3_000, 5_000, 8_000];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -1264,19 +1272,20 @@ Deno.serve(async (req) => {
     // compartilhado, não um problema com a pergunta em si -- confirmado em
     // produção que a chamada INICIAL (não só a tentativa extra de escopo, já
     // tratada mais abaixo) pode esbarrar nisso e devolver
-    // AI_PROVIDER_RATE_LIMITED direto ao usuário. Uma única espera+nova
-    // tentativa aqui evita expor esse detalhe interno sem custar uma segunda
-    // reserva de cota: é a mesma chamada, não uma tentativa de classificação.
-    let usedRateLimitBackoff = false;
+    // AI_PROVIDER_RATE_LIMITED direto ao usuário. Uma espera+nova tentativa
+    // ao longo de todo o RATE_LIMIT_BACKOFF_SCHEDULE_MS evita expor esse
+    // detalhe interno sem custar uma segunda reserva de cota: é a mesma
+    // chamada, não uma tentativa de classificação.
+    let rateLimitRetryIndex = 0;
     while (true) {
       try {
         modelResult = await requestModel(prompt, history, safetyId);
         break;
       } catch (providerError) {
         const providerErrorCode = monitoringErrorCode(providerError, "AI_PROVIDER_FAILED");
-        if (RATE_LIMIT_RETRY_CODES.has(providerErrorCode) && !usedRateLimitBackoff) {
-          usedRateLimitBackoff = true;
-          await sleep(RATE_LIMIT_BACKOFF_MS);
+        if (RATE_LIMIT_RETRY_CODES.has(providerErrorCode) && rateLimitRetryIndex < RATE_LIMIT_BACKOFF_SCHEDULE_MS.length) {
+          await sleep(RATE_LIMIT_BACKOFF_SCHEDULE_MS[rateLimitRetryIndex]);
+          rateLimitRetryIndex += 1;
           continue;
         }
         const providerMetadata = providerFailureMetadata(providerError);
@@ -1337,10 +1346,11 @@ Deno.serve(async (req) => {
       // Uma tentativa extra pode esbarrar num limite de taxa transitório
       // (nosso ou da Groq) mesmo quando a pergunta em si está correta --
       // confirmado em produção. Isso não é o mesmo problema que motivou a
-      // tentativa extra (classificação errada), então ganha uma única
-      // rodada de espera+nova tentativa própria, silenciosa, sem consumir
-      // outra iteração de retryAttempt nem expor o motivo ao usuário.
-      let rateLimitBackoffUsed = false;
+      // tentativa extra (classificação errada), então ganha sua própria
+      // rodada de espera+nova tentativa ao longo do
+      // RATE_LIMIT_BACKOFF_SCHEDULE_MS, silenciosa, sem consumir outra
+      // iteração de retryAttempt nem expor o motivo ao usuário.
+      let rateLimitRetryIndex = 0;
       innerAttempt:
       while (true) {
         const retryStartedAt = Date.now();
@@ -1386,9 +1396,9 @@ Deno.serve(async (req) => {
               errorCode,
             }).catch(() => undefined);
           }
-          if (RATE_LIMIT_RETRY_CODES.has(errorCode) && !rateLimitBackoffUsed) {
-            rateLimitBackoffUsed = true;
-            await sleep(RATE_LIMIT_BACKOFF_MS);
+          if (RATE_LIMIT_RETRY_CODES.has(errorCode) && rateLimitRetryIndex < RATE_LIMIT_BACKOFF_SCHEDULE_MS.length) {
+            await sleep(RATE_LIMIT_BACKOFF_SCHEDULE_MS[rateLimitRetryIndex]);
+            rateLimitRetryIndex += 1;
             continue innerAttempt;
           }
           // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
