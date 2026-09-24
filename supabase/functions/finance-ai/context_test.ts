@@ -6,6 +6,7 @@ import {
   financialSnapshotFromAggregate,
   informationalRequest,
   MAX_PROVIDER_CONTEXT_CHARS,
+  MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
   redactSensitiveText,
   selectedMonth,
   selectRelevantRows,
@@ -785,6 +786,108 @@ Deno.test("rede de seguranca final nunca deixa o contexto financeiro falhar por 
   assert(encoded.length <= MAX_PROVIDER_CONTEXT_CHARS, "a rede de seguranca final precisa garantir que o contexto sempre caiba");
   const parsed = JSON.parse(encoded);
   assert(parsed.context_budget.truncated === true, "o contexto reduzido pela rede de seguranca ainda precisa ser sinalizado como truncado");
+});
+
+Deno.test("teto somente-leitura mais largo preserva categories e recent_week_category_totals para uma conta bem movimentada", () => {
+  // Bug real em producao: "Quanto eu gastei com alimentacao na ultima
+  // semana?" respondia que nao havia dados, mesmo com lancamentos reais no
+  // banco (confirmados por SQL direto: 3 lancamentos somando R$68 na
+  // categoria). finance_ai_debug_log confirmou categoriesCount=0 e
+  // hasRecentWindow=false para essa pergunta -- a rede de seguranca final de
+  // serializeContextWithinBudget tinha zerado categories e derrubado
+  // recent_week_category_totals por completo. Causa raiz: relevant_transactions
+  // sozinho pode passar de dezenas de milhares de caracteres (compactTransaction
+  // tem mais de 20 campos por linha, incluindo nomes de conta e categoria) para
+  // uma conta com uso normal (varios lancamentos recorrentes "(Fixa)" no mes,
+  // como o usuario real tinha). Combinado com scenario_candidates (recorrencias
+  // futuras) e o escopo de contas, o total bruto pode superar em muito o teto
+  // de MAX_PROVIDER_CONTEXT_CHARS (4K, calibrado para o prompt operacional, que
+  // fica perto do proprio teto do provedor) mesmo depois de reduzir tudo ao
+  // minimo -- o que nunca deveria acontecer no caminho somente-leitura, que tem
+  // prompt bem menor e sobra de orcamento nao usada.
+  const categoryNames = ["Alimentação", "Educação", "Lazer", "Moradia", "Outros", "Renda Extra", "Salário", "Saúde", "Tecnologia", "Transporte", "Assinaturas"];
+  const descriptions = ["Mercado", "Café", "Uber", "Farmacia", "Spotify", "EMTU", "Almoço", "McDonald's", "Aluguel", "Internet (Fixa)"];
+  const relevantTransactions = Array.from({ length: 80 }, (_, index) => ({
+    id: 8_000 + index,
+    type: index % 5 === 0 ? "receita" : "despesa",
+    value: 9.25 + index,
+    description: descriptions[index % descriptions.length],
+    status: "paga",
+    scheduled_date: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+    realization_date: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+    account: "Banco do Brasil",
+    account_id: 69,
+    category: categoryNames[index % categoryNames.length],
+    category_id: 300 + (index % categoryNames.length),
+    internal_transfer: false,
+    destination_account_id: null,
+    destination_account: null,
+    goal_id: null,
+    goal: null,
+    goal_operation: null,
+    series_id: null,
+    invoice_payment: false,
+    invoice_payment_card_id: null,
+    invoice_payment_month: null,
+    invoice_payment_mode: null,
+  }));
+  const scenarioCandidates = Array.from({ length: 120 }, (_, index) => ({
+    id: 9_000 + index,
+    type: "despesa",
+    value: 12.5,
+    description: "Refrigerante (Fixa semanal)",
+    status: "pendente",
+    scheduled_date: `2026-09-0${(index % 9) + 1}`,
+    realization_date: null,
+  }));
+  const context = {
+    current_date: "2026-09-24",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "free",
+    analytics_allowed: true,
+    personal_data_included: true,
+    // account_ids reflete todas as contas ativas da rede compartilhada do
+    // usuario, nao so as proprias -- nao tem corte proprio em nenhum passo de
+    // trimArray, entao sozinho ja contribui um bom pedaco do orcamento.
+    scope: { type: "active_accounts", account_ids: Array.from({ length: 300 }, (_, index) => index + 1), all_active_account_balance: 119.87 },
+    dataset_complete: { transactions: true, invoice_items: true },
+    month_summary: { current_account_balance: 119.87, predicted_end_balance: 40 },
+    monthly_cash_flow: [],
+    daily_cash_flow: [],
+    market_indicators: null,
+    accounts: [1, 2, 3, 4].map((id) => ({ id, name: `Conta ${id}`, active: true, balance: 30, shared: false, owned_by_user: true, can_update: true })),
+    categories: categoryNames.map((name, index) => ({ id: 300 + index, name, type: index % 2 === 0 ? "despesa" : "receita", active: true, owned_by_user: true, can_update: true })),
+    goals: [],
+    cards: [],
+    relevant_transactions: relevantTransactions,
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: scenarioCandidates,
+    recent_week_category_totals: {
+      start_date: "2026-09-18",
+      end_date: "2026-09-24",
+      by_category: [{ category: "Alimentação", total: 68 }],
+    },
+  };
+
+  // Prova que o cenario realmente estoura o teto apertado -- confirma que o
+  // bug era real e nao um artefato do teste (sem isso, a asserção abaixo
+  // passaria mesmo sem o corte causar dano nenhum).
+  const encodedOperational = serializeContextWithinBudget(context, MAX_PROVIDER_CONTEXT_CHARS);
+  const parsedOperational = JSON.parse(encodedOperational);
+  assert(parsedOperational.categories.length === 0, "o cenario de teste precisa reproduzir o colapso real (categories zerado) no teto de 4K");
+  assert(!parsedOperational.recent_week_category_totals, "o cenario de teste precisa reproduzir a perda de recent_week_category_totals no teto de 4K");
+
+  const encodedReadOnly = serializeContextWithinBudget(context, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY);
+  assert(encodedReadOnly.length <= MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY, "o contexto somente-leitura excedeu seu proprio teto");
+  const parsedReadOnly = JSON.parse(encodedReadOnly);
+  assert(Array.isArray(parsedReadOnly.categories) && parsedReadOnly.categories.length > 0, "categories nao pode ser zerado no teto somente-leitura para essa mesma conta");
+  assert(
+    parsedReadOnly.recent_week_category_totals?.by_category?.some((row: { category: string }) => row.category === "Alimentação"),
+    "recent_week_category_totals precisa sobreviver ao corte no teto somente-leitura",
+  );
 });
 
 Deno.test("contextNeeds busca os lancamentos quando a pergunta pede quais despesas/receitas, nao so o total", () => {

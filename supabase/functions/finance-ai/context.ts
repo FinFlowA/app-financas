@@ -32,7 +32,17 @@ const CARD_LIMIT = 200;
 // Mantém os agregados e os recursos mais relevantes dentro do teto de 8K TPM
 // da Groq. Quando necessário, os sinalizadores dataset_complete orientam a IA a
 // pedir um filtro em vez de inventar uma conclusão abrangente.
+// O contrato operacional completo (buildSystemPrompt) já ocupa boa parte do
+// teto de MODEL_MAX_SYSTEM_PROMPT_CHARS sozinho, então esse valor precisa
+// ficar apertado nesse caminho. O prompt somente-leitura é bem menor: usar o
+// mesmo teto de 4K aqui desperdiçava a folga e derrubava recursos baratos e
+// essenciais (categories, recent_week_category_totals) para uma conta com
+// poucos anos de histórico -- confirmado em produção via
+// finance_ai_debug_log: categoriesCount=0 numa pergunta com dado real no
+// banco, porque o agregado bruto (finance_ai_context_snapshot) já passava de
+// 9 mil caracteres sozinho e a rede de segurança final zera categories.
 export const MAX_PROVIDER_CONTEXT_CHARS = 4_000;
+export const MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY = 8_000;
 const ACCOUNT_TRANSFER_DESTINATION = /\s*\[Destino:(\d+)\]\s*$/;
 const GOAL_TRANSFER = /\[Objetivo:(\d+):(guardar|resgatar)\]\s*$/;
 const SERIES_METADATA = /\[Serie:([A-Za-z0-9_-]+)\]/;
@@ -1558,6 +1568,7 @@ export async function buildFinancialContext(
   requestContext = "",
   currentUserId = "",
   currentMessage = requestContext,
+  maxContextCharacters = MAX_PROVIDER_CONTEXT_CHARS,
 ): Promise<FinancialContext> {
   const analyticsAllowed = !limitsEnabled || plan === "premium";
   const currentDate = currentDateInSaoPaulo();
@@ -2006,7 +2017,7 @@ export async function buildFinancialContext(
   };
 
   return {
-    compactJson: serializeContextWithinBudget(compact),
+    compactJson: serializeContextWithinBudget(compact, maxContextCharacters),
     analyticsAllowed,
   };
 }
