@@ -942,6 +942,17 @@ Deno.test("contextNeeds busca os lancamentos quando a pergunta pede o maior/meno
   const categoryBreakdown = contextNeeds("Como estão meus gastos por categoria?", true);
   assert(!categoryBreakdown.transactionDetails, "pergunta agregada por categoria nao deveria exigir os lancamentos individuais");
   assert(!categoryBreakdown.monthlyExtremeTransaction, "pergunta agregada por categoria nao deveria calcular o extremo do mes");
+
+  // Bug real (continuação): depois de responder o maior gasto de agosto, a
+  // pergunta de acompanhamento "E a menor?" não repete "gasto"/"despesa" e
+  // cai fora do padrão isolado -- mas o histórico concatenado (requestContext)
+  // ainda carrega "maior gasto...agosto" da pergunta anterior, e é isso que
+  // precisa manter monthlyExtremeTransaction ligado nessa continuação
+  // (monthlyExtremeTransactionAnswer, em index.ts, decide sozinho se ainda
+  // faz sentido responder com base na mensagem atual e na anterior).
+  const followUpRequestContext = "Qual foi o meu maior gasto no mês de agosto?\nContinuação do usuário: E a menor?";
+  const followUp = contextNeeds(followUpRequestContext, true, "E a menor?");
+  assert(followUp.monthlyExtremeTransaction, "continuacao 'E a menor?' precisa manter o calculo do extremo ligado via o historico concatenado");
 });
 
 Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes sobre o mes atual", () => {
