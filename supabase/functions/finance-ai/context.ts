@@ -1378,11 +1378,16 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   // lançamentos completos do mês não estavam disponíveis.
   const superlativeTransactionPattern = /\b(?:maior|menor|mais car[oa]|mais barat[oa])\b.{0,25}\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b|\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b.{0,25}\b(?:maior|menor|mais car[oa]|mais barat[oa])\b/;
   const superlativeTransactionDomain = superlativeTransactionPattern.test(normalized);
-  // O agregado (fetchMonthlyExtremeTransactions) só vale a pena buscar
-  // quando a pergunta ATUAL pede o extremo, não em qualquer continuação da
-  // conversa que ainda carregue "maior gasto" no histórico concatenado --
-  // mesmo motivo de marketIndicatorQuery usar currentNormalized.
-  const monthlyExtremeTransaction = superlativeTransactionPattern.test(currentNormalized);
+  // Ao contrário de marketIndicatorQuery, o agregado precisa continuar
+  // disponível numa continuação curta ("E a menor?" depois de "Qual foi o
+  // meu maior gasto em agosto?") que não repete "gasto"/"despesa" — bug
+  // real: sem isso, a pergunta de acompanhamento nem buscava
+  // month_extreme_transactions e caía inteiramente para o modelo, que a
+  // classificou como fora de escopo. monthlyExtremeTransactionAnswer() (em
+  // index.ts) resolve o tipo/direção priorizando a pergunta ATUAL e só usa
+  // a mensagem anterior como reforço quando a atual não é suficiente, então
+  // manter isto ligado ao histórico concatenado é seguro.
+  const monthlyExtremeTransaction = superlativeTransactionDomain;
   // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa

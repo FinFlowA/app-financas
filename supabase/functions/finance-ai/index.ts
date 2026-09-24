@@ -258,22 +258,57 @@ function displayDateBR(isoDate: string): string {
   return `${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
 }
 
+// "Qual foi o meu maior gasto em agosto?" seguido de "E a menor?" -- a
+// direção muda mas a pergunta de acompanhamento não repete "gasto"/
+// "despesa". Resolve cada campo (direção, tipo) pela pergunta ATUAL
+// primeiro; só recorre à mensagem anterior quando a atual não decide
+// sozinha (nenhuma palavra do par apareceu) -- nunca quando a atual já é
+// ambígua sozinha (as duas palavras do par apareceram nela).
+function resolveFromCurrentThenPrevious(
+  currentNormalized: string,
+  previousNormalized: string,
+  patternA: RegExp,
+  patternB: RegExp,
+): boolean | null {
+  const currentA = patternA.test(currentNormalized);
+  const currentB = patternB.test(currentNormalized);
+  if (currentA !== currentB) return currentA;
+  if (currentA && currentB) return null;
+  const previousA = patternA.test(previousNormalized);
+  const previousB = patternB.test(previousNormalized);
+  return previousA !== previousB ? previousA : null;
+}
+
 // month_extreme_transactions (ver context.ts) já calcula no banco o
 // lançamento de maior/menor valor do mês em foco. relevant_transactions
 // cabe só uma amostra limitada por orçamento de contexto — um mês ativo
 // pode ter bem mais lançamentos que essa amostra, e o de maior/menor valor
 // podia nem estar nela (confirmado em produção: "Qual foi meu maior gasto
 // em agosto?" com um mês de 79 lançamentos, dos quais só ~24 cabiam na
-// amostra). Resolve o tipo (despesa/receita) e a direção (maior/menor)
-// pela pergunta ATUAL e monta a frase a partir do valor já calculado, sem
-// depender do modelo escolher entre uma lista parcial.
-function monthlyExtremeTransactionAnswer(compactJson: string, normalizedMessage: string): string | null {
-  const isMax = /\b(?:maior|mais car[oa])\b/.test(normalizedMessage);
-  const isMin = /\b(?:menor|mais barat[oa])\b/.test(normalizedMessage);
-  if (isMax === isMin) return null;
-  const isExpense = /\b(?:gasto|despesa|compra)\b/.test(normalizedMessage);
-  const isIncome = /\breceita\b/.test(normalizedMessage);
-  if (isExpense === isIncome) return null;
+// amostra). Resolve o tipo (despesa/receita) e a direção (maior/menor) e
+// monta a frase a partir do valor já calculado, sem depender do modelo
+// escolher entre uma lista parcial.
+function monthlyExtremeTransactionAnswer(compactJson: string, normalizedMessage: string, previousNormalizedMessage: string): string | null {
+  // A mensagem anterior só preenche o que falta numa continuação real; se a
+  // pergunta ATUAL não tiver nenhuma palavra do assunto (nem direção, nem
+  // tipo), não é uma continuação -- é um pedido novo e não relacionado, que
+  // não pode herdar "maior"/"despesa" de uma pergunta antiga só porque ela
+  // ficou nas últimas mensagens (bug real: "Quanto gastei no Uber?" logo
+  // após "Qual foi o meu maior gasto em agosto?" respondia com o maior
+  // gasto do mês inteiro, ignorando a pergunta sobre Uber).
+  const currentHasAnySignal = /\b(?:maior|menor|mais car[oa]|mais barat[oa]|gasto|despesa|compra|receita)\b/.test(normalizedMessage);
+  if (!currentHasAnySignal) return null;
+  const isMax = resolveFromCurrentThenPrevious(
+    normalizedMessage, previousNormalizedMessage,
+    /\b(?:maior|mais car[oa])\b/, /\b(?:menor|mais barat[oa])\b/,
+  );
+  if (isMax === null) return null;
+  const isExpense = resolveFromCurrentThenPrevious(
+    normalizedMessage, previousNormalizedMessage,
+    /\b(?:gasto|despesa|compra)\b/, /\breceita\b/,
+  );
+  if (isExpense === null) return null;
+  const isIncome = !isExpense;
   let parsed: JsonRecord;
   try {
     parsed = asObject(JSON.parse(compactJson));
@@ -1478,7 +1513,8 @@ Deno.serve(async (req) => {
         output = { kind: "answer", intent: "financial_summary", message: safeWeeklySpendMessage, missing_fields: [], data: [] };
         outputMessage = safeWeeklySpendMessage;
       } else {
-        const extremeMessage = monthlyExtremeTransactionAnswer(financialContext.compactJson, normalizeText(message));
+        const previousUserMessage = history.slice(0, -1).filter((item) => item.role === "user").at(-1)?.content ?? "";
+        const extremeMessage = monthlyExtremeTransactionAnswer(financialContext.compactJson, normalizeText(message), normalizeText(previousUserMessage));
         const safeExtremeMessage = extremeMessage
           ? safeAssistantMessage(extremeMessage, "financial_summary", "answer", outputCanary)
           : null;
