@@ -11,6 +11,7 @@ import {
   selectedMonth,
   selectRelevantRows,
   serializeContextWithinBudget,
+  transactionRelevanceSort,
   type FinancialRow,
 } from "./context.ts";
 
@@ -917,15 +918,59 @@ Deno.test("contextNeeds busca os lancamentos quando a pergunta pede o maior/meno
   // lançamentos individuais necessários para apontar qual foi o maior.
   const biggestExpense = contextNeeds("Qual foi o meu maior gasto no mês de agosto?", true);
   assert(biggestExpense.transactionDetails, "pergunta pelo maior gasto precisa trazer os lancamentos individuais do mes");
+  // Mesmo com os lancamentos individuais buscados, a amostra enviada ao
+  // modelo cabe só ~24-40 itens por orçamento de contexto (ver
+  // transactionRelevanceAnchor em buildFinancialContext) -- um mês ativo
+  // pode ter bem mais lançamentos que isso, e o de maior valor podia nem
+  // estar na amostra. monthlyExtremeTransaction aciona o calculo
+  // deterministico no banco (fetchMonthlyExtremeTransactions), que nao
+  // depende de amostra nenhuma.
+  assert(biggestExpense.monthlyExtremeTransaction, "pergunta pelo maior gasto precisa calcular o extremo do mes no banco, nao so amostrar lancamentos");
 
   const smallestExpense = contextNeeds("Qual foi minha menor despesa em setembro?", true);
   assert(smallestExpense.transactionDetails, "pergunta pela menor despesa tambem precisa trazer os lancamentos");
+  assert(smallestExpense.monthlyExtremeTransaction, "pergunta pela menor despesa tambem precisa do calculo deterministico do extremo");
 
   const mostExpensivePurchase = contextNeeds("Qual foi a compra mais cara do mês?", true);
   assert(mostExpensivePurchase.transactionDetails, "pergunta pela compra mais cara precisa trazer os lancamentos");
+  assert(mostExpensivePurchase.monthlyExtremeTransaction, "pergunta pela compra mais cara tambem precisa do calculo deterministico do extremo");
 
   // Uma pergunta agregada por categoria (sem pedir um lançamento específico)
-  // não precisa da lista individual — continua só com o agregado.
+  // não precisa da lista individual nem do extremo — continua só com o
+  // agregado.
   const categoryBreakdown = contextNeeds("Como estão meus gastos por categoria?", true);
   assert(!categoryBreakdown.transactionDetails, "pergunta agregada por categoria nao deveria exigir os lancamentos individuais");
+  assert(!categoryBreakdown.monthlyExtremeTransaction, "pergunta agregada por categoria nao deveria calcular o extremo do mes");
+});
+
+Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes sobre o mes atual", () => {
+  // Bug real: a amostra de relevant_transactions sempre ordenava por
+  // proximidade a HOJE, mesmo perguntando por um mes diferente do atual.
+  // Como o mes perguntado fica sempre mais distante de hoje que o mes
+  // atual, seus lancamentos nunca entravam nem no preenchimento inicial
+  // (top 24) -- confirmado em producao: uma conta com 79 lancamentos em
+  // agosto e hoje em 24/09 tinha ZERO lancamentos de agosto nos 24
+  // primeiros ao ordenar por proximidade a hoje. Ancorar num dia do mes em
+  // foco (ex.: 15) resolve isso sem quebrar o caso comum (mes em foco =
+  // mes atual, onde o comportamento e identico a antes).
+  const rows: FinancialRow[] = [
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: 100 + index,
+      tipo: "despesa",
+      valor: 10,
+      status: "paga",
+      data_vencimento: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+      data_realizacao: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+    })),
+    { id: 1, tipo: "despesa", valor: 559.99, status: "paga", data_vencimento: "2026-08-10", data_realizacao: "2026-08-06" },
+    { id: 2, tipo: "despesa", valor: 14, status: "paga", data_vencimento: "2026-08-02", data_realizacao: "2026-08-02" },
+  ];
+
+  const sortedByToday = [...rows].sort(transactionRelevanceSort("2026-09-24"));
+  const augustInTop24ByToday = sortedByToday.slice(0, 24).filter((row) => String(row.data_vencimento).startsWith("2026-08")).length;
+  assert(augustInTop24ByToday === 0, "ancorado em hoje, nenhum lancamento de agosto deveria caber nos 24 primeiros (reproduz o bug)");
+
+  const sortedByFocusMonth = [...rows].sort(transactionRelevanceSort("2026-08-15"));
+  const augustInTop24ByFocusMonth = sortedByFocusMonth.slice(0, 24).filter((row) => String(row.data_vencimento).startsWith("2026-08")).length;
+  assert(augustInTop24ByFocusMonth === 2, "ancorado no meio do mes em foco, os 2 lancamentos de agosto devem caber nos 24 primeiros");
 });

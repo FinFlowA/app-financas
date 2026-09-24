@@ -249,6 +249,55 @@ function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: strin
   return `Na última semana você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
 }
 
+const MONTH_NAMES_PT: readonly string[] = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+
+function displayDateBR(isoDate: string): string {
+  return `${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
+}
+
+// month_extreme_transactions (ver context.ts) já calcula no banco o
+// lançamento de maior/menor valor do mês em foco. relevant_transactions
+// cabe só uma amostra limitada por orçamento de contexto — um mês ativo
+// pode ter bem mais lançamentos que essa amostra, e o de maior/menor valor
+// podia nem estar nela (confirmado em produção: "Qual foi meu maior gasto
+// em agosto?" com um mês de 79 lançamentos, dos quais só ~24 cabiam na
+// amostra). Resolve o tipo (despesa/receita) e a direção (maior/menor)
+// pela pergunta ATUAL e monta a frase a partir do valor já calculado, sem
+// depender do modelo escolher entre uma lista parcial.
+function monthlyExtremeTransactionAnswer(compactJson: string, normalizedMessage: string): string | null {
+  const isMax = /\b(?:maior|mais car[oa])\b/.test(normalizedMessage);
+  const isMin = /\b(?:menor|mais barat[oa])\b/.test(normalizedMessage);
+  if (isMax === isMin) return null;
+  const isExpense = /\b(?:gasto|despesa|compra)\b/.test(normalizedMessage);
+  const isIncome = /\breceita\b/.test(normalizedMessage);
+  if (isExpense === isIncome) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const extremes = asObject(parsed.month_extreme_transactions);
+  const key = `${isIncome ? "income" : "expense"}_${isMax ? "max" : "min"}`;
+  const entry = asObject(extremes[key]);
+  const value = numberOrNull(entry.value);
+  const description = stringOrNull(entry.description);
+  const date = stringOrNull(entry.date);
+  const focusMonth = stringOrNull(parsed.focus_month);
+  const monthLabel = focusMonth && /^\d{4}-\d{2}$/.test(focusMonth)
+    ? ` em ${MONTH_NAMES_PT[Number(focusMonth.slice(5, 7)) - 1]}`
+    : "";
+  const noun = isIncome ? "receita" : "despesa";
+  if (value === null || !description || !date) {
+    return `Não encontrei nenhuma ${noun}${monthLabel} para identificar a ${isMax ? "maior" : "menor"}.`;
+  }
+  const superlative = isMax ? "maior" : "menor";
+  return `Sua ${superlative} ${noun}${monthLabel} foi "${description}", de ${formatMoneyBRL(value)}, em ${displayDateBR(date)}.`;
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1428,6 +1477,15 @@ Deno.serve(async (req) => {
       if (safeWeeklySpendMessage) {
         output = { kind: "answer", intent: "financial_summary", message: safeWeeklySpendMessage, missing_fields: [], data: [] };
         outputMessage = safeWeeklySpendMessage;
+      } else {
+        const extremeMessage = monthlyExtremeTransactionAnswer(financialContext.compactJson, normalizeText(message));
+        const safeExtremeMessage = extremeMessage
+          ? safeAssistantMessage(extremeMessage, "financial_summary", "answer", outputCanary)
+          : null;
+        if (safeExtremeMessage) {
+          output = { kind: "answer", intent: "financial_summary", message: safeExtremeMessage, missing_fields: [], data: [] };
+          outputMessage = safeExtremeMessage;
+        }
       }
     }
 
