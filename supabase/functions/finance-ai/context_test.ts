@@ -657,6 +657,51 @@ Deno.test("selectedMonth foca o mes de uma data DD/MM citada, mesmo fora do mes 
   assert(selectedMonth("Quanto vou ter em 2026-08-14?", currentMonth) === "2026-08", "data ISO completa continua funcionando");
 });
 
+Deno.test("selectedMonth prioriza a pergunta ATUAL sobre um mes citado so no historico", () => {
+  // Bug real: "Com base nos meus gastos deste mês, eu vou conseguir poupar
+  // R$ 500 até o dia 30?" focou agosto em vez de setembro (mes atual) --
+  // uma pergunta ANTERIOR na mesma conversa citava agosto, e a funcao
+  // varria o texto concatenado (historico + atual) sem dar prioridade
+  // nenhuma para a pergunta atual, que nem citava agosto e ainda dizia
+  // "deste mes" explicitamente.
+  const currentMonth = "2026-09";
+  const currentMessage = "Com base nos meus gastos deste mês, eu vou conseguir poupar R$ 500 até o dia 30?";
+  const requestContext = `Qual foi o meu maior gasto no mês de agosto?\nContinuação do usuário: ${currentMessage}`;
+  assert(
+    selectedMonth(requestContext, currentMonth, currentMessage) === currentMonth,
+    "'deste mes' na pergunta atual deveria vencer um mes citado so no historico",
+  );
+
+  // "este mes"/"esse mes"/"nesse mes" tambem devem ancorar no mes atual,
+  // mesmo sem nenhum historico contaminado -- nao eram reconhecidos antes.
+  assert(selectedMonth("Quanto gastei esse mês?", currentMonth) === currentMonth, "'esse mes' deveria resolver para o mes atual");
+  assert(selectedMonth("Como estão minhas contas neste mês?", currentMonth) === currentMonth, "'neste mes' deveria resolver para o mes atual");
+
+  // Continuidade legitima nao pode regredir: se a pergunta ATUAL nao cita
+  // nenhum mes nem "este mes", ainda deve herdar o mes do historico
+  // (mesmo comportamento de continuidade ja usado por outras perguntas).
+  const followUp = "E quanto sobrou depois disso?";
+  const historyWithAugust = `Qual foi meu maior gasto em agosto?\nContinuação do usuário: ${followUp}`;
+  assert(
+    selectedMonth(historyWithAugust, currentMonth, followUp) === "2026-08",
+    "continuacao sem sinal proprio de mes deveria continuar herdando o mes do historico",
+  );
+
+  // Isola a prioridade da pergunta ATUAL mesmo quando as DUAS mensagens
+  // citam um mes explícito (nao so "este mes"): antes desta correção, a
+  // função varria o texto concatenado e o loop de MONTHS_PT retornava o
+  // primeiro nome de mês encontrado na ordem do calendário (janeiro a
+  // dezembro) -- não o mais recente nem o da pergunta atual. Um "junho"
+  // qualquer no histórico vencia um "agosto" explícito na pergunta atual
+  // só por vir antes na ordem de iteração do objeto.
+  const currentAugust = "Quanto gastei em agosto?";
+  const historyWithJune = `Preciso revisar meu aluguel de junho.\nContinuação do usuário: ${currentAugust}`;
+  assert(
+    selectedMonth(historyWithJune, currentMonth, currentAugust) === "2026-08",
+    "mes explicito da pergunta ATUAL deve vencer outro mes explicito citado so no historico",
+  );
+});
+
 Deno.test("market_indicators cai primeiro no orcamento em vez de sacrificar contas por ~200 bytes", () => {
   // Reproduz o caso real: uma conversa sobre um objetivo ("Entrada casa")
   // que tambem menciona CDB (por isso ganha market_indicators) e tem varias

@@ -148,7 +148,14 @@ function currentDateInSaoPaulo(): string {
   }).format(new Date());
 }
 
-export function selectedMonth(request: string, fallback: string): string {
+// Bug real: "Com base nos meus gastos deste mês, eu vou conseguir poupar
+// R$ 500 até o dia 30?" focou agosto, não setembro (mês atual) -- a
+// pergunta atual nem citava agosto, mas uma pergunta anterior na mesma
+// conversa citava, e a função varria o texto concatenado (histórico +
+// atual) sem dar prioridade nenhuma à pergunta ATUAL. "deste mês" também
+// não era reconhecido como pedido explícito do mês corrente, então nada
+// impedia esse mês antigo de vazar por cima do fallback correto.
+function resolveMonthFrom(request: string, fallback: string): string | null {
   const normalized = normalize(request);
   const explicit = normalized.match(/\b(19\d{2}|20\d{2})-(0[1-9]|1[0-2])\b/);
   if (explicit) return `${explicit[1]}-${explicit[2]}`;
@@ -167,11 +174,16 @@ export function selectedMonth(request: string, fallback: string): string {
   // caía no mês em foco por padrão e respondia com os dados do mês atual.
   if (/\b(mes que vem|proximo mes|mes seguinte|mes que vira)\b/.test(normalized)) return nextMonth(fallback);
   if (/\b(mes passado|mes anterior|mes retrasado)\b/.test(normalized)) return previousMonth(fallback);
+  if (/\b(este mes|esse mes|deste mes|desse mes|nesse mes|neste mes|mes atual|mes corrente)\b/.test(normalized)) return fallback;
   const year = normalized.match(/\b(19\d{2}|20\d{2})\b/)?.[1] ?? fallback.slice(0, 4);
   for (const [name, month] of Object.entries(MONTHS_PT)) {
     if (new RegExp(`\\b${name}\\b`).test(normalized)) return `${year}-${month}`;
   }
-  return fallback;
+  return null;
+}
+
+export function selectedMonth(request: string, fallback: string, currentMessage = request): string {
+  return resolveMonthFrom(currentMessage, fallback) ?? resolveMonthFrom(request, fallback) ?? fallback;
 }
 
 function selectedDate(request: string, focusMonth: string): string | null {
@@ -1736,7 +1748,7 @@ export async function buildFinancialContext(
     };
   }
   const needs = contextNeeds(requestContext, analyticsAllowed, currentMessage);
-  const focusMonth = selectedMonth(requestContext, currentMonth);
+  const focusMonth = selectedMonth(requestContext, currentMonth, currentMessage);
   const years = selectedYears(requestContext, Number(currentMonth.slice(0, 4)));
   years.add(Number(focusMonth.slice(0, 4)));
   // A seleção de relevant_transactions usava sempre a proximidade com HOJE
