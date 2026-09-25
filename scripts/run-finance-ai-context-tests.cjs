@@ -77,6 +77,8 @@ async function main() {
     evaluateCommonJs(transpile("guard_security_test.ts"), financeAiRequire);
     evaluateCommonJs(transpile("prompt_test.ts"), (request) => {
       if (request === "./prompt.ts") return prompt;
+      if (request === "./context.ts") return context;
+      if (request === "./provider.ts") return provider;
       return financeAiRequire(request);
     });
     evaluateCommonJs(transpile("provider_test.ts"), (request) => {
