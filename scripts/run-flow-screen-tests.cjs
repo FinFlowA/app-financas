@@ -77,7 +77,7 @@ if (!newCategoryFlow.includes("styles.categoryOptionsGrid") || /<ScrollView\s+ho
 if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includes('offlineQueueList: { flex: 1')) {
   throw new Error("As acoes de notificacao e sincronizacao precisam permanecer alinhadas ao rodape.");
 }
-if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("64 + bottomInset")) {
+if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("FLOATING_BAR_HEIGHT + bottomInset + FLOATING_BAR_GAP")) {
   throw new Error("A barra de abas precisa reservar a area de navegacao do aparelho.");
 }
 if (!home.includes("transactionFormRef.current?.scrollTo") || !home.includes("transactionValueYRef.current")) {
