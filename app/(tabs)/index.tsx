@@ -2892,14 +2892,26 @@ export default function Dashboard() {
       {modalCatVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalCatVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.categoryModalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, styles.categoryModalContent, FinFlowShadow, { backgroundColor: Cores.cardFundo, borderWidth: 1, borderColor: Cores.borda }]}>
+            <View style={styles.categoryModalHeader}>
+              <View style={[styles.transactionHeaderIcon, { backgroundColor: corSelecionada }]}>
+                <MaterialIcons name={iconeSelecionado as any} size={23} color="#FFF" />
+              </View>
+              <View style={styles.transactionHeaderCopy}>
+                <Text style={[styles.transactionTitle, { color: Cores.textoPrincipal }]}>Nova categoria</Text>
+                <Text style={[styles.transactionSubtitle, { color: Cores.textoSecundario }]}>Escolha o tipo, nome, cor e ícone.</Text>
+              </View>
+              <TouchableOpacity style={[styles.transactionClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalCatVisivel(false)} accessibilityLabel="Fechar">
+                <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
             <ScrollView
               style={styles.categoryModalScroll}
               contentContainerStyle={styles.categoryModalBody}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Criar Categoria</Text>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Tipo</Text>
             <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
               <TouchableOpacity style={[styles.typeButton, tipoNovaCategoria === "despesa" && styles.expenseSelected]} onPress={() => setTipoNovaCategoria("despesa")}>
                 <Text style={[styles.typeButtonText, tipoNovaCategoria === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesas</Text>
@@ -2908,40 +2920,66 @@ export default function Dashboard() {
                 <Text style={[styles.typeButtonText, tipoNovaCategoria === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receitas</Text>
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Nome (ex: Lazer, Vendas)"
-              placeholderTextColor={Cores.textoSecundario}
-              value={nomeCategoria}
-              onChangeText={setNomeCategoria}
-            />
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-            <View style={styles.categoryOptionsGrid}>
-              {PALETA_CORES.map((cor) => (
-                <TouchableOpacity
-                  key={cor}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: corSelecionada === cor }}
-                  accessibilityLabel={`Selecionar cor ${cor}`}
-                  style={[styles.colorOption, styles.categoryColorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
-                  onPress={() => setCorSelecionada(cor)}
-                />
-              ))}
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Nome</Text>
+            <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}>
+              <MaterialIcons name="label" size={19} color={corSelecionada} />
+              <TextInput
+                style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]}
+                placeholder="Ex: Lazer, Vendas"
+                placeholderTextColor={Cores.textoSecundario}
+                value={nomeCategoria}
+                onChangeText={setNomeCategoria}
+              />
             </View>
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Cor</Text>
             <View style={styles.categoryOptionsGrid}>
-              {LISTA_ICONES.map((icone) => (
-                <TouchableOpacity
-                  key={icone}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: iconeSelecionado === icone }}
-                  accessibilityLabel={`Selecionar ícone ${icone}`}
-                  style={[styles.iconeOpcao, styles.categoryIconOption, { backgroundColor: iconeSelecionado === icone ? corSelecionada : Cores.pillFundo }]}
-                  onPress={() => setIconeSelecionado(icone)}
-                >
-                  <MaterialIcons name={icone as any} size={24} color={iconeSelecionado === icone ? "#FFF" : Cores.textoSecundario} />
-                </TouchableOpacity>
-              ))}
+              {PALETA_CORES.map((cor) => {
+                const selecionada = corSelecionada === cor;
+                return (
+                  <TouchableOpacity
+                    key={cor}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selecionada }}
+                    accessibilityLabel={`Selecionar cor ${cor}`}
+                    style={[styles.colorOption, styles.categoryColorOption, { backgroundColor: cor }]}
+                    onPress={() => setCorSelecionada(cor)}
+                  >
+                    {selecionada && <MaterialIcons name="check" size={18} color="#FFF" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Ícone</Text>
+            <View style={styles.categoryOptionsGrid}>
+              {LISTA_ICONES.map((icone) => {
+                const selecionado = iconeSelecionado === icone;
+                return (
+                  <TouchableOpacity
+                    key={icone}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selecionado }}
+                    accessibilityLabel={`Selecionar ícone ${icone}`}
+                    style={[styles.iconeOpcao, styles.categoryIconOption, { backgroundColor: selecionado ? corSelecionada : Cores.pillFundo }, selecionado && FinFlowShadow]}
+                    onPress={() => setIconeSelecionado(icone)}
+                  >
+                    <MaterialIcons name={icone as any} size={24} color={selecionado ? "#FFF" : Cores.textoSecundario} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Pré-visualização</Text>
+            <View style={[styles.categoryPreview, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <View style={[styles.categoryPreviewIcon, { backgroundColor: corSelecionada }]}>
+                <MaterialIcons name={iconeSelecionado as any} size={20} color="#FFF" />
+              </View>
+              <Text style={[styles.categoryPreviewName, { color: Cores.textoPrincipal }]} numberOfLines={1}>
+                {nomeCategoria.trim() || "Nome da categoria"}
+              </Text>
+              <View style={[styles.categoryPreviewBadge, { backgroundColor: tipoNovaCategoria === "despesa" ? "#E76F5122" : "#2A9D8F22" }]}>
+                <Text style={[styles.categoryPreviewBadgeText, { color: tipoNovaCategoria === "despesa" ? "#E76F51" : "#2A9D8F" }]}>
+                  {tipoNovaCategoria === "despesa" ? "Despesa" : "Receita"}
+                </Text>
+              </View>
             </View>
             </ScrollView>
             <View style={[styles.modalButtons, styles.categoryModalButtons]}>
@@ -3776,11 +3814,17 @@ const styles = StyleSheet.create({
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   categoryModalContent: { justifyContent: "flex-start", overflow: "hidden" },
+  categoryModalHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
   categoryModalScroll: { flex: 1, minHeight: 0 },
   categoryModalBody: { flexGrow: 1, paddingBottom: 8 },
   categoryOptionsGrid: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10, marginBottom: 20 },
-  categoryColorOption: { width: 40, height: 40, borderRadius: 20 },
+  categoryColorOption: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   categoryIconOption: { width: 46, height: 46, borderRadius: 12 },
+  categoryPreview: { flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, marginBottom: 6 },
+  categoryPreviewIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  categoryPreviewName: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: "800" },
+  categoryPreviewBadge: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
+  categoryPreviewBadgeText: { fontSize: 11, fontWeight: "800" },
   categoryModalButtons: { justifyContent: "space-between", gap: 12, marginTop: 8, paddingBottom: Platform.OS === "android" ? 24 : 12 },
   categoryActionButton: { flex: 1, minWidth: 0 },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
