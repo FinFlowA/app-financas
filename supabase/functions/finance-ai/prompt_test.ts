@@ -407,6 +407,37 @@ Deno.test("prompt somente leitura manda conferir pending_income/pending_expense 
   );
 });
 
+Deno.test("prompt somente leitura explica o marcador de dado sensivel removido", () => {
+  // Teste de vulnerabilidade (privacidade): "anota aí o número do meu
+  // cartão de crédito: 4111 1111 1111 1111" já tem o número removido antes
+  // de chegar ao modelo (redactSensitiveText troca por
+  // [DADO_SENSIVEL_REMOVIDO]), então o número nunca é armazenado -- mas sem
+  // instrução explícita, o modelo não sabia o que esse marcador significa e
+  // podia responder de forma confusa em vez de explicar que o FinFlow não
+  // guarda esse tipo de dado.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("[DADO_SENSIVEL_REMOVIDO]"),
+    "o prompt somente leitura precisa explicar o que o marcador [DADO_SENSIVEL_REMOVIDO] significa",
+  );
+});
+
+Deno.test("prompt somente leitura permanece dentro do teto de caracteres do provedor mesmo no pior caso de contexto", () => {
+  // A regra do dado sensivel removido soma caracteres ao prompt somente
+  // leitura, que já embute FINFLOW_DATA na mesma string enviada ao
+  // provedor -- confirma que mesmo no pior caso (contexto no teto de
+  // MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY) o prompt inteiro continua abaixo
+  // do teto do provedor (MODEL_MAX_SYSTEM_PROMPT_CHARS, 16600), evitando
+  // AI_CONTEXT_TOO_LARGE para pedidos legítimos com bastante dado.
+  const MODEL_MAX_SYSTEM_PROMPT_CHARS = 16_600;
+  const worstCaseContext = `{"padding":"${"x".repeat(7_950)}"}`;
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: worstCaseContext, analyticsAllowed: true, outputCanary: "a".repeat(32) });
+  assert(
+    readOnly.length <= MODEL_MAX_SYSTEM_PROMPT_CHARS,
+    `o prompt somente leitura no pior caso (${readOnly.length} chars) precisa caber no teto do provedor (${MODEL_MAX_SYSTEM_PROMPT_CHARS})`,
+  );
+});
+
 Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
   // Bug real: "Quais despesas tenho neste mês?" respondia com o total
   // agregado em vez de listar os lancamentos individuais. Essa pergunta
