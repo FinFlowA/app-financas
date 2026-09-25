@@ -467,18 +467,27 @@ function categorySpendRankingAnswer(compactJson: string, normalizedMessage: stri
     }
   }
 
-  const anyHighlight = top.some((row) => topTransactionByCategory.has(row.category));
-  const items = top.map((row) => {
-    const highlight = topTransactionByCategory.get(row.category);
-    const suffix = highlight
-      ? ` — maior gasto: ${highlight.description} (${formatMoneyBRL(highlight.value)}, ${displayDateBR(highlight.date)})`
-      : "";
-    return `${row.category} (${formatMoneyBRL(row.total)})${suffix}`;
-  }).join("; ");
-  const closing = anyHighlight
+  // A tela não renderiza markdown nem separa itens por hífen/travessão (ver
+  // prompt.ts) -- ela só destaca automaticamente valores/datas e quebra a
+  // mensagem em blocos visuais a cada limite de frase (". " seguido de
+  // maiúscula). Uma frase por categoria, sem travessão, aproveita essa
+  // quebra automática em vez de virar um parágrafo único cheio de ponto e
+  // vírgula.
+  const categoryList = top.map((row) => `${row.category} (${formatMoneyBRL(row.total)})`);
+  const summary = categoryList.length > 1
+    ? `${categoryList.slice(0, -1).join(", ")} e ${categoryList[categoryList.length - 1]}`
+    : categoryList[0];
+  const highlightSentences = top
+    .map((row) => {
+      const highlight = topTransactionByCategory.get(row.category);
+      if (!highlight) return null;
+      return `Em ${row.category}, o maior gasto foi ${highlight.description}, de ${formatMoneyBRL(highlight.value)}, em ${displayDateBR(highlight.date)}.`;
+    })
+    .filter((sentence): sentence is string => sentence !== null);
+  const closing = highlightSentences.length > 0
     ? "Considere revisar esses lançamentos primeiro."
     : "Considere cortar ou reduzir gastos nessas áreas primeiro.";
-  return `As categorias com maior gasto neste mês são: ${items}. ${closing}`;
+  return [`As categorias com maior gasto neste mês são ${summary}.`, ...highlightSentences, closing].join(" ");
 }
 
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
