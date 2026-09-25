@@ -8,6 +8,7 @@ import {
   MAX_PROVIDER_CONTEXT_CHARS,
   MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
   redactSensitiveText,
+  fetchCategoryTopTransactions,
   fetchMonthlyExtremeTransactions,
   selectedMonth,
   selectRelevantRows,
@@ -1032,19 +1033,26 @@ Deno.test("contextNeeds busca o total por categoria do mes quando a pergunta ped
   // que o ranking seja calculado de forma deterministica, direto do banco.
   const cutSpending = contextNeeds("Identifique três áreas onde eu posso cortar gastos para economizar no próximo mês.", true);
   assert(cutSpending.categoryMonthComparison, "pedido para cortar gastos por area precisa buscar os totais por categoria do mes");
+  // category_top_transactions (o maior lancamento genuino de cada
+  // categoria) so precisa ser buscado para o pedido de RANKING/corte, nao
+  // para uma comparacao simples de categoria entre meses.
+  assert(cutSpending.categorySpendRanking, "pedido para cortar gastos por area tambem precisa do maior lancamento por categoria");
 
   const reduceExpenses = contextNeeds("Onde eu posso reduzir minhas despesas?", true);
   assert(reduceExpenses.categoryMonthComparison, "'reduzir despesas' tambem deve acionar a busca dos totais por categoria");
+  assert(reduceExpenses.categorySpendRanking, "'reduzir despesas' tambem deve acionar a busca do maior lancamento por categoria");
 
   // Verbo de corte/reducao sozinho, sem falar de area/categoria/gasto, nao
   // deveria acionar (ex.: cortar um cartao, reduzir uma meta).
   const unrelatedVerb = contextNeeds("Quero cortar meu cartão de crédito adicional.", true);
   assert(!unrelatedVerb.categoryMonthComparison, "verbo de corte sem mencionar area/categoria/gasto nao deveria acionar o ranking");
+  assert(!unrelatedVerb.categorySpendRanking, "verbo de corte sem mencionar area/categoria/gasto nao deveria acionar a busca do maior lancamento");
 
   // Substantivo de area/gasto sozinho, sem verbo de corte/reducao, tambem
   // nao deveria acionar (ja coberto por outras necessidades, ex.: resumo).
   const unrelatedNoun = contextNeeds("Quais são minhas categorias de despesa?", true);
   assert(!unrelatedNoun.categoryMonthComparison, "substantivo de area/gasto sem verbo de corte/reducao nao deveria acionar o ranking");
+  assert(!unrelatedNoun.categorySpendRanking, "substantivo de area/gasto sem verbo de corte/reducao nao deveria acionar a busca do maior lancamento");
 });
 
 Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes sobre o mes atual", () => {
@@ -1110,4 +1118,39 @@ Deno.test("fetchMonthlyExtremeTransactions ignora transferencias, movimentacoes 
   assert(extremes!.expense_min?.value === 5, "o valor da menor despesa real deveria ser R$ 5,00, nao o aporte de R$ 1,00");
   assert(extremes!.expense_max?.description === "Denylson  (1/5)", "a maior despesa real deveria continuar sendo identificada normalmente");
   assert(extremes!.expense_max?.value === 559.99, "o valor da maior despesa deveria ser R$ 559,99");
+});
+
+Deno.test("fetchCategoryTopTransactions acha o maior lancamento genuino por categoria, ignorando transferencia/objetivo/fatura", async () => {
+  // "Identifique três áreas onde eu posso cortar gastos" listava só o total
+  // da categoria, sem indicar ONDE cortar de fato. Citar o maior lançamento
+  // de cada categoria precisa da mesma exclusão de transferência/objetivo/
+  // fatura de fetchMonthlyExtremeTransactions -- senão um aporte grande em
+  // objetivo categorizado por engano, por exemplo, podia virar o "maior
+  // gasto" citado de uma categoria.
+  const rows = [
+    { id: 1, categoria_id: 279, tipo: "despesa", valor: 900, descricao: "[Transf.] Guardar em: Viagem [Objetivo:12:guardar]", status: "paga", data_vencimento: "2026-09-05", data_realizacao: "2026-09-05" },
+    { id: 2, categoria_id: 279, tipo: "despesa", valor: 559.99, descricao: "Denylson  (2/5)", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-03" },
+    { id: 3, categoria_id: 279, tipo: "despesa", valor: 5, descricao: "Anime (Fixa)", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-01" },
+    { id: 4, categoria_id: 277, tipo: "despesa", valor: 200, descricao: "Fretado (Fixa)", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-03" },
+    { id: 5, categoria_id: null, tipo: "despesa", valor: 999, descricao: "Sem categoria", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-03" },
+  ];
+  const fakeClient = {
+    from: () => ({
+      select: () => ({
+        or: () => Promise.resolve({ data: rows, error: null }),
+      }),
+    }),
+  };
+
+  const topTransactions = await fetchCategoryTopTransactions(fakeClient as never, "2026-09", true);
+  const lazer = topTransactions.find((item) => item.category_id === 279);
+  assert(lazer !== undefined, "categoria 279 (Lazer) deveria ter um maior lancamento identificado");
+  assert(lazer!.description === "Denylson  (2/5)", "o aporte em objetivo de R$ 900 nao deveria ser escolhido como maior gasto de Lazer");
+  assert(lazer!.value === 559.99, "o maior gasto genuino de Lazer deveria ser R$ 559,99");
+  const transporte = topTransactions.find((item) => item.category_id === 277);
+  assert(transporte?.description === "Fretado (Fixa)", "Transporte deveria identificar seu unico lancamento genuino");
+  assert(topTransactions.every((item) => item.category_id !== null), "lancamentos sem categoria nao deveriam aparecer no resultado");
+
+  const disabled = await fetchCategoryTopTransactions(fakeClient as never, "2026-09", false);
+  assert(disabled.length === 0, "enabled=false nao deveria buscar nem retornar nada");
 });

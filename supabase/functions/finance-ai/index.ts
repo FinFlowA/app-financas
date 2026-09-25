@@ -447,8 +447,38 @@ function categorySpendRankingAnswer(compactJson: string, normalizedMessage: stri
   if (ranked.length === 0) return null;
   const requestedCount = parseRequestedCategoryCount(normalizedMessage);
   const top = ranked.slice(0, Math.min(requestedCount, ranked.length, 10));
-  const items = top.map((row) => `${row.category} (${formatMoneyBRL(row.total)})`).join(", ");
-  return `As categorias com maior gasto neste mês são: ${items}. Considere cortar ou reduzir gastos nessas áreas primeiro.`;
+
+  // Só o total da categoria é conselho genérico demais ("corte gastos
+  // aqui") -- citar o maior lançamento genuíno dela dá um alvo concreto
+  // de revisão, calculado no banco (category_top_transactions), não
+  // escolhido pelo modelo a partir de uma amostra parcial.
+  const topTransactionByCategory = new Map<string, { description: string; value: number; date: string }>();
+  const rawTopTransactions = parsed.category_top_transactions;
+  if (Array.isArray(rawTopTransactions)) {
+    for (const row of rawTopTransactions) {
+      const entry = asObject(row);
+      const category = stringOrNull(entry.category);
+      const description = stringOrNull(entry.description);
+      const value = numberOrNull(entry.value);
+      const date = stringOrNull(entry.date);
+      if (category && description && value !== null && date) {
+        topTransactionByCategory.set(category, { description, value, date });
+      }
+    }
+  }
+
+  const anyHighlight = top.some((row) => topTransactionByCategory.has(row.category));
+  const items = top.map((row) => {
+    const highlight = topTransactionByCategory.get(row.category);
+    const suffix = highlight
+      ? ` — maior gasto: ${highlight.description} (${formatMoneyBRL(highlight.value)}, ${displayDateBR(highlight.date)})`
+      : "";
+    return `${row.category} (${formatMoneyBRL(row.total)})${suffix}`;
+  }).join("; ");
+  const closing = anyHighlight
+    ? "Considere revisar esses lançamentos primeiro."
+    : "Considere cortar ou reduzir gastos nessas áreas primeiro.";
+  return `As categorias com maior gasto neste mês são: ${items}. ${closing}`;
 }
 
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;

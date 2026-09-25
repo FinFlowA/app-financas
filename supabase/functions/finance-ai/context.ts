@@ -449,6 +449,56 @@ export async function fetchMonthlyExtremeTransactions(
   };
 }
 
+type CategoryTopTransaction = {
+  category_id: number;
+  id: number;
+  description: string;
+  value: number;
+  date: string;
+};
+
+/** "Identifique três áreas onde eu posso cortar gastos" listava só o total
+ * de cada categoria, sem indicar ONDE cortar de fato -- conselho genérico
+ * demais pra ser acionável. Aponta o maior lançamento genuíno de cada
+ * categoria do mês em foco (mesma exclusão de transferência/objetivo/
+ * fatura de fetchMonthlyExtremeTransactions, pelo mesmo motivo: um aporte
+ * em objetivo ou pagamento de fatura não é o "gasto" que vale citar como
+ * alvo de corte), calculado no banco em vez de pedido ao modelo para
+ * escolher a partir de uma amostra parcial. */
+export async function fetchCategoryTopTransactions(
+  client: SupabaseClient,
+  focusMonth: string,
+  enabled: boolean,
+): Promise<CategoryTopTransaction[]> {
+  if (!enabled) return [];
+  const monthStart = `${focusMonth}-01`;
+  const monthEnd = endOfMonth(focusMonth);
+  const { data, error } = await client.from("transacoes")
+    .select("id,categoria_id,valor,descricao,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  const genuineRows = (data ?? []).filter((row) => {
+    const description = text(row.descricao, 500);
+    return row.categoria_id != null
+      && !isInternalTransfer(description)
+      && !parseGoalMovement(description)
+      && !isInvoicePayment(description);
+  });
+  const best = new Map<number, FinancialRow>();
+  for (const row of genuineRows) {
+    const categoryId = number(row.categoria_id);
+    const current = best.get(categoryId);
+    if (!current || number(row.valor) > number(current.valor)) best.set(categoryId, row);
+  }
+  return [...best.entries()].map(([categoryId, row]) => ({
+    category_id: categoryId,
+    id: number(row.id),
+    description: visibleDescription(row.descricao),
+    value: number(row.valor),
+    date: effectiveDate(row),
+  }));
+}
+
 async function fetchAllCashFlowTransactions(
   client: SupabaseClient,
   enabled: boolean,
@@ -1390,6 +1440,7 @@ type ContextNeeds = {
   marketIndicatorQuery: boolean;
   monthlyExtremeTransaction: boolean;
   categoryMonthComparison: boolean;
+  categorySpendRanking: boolean;
 };
 
 export function contextNeeds(request: string, analyticsAllowed: boolean, currentMessage = request): ContextNeeds {
@@ -1502,6 +1553,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
     marketIndicatorQuery,
     monthlyExtremeTransaction,
     categoryMonthComparison,
+    categorySpendRanking: categorySpendRankingDomain,
   };
 }
 
@@ -1778,7 +1830,7 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow, monthlyExtremes, currentMonthCategoryWindow, previousMonthCategoryWindow] = await Promise.all([
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow, monthlyExtremes, currentMonthCategoryWindow, previousMonthCategoryWindow, categoryTopTransactions] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1798,6 +1850,7 @@ export async function buildFinancialContext(
     fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
     fetchCategoryTotalsWindow(client, `${currentMonth}-01`, endOfMonth(currentMonth), needs.categoryMonthComparison),
     fetchCategoryTotalsWindow(client, `${previousMonth(currentMonth)}-01`, endOfMonth(previousMonth(currentMonth)), needs.categoryMonthComparison),
+    fetchCategoryTopTransactions(client, focusMonth, needs.categorySpendRanking),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -2095,6 +2148,15 @@ export async function buildFinancialContext(
     recent_week_category_totals: recentCategoryTotals,
     month_extreme_transactions: monthlyExtremes,
     category_month_comparison: categoryMonthComparisonResult,
+    category_top_transactions: categoryTopTransactions
+      .map((item) => ({
+        category: categoryById.get(item.category_id) ?? null,
+        id: item.id,
+        description: item.description,
+        value: item.value,
+        date: item.date,
+      }))
+      .filter((item): item is { category: string; id: number; description: string; value: number; date: string } => item.category !== null),
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;
