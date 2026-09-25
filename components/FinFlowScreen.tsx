@@ -125,7 +125,7 @@ export function FinFlowScreenPage() {
     // fato no topo; do contrário o router.back() removeria a tela recém-aberta
     // e a navegação cascatearia até a Início ("a tela pisca e volta").
     if (!isFocused) return;
-    const timeout = setTimeout(() => router.back(), 80);
+    const timeout = setTimeout(() => router.back(), 0);
     return () => clearTimeout(timeout);
   }, [entry, id, registry, router, isFocused]);
 
@@ -133,7 +133,13 @@ export function FinFlowScreenPage() {
     lastEntryRef.current?.onRequestClose?.();
   }, []);
 
-  const pageContent = expandContentToPage(entry?.content, theme.background);
+  // O estado que fecha o fluxo chega antes de a rota terminar de sair. Manter
+  // o ultimo conteudo evita exibir por um frame apenas o canvas vazio (a
+  // "piscada" cinza) enquanto o router remove a tela.
+  const pageContent = expandContentToPage(
+    entry?.content ?? lastEntryRef.current?.content,
+    theme.background,
+  );
 
   return (
     <SafeAreaView

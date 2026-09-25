@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Easing, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { finFlowTheme, FinFlowColors } from "../../constants/finflow-design";
 import { useAppTheme } from "../_layout"; // Puxando nossa memória global!
@@ -95,17 +95,10 @@ export default function TabLayout() {
         tabBarActiveTintColor: theme.text,
         tabBarInactiveTintColor: theme.textMuted,
         headerShown: false,
-        animation: "shift",
-        transitionSpec: {
-          animation: "timing",
-          config: {
-            duration: 220,
-            easing: Easing.out(Easing.cubic),
-          },
-        },
-        // As abas são telas extensas. Congelar as inativas impede que um
-        // clique na aba atual recalcule também todas as telas já visitadas.
-        freezeOnBlur: true,
+        animation: "none",
+        // Manter as abas montadas evita que uma tela permaneça congelada ao
+        // voltar de fluxos empilhados, especialmente na nova arquitetura.
+        freezeOnBlur: false,
         lazy: true,
         tabBarStyle: {
           backgroundColor: theme.surface,
