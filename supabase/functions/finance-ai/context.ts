@@ -1850,7 +1850,15 @@ export async function buildFinancialContext(
     fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
     fetchCategoryTotalsWindow(client, `${currentMonth}-01`, endOfMonth(currentMonth), needs.categoryMonthComparison),
     fetchCategoryTotalsWindow(client, `${previousMonth(currentMonth)}-01`, endOfMonth(previousMonth(currentMonth)), needs.categoryMonthComparison),
-    fetchCategoryTopTransactions(client, focusMonth, needs.categorySpendRanking),
+    // currentMonth, nao focusMonth: os totais de category_month_comparison
+    // (usados pelo ranking) ja sao calculados sobre currentMonth por design
+    // -- usar focusMonth aqui causava uma inconsistencia real: "...para
+    // economizar no PRÓXIMO mês" fazia selectedMonth() focar o mes seguinte
+    // (bug de deteccao de mes ja conhecido, nao a intencao da pergunta), e o
+    // "maior gasto" citado passava a vir de um mes diferente do total
+    // exibido ao lado dele (ex.: total de setembro ao lado do maior gasto
+    // de uma parcela futura de outubro que nem venceu ainda).
+    fetchCategoryTopTransactions(client, currentMonth, needs.categorySpendRanking),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
