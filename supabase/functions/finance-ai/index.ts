@@ -499,6 +499,26 @@ function categorySpendRankingAnswer(compactJson: string, normalizedMessage: stri
   return [`As categorias com maior gasto neste mês são ${summary}.`, ...categorySentences].join(" ");
 }
 
+// categorySpendRankingAnswer() sempre SUBSTITUI a resposta do modelo quando
+// dá match -- chamar o modelo antes só pra descartar o resultado gastava
+// tokens à toa e, pior, bug real: essa pergunta busca category_month_comparison
+// (totais de duas janelas de mês) + category_top_transactions (maior
+// lançamento por categoria) inteiros, o que deixa o contexto grande o
+// bastante pra, em alguns casos, o provedor rejeitar a requisição com 400
+// (AI_PROVIDER_REQUEST_INVALID) -- sem nenhum benefício, já que a resposta
+// do modelo seria jogada fora de qualquer jeito. Vira resposta determinística
+// ANTES da chamada ao modelo, no mesmo padrão de deterministicDatedAnswer().
+function categorySpendRankingDeterministicAnswer(
+  compactJson: string,
+  normalizedMessage: string,
+  outputCanary: string,
+): { message: string; intent: "financial_summary" } | null {
+  const rankingMessage = categorySpendRankingAnswer(compactJson, normalizedMessage);
+  if (!rankingMessage) return null;
+  const safeMessage = safeAssistantMessage(rankingMessage, "financial_summary", "answer", outputCanary);
+  return safeMessage ? { message: safeMessage, intent: "financial_summary" } : null;
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1458,7 +1478,10 @@ Deno.serve(async (req) => {
 
       const deterministicAnswer = fallbackProductGuidance(safeMessage)
         ?? await deterministicNamedFutureExpense(client, safeMessage)
-        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson, safeMessage);
+        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson, safeMessage)
+        ?? (!mutationRequested
+          ? categorySpendRankingDeterministicAnswer(financialContext.compactJson, normalizeText(safeMessage), outputCanary)
+          : null);
       if (deterministicAnswer) {
         conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
         await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
@@ -1700,6 +1723,9 @@ Deno.serve(async (req) => {
           output = { kind: "answer", intent: "financial_summary", message: safeExtremeMessage, missing_fields: [], data: [] };
           outputMessage = safeExtremeMessage;
         } else {
+          // categorySpendRankingAnswer não entra aqui mais -- vira uma
+          // resposta determinística ANTES da chamada ao modelo (ver mais
+          // acima), então nunca chega a este ponto.
           const comparisonMessage = categoryMonthComparisonAnswer(financialContext.compactJson, normalizeText(message));
           const safeComparisonMessage = comparisonMessage
             ? safeAssistantMessage(comparisonMessage, "financial_summary", "answer", outputCanary)
@@ -1707,15 +1733,6 @@ Deno.serve(async (req) => {
           if (safeComparisonMessage) {
             output = { kind: "answer", intent: "financial_summary", message: safeComparisonMessage, missing_fields: [], data: [] };
             outputMessage = safeComparisonMessage;
-          } else {
-            const rankingMessage = categorySpendRankingAnswer(financialContext.compactJson, normalizeText(message));
-            const safeRankingMessage = rankingMessage
-              ? safeAssistantMessage(rankingMessage, "financial_summary", "answer", outputCanary)
-              : null;
-            if (safeRankingMessage) {
-              output = { kind: "answer", intent: "financial_summary", message: safeRankingMessage, missing_fields: [], data: [] };
-              outputMessage = safeRankingMessage;
-            }
           }
         }
       }
