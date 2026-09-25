@@ -1,4 +1,4 @@
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React, {
   Children,
   cloneElement,
@@ -28,30 +28,51 @@ type FlowRegistry = {
   entries: ReadonlyMap<string, FlowEntry>;
   register: (id: string, entry: FlowEntry) => void;
   unregister: (id: string) => void;
+  closeRoute: () => void;
 };
 
 const FlowScreenContext = createContext<FlowRegistry | null>(null);
 let nextFlowId = 0;
 
 export function FinFlowScreenProvider({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [entries, setEntries] = useState<ReadonlyMap<string, FlowEntry>>(() => new Map());
+  const entriesRef = useRef<ReadonlyMap<string, FlowEntry>>(new Map());
+  const routeOpenRef = useRef(false);
   const register = useCallback((id: string, entry: FlowEntry) => {
-    setEntries((current) => new Map(current).set(id, entry));
-  }, []);
+    const next = new Map(entriesRef.current);
+    next.set(id, entry);
+    entriesRef.current = next;
+    setEntries(next);
+
+    // Todos os fluxos compartilham uma unica rota. Isso impede que abrir uma
+    // tela a partir de outra acumule /flow-screen na pilha de navegacao.
+    if (!routeOpenRef.current) {
+      routeOpenRef.current = true;
+      router.push("/flow-screen");
+    }
+  }, [router]);
   const unregister = useCallback((id: string) => {
-    setEntries((current) => {
-      if (!current.has(id)) return current;
-      const next = new Map(current);
-      next.delete(id);
-      return next;
-    });
+    if (!entriesRef.current.has(id)) return;
+    const next = new Map(entriesRef.current);
+    next.delete(id);
+    entriesRef.current = next;
+    setEntries(next);
+  }, []);
+  const closeRoute = useCallback(() => {
+    routeOpenRef.current = false;
+    const activeEntries = [...entriesRef.current.values()];
+    entriesRef.current = new Map();
+    setEntries(entriesRef.current);
+    activeEntries.forEach((entry) => entry.onRequestClose?.());
   }, []);
 
   const value = useMemo<FlowRegistry>(() => ({
     entries,
     register,
     unregister,
-  }), [entries, register, unregister]);
+    closeRoute,
+  }), [closeRoute, entries, register, unregister]);
 
   return <FlowScreenContext.Provider value={value}>{children}</FlowScreenContext.Provider>;
 }
@@ -77,9 +98,7 @@ export default function FinFlowScreen({
   const registry = useContext(FlowScreenContext);
   const register = registry?.register;
   const unregister = registry?.unregister;
-  const router = useRouter();
   const idRef = useRef(`flow-${++nextFlowId}`);
-  const openedRef = useRef(false);
   const closeRef = useRef(onRequestClose);
   closeRef.current = onRequestClose;
 
@@ -89,16 +108,11 @@ export default function FinFlowScreen({
 
     if (visible) {
       register(id, { content: children, onRequestClose: () => closeRef.current?.() });
-      if (!openedRef.current) {
-        openedRef.current = true;
-        router.push({ pathname: "/flow-screen", params: { id } });
-      }
       return;
     }
 
     unregister(id);
-    openedRef.current = false;
-  }, [children, register, router, unregister, visible]);
+  }, [children, register, unregister, visible]);
 
   useEffect(() => () => {
     unregister?.(idRef.current);
@@ -108,30 +122,26 @@ export default function FinFlowScreen({
 }
 
 export function FinFlowScreenPage() {
-  const { id } = useLocalSearchParams<{ id?: string }>();
   const registry = useContext(FlowScreenContext);
+  const closeRoute = registry?.closeRoute;
   const router = useRouter();
   const isFocused = useIsFocused();
   const { dark: isDark } = useTheme();
   const theme = finFlowTheme(isDark);
-  const entry = id ? registry?.entries.get(id) : undefined;
+  const entry = registry ? [...registry.entries.values()].at(-1) : undefined;
   const lastEntryRef = useRef<FlowEntry | undefined>(entry);
   if (entry) lastEntryRef.current = entry;
 
   useEffect(() => {
-    if (!id || !registry || entry) return;
-    // Quando um fluxo abre outro fechando o primeiro no mesmo evento, a rota
-    // antiga fica orfã por baixo da nova. Só voltamos quando esta rota está de
-    // fato no topo; do contrário o router.back() removeria a tela recém-aberta
-    // e a navegação cascatearia até a Início ("a tela pisca e volta").
+    if (!registry || entry) return;
     if (!isFocused) return;
     const timeout = setTimeout(() => router.back(), 0);
     return () => clearTimeout(timeout);
-  }, [entry, id, registry, router, isFocused]);
+  }, [entry, registry, router, isFocused]);
 
   useEffect(() => () => {
-    lastEntryRef.current?.onRequestClose?.();
-  }, []);
+    closeRoute?.();
+  }, [closeRoute]);
 
   // O estado que fecha o fluxo chega antes de a rota terminar de sair. Manter
   // o ultimo conteudo evita exibir por um frame apenas o canvas vazio (a

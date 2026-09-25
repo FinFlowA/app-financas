@@ -49,6 +49,15 @@ if (!flowScreen.includes('from "react-native-safe-area-context"')) {
 if (!flowScreen.includes('edges={["top", "right", "bottom", "left"]}')) {
   throw new Error("As telas de fluxo precisam respeitar todas as areas seguras do aparelho.");
 }
+if (!flowScreen.includes("routeOpenRef") || !flowScreen.includes('router.push("/flow-screen")')) {
+  throw new Error("Os fluxos devem compartilhar uma unica rota para nao acumular telas vazias.");
+}
+if (flowScreen.includes('pathname: "/flow-screen", params: { id }')) {
+  throw new Error("Cada modal nao pode criar sua propria rota /flow-screen.");
+}
+if (/setModalNotificacoesHome\(false\);\s*router\.(?:push|replace)/s.test(home)) {
+  throw new Error("Avisos nao podem fechar e navegar no mesmo evento; isso disputa a pilha de rotas.");
+}
 if (!home.includes('transactionForm: { flexGrow: 1') || !home.includes('marginTop: "auto"')) {
   throw new Error("A acao da tela de transacao precisa permanecer alinhada ao rodape.");
 }

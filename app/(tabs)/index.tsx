@@ -2453,7 +2453,6 @@ export default function Dashboard() {
             <View style={styles.notificationList}>
               {qtdVencidasHome > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  setModalNotificacoesHome(false);
                   router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E76F5122" }]}><MaterialIcons name="warning-amber" size={20} color="#E76F51" /></View>
@@ -2463,7 +2462,6 @@ export default function Dashboard() {
               )}
               {qtdVencendoHoje > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  setModalNotificacoesHome(false);
                   router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: `${novoTema.primary}22` }]}><MaterialIcons name="today" size={20} color={novoTema.primary} /></View>
@@ -2473,7 +2471,6 @@ export default function Dashboard() {
               )}
               {qtdProximosVencimentos > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  setModalNotificacoesHome(false);
                   router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E9C46A22" }]}><MaterialIcons name="event" size={20} color="#C99B25" /></View>
@@ -2482,7 +2479,7 @@ export default function Dashboard() {
                 </TouchableOpacity>
               )}
               {temFaturaVencidaHome && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.replace("/(tabs)/cartoes" as any); }}>
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => router.replace("/(tabs)/cartoes" as any)}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#C0392E22" }]}><MaterialIcons name="credit-card" size={20} color="#C0392E" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Fatura vencida</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>Existe uma fatura em aberto após o vencimento.</Text></View>
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
@@ -2498,7 +2495,6 @@ export default function Dashboard() {
             </View>
 
             <TouchableOpacity style={[styles.notificationSettings, { borderColor: Cores.borda }]} onPress={() => {
-              setModalNotificacoesHome(false);
               router.replace({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
             }}>
               <MaterialIcons name="tune" size={18} color={novoTema.primary} />
@@ -3115,8 +3111,7 @@ export default function Dashboard() {
             <TouchableOpacity
               style={{ width: "100%", minHeight: 50, backgroundColor: novoTema.primary, borderRadius: FinFlowRadius.medium, alignItems: "center", justifyContent: "center", marginBottom: 10 }}
               onPress={() => {
-                setModalVencidosVisivel(false);
-                router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+                router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
               }}
             >
               <Text style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}>Ver no Histórico</Text>
