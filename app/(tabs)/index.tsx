@@ -1,6 +1,5 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import React, { useCallback, useMemo, useRef, useState } from "react";
@@ -359,6 +358,8 @@ export default function Dashboard() {
   const [modoValorParcelado, setModoValorParcelado] = useState<"total" | "parcela">("parcela");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [mesExibidoTransacao, setMesExibidoTransacao] = useState(() => new Date());
+  const [seletorPeriodoTransacaoVisivel, setSeletorPeriodoTransacaoVisivel] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
   const conclusaoMovimentoObjetivoRequestIdsRef = useRef(new Map<string, string>());
   const corTipoTransacao = tipoTransacao === "despesa"
@@ -652,6 +653,17 @@ export default function Dashboard() {
       ...Array.from({ length: totalDias }, (_, indice) => indice + 1),
     ];
   }, [dataAgenda]);
+
+  const diasCalendarioTransacao = useMemo(() => {
+    const ano = mesExibidoTransacao.getFullYear();
+    const mes = mesExibidoTransacao.getMonth();
+    const primeiroDia = new Date(ano, mes, 1).getDay();
+    const totalDias = new Date(ano, mes + 1, 0).getDate();
+    return [
+      ...Array.from({ length: primeiroDia }, () => null),
+      ...Array.from({ length: totalDias }, (_, indice) => indice + 1),
+    ];
+  }, [mesExibidoTransacao]);
 
   React.useEffect(() => {
     let efeitoAtivo = true;
@@ -1520,10 +1532,6 @@ export default function Dashboard() {
   };
 
   // --- Transação ---
-  const aoMudarData = (_event: any, dataEscolhida?: Date) => {
-    setMostrarCalendario(false);
-    if (dataEscolhida) setDataSelecionada(dataEscolhida);
-  };
 
   const formatarDataBR = (data: Date) => {
     const d = String(data.getDate()).padStart(2, "0");
@@ -3260,12 +3268,100 @@ export default function Dashboard() {
                 <TextInput style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
               </View>
 
-              <TouchableOpacity style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]} onPress={() => setMostrarCalendario(true)}>
+              <TouchableOpacity
+                style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}
+                onPress={() => {
+                  setMesExibidoTransacao(dataSelecionada);
+                  setSeletorPeriodoTransacaoVisivel(false);
+                  setMostrarCalendario(true);
+                }}
+              >
                 <MaterialIcons name="calendar-today" size={19} color={corTipoTransacao} />
                 <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
                 <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginLeft: "auto" }} />
               </TouchableOpacity>
-              {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
+              {mostrarCalendario && (
+              <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setMostrarCalendario(false)}>
+                <View style={styles.modalOverlay}>
+                  <View style={[styles.datePickerPanel, FinFlowShadow, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+                    <View style={styles.agendaHeader}>
+                      <View style={[styles.agendaHeaderIcon, { backgroundColor: `${corTipoTransacao}22` }]}>
+                        <MaterialIcons name="calendar-month" size={22} color={corTipoTransacao} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.agendaTitle, { color: Cores.textoPrincipal }]}>Selecionar data</Text>
+                        <Text style={[styles.agendaSubtitle, { color: Cores.textoSecundario }]}>Escolha o dia do lançamento.</Text>
+                      </View>
+                      <TouchableOpacity style={[styles.agendaClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setMostrarCalendario(false)} accessibilityLabel="Fechar calendário">
+                        <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={[styles.agendaCalendar, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                      <View style={styles.agendaMonthRow}>
+                        <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear(), data.getMonth() - 1, 1))} accessibilityLabel="Mês anterior">
+                          <MaterialIcons name="chevron-left" size={22} color={Cores.textoPrincipal} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.agendaPeriodButton, { borderColor: Cores.borda }]} onPress={() => setSeletorPeriodoTransacaoVisivel((visivel) => !visivel)} accessibilityLabel="Selecionar mês e ano">
+                          <Text style={[styles.agendaMonthTitle, { color: Cores.textoPrincipal }]}>{mesesEmPortugues[mesExibidoTransacao.getMonth()]} {mesExibidoTransacao.getFullYear()}</Text>
+                          <MaterialIcons name={seletorPeriodoTransacaoVisivel ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={18} color={Cores.textoSecundario} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear(), data.getMonth() + 1, 1))} accessibilityLabel="Próximo mês">
+                          <MaterialIcons name="chevron-right" size={22} color={Cores.textoPrincipal} />
+                        </TouchableOpacity>
+                      </View>
+                      {seletorPeriodoTransacaoVisivel ? (
+                        <View>
+                          <View style={styles.agendaYearRow}>
+                            <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear() - 1, data.getMonth(), 1))} accessibilityLabel="Ano anterior">
+                              <MaterialIcons name="chevron-left" size={23} color={Cores.textoPrincipal} />
+                            </TouchableOpacity>
+                            <Text style={[styles.agendaYearText, { color: Cores.textoPrincipal }]}>{mesExibidoTransacao.getFullYear()}</Text>
+                            <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear() + 1, data.getMonth(), 1))} accessibilityLabel="Próximo ano">
+                              <MaterialIcons name="chevron-right" size={23} color={Cores.textoPrincipal} />
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.agendaMonthGrid}>
+                            {mesesEmPortugues.map((mes, indice) => {
+                              const ativo = indice === mesExibidoTransacao.getMonth();
+                              return (
+                                <TouchableOpacity key={mes} style={[styles.agendaMonthOption, ativo && { backgroundColor: corTipoTransacao }]} onPress={() => { setMesExibidoTransacao((data) => new Date(data.getFullYear(), indice, 1)); setSeletorPeriodoTransacaoVisivel(false); }}>
+                                  <Text style={[styles.agendaMonthOptionText, { color: ativo ? "#FFF" : Cores.textoPrincipal }]}>{mes.slice(0, 3)}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      ) : (<>
+                      <View style={styles.agendaWeekRow}>{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <Text key={`${dia}-${indice}`} style={[styles.agendaWeekDay, { color: Cores.textoSecundario }]}>{dia}</Text>)}</View>
+                      <View style={styles.agendaDaysGrid}>
+                        {diasCalendarioTransacao.map((dia, indice) => {
+                          if (dia === null) return <View key={`vazio-${indice}`} style={styles.agendaDayCell} />;
+                          const selecionado = dia === dataSelecionada.getDate()
+                            && mesExibidoTransacao.getMonth() === dataSelecionada.getMonth()
+                            && mesExibidoTransacao.getFullYear() === dataSelecionada.getFullYear();
+                          return (
+                            <TouchableOpacity
+                              key={`dia-${dia}`}
+                              style={styles.agendaDayCell}
+                              onPress={() => {
+                                setDataSelecionada(new Date(mesExibidoTransacao.getFullYear(), mesExibidoTransacao.getMonth(), dia));
+                                setMostrarCalendario(false);
+                              }}
+                              accessibilityLabel={`Selecionar dia ${dia}`}
+                            >
+                              <View style={[styles.agendaDayCircle, selecionado && { backgroundColor: corTipoTransacao }]}>
+                                <Text style={[styles.agendaDayText, { color: selecionado ? "#FFF" : Cores.textoPrincipal }]}>{dia}</Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      </>)}
+                    </View>
+                  </View>
+                </View>
+              </FinFlowPopup>
+              )}
               <View
                 style={styles.rowInputs}
                 onLayout={({ nativeEvent }) => {
@@ -3477,6 +3573,7 @@ const styles = StyleSheet.create({
   homeMetricValue: { fontSize: 14, fontWeight: "800" },
   homeMonthTrack: { height: 5, borderRadius: 3, overflow: "hidden", flexDirection: "row", marginTop: 14 },
   agendaPanel: { width: "92%", maxWidth: 520, maxHeight: "88%", borderRadius: 24, borderWidth: 1, padding: 18, elevation: 12 },
+  datePickerPanel: { width: "90%", maxWidth: 380, borderRadius: 24, borderWidth: 1, padding: 18, elevation: 12 },
   agendaHeader: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 15 },
   agendaHeaderIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   agendaTitle: { fontSize: 18, fontWeight: "900" },
