@@ -477,17 +477,15 @@ function categorySpendRankingAnswer(compactJson: string, normalizedMessage: stri
   const summary = categoryList.length > 1
     ? `${categoryList.slice(0, -1).join(", ")} e ${categoryList[categoryList.length - 1]}`
     : categoryList[0];
-  const highlightSentences = top
-    .map((row) => {
-      const highlight = topTransactionByCategory.get(row.category);
-      if (!highlight) return null;
-      return `Em ${row.category}, o maior gasto foi ${highlight.description}, de ${formatMoneyBRL(highlight.value)}, em ${displayDateBR(highlight.date)}.`;
-    })
-    .filter((sentence): sentence is string => sentence !== null);
-  const closing = highlightSentences.length > 0
-    ? "Considere revisar esses lançamentos primeiro."
-    : "Considere cortar ou reduzir gastos nessas áreas primeiro.";
-  return [`As categorias com maior gasto neste mês são ${summary}.`, ...highlightSentences, closing].join(" ");
+  // Cada frase precisa fechar com uma recomendação de corte explícita --
+  // só relatar "o maior gasto foi X" sem dizer o que fazer com isso deixa
+  // a pergunta original ("onde posso cortar gastos") sem resposta direta.
+  const categorySentences = top.map((row) => {
+    const highlight = topTransactionByCategory.get(row.category);
+    if (!highlight) return `Em ${row.category}, considere cortar ou reduzir gastos primeiro.`;
+    return `Em ${row.category}, o maior gasto foi ${highlight.description}, de ${formatMoneyBRL(highlight.value)}, em ${displayDateBR(highlight.date)}; considere cortar ou reduzir esse gasto primeiro.`;
+  });
+  return [`As categorias com maior gasto neste mês são ${summary}.`, ...categorySentences].join(" ");
 }
 
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
