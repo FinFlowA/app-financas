@@ -519,6 +519,74 @@ function categorySpendRankingDeterministicAnswer(
   return safeMessage ? { message: safeMessage, intent: "financial_summary" } : null;
 }
 
+function parseBrazilianAmount(raw: string): number | null {
+  const cleaned = raw.replace(/\./g, "").replace(",", ".");
+  const value = Number(cleaned);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function parseInterestRate(normalizedMessage: string): { percent: number; isMonthly: boolean } | null {
+  const direct = normalizedMessage.match(/(\d+(?:[.,]\d+)?)\s*%\s*(?:ao\s+)?(mes|ano)\b/);
+  if (direct) {
+    const percent = Number(direct[1].replace(",", "."));
+    return Number.isFinite(percent) && percent > 0 ? { percent, isMonthly: direct[2] === "mes" } : null;
+  }
+  const worded = normalizedMessage.match(/taxa\s+(?:de\s+juros\s+)?(mensal|anual)[^%\d]{0,20}?(\d+(?:[.,]\d+)?)\s*%/);
+  if (worded) {
+    const percent = Number(worded[2].replace(",", "."));
+    return Number.isFinite(percent) && percent > 0 ? { percent, isMonthly: worded[1] === "mensal" } : null;
+  }
+  return null;
+}
+
+// "Calcule o impacto dos juros compostos se eu atrasar a fatura do cartão
+// de crédito de R$ 2.000 por 15 dias" -- pergunta hipotética sem nenhum
+// dado real da conta envolvido, só a aritmética de juros compostos sobre os
+// números que a própria pergunta fornece. Bug real: o modelo respondeu um
+// acréscimo de R$ 154, quando o correto pela própria taxa que ele citou
+// (5% ao mês) é ~R$ 49 -- composição diária é aritmética determinística,
+// não deveria depender do modelo acertar. Quando a pergunta não informa
+// nenhuma taxa (como no bug real), o modelo estava simplesmente inventando
+// uma -- aqui a resposta pede a taxa em vez de arriscar assumir um número
+// que ninguém informou.
+function compoundInterestDelayAnswer(normalizedMessage: string): { message: string; intent: "financial_summary" } | null {
+  if (!/\bjuros\s+compostos?\b/.test(normalizedMessage)) return null;
+  const amountMatch = normalizedMessage.match(/r\$\s*([\d.,]+)/);
+  const daysMatch = normalizedMessage.match(/\b(\d{1,4})\s*dias?\b/);
+  if (!amountMatch || !daysMatch) return null;
+  const principal = parseBrazilianAmount(amountMatch[1]);
+  const days = Number(daysMatch[1]);
+  if (principal === null || !Number.isFinite(days) || days <= 0 || days > 3650) return null;
+
+  const rate = parseInterestRate(normalizedMessage);
+  const daysLabel = days === 1 ? "dia" : "dias";
+  if (!rate) {
+    return {
+      message: `Para calcular o impacto dos juros compostos em ${formatMoneyBRL(principal)} por ${days} ${daysLabel}, preciso saber a taxa de juros a considerar (normalmente informada na fatura como juros rotativo ou CET). Qual taxa mensal ou anual devo usar?`,
+      intent: "financial_summary",
+    };
+  }
+  const periodDays = rate.isMonthly ? 30 : 365;
+  const dailyRate = Math.pow(1 + rate.percent / 100, 1 / periodDays) - 1;
+  const total = principal * Math.pow(1 + dailyRate, days);
+  const extra = total - principal;
+  const rateLabel = rate.percent.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  return {
+    message: `Com juros compostos diários a uma taxa de ${rateLabel}% ao ${rate.isMonthly ? "mês" : "ano"}, um atraso de ${days} ${daysLabel} em uma fatura de ${formatMoneyBRL(principal)} gera um acréscimo de aproximadamente ${formatMoneyBRL(extra)}, resultando em um total de aproximadamente ${formatMoneyBRL(total)}.`,
+    intent: "financial_summary",
+  };
+}
+
+function compoundInterestDeterministicAnswer(
+  normalizedMessage: string,
+  outputCanary: string,
+): { message: string; intent: "financial_summary" } | null {
+  const answer = compoundInterestDelayAnswer(normalizedMessage);
+  if (!answer) return null;
+  const safeMessage = safeAssistantMessage(answer.message, "financial_summary", "answer", outputCanary);
+  return safeMessage ? { message: safeMessage, intent: "financial_summary" } : null;
+}
+
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
 
 async function loadOperationalReferences(client: SupabaseClient): Promise<OperationalReferences> {
@@ -1493,6 +1561,7 @@ Deno.serve(async (req) => {
       const deterministicAnswer = fallbackProductGuidance(safeMessage)
         ?? await deterministicNamedFutureExpense(client, safeMessage)
         ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson, safeMessage)
+        ?? (!mutationRequested ? compoundInterestDeterministicAnswer(normalizeText(safeMessage), outputCanary) : null)
         ?? (!mutationRequested
           ? categorySpendRankingDeterministicAnswer(financialContext.compactJson, normalizeText(safeMessage), outputCanary)
           : null);
