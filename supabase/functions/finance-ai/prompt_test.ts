@@ -1,4 +1,6 @@
 import { DIRECT_ACTIONS } from "./contracts.ts";
+import { MAX_PROVIDER_CONTEXT_CHARS, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY } from "./context.ts";
+import { MODEL_MAX_SYSTEM_PROMPT_CHARS } from "./provider.ts";
 import { buildReadOnlySystemPrompt, buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -427,14 +429,43 @@ Deno.test("prompt somente leitura permanece dentro do teto de caracteres do prov
   // leitura, que já embute FINFLOW_DATA na mesma string enviada ao
   // provedor -- confirma que mesmo no pior caso (contexto no teto de
   // MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY) o prompt inteiro continua abaixo
-  // do teto do provedor (MODEL_MAX_SYSTEM_PROMPT_CHARS, 16600), evitando
+  // do teto do provedor (MODEL_MAX_SYSTEM_PROMPT_CHARS), evitando
   // AI_CONTEXT_TOO_LARGE para pedidos legítimos com bastante dado.
-  const MODEL_MAX_SYSTEM_PROMPT_CHARS = 16_600;
-  const worstCaseContext = `{"padding":"${"x".repeat(7_950)}"}`;
+  const worstCaseContext = `{"padding":"${"x".repeat(MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY - 15)}"}`;
   const readOnly = buildReadOnlySystemPrompt({ financialContext: worstCaseContext, analyticsAllowed: true, outputCanary: "a".repeat(32) });
   assert(
     readOnly.length <= MODEL_MAX_SYSTEM_PROMPT_CHARS,
     `o prompt somente leitura no pior caso (${readOnly.length} chars) precisa caber no teto do provedor (${MODEL_MAX_SYSTEM_PROMPT_CHARS})`,
+  );
+});
+
+Deno.test("prompt operacional permanece dentro do teto de caracteres do provedor mesmo no pior caso", () => {
+  // Bug real: medido o prompt operacional com FINFLOW_DATA e
+  // CONVERSATION_STATE nos respectivos tetos (MAX_PROVIDER_CONTEXT_CHARS e
+  // MAX_PROMPT_CONVERSATION_STATE_BYTES), o total ultrapassava
+  // MODEL_MAX_SYSTEM_PROMPT_CHARS em mais de mil caracteres -- um pedido
+  // legítimo de um usuário com bastante dado financeiro podia lançar
+  // AI_CONTEXT_TOO_LARGE mesmo sem nada de errado no pedido em si.
+  // MAX_PROVIDER_CONTEXT_CHARS (context.ts) ficou como estava, para não
+  // reduzir os dados financeiros visíveis numa mutação; o orçamento coube
+  // reduzindo MAX_PROMPT_CONVERSATION_STATE_BYTES e reescrevendo o texto
+  // fixo das regras de forma mais compacta (ambos em prompt.ts). Este teste
+  // garante que a regressão não volta despercebida se o texto fixo crescer
+  // de novo no futuro.
+  const worstCaseFinancial = `{"padding":"${"x".repeat(MAX_PROVIDER_CONTEXT_CHARS - 15)}"}`;
+  const worstCaseState: Record<string, string> = {};
+  for (let index = 0; JSON.stringify(worstCaseState).length < MAX_PROMPT_CONVERSATION_STATE_BYTES - 40; index++) {
+    worstCaseState[`campo_${index}`] = "x".repeat(50);
+  }
+  const operational = buildSystemPrompt({
+    financialContext: worstCaseFinancial,
+    conversationState: worstCaseState,
+    analyticsAllowed: true,
+    outputCanary: "a".repeat(32),
+  });
+  assert(
+    operational.length <= MODEL_MAX_SYSTEM_PROMPT_CHARS,
+    `o prompt operacional no pior caso (${operational.length} chars) precisa caber no teto do provedor (${MODEL_MAX_SYSTEM_PROMPT_CHARS})`,
   );
 });
 
