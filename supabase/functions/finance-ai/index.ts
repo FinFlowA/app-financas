@@ -963,13 +963,23 @@ function isDraftCancellation(message: string): boolean {
   return /^(cancelar?|cancela|desistir|desisto|deixa pra la|esquece|nao quero|vamos falar de outra coisa|quero mudar de assunto)(?:[.!\s]|$)/.test(normalizeText(message));
 }
 
+const MUTATION_VERBS = "crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir";
+
 function isLikelyMutationRequest(message: string): boolean {
   const normalized = normalizeText(message);
   if (/\b(como|posso|onde|qual a forma)\b/.test(normalized)) return false;
+  // Bug real: "Analise meus dados financeiros atuais... sem criar ou
+  // alterar nenhum registro" foi tratado como pedido de mutação porque
+  // "criar"/"alterar" aparecem na frase -- o regex de verbos de ação não
+  // tinha noção de negação, então ignorava o "sem" logo antes. Isso jogou
+  // um pedido puramente informativo pro caminho operacional (orçamento de
+  // contexto mais apertado, prompt voltado a criar/editar registros), e o
+  // modelo respondeu como se não houvesse nenhum dado financeiro.
+  if (new RegExp(`\\bsem\\s+(?:\\w+\\s+){0,4}(?:${MUTATION_VERBS})\\w*`).test(normalized)) return false;
   if (!/\b(quanto|qual|mostre|liste|compare)\b/.test(normalized)
       && /\b(gastei|paguei|comprei|recebi|ganhei)\b/.test(normalized)
       && /(?:r\$\s*)?\d/.test(normalized)) return true;
-  return /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized)
+  return new RegExp(`(?:${MUTATION_VERBS})`).test(normalized)
     && /(conta|categoria|objetiv|caixinha|lanc|transa|receit|despes|cartao|compra|fatura|transfer)/.test(normalized);
 }
 
