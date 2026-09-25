@@ -312,6 +312,19 @@ Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiz
   }
 });
 
+Deno.test("prompt somente leitura recusa pedido de traducao como conteudo alheio ao FinFlow", () => {
+  // Bug real: "Traduza a seguinte frase para o inglês: How old are you?"
+  // recebeu de volta "How old are you?" -- o modelo cumpriu o pedido em vez
+  // de recusar. Tradução de texto é a mesma categoria de piada/poema/receita
+  // já listada na regra 7, mas não estava explicitamente citada, e o modelo
+  // não a reconheceu como conteúdo alheio ao FinFlow.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("tradução"),
+    "o prompt somente leitura precisa citar traducao de texto como exemplo de conteudo alheio ao FinFlow",
+  );
+});
+
 Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens", () => {
   // Bug real visto pelo usuario: ao listar varios lancamentos numa unica
   // mensagem (ex.: resposta a "Quais os dias?"), o modelo escrevia
