@@ -551,7 +551,11 @@ function clarificationChoices(
     .slice(0, 30);
 }
 
-function deterministicDatedAnswer(message: string, compactJson: string): { message: string; intent: "cash_flow" | "list_transactions" } | null {
+function deterministicDatedAnswer(
+  message: string,
+  compactJson: string,
+  currentMessage: string = message,
+): { message: string; intent: "cash_flow" | "list_transactions" } | null {
   let context: JsonRecord;
   try {
     context = asObject(JSON.parse(compactJson));
@@ -559,6 +563,14 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
     return null;
   }
   const normalized = normalizeText(message);
+  // Bug real: "eu vou conseguir poupar R$ 500 até o dia 30?" foi tratado
+  // como pedido de lista de lançamentos agendados porque a mensagem
+  // anterior na conversa era "Quais dias?" -- "quais" vazou pelo texto
+  // concatenado (message) e acionou asksItems por engano. Qual TIPO de
+  // pergunta datada é esta só pode vir da pergunta ATUAL; o texto
+  // concatenado continua servindo só para extrair a data em si (ex.: uma
+  // referência de dia feita num turno anterior).
+  const currentNormalized = normalizeText(currentMessage);
   const daily = Array.isArray(context.daily_cash_flow) ? context.daily_cash_flow.map(asObject) : [];
   const monthNames: Record<string, string> = {
     janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
@@ -580,7 +592,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
   }
 
   const money = (value: unknown) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
-  const asksFutureExpenseByName = /\bquanto\b.*\b(?:vou\s+)?gastar\b/.test(normalized);
+  const asksFutureExpenseByName = /\bquanto\b.*\b(?:vou\s+)?gastar\b/.test(currentNormalized);
   if (asksFutureExpenseByName && requestedDate) {
     const ignoredWords = new Set([
       "quanto", "vou", "gastar", "gasto", "despesa", "despesas", "ate", "fim", "ano", "mes",
@@ -621,7 +633,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
   const date = String(row.date ?? "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   const displayDate = `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
-  const conditionalExclusion = /(nao\s+(?:vou\s+)?(?:gastar|pagar|receber)|\bsem\b|desconsider|retir|exclu)/.test(normalized);
+  const conditionalExclusion = /(nao\s+(?:vou\s+)?(?:gastar|pagar|receber)|\bsem\b|desconsider|retir|exclu)/.test(currentNormalized);
   if (conditionalExclusion) {
     const ignoredWords = new Set([
       "quanto", "conta", "saldo", "sera", "terei", "gastar", "pagar", "receber", "dia", "mes",
@@ -671,7 +683,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
     }
     return null;
   }
-  const asksItems = /(o que|quais|lancamento|agend|programad|calendario|agenda)/.test(normalized);
+  const asksItems = /(o que|quais|lancamento|agend|programad|calendario|agenda)/.test(currentNormalized);
 
   if (asksItems) {
     const transactions = (Array.isArray(context.relevant_transactions) ? context.relevant_transactions : [])
@@ -689,7 +701,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
     return { message: `Em ${displayDate}: ${details.join("; ")}.${suffix}`, intent: "list_transactions" };
   }
 
-  if (/(saldo|quanto terei|quanto vou ter|previs)/.test(normalized)) {
+  if (/(saldo|quanto terei|quanto vou ter|previs)/.test(currentNormalized)) {
     const projected = Boolean(row.balance_is_projection);
     return {
       message: `Em ${displayDate}, seu saldo ${projected ? "projetado" : "realizado"} é ${money(row.account_balance)}.`,
@@ -1398,7 +1410,7 @@ Deno.serve(async (req) => {
 
       const deterministicAnswer = fallbackProductGuidance(safeMessage)
         ?? await deterministicNamedFutureExpense(client, safeMessage)
-        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson);
+        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson, safeMessage);
       if (deterministicAnswer) {
         conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
         await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
