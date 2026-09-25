@@ -639,6 +639,20 @@ function deterministicDatedAnswer(
   // concatenado continua servindo só para extrair a data em si (ex.: uma
   // referência de dia feita num turno anterior).
   const currentNormalized = normalizeText(currentMessage);
+  // Bug real: "Se eu investir R$ 300 por mês a uma taxa de 10% ao ano,
+  // quanto terei em 5 anos?" (uma conta de juros compostos hipotética, sem
+  // nenhuma relação com o saldo real da conta) respondeu "Em 01/10/2026,
+  // seu saldo projetado é R$ 636,87" -- "quanto terei" é a mesma frase
+  // usada pelo ramo de saldo projetado numa data (mais abaixo), e como a
+  // pergunta não cita nenhuma data explícita, o código caía no fallback de
+  // "só existe um dia em daily_cash_flow, deve ser esse" mesmo a pergunta
+  // não tendo nada a ver com uma data real. Uma pergunta de investimento
+  // hipotético (taxa/rendimento/juros informados na própria pergunta) é um
+  // cálculo matemático, não uma projeção do saldo real -- não é o domínio
+  // desta função.
+  if (/\binvestir\b|\btaxa\s+de\s+\d|\d+\s*%\s*(?:ao\s+)?(?:ano|m[êe]s)|\bjuros\s+compostos?\b/.test(currentNormalized)) {
+    return null;
+  }
   const daily = Array.isArray(context.daily_cash_flow) ? context.daily_cash_flow.map(asObject) : [];
   const monthNames: Record<string, string> = {
     janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
