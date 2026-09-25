@@ -480,10 +480,21 @@ function categorySpendRankingAnswer(compactJson: string, normalizedMessage: stri
   // Cada frase precisa fechar com uma recomendação de corte explícita --
   // só relatar "o maior gasto foi X" sem dizer o que fazer com isso deixa
   // a pergunta original ("onde posso cortar gastos") sem resposta direta.
-  const categorySentences = top.map((row) => {
+  // Repetir a mesma frase de recomendação em toda categoria soa repetitivo
+  // (bug real apontado pelo usuário) -- alterna entre algumas variações,
+  // nunca repetindo a mesma na categoria seguinte.
+  const CUT_RECOMMENDATION_VARIANTS = [
+    "considere cortar ou reduzir esse gasto primeiro",
+    "vale a pena rever esse gasto para economizar",
+    "esse é um bom ponto de partida para cortar",
+    "priorize esse item se quiser economizar",
+    "avalie se dá para reduzir ou eliminar esse gasto",
+  ];
+  const categorySentences = top.map((row, index) => {
+    const recommendation = CUT_RECOMMENDATION_VARIANTS[index % CUT_RECOMMENDATION_VARIANTS.length];
     const highlight = topTransactionByCategory.get(row.category);
-    if (!highlight) return `Em ${row.category}, considere cortar ou reduzir gastos primeiro.`;
-    return `Em ${row.category}, o maior gasto foi ${highlight.description}, de ${formatMoneyBRL(highlight.value)}, em ${displayDateBR(highlight.date)}; considere cortar ou reduzir esse gasto primeiro.`;
+    if (!highlight) return `Em ${row.category}, ${recommendation}.`;
+    return `Em ${row.category}, o maior gasto foi ${highlight.description}, de ${formatMoneyBRL(highlight.value)}, em ${displayDateBR(highlight.date)}; ${recommendation}.`;
   });
   return [`As categorias com maior gasto neste mês são ${summary}.`, ...categorySentences].join(" ");
 }
