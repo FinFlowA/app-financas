@@ -372,6 +372,28 @@ Deno.test("prompt somente leitura esclarece que contas a vencer sao lancamentos 
   );
 });
 
+Deno.test("prompt somente leitura manda conferir pending_income/pending_expense antes de negar compromissos", () => {
+  // Bug real: "Analise meus dados financeiros... e proximos compromissos"
+  // respondeu "Nao ha compromissos pendentes" para um usuario com uma
+  // receita pendente real de R$600 (Vale) e uma despesa pendente de
+  // R$45,25 (EMTU) no mes -- os dois numeros estavam disponiveis em
+  // month_summary.pending_income/pending_expense (campo sempre preservado,
+  // mesmo no corte de orcamento mais agressivo), mas o modelo nao os
+  // conferiu antes de responder. "Proximos compromissos/pendencias" precisa
+  // do mesmo tratamento de "contas a vencer", e o prompt precisa mandar
+  // checar o agregado, nao só a lista de relevant_transactions (que pode
+  // nao trazer o item especifico).
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("proximos compromissos/pendencias") || readOnly.includes("próximos compromissos/pendências"),
+    "o prompt somente leitura precisa tratar 'proximos compromissos/pendencias' como lancamentos pendentes",
+  );
+  assert(
+    readOnly.includes("month_summary.pending_income") && readOnly.includes("pending_expense"),
+    "o prompt somente leitura precisa mandar conferir month_summary.pending_income/pending_expense antes de negar compromissos pendentes",
+  );
+});
+
 Deno.test("prompt somente leitura distingue pedido de lista (quais) do pedido de total (quanto)", () => {
   // Bug real: "Quais despesas tenho neste mês?" respondia com o total
   // agregado em vez de listar os lancamentos individuais. Essa pergunta
