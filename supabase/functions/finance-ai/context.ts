@@ -1844,7 +1844,7 @@ export async function buildFinancialContext(
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
-    needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
+    needs.marketIndicatorQuery ? fetchMarketIndicators(fetch, currentDate) : Promise.resolve<MarketIndicators | null>(null),
     countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
     fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
     fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
