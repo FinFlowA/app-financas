@@ -2,7 +2,7 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { Tabs } from "expo-router";
 import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 import { useEffect, useRef, useState } from "react";
-import { Animated, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Animated, Platform, StyleSheet, TouchableOpacity, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { finFlowTheme, FinFlowColors } from "../../constants/finflow-design";
 import { useAppTheme } from "../_layout"; // Puxando nossa memória global!
@@ -15,16 +15,24 @@ const VISIBLE_TABS = [
   { name: "configuracoes", label: "Ajustes", icon: "settings" },
 ] as const;
 
+// Altura fixa do pill (não depende mais da área segura do aparelho) e a folga
+// entre a base do pill e a borda inferior da tela, que é o que de fato faz a
+// barra "flutuar" em vez de ficar encostada/colada no rodapé.
+const FLOATING_BAR_HEIGHT = 74;
+const FLOATING_BAR_GAP = 14;
+
 function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const { isDark } = useAppTheme();
   const theme = finFlowTheme(isDark);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 10 : 14);
+  const floatingBarBottom = bottomInset + FLOATING_BAR_GAP;
   const [barWidth, setBarWidth] = useState(0);
   const activeRouteName = state.routes[state.index]?.name;
   const foundIndex = VISIBLE_TABS.findIndex((tab) => tab.name === activeRouteName);
   const nextIndex = foundIndex >= 0 ? foundIndex : 0;
   const indicatorPosition = useRef(new Animated.Value(nextIndex)).current;
+  const iconPop = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.spring(indicatorPosition, {
@@ -37,7 +45,14 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
       restSpeedThreshold: 0.01,
       useNativeDriver: true,
     }).start();
-  }, [indicatorPosition, nextIndex]);
+    iconPop.setValue(0.6);
+    Animated.spring(iconPop, {
+      toValue: 1,
+      friction: 4.5,
+      tension: 170,
+      useNativeDriver: true,
+    }).start();
+  }, [iconPop, indicatorPosition, nextIndex]);
 
   const innerBarWidth = Math.max(0, barWidth - 2);
   const itemWidth = innerBarWidth > 0 ? innerBarWidth / VISIBLE_TABS.length : 0;
@@ -46,12 +61,12 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   return (
     <View
       onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}
-      style={[styles.floatingBar, { height: 64 + bottomInset, paddingBottom: bottomInset, backgroundColor: theme.surface, borderColor: theme.border }]}
+      style={[styles.floatingBar, { height: FLOATING_BAR_HEIGHT, bottom: floatingBarBottom, backgroundColor: theme.surface, borderColor: theme.border }]}
     >
       {barWidth > 0 && (
         <Animated.View pointerEvents="none" style={[styles.slidingIndicator, { left: 1 + (itemWidth - 50) / 2, transform: [{ translateX: indicatorTranslate }] }]} />
       )}
-      {VISIBLE_TABS.map((tab) => {
+      {VISIBLE_TABS.map((tab, index) => {
         const route = state.routes.find((candidate) => candidate.name === tab.name);
         if (!route) return null;
         const focused = activeRouteName === tab.name;
@@ -59,6 +74,11 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
         };
+        const labelOpacity = indicatorPosition.interpolate({
+          inputRange: [index - 1, index, index + 1],
+          outputRange: [1, 0, 1],
+          extrapolate: "clamp",
+        });
         return (
           <TouchableOpacity
             key={tab.name}
@@ -70,10 +90,10 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
             onPress={onPress}
             onLongPress={() => navigation.emit({ type: "tabLongPress", target: route.key })}
           >
-            <View style={[styles.iconShell, focused && styles.iconShellFocused]}>
+            <Animated.View style={[styles.iconShell, focused && { transform: [{ translateY: -4 }, { scale: iconPop }] }]}>
               <MaterialIcons name={tab.icon} size={focused ? 28 : 25} color={focused ? "#FFF" : theme.textMuted} />
-            </View>
-            <Text style={[styles.customTabLabel, { color: focused ? theme.text : theme.textMuted }]}>{tab.label}</Text>
+            </Animated.View>
+            <Animated.Text style={[styles.customTabLabel, { color: focused ? theme.text : theme.textMuted, opacity: labelOpacity }]}>{tab.label}</Animated.Text>
           </TouchableOpacity>
         );
       })}
@@ -86,7 +106,11 @@ export default function TabLayout() {
   const theme = finFlowTheme(isDark);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, Platform.OS === "android" ? 10 : 14);
-  const tabBarHeight = 64 + bottomInset;
+  // Precisa refletir a folga do pill flutuante (FloatingTabBar): react-navigation
+  // não vê o layout do tabBar customizado, então outras telas (relatorios.tsx via
+  // useBottomTabBarHeight) só conseguem reservar espaço correto no rodapé se este
+  // valor cobrir a altura do pill MAIS a folga até a borda inferior da tela.
+  const tabBarHeight = FLOATING_BAR_HEIGHT + bottomInset + FLOATING_BAR_GAP;
 
   return (
     <Tabs
@@ -176,19 +200,18 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   floatingBar: {
     position: "absolute",
-    left: 12,
-    right: 12,
-    bottom: 0,
+    left: 16,
+    right: 16,
     flexDirection: "row",
     borderWidth: 1,
     borderRadius: 32,
     paddingTop: 7,
     overflow: "visible",
-    elevation: 18,
-    shadowColor: "#001E1A",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.22,
-    shadowRadius: 18,
+    elevation: 24,
+    shadowColor: "#001510",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.32,
+    shadowRadius: 22,
   },
   slidingIndicator: {
     position: "absolute",
@@ -197,13 +220,11 @@ const styles = StyleSheet.create({
     height: 50,
     borderRadius: 25,
     backgroundColor: FinFlowColors.primary,
-    borderWidth: 3,
-    borderColor: "rgba(255,255,255,0.92)",
-    elevation: 10,
-    shadowColor: "#001E1A",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28,
-    shadowRadius: 10,
+    elevation: 12,
+    shadowColor: FinFlowColors.primary,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.5,
+    shadowRadius: 12,
   },
   customTabItem: {
     flex: 1,
@@ -219,9 +240,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 21,
-  },
-  iconShellFocused: {
-    transform: [{ translateY: -4 }],
   },
   customTabLabel: {
     position: "absolute",
