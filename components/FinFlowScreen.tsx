@@ -24,11 +24,14 @@ type FlowEntry = {
   onRequestClose?: () => void;
 };
 
+type FlowDestination = Parameters<ReturnType<typeof useRouter>["replace"]>[0];
+
 type FlowRegistry = {
   entries: ReadonlyMap<string, FlowEntry>;
   register: (id: string, entry: FlowEntry) => void;
   unregister: (id: string) => void;
   closeRoute: () => void;
+  closeAndNavigate: (destination: FlowDestination) => void;
 };
 
 const FlowScreenContext = createContext<FlowRegistry | null>(null);
@@ -39,6 +42,7 @@ export function FinFlowScreenProvider({ children }: { children: ReactNode }) {
   const [entries, setEntries] = useState<ReadonlyMap<string, FlowEntry>>(() => new Map());
   const entriesRef = useRef<ReadonlyMap<string, FlowEntry>>(new Map());
   const routeOpenRef = useRef(false);
+  const pendingDestinationRef = useRef<FlowDestination | null>(null);
   const register = useCallback((id: string, entry: FlowEntry) => {
     const next = new Map(entriesRef.current);
     next.set(id, entry);
@@ -65,16 +69,41 @@ export function FinFlowScreenProvider({ children }: { children: ReactNode }) {
     entriesRef.current = new Map();
     setEntries(entriesRef.current);
     activeEntries.forEach((entry) => entry.onRequestClose?.());
-  }, []);
+    const destination = pendingDestinationRef.current;
+    pendingDestinationRef.current = null;
+    if (destination) {
+      // A rota de fluxo precisa sair completamente antes da troca de aba.
+      // Navegar antes disso pode deixar /flow-screen vazia sob a nova tela.
+      setTimeout(() => router.navigate(destination), 0);
+    }
+  }, [router]);
+  const closeAndNavigate = useCallback((destination: FlowDestination) => {
+    pendingDestinationRef.current = destination;
+    if (routeOpenRef.current) {
+      router.back();
+      return;
+    }
+    pendingDestinationRef.current = null;
+    router.navigate(destination);
+  }, [router]);
 
   const value = useMemo<FlowRegistry>(() => ({
     entries,
     register,
     unregister,
     closeRoute,
-  }), [closeRoute, entries, register, unregister]);
+    closeAndNavigate,
+  }), [closeAndNavigate, closeRoute, entries, register, unregister]);
 
   return <FlowScreenContext.Provider value={value}>{children}</FlowScreenContext.Provider>;
+}
+
+export function useFinFlowNavigation() {
+  const registry = useContext(FlowScreenContext);
+  if (!registry) {
+    throw new Error("useFinFlowNavigation deve ser usado dentro de FinFlowScreenProvider.");
+  }
+  return registry.closeAndNavigate;
 }
 
 /**

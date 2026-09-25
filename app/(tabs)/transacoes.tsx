@@ -20,7 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Modal from "../../components/FinFlowScreen";
+import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
@@ -183,6 +183,7 @@ const normalizarBusca = (valor: string) => (valor || "")
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
   const router = useRouter();
+  const navigateFromFlow = useFinFlowNavigation();
   const params = useLocalSearchParams<{ filtroPeriodo?: "hoje" | "proximos-7-dias" | "atrasados" | string }>();
   const novoTema = finFlowTheme(isDark);
 
@@ -2312,7 +2313,7 @@ export default function TransacoesScreen() {
                 style={{ minHeight: 52, borderRadius: 11, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginBottom: 9 }}
                 onPress={() => {
                   const fatura = faturaAbrirCartao;
-                  router.replace({ pathname: "/cartoes", params: { pagarCartaoId: String(fatura.cartao_id), mesFatura: fatura.mes_fatura } } as any);
+                  navigateFromFlow({ pathname: "/cartoes", params: { pagarCartaoId: String(fatura.cartao_id), mesFatura: fatura.mes_fatura } } as any);
                 }}
               >
                 <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Continuar para o cartão</Text>
