@@ -20,7 +20,7 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
       .order("id")
       .range(from, to)),
-    supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version"),
+    fetchAllRows((from, to) => supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").range(from, to)),
     fetchAllRows((from, to) => supabase
       .from("fatura_itens")
       .select("id, cartao_id, user_id, descricao, valor, data_compra, mes_fatura, parcela_atual, total_parcelas, categoria_id, pago, grupo_parcela_id")

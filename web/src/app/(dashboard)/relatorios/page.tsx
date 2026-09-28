@@ -40,7 +40,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
       .order("id")
       .range(from, to)),
-    supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version"),
+    fetchAllRows((from, to) => supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").range(from, to)),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     fetchAllRows((from, to) => supabase
       .from("fatura_itens")
