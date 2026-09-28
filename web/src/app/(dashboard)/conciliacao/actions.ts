@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { traduzirErro } from "@/lib/error-messages";
 
+export type NewReconciliationEntry = { categoryId: number | null; description: string; value: number };
+
 export type ReconcileEntryInput = {
   accountId: number;
   fingerprint: string;
@@ -13,8 +15,7 @@ export type ReconcileEntryInput = {
   mode: "existing" | "new";
   transactionId?: number | null;
   transactionIds?: number[];
-  categoryId?: number | null;
-  description: string;
+  newEntries?: NewReconciliationEntry[];
   requestId: string;
   excessAsInterest?: boolean;
   existingKind?: "standard" | "transfer" | "goal" | "invoice";
@@ -53,6 +54,8 @@ function reconciliationError(message: string): string {
     TRANSACTION_ADJUSTMENT_NOT_ALLOWED_BEFORE_DUE_DATE: "Juros só podem ser registrados depois da data agendada.",
     RECONCILIATION_CATEGORY_INVALID: "Selecione uma categoria ativa e compatível.",
     RECONCILIATION_DESCRIPTION_INVALID: "Informe uma descrição de até 100 caracteres.",
+    RECONCILIATION_NEW_ENTRIES_INVALID: "Informe entre 2 e 50 lançamentos, cada um com categoria, descrição e valor.",
+    RECONCILIATION_NEW_ENTRIES_TOTAL_MISMATCH: "A soma dos novos lançamentos precisa ser exatamente igual ao valor do extrato.",
     RECONCILIATION_COMPLETION_NOT_CONFIRMED: "O banco não confirmou a baixa. Nenhuma conciliação foi gravada.",
     RECONCILIATION_CREATION_NOT_CONFIRMED: "O banco não confirmou o novo lançamento. Nenhuma conciliação foi gravada.",
     RECONCILIATION_PARTIAL_RECEIPT_UNAVAILABLE: "Esta conciliação mudou. Reimporte o extrato antes de continuar.",
@@ -73,11 +76,24 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
     || transactionIds.some((id) => !Number.isSafeInteger(id) || (input.existingKind !== "invoice" && id <= 0)))) {
     return { erro: "Selecione o lançamento que será conciliado." };
   }
-  if (input.mode === "new" && (!Number.isSafeInteger(input.categoryId) || Number(input.categoryId) <= 0)) {
-    return { erro: "Selecione a categoria do novo lançamento." };
+  const newEntries = (input.newEntries ?? []).map((entry) => ({
+    categoryId: entry.categoryId,
+    description: entry.description.trim(),
+    value: Math.round((entry.value + Number.EPSILON) * 100) / 100,
+  }));
+  if (input.mode === "new" && (newEntries.length < 1 || newEntries.length > 50
+    || newEntries.some((entry) => !Number.isSafeInteger(entry.categoryId) || Number(entry.categoryId) <= 0
+      || !entry.description || entry.description.length > 100
+      || !Number.isFinite(entry.value) || entry.value <= 0 || entry.value > 999_999_999_999.99))) {
+    return { erro: "Informe categoria, descrição e valor de cada novo lançamento." };
   }
-  const description = input.description.trim();
-  if (input.mode === "new" && (!description || description.length > 100)) return { erro: "Informe uma descrição de até 100 caracteres." };
+  if (input.mode === "new" && newEntries.length > 1) {
+    const total = Math.round(newEntries.reduce((sum, entry) => sum + entry.value, 0) * 100) / 100;
+    if (total !== Math.round(input.amount * 100) / 100) {
+      return { erro: "A soma dos novos lançamentos precisa ser exatamente igual ao valor do extrato." };
+    }
+  }
+  const description = newEntries[0]?.description ?? "";
 
   const supabase = await createClient();
   const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -151,6 +167,29 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
     revalidatePath("/"); revalidatePath("/conciliacao"); revalidatePath("/transacoes"); revalidatePath("/contas"); revalidatePath("/relatorios");
     return { erro: null, sucesso: `${transactionIds.length} lançamentos conciliados com a movimentação.` };
   }
+  if (input.mode === "new" && newEntries.length > 1) {
+    const { data, error } = await supabase.rpc("reconcile_bank_statement_new_entries", {
+      p_account_id: input.accountId,
+      p_entry_fingerprint: input.fingerprint,
+      p_entry_date: input.date,
+      p_entry_type: input.type,
+      p_entry_amount: input.amount,
+      p_entries: newEntries.map((entry) => ({ category_id: entry.categoryId, description: entry.description, value: entry.value })),
+      p_idempotency_key: input.requestId,
+      p_expected_user_id: user.id,
+      p_client_created_at: new Date().toISOString(),
+    });
+    if (error) {
+      return { erro: error.code === "PGRST202"
+        ? "A atualização do banco para dividir um lançamento novo em vários ainda não foi aplicada. Nenhuma alteração financeira foi feita."
+        : reconciliationError(error.message) };
+    }
+    if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
+      return { erro: "O servidor não confirmou a criação dos novos lançamentos. Nenhuma alteração foi considerada concluída." };
+    }
+    revalidatePath("/"); revalidatePath("/conciliacao"); revalidatePath("/transacoes"); revalidatePath("/contas"); revalidatePath("/relatorios");
+    return { erro: null, sucesso: `${newEntries.length} novos lançamentos criados e conciliados com a movimentação.` };
+  }
   const transactionId = transactionIds[0] ?? null;
   const rpcName = input.mode === "existing" && input.existingStatus === "paga"
     ? "link_completed_bank_statement_entry"
@@ -178,7 +217,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
     ...commonRpcInput,
     p_mode: input.mode,
     p_transaction_id: input.mode === "existing" ? transactionId : null,
-    p_category_id: input.mode === "new" ? input.categoryId : null,
+    p_category_id: input.mode === "new" ? newEntries[0]?.categoryId ?? null : null,
     p_description: input.mode === "new" ? description : "",
     p_excess_as_interest: input.excessAsInterest === true,
   };
