@@ -19,7 +19,7 @@ export default async function ReconciliationPage() {
   const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, cardsResult, invoiceItemsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult, entitlementResult] = await Promise.all([
     supabase.auth.getClaims(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
-    supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome"),
+    fetchAllRows((from, to) => supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome").range(from, to)),
     fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
     supabase.from("cartoes").select("id,user_id,nome,cor,limite,dia_vencimento,dia_fechamento,ativo,version").eq("ativo", true),
     fetchAllRows((from, to) => supabase.from("fatura_itens").select("id,cartao_id,user_id,descricao,valor,data_compra,mes_fatura,parcela_atual,total_parcelas,categoria_id,pago,grupo_parcela_id").eq("pago", false).range(from, to)),

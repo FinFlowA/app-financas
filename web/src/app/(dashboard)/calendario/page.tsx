@@ -13,7 +13,7 @@ export default async function CalendarPage() {
   const [accountsResult, goalsResult, categoriesResult, transactionsResult, cardsResult, invoiceItemsResult] = await Promise.all([
     supabase.from("contas").select("id,user_id,nome,cor,saldo_inicial,arquivado,compartilhado,version").order("nome"),
     supabase.from("caixinhas").select("id,user_id,nome,meta_valor,saldo_atual,cor,icone,compartilhado,data_prazo,arquivado,version").order("nome"),
-    supabase.from("categorias").select("id,user_id,nome,cor,icone,tipo,ativa,bloqueado_plano,version").order("nome"),
+    fetchAllRows((from, to) => supabase.from("categorias").select("id,user_id,nome,cor,icone,tipo,ativa,bloqueado_plano,version").order("nome").range(from, to)),
     fetchAllRows((from, to) => supabase.from("transacoes")
       .select("id,user_id,conta_id,categoria_id,tipo,valor,descricao,data_vencimento,data_realizacao,status,transacao_pai_id,version")
       .is("transacao_pai_id", null).order("data_vencimento").range(from, to)),

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/pagination";
 import type { Categoria } from "@/lib/types";
 import CategoryManager from "./category-manager";
 
@@ -6,7 +7,7 @@ export default async function CategoriasPage() {
   const supabase = await createClient();
   // `*` mantém a leitura compatível com bancos que ainda não receberam a
   // coluna `version`; o RLS continua limitando as linhas ao usuário conectado.
-  const result = await supabase.from("categorias").select("*").order("nome");
+  const result = await fetchAllRows((from, to) => supabase.from("categorias").select("*").order("nome").range(from, to));
   if (result.error) {
     return <section className="ff-card mx-auto max-w-3xl p-6 text-center"><h1 className="text-xl font-extrabold text-foreground">Categorias indisponíveis</h1><p className="mt-2 text-sm text-foreground-muted">Não foi possível carregar suas categorias agora. Atualize a página em instantes.</p></section>;
   }
