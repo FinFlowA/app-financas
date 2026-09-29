@@ -946,9 +946,14 @@ export default function ConfiguracoesScreen() {
             ) : !parceria ? (
               <>
                 <View style={styles.parceriaHeader}>
-                  <View style={[styles.parceriaIcon, { backgroundColor: novoTema.primarySoft }]}>
-                    <MaterialIcons name="people" size={26} color={novoTema.primary} />
-                  </View>
+                  {/* Finn com a namorada: PNG com fundo transparente. */}
+                  <Image
+                    source={require("../../assets/images/finn-casal.png")}
+                    style={styles.parceriaIlustracao}
+                    resizeMode="contain"
+                    accessibilityIgnoresInvertColors
+                    accessible={false}
+                  />
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Text style={[styles.parceriaTitle, { color: Cores.texto }]}>Finanças a dois</Text>
                     <Text style={[styles.parceriaSubtitle, { color: Cores.secundario }]}>
@@ -1566,7 +1571,7 @@ const styles = StyleSheet.create({
   centerBox: { alignItems: "center", paddingVertical: 10 },
   rowBtns: { flexDirection: "row", width: "100%" },
   parceriaHeader: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
-  parceriaIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  parceriaIlustracao: { width: 84, height: 76 },
   parceriaIconLarge: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center" },
   parceriaTitle: { fontSize: 17, fontWeight: "800" },
   parceriaSubtitle: { fontSize: 13, lineHeight: 19, marginTop: 3 },
