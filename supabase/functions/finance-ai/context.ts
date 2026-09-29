@@ -36,7 +36,7 @@ const CARD_LIMIT = 200;
 // teto de MODEL_MAX_SYSTEM_PROMPT_CHARS sozinho, então esse valor precisa
 // ficar apertado nesse caminho. O prompt somente-leitura é bem menor: usar o
 // mesmo teto de 4K aqui desperdiçava a folga e derrubava recursos baratos e
-// essenciais (categories, recent_week_category_totals) para uma conta com
+// essenciais (categories, week_category_totals) para uma conta com
 // poucos anos de histórico -- confirmado em produção via
 // finance_ai_debug_log: categoriesCount=0 numa pergunta com dado real no
 // banco, porque o agregado bruto (finance_ai_context_snapshot) já passava de
@@ -137,6 +137,17 @@ function daysBefore(date: string, days: number): string {
   const [year, month, day] = date.split("-").map(Number);
   const shifted = new Date(Date.UTC(year, month - 1, day - days));
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
+}
+
+// "Semana" para o FinFlow é domingo a sábado (convenção mais comum no
+// Brasil), não uma janela deslizante de 7 dias -- bug real: "quanto gastei
+// com alimentação na última semana?" somava os últimos 7 dias corridos, que
+// raramente coincide com a semana civil anterior e confundia quem esperava
+// o intervalo domingo-sábado.
+function startOfWeekSunday(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return daysBefore(date, dayOfWeek);
 }
 
 function currentDateInSaoPaulo(): string {
@@ -311,41 +322,6 @@ async function countTransactionsInFocusMonth(
     .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
   if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
   return count ?? 0;
-}
-
-type RecentCategoryWindow = {
-  start_date: string;
-  end_date: string;
-  rows: { categoria_id: number | null; valor: number }[];
-};
-
-/** Total gasto/recebido por categoria nos últimos 7 dias (hoje incluso),
- * calculado no banco em vez de pedido ao modelo para somar
- * relevant_transactions de cabeça. Perguntas como "quanto gastei com
- * alimentação na última semana?" tiveram 3 falhas diferentes só nesta
- * sessão pedindo pro modelo somar manualmente (pediu pro usuário
- * reclassificar, excluiu um item em silêncio, e por fim inventou um total
- * sem relação nenhuma com os dados) -- soma é aritmética determinística,
- * não deveria depender do modelo acertar. */
-async function fetchRecentCategoryTotals(
-  client: SupabaseClient,
-  currentDate: string,
-  enabled: boolean,
-): Promise<RecentCategoryWindow | null> {
-  if (!enabled) return null;
-  const startDate = daysBefore(currentDate, 6);
-  const { data, error } = await client.from("transacoes")
-    .select("categoria_id,valor,status,data_vencimento,data_realizacao")
-    .or(`and(data_vencimento.gte.${startDate},data_vencimento.lte.${currentDate}),and(status.eq.paga,data_realizacao.gte.${startDate},data_realizacao.lte.${currentDate})`);
-  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
-  return {
-    start_date: startDate,
-    end_date: currentDate,
-    rows: (data ?? []).map((row) => ({
-      categoria_id: row.categoria_id == null ? null : number(row.categoria_id),
-      valor: number(row.valor),
-    })),
-  };
 }
 
 type CategoryTotalsWindow = {
@@ -1830,7 +1806,14 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow, monthlyExtremes, currentMonthCategoryWindow, previousMonthCategoryWindow, categoryTopTransactions] = await Promise.all([
+  // "Essa semana"/"esta semana" e "última semana"/"semana passada" precisam
+  // de janelas diferentes sob a convenção domingo-sábado: a atual vai do
+  // domingo mais recente até hoje (ainda em andamento); a anterior é a
+  // semana civil completa logo antes dela.
+  const currentWeekStart = startOfWeekSunday(currentDate);
+  const previousWeekEnd = daysBefore(currentWeekStart, 1);
+  const previousWeekStart = daysBefore(currentWeekStart, 7);
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, currentWeekCategoryWindow, previousWeekCategoryWindow, monthlyExtremes, currentMonthCategoryWindow, previousMonthCategoryWindow, categoryTopTransactions] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1846,7 +1829,8 @@ export async function buildFinancialContext(
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
     needs.marketIndicatorQuery ? fetchMarketIndicators(fetch, currentDate) : Promise.resolve<MarketIndicators | null>(null),
     countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
-    fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
+    fetchCategoryTotalsWindow(client, currentWeekStart, currentDate, needs.transactionDetails),
+    fetchCategoryTotalsWindow(client, previousWeekStart, previousWeekEnd, needs.transactionDetails),
     fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
     fetchCategoryTotalsWindow(client, `${currentMonth}-01`, endOfMonth(currentMonth), needs.categoryMonthComparison),
     fetchCategoryTotalsWindow(client, `${previousMonth(currentMonth)}-01`, endOfMonth(previousMonth(currentMonth)), needs.categoryMonthComparison),
@@ -1889,7 +1873,12 @@ export async function buildFinancialContext(
         .filter((item): item is { category: string; total: number } => item.category !== null),
     };
   };
-  const recentCategoryTotals = recentCategoryWindow ? categoryTotalsByWindow(recentCategoryWindow) : null;
+  const weekCategoryComparisonResult = currentWeekCategoryWindow && previousWeekCategoryWindow
+    ? {
+      current_week: categoryTotalsByWindow(currentWeekCategoryWindow),
+      previous_week: categoryTotalsByWindow(previousWeekCategoryWindow),
+    }
+    : null;
   const categoryMonthComparisonResult = currentMonthCategoryWindow && previousMonthCategoryWindow
     ? {
       current_month: categoryTotalsByWindow(currentMonthCategoryWindow),
@@ -2153,7 +2142,7 @@ export async function buildFinancialContext(
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
     market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
-    recent_week_category_totals: recentCategoryTotals,
+    week_category_totals: weekCategoryComparisonResult,
     month_extreme_transactions: monthlyExtremes,
     category_month_comparison: categoryMonthComparisonResult,
     category_top_transactions: categoryTopTransactions

@@ -343,33 +343,38 @@ Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens
   );
 });
 
-Deno.test("prompt somente leitura usa o total pronto de categoria dos ultimos 7 dias", () => {
+Deno.test("prompt somente leitura usa o total pronto de categoria da semana civil", () => {
   // Bug real: "Quanto eu gastei com alimentacao na ultima semana?" teve 3
   // falhas diferentes so nesta sessao pedindo pro modelo somar
   // relevant_transactions de cabeca (pediu pro usuario reclassificar,
   // excluiu um lancamento em silencio, e por fim respondeu um total sem
   // relacao nenhuma com os dados reais). A soma passou a ser calculada no
-  // banco (fetchRecentCategoryTotals/recent_week_category_totals em
-  // context.ts) para essa pergunta nao depender mais da aritmetica do
-  // modelo.
+  // banco (fetchCategoryTotalsWindow/week_category_totals em context.ts)
+  // para essa pergunta nao depender mais da aritmetica do modelo.
+  //
+  // Segundo bug real, descoberto depois: a janela usada era "ultimos 7 dias
+  // corridos" em vez da semana civil (domingo a sabado) que o usuario espera
+  // ao dizer "semana passada" -- corrigido para week_category_totals
+  // trazer current_week (domingo ate hoje) e previous_week (semana civil
+  // anterior completa) separadamente.
   const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
   assert(
-    readOnly.includes("recent_week_category_totals"),
-    "o prompt somente leitura precisa orientar o uso do total pronto de categoria dos ultimos 7 dias",
+    readOnly.includes("week_category_totals") && readOnly.includes("current_week.by_category") && readOnly.includes("previous_week.by_category"),
+    "o prompt somente leitura precisa orientar o uso do total pronto de categoria da semana atual e da semana anterior",
   );
 });
 
 Deno.test("prompt somente leitura restringe o detalhamento de um total semanal a mesma janela", () => {
   // Bug real: depois de responder corretamente "Na ultima semana voce gastou
-  // R$ 68,00 com Alimentacao" (usando recent_week_category_totals), a
-  // pergunta de acompanhamento "Quais os dias que eu gastei?" nao repete
-  // "ultima semana" e cai fora do atalho deterministico de
-  // weeklyCategorySpendAnswer() (que exige "quanto"). O modelo respondeu
-  // listando lancamentos de ate 2 semanas atras (R$ 94,00 no total),
-  // contradizendo o total de R$ 68,00 que ele mesmo acabara de informar.
+  // R$ 68,00 com Alimentacao" (usando week_category_totals), a pergunta de
+  // acompanhamento "Quais os dias que eu gastei?" nao repete "ultima semana"
+  // e cai fora do atalho deterministico de weeklyCategorySpendAnswer() (que
+  // exige "quanto"). O modelo respondeu listando lancamentos de ate 2
+  // semanas atras (R$ 94,00 no total), contradizendo o total de R$ 68,00 que
+  // ele mesmo acabara de informar.
   const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
   assert(
-    readOnly.includes("recent_week_category_totals.start_date"),
+    readOnly.includes("start_date–end_date de current_week ou previous_week"),
     "o prompt somente leitura precisa restringir o detalhamento de um total semanal a mesma janela de start_date/end_date",
   );
 });
