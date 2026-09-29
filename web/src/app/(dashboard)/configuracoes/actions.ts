@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { hasVerifiedFactor, totpErrorMessage, verifyTotpCode } from "@/lib/auth/mfa";
 import { createClient } from "@/lib/supabase/server";
 import { parseMoney } from "@/lib/money";
 
@@ -351,6 +352,14 @@ export async function deleteAccountAction(
     password: currentPassword,
   });
   if (reauthenticationError) return fail("Senha atual incorreta. Nenhum dado foi removido.");
+
+  // Entrar com a senha cria uma sessão sem o segundo fator. Quem ativou a
+  // verificação em duas etapas confirma o código antes de qualquer consulta,
+  // já que o banco recusa sessões sem ele (finflow_guard.enforce_mfa).
+  if (hasVerifiedFactor(auth.user)) {
+    const result = await verifyTotpCode(auth.supabase, rawText(formData, "mfa_code", 12));
+    if (result !== "ok") return fail(`${totpErrorMessage(result)} Nenhum dado foi removido.`);
+  }
 
   const [partnerships, subscriptions, accountDecisions, goalDecisions] = await Promise.all([
     openPartnershipsForUser(auth.supabase, auth.user.id, email),

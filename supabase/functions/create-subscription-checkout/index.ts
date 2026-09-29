@@ -281,6 +281,7 @@ Deno.serve(async (req) => {
       return json({ error: error.message }, error.status, req);
     }
     if (code === "UNAUTHORIZED") return json({ error: code }, 401, req);
+    if (code === "MFA_REQUIRED") return json({ error: code }, 403, req);
     console.error("create-subscription-checkout", code);
     return json({ error: "CHECKOUT_FAILED" }, 500, req);
   }

@@ -32,6 +32,28 @@
 - Nunca remover RLS para corrigir erro de permissão.
 - Nunca registrar senha, token, corpo integral de webhook ou dados bancários crus.
 
+## Verificação em duas etapas (MFA)
+
+Opcional, por app autenticador (TOTP, gratuito no Supabase). SMS não é usado: é add-on pago e vulnerável a clonagem de chip.
+
+- **Onde é exigida:** no servidor. `finflow_guard.enforce_mfa()` roda como `pgrst.db_pre_request` antes de toda requisição do PostgREST (tabelas, RPCs e GraphQL) e recusa com `FINFLOW_MFA_REQUIRED` (42501) quem tem fator verificado e sessão sem o código (AAL1). Isso cobre as funções SECURITY DEFINER, que ignoram RLS. O Realtime não é usado.
+- **service_role:** não passa pelo pre-request. Por isso as Edge Functions (`_shared/supabase.ts` → `mfaSatisfied`, Finn → `AI_MFA_REQUIRED`) e o portal Paddle do site checam por conta própria antes de agir pelo usuário.
+- **Supabase Auth** já exige AAL2 para trocar senha/e-mail e para adicionar/remover fator quando há MFA ativo, e desconecta as sessões AAL1 ao ativar.
+- **Site:** o proxy leva quem está pendente para `/verificacao-duas-etapas`. Em Segurança: ativar (QR, abrir no app, copiar chave), autenticador reserva (máx. 2) e remover. Desbloqueio da área e exclusão de conta pedem senha **e** código.
+- **App:** o `_layout` retém a sessão pendente (o app age como deslogado e mostra `MfaChallengeScreen`). Telas que reautenticam com senha sinalizam `definirReautenticacao` para pedir o código na própria tela; ao desistir, a sessão é reavaliada. A fila offline trata `FINFLOW_MFA_REQUIRED` como erro temporário (`OFFLINE_MFA_REQUIRED`).
+- **Reverter em emergência** (derruba só a exigência no banco): `alter role authenticator reset pgrst.db_pre_request; notify pgrst, 'reload config';`
+
+### Recuperação (usuário perdeu o autenticador)
+
+Não há códigos de recuperação nativos na versão atual do Supabase Auth (chegam na 2.198). Até lá:
+
+1. Confirme a identidade antes de qualquer ação: e-mail de cadastro respondendo do próprio endereço e dados que só o titular sabe (ex.: contas e valores recentes). Na dúvida, não remova.
+2. No painel do Supabase, em *Authentication → Users*, localize o usuário pelo e-mail e anote o ID.
+3. Remova os fatores pela API admin, com a chave `service_role` (nunca em cliente):
+   `DELETE {SUPABASE_URL}/auth/v1/admin/users/{user_id}/factors/{factor_id}` (liste com `GET .../admin/users/{user_id}/factors`).
+4. Oriente a pessoa a entrar e ativar a verificação de novo, de preferência com um autenticador reserva.
+5. Registre o atendimento (data, quem aprovou, como a identidade foi confirmada), sem copiar dados sensíveis.
+
 ## Compartilhamento
 
 - A parceria aceita é necessária, mas não suficiente: o recurso precisa estar marcado como compartilhado.

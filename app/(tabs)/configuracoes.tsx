@@ -35,6 +35,7 @@ import {
   salvarPreferenciasNotificacoes,
   type PreferenciasNotificacoes,
 } from "../../lib/notifications";
+import { definirReautenticacao, hasVerifiedFactor, normalizeTotpCode, totpErrorMessage, verifyTotpCode } from "../../lib/mfa";
 import {
   limparFilaFinanceiraDoUsuario,
   OFFLINE_SYNC_COMPLETED_EVENT,
@@ -146,6 +147,8 @@ export default function ConfiguracoesScreen() {
   // não ao backend.
   const [modalSenhaExclusaoVisivel, setModalSenhaExclusaoVisivel] = useState(false);
   const [senhaExclusao, setSenhaExclusao] = useState("");
+  // Quem ativou a verificação em duas etapas também confirma o código.
+  const [codigoExclusao, setCodigoExclusao] = useState("");
   const [verificandoExclusao, setVerificandoExclusao] = useState(false);
 
   const [modalInfo, setModalInfo] = useState<{ titulo: string; mensagem: string; cor?: string } | null>(null);
@@ -536,6 +539,7 @@ export default function ConfiguracoesScreen() {
         // abaixo é verificada no servidor e é o que autoriza de fato a RPC de
         // exclusão — sem ela, um token roubado não conseguiria apagar a conta.
         setSenhaExclusao("");
+        setCodigoExclusao("");
         setModalSenhaExclusaoVisivel(true);
       },
     });
@@ -554,8 +558,16 @@ export default function ConfiguracoesScreen() {
       Alert.alert("Senha necessária", "Digite sua senha atual para confirmar a exclusão.");
       return;
     }
+    const precisaCodigo = hasVerifiedFactor(session?.user);
+    if (precisaCodigo && !normalizeTotpCode(codigoExclusao)) {
+      Alert.alert("Código necessário", "Digite o código de 6 dígitos do seu app autenticador.");
+      return;
+    }
 
     setVerificandoExclusao(true);
+    // Entrar com a senha cria uma sessão sem o código; para quem tem MFA o
+    // código é confirmado logo em seguida, ainda neste fluxo.
+    if (precisaCodigo) definirReautenticacao(true);
     try {
       const { error: erroSenha } = await supabase.auth.signInWithPassword({
         email: meuEmail,
@@ -572,6 +584,15 @@ export default function ConfiguracoesScreen() {
             : "A senha atual não confere. Nenhum dado foi removido.",
         );
         return;
+      }
+
+      if (precisaCodigo) {
+        const resultado = await verifyTotpCode(supabase, codigoExclusao);
+        setCodigoExclusao("");
+        if (resultado !== "ok") {
+          Alert.alert("Código não confere", `${totpErrorMessage(resultado)} Nenhum dado foi removido.`);
+          return;
+        }
       }
 
       const [parceriasAbertas, assinaturasAbertas, decisoesConta, decisoesCaixinha] = await Promise.all([
@@ -637,6 +658,8 @@ export default function ConfiguracoesScreen() {
         cor: "#FF4444",
       });
     } finally {
+      // Se o código não foi confirmado, o _layout reavalia e abre a verificação.
+      if (precisaCodigo) definirReautenticacao(false);
       setVerificandoExclusao(false);
     }
   };
@@ -1432,6 +1455,20 @@ export default function ConfiguracoesScreen() {
                 onChangeText={setSenhaExclusao}
                 onSubmitEditing={confirmarSenhaEApagarConta}
               />
+              {hasVerifiedFactor(session?.user) && (
+                <TextInput
+                  style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto, marginBottom: 20, textAlign: "center", letterSpacing: 6, fontSize: 20 }]}
+                  placeholder="Código do autenticador"
+                  placeholderTextColor={Cores.secundario}
+                  keyboardType="number-pad"
+                  textContentType="oneTimeCode"
+                  maxLength={6}
+                  editable={!verificandoExclusao}
+                  value={codigoExclusao}
+                  onChangeText={(texto) => setCodigoExclusao(texto.replace(/\D/g, "").slice(0, 6))}
+                  accessibilityLabel="Código do app autenticador"
+                />
+              )}
               <TouchableOpacity
                 style={{ backgroundColor: "#FF4444", paddingVertical: 14, borderRadius: 10, alignItems: "center", marginBottom: 10, opacity: verificandoExclusao ? 0.6 : 1 }}
                 onPress={confirmarSenhaEApagarConta}

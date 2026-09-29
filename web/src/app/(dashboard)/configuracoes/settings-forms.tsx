@@ -316,7 +316,7 @@ export function DissolutionDecisions({ accounts, goals }: { accounts: AccountDec
   );
 }
 
-export function DeleteAccountForm() {
+export function DeleteAccountForm({ requiresMfaCode = false }: { requiresMfaCode?: boolean }) {
   const [state, action, pending] = useActionState(deleteAccountAction, INITIAL_SETTINGS_STATE);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -352,6 +352,20 @@ export function DeleteAccountForm() {
           </button>
         </span>
       </label>
+      {requiresMfaCode && (
+        <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-foreground-muted">
+          Código do app autenticador
+          <input
+            className={`${INPUT} text-center tracking-[.35em]`}
+            name="mfa_code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            required
+            maxLength={7}
+          />
+        </label>
+      )}
       <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-foreground-muted">
         Para confirmar, digite EXCLUIR
         <input

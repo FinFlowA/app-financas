@@ -556,6 +556,21 @@ export function createLocalDemoSupabaseClient() {
       },
       async resetPasswordForEmail() { return ok({}); },
       async resend() { return ok({}); },
+      // Verificação em duas etapas não existe no modo local: sem fatores, e
+      // ativar devolve um aviso em vez de quebrar a tela de Segurança.
+      mfa: {
+        async listFactors() { return ok({ all: [], totp: [], phone: [], webauthn: [] }); },
+        async getAuthenticatorAssuranceLevel() {
+          return ok({ currentLevel: "aal1", nextLevel: "aal1", currentAuthenticationMethods: [] });
+        },
+        async enroll() {
+          return failure("LOCAL_DEMO_MFA_DISABLED", "A verificação em duas etapas está desativada no modo local.");
+        },
+        async challengeAndVerify() {
+          return failure("LOCAL_DEMO_MFA_DISABLED", "A verificação em duas etapas está desativada no modo local.");
+        },
+        async unenroll() { return ok({ id: null }); },
+      },
       async verifyOtp() {
         if (!user) user = createLocalDemoUser();
         session = createLocalDemoSession(user);

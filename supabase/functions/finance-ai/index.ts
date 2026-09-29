@@ -1,5 +1,5 @@
 import { handleOptions, json } from "../_shared/http.ts";
-import { adminClient, authenticatedClient } from "../_shared/supabase.ts";
+import { adminClient, authenticatedClient, mfaSatisfied } from "../_shared/supabase.ts";
 import {
   fieldsToPayload,
   hasRemainingActionQuota,
@@ -1314,7 +1314,7 @@ function errorStatus(code: string): number {
   if (code === "AI_PROVIDER_REQUEST_TOO_LARGE") return 413;
   if (code === "AI_TEMPORARILY_PAUSED") return 503;
   if (["AI_RATE_LIMITED", "AI_DAILY_MESSAGE_LIMIT", "AI_DAILY_SAFETY_LIMIT", "AI_DAILY_QUOTA_EXCEEDED", "AI_DAILY_LIMIT_REACHED", "AI_PROVIDER_RATE_LIMITED", "AI_PROPOSAL_RATE_LIMITED"].includes(code)) return 429;
-  if (["AI_NOT_AVAILABLE", "AI_PLAN_REQUIRED", "AI_ANALYTICS_PLAN_REQUIRED", "AI_PLAN_RESOURCE_LIMIT"].includes(code)) return 403;
+  if (["AI_NOT_AVAILABLE", "AI_PLAN_REQUIRED", "AI_ANALYTICS_PLAN_REQUIRED", "AI_PLAN_RESOURCE_LIMIT", "AI_MFA_REQUIRED"].includes(code)) return 403;
   if (code === "AI_ACTION_NOT_FOUND" || code === "PENDING_ACTION_NOT_FOUND" || code.includes("_NOT_FOUND")) return 404;
   if (code === "INVALID_REQUEST" || code === "AI_SENSITIVE_DATA_REJECTED" || code.startsWith("INVALID_") || code.startsWith("AI_INVALID_") || code.startsWith("AI_MISSING_")) return 400;
   if (code === "AI_ACTION_STATE_CHANGED") return 409;
@@ -1342,6 +1342,9 @@ Deno.serve(async (req) => {
     const client = authenticatedClient(req);
     const { data: authData, error: authError } = await client.auth.getUser();
     if (authError || !authData.user) throw new Error("UNAUTHORIZED");
+    // Histórico e limpeza usam a service_role; sem esta checagem uma sessão
+    // que ainda não digitou o código da verificação em duas etapas leria o chat.
+    if (!mfaSatisfied(authData.user, req.headers.get("Authorization") ?? "")) throw new Error("AI_MFA_REQUIRED");
     const user = authData.user;
     const body = await parseRequest(req);
     const mode = requestMode(body.mode);

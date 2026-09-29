@@ -16,6 +16,7 @@
     "test:history-order": "node scripts/run-history-order-tests.cjs",
     "test:money-input": "node scripts/run-money-input-tests.cjs",
     "test:password": "node scripts/run-password-tests.cjs",
+    "test:mfa": "node scripts/run-mfa-tests.cjs",
     "test:transaction-completion": "node scripts/run-transaction-completion-tests.cjs",
     "test:plan-trigger": "node scripts/run-plan-trigger-guard-tests.cjs",
     "test:plan-matrix": "node scripts/run-plan-matrix-tests.cjs",

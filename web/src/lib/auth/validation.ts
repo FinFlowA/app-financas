@@ -7,7 +7,8 @@ export type AuthFieldName =
   | "dataNascimento"
   | "senha"
   | "confirmarSenha"
-  | "aceiteLegal";
+  | "aceiteLegal"
+  | "codigo";
 
 export type AuthFieldErrors = Partial<Record<AuthFieldName, string>>;
 

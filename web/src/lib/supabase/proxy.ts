@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { isMfaPending, MFA_CHALLENGE_ROUTE } from "@/lib/auth/mfa";
 import { hardenAuthCookie } from "@/lib/auth/pkce-cookies";
 
 const PUBLIC_ROUTES = new Set([
@@ -78,6 +79,20 @@ export async function updateSession(request: NextRequest, requestHeaders = reque
 
   if (user && AUTH_ENTRY_ROUTES.has(pathname)) {
     return NextResponse.redirect(trustedAppUrl("/"));
+  }
+
+  // Verificação em duas etapas: quem ativou MFA e ainda não digitou o código
+  // nesta sessão só acessa a tela do código (o banco também recusa os dados).
+  if (user) {
+    const mfaPending = await isMfaPending(supabase, user);
+    const target = mfaPending && pathname !== MFA_CHALLENGE_ROUTE
+      ? MFA_CHALLENGE_ROUTE
+      : !mfaPending && pathname === MFA_CHALLENGE_ROUTE ? "/" : null;
+    if (target) {
+      const redirect = NextResponse.redirect(trustedAppUrl(target));
+      supabaseResponse.cookies.getAll().forEach((cookie) => redirect.cookies.set(cookie));
+      return redirect;
+    }
   }
 
   const googleNeedsPassword = user?.app_metadata?.provider === "google"

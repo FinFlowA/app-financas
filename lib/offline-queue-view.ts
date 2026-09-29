@@ -38,6 +38,7 @@ const ACTION_LABELS = {
 
 const FAILURE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   OFFLINE_OPERATION_EXPIRED: "O prazo para sincronizar esta ação expirou.",
+  OFFLINE_MFA_REQUIRED: "Confirme a verificação em duas etapas para sincronizar.",
   OFFLINE_MAX_ATTEMPTS: "Não foi possível sincronizar após várias tentativas.",
   OFFLINE_SERVER_REJECTED: "O servidor recusou esta ação.",
   OFFLINE_RATE_LIMITED: "Muitas tentativas de sincronização. Tente novamente mais tarde.",

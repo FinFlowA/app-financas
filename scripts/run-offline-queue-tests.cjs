@@ -120,6 +120,15 @@ async function run() {
   assert.deepEqual(await domainFailureExecutor(executionRequest), {
     ok: false, retryable: false, errorCode: "AI_LIMIT_BELOW_USED",
   });
+  // Verificação em duas etapas pendente: o banco recusa (42501), mas a ação
+  // precisa continuar na fila até o usuário confirmar o código.
+  const mfaPendingExecutor = createSupabaseOfflineExecutor({
+    auth: { getUser: async () => ({ data: { user: { id: USER_A } }, error: null }) },
+    rpc: async () => ({ data: null, error: { code: "42501", message: "FINFLOW_MFA_REQUIRED" }, status: 403 }),
+  });
+  assert.deepEqual(await mfaPendingExecutor(executionRequest), {
+    ok: false, retryable: true, errorCode: "OFFLINE_MFA_REQUIRED",
+  });
 
   let optimisticRpcName;
   let optimisticRpcPayload;

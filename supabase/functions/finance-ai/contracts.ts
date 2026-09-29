@@ -253,6 +253,7 @@ export const MODEL_OUTPUT_FORMAT = {
 export function publicErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     UNAUTHORIZED: "Sua sessão expirou. Entre novamente para usar a IA financeira.",
+    AI_MFA_REQUIRED: "Digite o código da verificação em duas etapas para usar a IA financeira.",
     METHOD_NOT_ALLOWED: "Esta operação não é aceita pela IA financeira.",
     AI_CONFIGURATION_FAILED: "Não consegui acessar meus recursos financeiros agora por uma falha de configuração.",
     AI_HISTORY_FAILED: "Não consegui acessar o histórico da conversa agora.",

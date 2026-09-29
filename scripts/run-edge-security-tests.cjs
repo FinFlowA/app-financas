@@ -142,4 +142,30 @@ for (const file of edgeFiles) {
   assert(errors.length === 0, `${path.relative(root, file)}: sintaxe TypeScript inválida`);
 }
 
+// Verificação em duas etapas: as Edge Functions agem com a service_role, que
+// não passa pelo pre-request do banco (finflow_guard.enforce_mfa).
+const mfaModuleSource = ts.transpileModule(supabaseShared.replace(/^import .*$/gm, ""), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const mfaModulePath = path.join(fs.mkdtempSync(path.join(require("node:os").tmpdir(), "finflow-edge-mfa-")), "supabase-shared.cjs");
+fs.writeFileSync(mfaModulePath, mfaModuleSource);
+const mfaExports = require(mfaModulePath);
+const bearer = (claims) => `Bearer header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.assinatura`;
+const verified = { factors: [{ status: "verified" }] };
+assert(mfaExports.mfaSatisfied({ factors: [] }, bearer({ aal: "aal1" })), "MFA: sem fator ativo não pode exigir código");
+assert(mfaExports.mfaSatisfied({}, bearer({ aal: "aal1" })), "MFA: usuário sem lista de fatores não pode exigir código");
+assert(mfaExports.mfaSatisfied({ factors: [{ status: "unverified" }] }, bearer({ aal: "aal1" })), "MFA: fator não verificado não ativa a exigência");
+assert(!mfaExports.mfaSatisfied(verified, bearer({ aal: "aal1" })), "MFA: sessão aal1 com MFA ativo precisa ser recusada");
+assert(!mfaExports.mfaSatisfied(verified, bearer({})), "MFA: token sem aal com MFA ativo precisa ser recusado");
+assert(!mfaExports.mfaSatisfied(verified, "Bearer token-ilegivel"), "MFA: token ilegível com MFA ativo precisa ser recusado");
+assert(mfaExports.mfaSatisfied(verified, bearer({ aal: "aal2" })), "MFA: sessão aal2 precisa passar");
+assert(supabaseShared.includes('throw new Error("MFA_REQUIRED")'), "authenticatedUser precisa recusar MFA pendente");
+for (const fn of ["cancel-subscription", "sync-subscription", "create-subscription-checkout"]) {
+  assert(read(`supabase/functions/${fn}/index.ts`).includes("MFA_REQUIRED"), `${fn}: MFA_REQUIRED precisa virar 403`);
+}
+const financeIndex = read("supabase/functions/finance-ai/index.ts");
+const mfaCheckAt = financeIndex.indexOf('throw new Error("AI_MFA_REQUIRED")');
+assert(mfaCheckAt > 0, "finance-ai precisa checar MFA");
+assert(mfaCheckAt < financeIndex.indexOf("await handleHistory(admin, user.id"), "finance-ai: MFA precisa ser checado antes do histórico (service_role)");
+
 console.log("Edge security validation tests passed.");

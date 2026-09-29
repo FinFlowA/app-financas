@@ -12,6 +12,7 @@ import {
   logSafeAuthFailure,
   safeSignupErrorMessage,
 } from "@/lib/auth/safe-errors";
+import { totpErrorMessage, verifyTotpCode } from "@/lib/auth/mfa";
 import { isPwnedPassword, PWNED_PASSWORD_MESSAGE } from "@/lib/auth/pwned-password";
 import type { AuthActionState } from "@/lib/auth/state";
 import {
@@ -346,4 +347,27 @@ export async function checkPasswordExposureAction(password: string): Promise<{ p
   } catch {
     return { pwned: false };
   }
+}
+
+/**
+ * Segunda etapa do login para quem ativou a verificação em duas etapas:
+ * confere o código do app autenticador e eleva a sessão a AAL2.
+ */
+export async function verifyMfaChallengeAction(
+  _previousState: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState> {
+  const code = String(formData.get("codigo") ?? "").slice(0, 12);
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      return { status: "error", message: "Sua sessão expirou. Entre novamente." };
+    }
+    const result = await verifyTotpCode(supabase, code);
+    if (result !== "ok") return { status: "error", errors: { codigo: totpErrorMessage(result) } };
+  } catch {
+    return { status: "error", message: safeUnexpectedMessage() };
+  }
+  redirect("/");
 }

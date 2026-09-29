@@ -61,6 +61,7 @@ import {
   garantirCategoriaOutros,
 } from "../lib/default-categories";
 import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import { reautenticacaoAtiva, registrarReavaliacaoMfa, sessaoAguardandoMfa } from "../lib/mfa";
 import {
   conexaoPermiteSincronizacao,
   OFFLINE_SYNC_COMPLETED_EVENT,
@@ -70,6 +71,7 @@ import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow
 import { getOptionalNetInfo, getOptionalScreenCapture } from "../lib/optional-native-modules";
 import { formatarEntradaMoeda, valorDaEntradaMoeda } from "../lib/utils";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
+import MfaChallengeScreen from "../components/MfaChallengeScreen";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
   type DecisaoContaDissolucao,
@@ -216,6 +218,10 @@ export default function RootLayout() {
   const [erroDesbloqueio, setErroDesbloqueio] = useState("");
   const [isReady, setIsReady] = useState(false);
   const [session, setSession] = useState<any>(null);
+  // Sessão de quem ativou a verificação em duas etapas e ainda não digitou o
+  // código. Fica retida aqui (session = null) para nenhuma tela carregar dados
+  // que o banco recusaria; o app mostra a tela do código até a confirmação.
+  const [sessaoMfaPendente, setSessaoMfaPendente] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
   const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
@@ -492,29 +498,54 @@ export default function RootLayout() {
   useEffect(() => {
     carregarConfiguracoes();
 
+    // Libera a sessão para o app ou a retém na tela do código (MFA). Retorna
+    // true quando o app pode usar a sessão (e sincronizar dados).
+    const aplicarSessao = (novaSessao: any): boolean => {
+      const aguardandoCodigo = sessaoAguardandoMfa(novaSessao);
+      // Telas sensíveis reautenticam com a senha e pedem o código na própria
+      // tela; durante esse fluxo a sessão do mesmo usuário continua liberada.
+      const reautenticandoNaTela = aguardandoCodigo
+        && reautenticacaoAtiva()
+        && usuarioSessaoRef.current === novaSessao?.user?.id;
+      const liberada = Boolean(novaSessao) && (!aguardandoCodigo || reautenticandoNaTela);
+      setSessaoMfaPendente(aguardandoCodigo && !reautenticandoNaTela ? novaSessao : null);
+      setSession(liberada ? novaSessao : null);
+      usuarioSessaoRef.current = liberada ? novaSessao.user.id : null;
+      return liberada;
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      usuarioSessaoRef.current = session?.user?.id ?? null;
-      setSession(session);
+      const liberada = aplicarSessao(session);
       if (!session) void limparNotificacoesAoSair(null);
-      else void sincronizarPendenciasOffline();
+      else if (liberada) void sincronizarPendenciasOffline();
       setIsAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const usuarioAnterior = usuarioSessaoRef.current;
-      usuarioSessaoRef.current = session?.user?.id ?? null;
-      setSession(session);
+      const liberada = aplicarSessao(session);
       if (event === "PASSWORD_RECOVERY") {
         void iniciarFluxoRecuperacaoSenha(session?.user.id);
       } else if (event === "SIGNED_OUT") {
         void AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
         void limparNotificacoesAoSair(usuarioAnterior);
-      } else if (session?.user?.id) {
+      } else if (liberada && session?.user?.id) {
         void sincronizarPendenciasOffline();
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Quando uma tela sensível termina ou desiste da reautenticação, a sessão
+    // atual é reavaliada: se ainda faltar o código, a tela de verificação abre.
+    const removerReavaliacao = registrarReavaliacaoMfa(() => {
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        if (aplicarSessao(session) && session?.user?.id) void sincronizarPendenciasOffline();
+      });
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      removerReavaliacao();
+    };
   }, [carregarConfiguracoes, iniciarFluxoRecuperacaoSenha, sincronizarPendenciasOffline]);
 
   useEffect(() => {
@@ -1082,6 +1113,8 @@ export default function RootLayout() {
   // Guarda de rotas: redireciona conforme estado de autenticação
   useEffect(() => {
     if (!isReady || !isAuthReady) return;
+    // A tela do código substitui a navegação; nada de redirecionar por baixo.
+    if (sessaoMfaPendente) return;
 
     const seg = segments[0] as string;
     const inAuthGroup = seg === "login";
@@ -1099,7 +1132,7 @@ export default function RootLayout() {
     } else if (session && inAuthGroup && !needsGooglePassword) {
       router.replace("/(tabs)");
     }
-  }, [session, isReady, isAuthReady, router, segments]);
+  }, [session, sessaoMfaPendente, isReady, isAuthReady, router, segments]);
 
   const setPlano = useCallback(async (novoPlano: TipoPlano) => {
     // Compatibilidade temporária com telas antigas. O plano só pode mudar por
@@ -1303,6 +1336,10 @@ export default function RootLayout() {
         <ActivityIndicator size="large" color="#2A9D8F" />
       </View>
     );
+  }
+
+  if (sessaoMfaPendente) {
+    return <MfaChallengeScreen isDark={isDark} userId={sessaoMfaPendente?.user?.id} />;
   }
 
   if (session && isBiometricEnabled && !isUnlocked) {

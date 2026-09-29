@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { isMfaPending } from "@/lib/auth/mfa";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPaddleInstance } from "@/lib/paddle/server";
 
@@ -8,6 +9,10 @@ export async function createPortalSessionAction(): Promise<{ url?: string; error
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.email) return { error: "Entre novamente para gerenciar sua assinatura." };
+  // O cliente admin (service_role) não passa pela checagem de MFA do banco.
+  if (await isMfaPending(supabase, user)) {
+    return { error: "Confirme a verificação em duas etapas para gerenciar sua assinatura." };
+  }
 
   const admin = createAdminClient();
   const { data: customer } = await admin

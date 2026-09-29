@@ -71,6 +71,7 @@ jobs:
       - run: npm run test:history-order
       - run: npm run test:money-input
       - run: npm run test:password
+      - run: npm run test:mfa
       - run: npm run test:transaction-completion
       - run: npm run test:plan-trigger
       - run: npm run test:account-deletion
