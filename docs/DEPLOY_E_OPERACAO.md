@@ -84,14 +84,31 @@ O CI publica EAS Update no branch/canal de preview para o runtime atual e para o
 
 ## Backups
 
-`.github/workflows/db-backup.yml` executa `pg_dump` diário e mantém dumps por 30 dias no branch `db-backups`. Requer `SUPABASE_DB_URL`.
+O backup do banco roda no repositório **privado** `FinFlowA/finflow-backups`,
+nunca neste repositório (que é público). O antigo `db-backup.yml` daqui foi
+removido: ele gravaria o dump sem criptografia num branch público.
+
+Como funciona (detalhes e passo a passo de restauração no README do
+`finflow-backups`):
+
+- todo dia às 03:00 (America/Sao_Paulo), `supabase db dump` gera roles,
+  schema e dados;
+- cada dump é **restaurado num banco Supabase descartável** dentro do runner e
+  só é aceito se as contagens das tabelas principais baterem com produção;
+- depois é criptografado com `age` (a chave privada fica só com o
+  responsável, fora do GitHub) e vira artefato apagado em 30 dias;
+- o plano gratuito da Supabase não oferece backup restaurável pelo painel,
+  então este é o único backup do projeto.
 
 Verifique periodicamente:
 
-- execução do workflow;
-- capacidade de restaurar um dump em ambiente isolado;
-- proteção e rotação da connection string;
-- ausência de dumps no branch principal.
+- falhas do workflow (o GitHub avisa por e-mail);
+- que a chave privada `age` continua acessível a mais de uma pessoa
+  autorizada;
+- rotação da senha do banco (atualizar o secret `SUPABASE_DB_URL` do
+  `finflow-backups` ao trocar);
+- que nenhum `*.dump` ou `backups/` entra neste repositório (o `.gitignore`
+  já bloqueia).
 
 ## Rollback
 

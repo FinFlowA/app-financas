@@ -69,7 +69,10 @@ As funções Mercado Pago ainda existem no repositório por compatibilidade hist
 | Secret | Workflow |
 |---|---|
 | `EXPO_TOKEN` | Publicação EAS Update após CI |
-| `SUPABASE_DB_URL` | Backup diário do PostgreSQL |
+
+O backup diário do PostgreSQL não roda neste repositório: o secret
+`SUPABASE_DB_URL` (Session pooler, porta 5432) e a variable
+`BACKUP_AGE_RECIPIENT` ficam no repositório privado `FinFlowA/finflow-backups`.
 
 ## Regras de manuseio
 

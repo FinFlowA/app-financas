@@ -18,7 +18,7 @@ Atualizado em 22/09/2026.
 2. Repetir o teste real de transferência parcelada agendada no aplicativo.
 3. Concluir aprovação do domínio e verificação da conta Paddle live.
 4. Validar catálogo, webhook, portal e um pagamento live somente depois da aprovação.
-5. Corrigir o workflow de backup caso continue falhando e testar restauração.
+5. ~~Corrigir o workflow de backup e testar restauração.~~ Feito em 29/09/2026: backup diário criptografado com restauração testada a cada execução no repositório privado `FinFlowA/finflow-backups` (ver `DEPLOY_E_OPERACAO.md`).
 6. Antes da Play Store, implementar Google Play Billing com validação server-side.
 7. Criar uma baseline reproduzível do schema para novos ambientes.
 
