@@ -28,6 +28,7 @@ import {
 import { supabase } from "../lib/supabase";
 import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from "../lib/pwned-password";
 import { useAppTheme } from "./_layout";
 
 const SECURITY_WINDOW_MS = 5 * 60 * 1000;
@@ -347,6 +348,11 @@ export default function SegurancaScreen() {
     }
 
     setIsUpdatingPassword(true);
+    if ((await checkPwnedPassword(newPassword)) === "pwned") {
+      setIsUpdatingPassword(false);
+      Alert.alert("Senha exposta em vazamentos", PWNED_PASSWORD_MESSAGE);
+      return;
+    }
     const { error } = await supabase.auth.updateUser({
       password: newPassword,
       current_password: verifiedPasswordRef.current,

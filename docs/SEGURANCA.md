@@ -16,6 +16,8 @@
 - Corpo bruto e assinatura do webhook Paddle.
 - CSP no site, incluindo origens necessárias do Paddle.
 - PKCE nos fluxos de autenticação.
+- Troca/redefinição de senha encerra as demais sessões no próprio Supabase Auth (`LogoutAllExceptMe`); o JWT de acesso já emitido vale até expirar.
+- Senha vazada: cadastro, definição e troca de senha consultam o HaveIBeenPwned por k-anonymity (`lib/pwned-password.ts` no app, `web/src/lib/auth/pwned-password.ts` no site). Só os 5 primeiros caracteres do SHA-1 saem; se a API cair, o fluxo segue. Substitui a proteção nativa da Supabase, que exige plano Pro.
 - SecureStore e bloqueio biométrico local.
 - Retenção de mensagens da IA e metadados allowlisted.
 - Gitleaks no histórico completo e verificação própria `security-check.cjs`.

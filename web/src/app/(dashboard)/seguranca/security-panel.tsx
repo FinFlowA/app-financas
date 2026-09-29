@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { checkPasswordExposureAction } from "@/lib/auth/actions";
 import { isStrongPassword, normalizeBrazilPhone } from "@/lib/auth/validation";
 import { createClient } from "@/lib/supabase/client";
 
@@ -80,6 +81,11 @@ export default function SecurityPanel({ currentEmail, currentPhone }: { currentE
     }
     setBusy(true);
     setMessage(null);
+    if ((await checkPasswordExposureAction(password)).pwned) {
+      setMessage({ tone: "error", text: "Esta senha já apareceu em vazamentos de dados públicos e pode ser descoberta por invasores. Escolha outra senha." });
+      setBusy(false);
+      return;
+    }
     const { error } = await supabase.auth.updateUser({ password });
     setMessage(error ? { tone: "error", text: "Não foi possível alterar a senha. Se o Supabase pedir confirmação adicional, use ‘Esqueci minha senha’." } : { tone: "success", text: "Senha alterada com segurança." });
     setBusy(false);

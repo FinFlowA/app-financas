@@ -7,6 +7,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Button from "../components/FinFlowButton";
 import { finFlowTheme } from "../constants/finflow-design";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from "../lib/pwned-password";
 import { supabase } from "../lib/supabase";
 import { useAppTheme } from "./_layout";
 
@@ -23,6 +24,10 @@ export default function DefinePasswordScreen() {
     if (!validatePassword(password).valid) return Alert.alert("Senha fraca", PASSWORD_REQUIREMENTS_MESSAGE);
     if (password !== confirmation) return Alert.alert("Senhas diferentes", "Digite a mesma senha nos dois campos.");
     setLoading(true);
+    if ((await checkPwnedPassword(password)) === "pwned") {
+      setLoading(false);
+      return Alert.alert("Senha exposta em vazamentos", PWNED_PASSWORD_MESSAGE);
+    }
     const userResult = await supabase.auth.getUser();
     const metadata = userResult.data.user?.user_metadata ?? {};
     const { error } = await supabase.auth.updateUser({
