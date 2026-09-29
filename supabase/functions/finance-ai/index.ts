@@ -204,21 +204,30 @@ function clientAccountBalances(compactJson: string): ClientAccountBalancesCard |
 }
 
 const WEEKLY_CATEGORY_SPEND_VERB = /\b(?:gastei|gastou|gasto|recebi|recebeu|ganhei|ganhou)\b/;
-const WEEKLY_CATEGORY_SPEND_WINDOW = /\b(?:ultima semana|essa semana|esta semana|semana passada|ultimos 7 dias)\b/;
+// "Semana" no FinFlow é domingo a sábado (ver startOfWeekSunday em
+// context.ts), não uma janela deslizante de 7 dias -- por isso "essa
+// semana"/"esta semana" (semana civil em andamento, domingo até hoje) e
+// "última semana"/"semana passada" (semana civil anterior completa) usam
+// janelas diferentes e precisam de dois padrões separados aqui.
+const WEEKLY_CATEGORY_SPEND_WINDOW_CURRENT = /\b(?:essa semana|esta semana)\b/;
+const WEEKLY_CATEGORY_SPEND_WINDOW_PREVIOUS = /\b(?:ultima semana|semana passada)\b/;
 
 function formatMoneyBRL(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// recent_week_category_totals (ver context.ts) já traz o total por categoria
-// dos últimos 7 dias calculado no banco. Resolve a categoria citada na
-// pergunta ATUAL (nunca o histórico concatenado, mesmo motivo do cartão de
-// saldo) e monta a frase aqui — só quando exatamente uma categoria bate,
-// para nunca arriscar citar a errada por ambiguidade.
+// week_category_totals (ver context.ts) já traz o total por categoria da
+// semana civil calculado no banco, tanto para a semana atual quanto para a
+// anterior. Resolve a categoria citada na pergunta ATUAL (nunca o histórico
+// concatenado, mesmo motivo do cartão de saldo) e monta a frase aqui — só
+// quando exatamente uma categoria bate, para nunca arriscar citar a errada
+// por ambiguidade.
 function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: string): string | null {
   if (!/\bquanto\b/.test(normalizedMessage)) return null;
   if (!WEEKLY_CATEGORY_SPEND_VERB.test(normalizedMessage)) return null;
-  if (!WEEKLY_CATEGORY_SPEND_WINDOW.test(normalizedMessage)) return null;
+  const isCurrentWeek = WEEKLY_CATEGORY_SPEND_WINDOW_CURRENT.test(normalizedMessage);
+  const isPreviousWeek = WEEKLY_CATEGORY_SPEND_WINDOW_PREVIOUS.test(normalizedMessage);
+  if (isCurrentWeek === isPreviousWeek) return null;
   let parsed: JsonRecord;
   try {
     parsed = asObject(JSON.parse(compactJson));
@@ -234,19 +243,23 @@ function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: strin
     .filter((row) => row.name.length >= 3 && normalizedMessage.includes(normalizeText(row.name)));
   if (matches.length !== 1) return null;
   const category = matches[0];
-  const rawWindow = parsed.recent_week_category_totals;
+  const rawComparison = parsed.week_category_totals;
+  if (!rawComparison || typeof rawComparison !== "object") return null;
+  const rawWindow = (rawComparison as JsonRecord)[isCurrentWeek ? "current_week" : "previous_week"];
   if (!rawWindow || typeof rawWindow !== "object") return null;
   const byCategoryRaw = (rawWindow as JsonRecord).by_category;
   const byCategory = Array.isArray(byCategoryRaw) ? byCategoryRaw.map((row) => asObject(row)) : [];
   const entry = byCategory.find((row) => stringOrNull(row.category) === category.name);
   const total = entry ? numberOrNull(entry.total) ?? 0 : 0;
+  const timeframe = isCurrentWeek ? "essa semana" : "na semana passada";
+  const sentencePrefix = isCurrentWeek ? "Essa semana" : "Na semana passada";
   if (total <= 0) {
     return category.type === "receita"
-      ? `Você não recebeu nada de ${category.name} na última semana.`
-      : `Você não teve gastos com ${category.name} na última semana.`;
+      ? `Você não recebeu nada de ${category.name} ${timeframe}.`
+      : `Você não teve gastos com ${category.name} ${timeframe}.`;
   }
   const verb = category.type === "receita" ? "recebeu" : "gastou";
-  return `Na última semana você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
+  return `${sentencePrefix} você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
 }
 
 const MONTH_NAMES_PT: readonly string[] = [
@@ -1493,7 +1506,7 @@ Deno.serve(async (req) => {
         // somente-leitura (buildReadOnlySystemPrompt) é bem mais enxuto e
         // sobrava muito espaço não usado com o mesmo teto de 4K, a ponto de
         // a rede de segurança final de serializeContextWithinBudget zerar
-        // categories/recent_week_category_totals para contas com mais de
+        // categories/week_category_totals para contas com mais de
         // um ano de histórico mesmo sem o pedido precisar de tanto dado.
         mutationRequested ? MAX_PROVIDER_CONTEXT_CHARS : MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
       );
@@ -1809,7 +1822,7 @@ Deno.serve(async (req) => {
     // modelo somar valores de cabeça e falhou de formas diferentes 4 vezes
     // na mesma sessão (pediu para o usuário reclassificar um lançamento,
     // excluiu esse lançamento em silêncio, inventou um total sem relação
-    // com os dados, e mesmo com o valor pronto em recent_week_category_totals
+    // com os dados, e mesmo com o valor pronto em week_category_totals
     // continuou errando). Soma é aritmética determinística: para esse padrão
     // específico e inequívoco (exatamente uma categoria citada, sem
     // ambiguidade), a resposta é montada aqui a partir do valor já calculado

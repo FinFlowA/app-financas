@@ -836,14 +836,14 @@ Deno.test("rede de seguranca final nunca deixa o contexto financeiro falhar por 
   assert(parsed.context_budget.truncated === true, "o contexto reduzido pela rede de seguranca ainda precisa ser sinalizado como truncado");
 });
 
-Deno.test("teto somente-leitura mais largo preserva categories e recent_week_category_totals para uma conta bem movimentada", () => {
+Deno.test("teto somente-leitura mais largo preserva categories e week_category_totals para uma conta bem movimentada", () => {
   // Bug real em producao: "Quanto eu gastei com alimentacao na ultima
   // semana?" respondia que nao havia dados, mesmo com lancamentos reais no
   // banco (confirmados por SQL direto: 3 lancamentos somando R$68 na
   // categoria). finance_ai_debug_log confirmou categoriesCount=0 e
   // hasRecentWindow=false para essa pergunta -- a rede de seguranca final de
   // serializeContextWithinBudget tinha zerado categories e derrubado
-  // recent_week_category_totals por completo. Causa raiz: relevant_transactions
+  // week_category_totals por completo. Causa raiz: relevant_transactions
   // sozinho pode passar de dezenas de milhares de caracteres (compactTransaction
   // tem mais de 20 campos por linha, incluindo nomes de conta e categoria) para
   // uma conta com uso normal (varios lancamentos recorrentes "(Fixa)" no mes,
@@ -913,10 +913,17 @@ Deno.test("teto somente-leitura mais largo preserva categories e recent_week_cat
     invoice_summaries: [],
     categories_by_year: [],
     scenario_candidates: scenarioCandidates,
-    recent_week_category_totals: {
-      start_date: "2026-09-18",
-      end_date: "2026-09-24",
-      by_category: [{ category: "Alimentação", total: 68 }],
+    week_category_totals: {
+      current_week: {
+        start_date: "2026-09-27",
+        end_date: "2026-09-29",
+        by_category: [{ category: "Alimentação", total: 12 }],
+      },
+      previous_week: {
+        start_date: "2026-09-20",
+        end_date: "2026-09-26",
+        by_category: [{ category: "Alimentação", total: 68 }],
+      },
     },
   };
 
@@ -926,15 +933,15 @@ Deno.test("teto somente-leitura mais largo preserva categories e recent_week_cat
   const encodedOperational = serializeContextWithinBudget(context, MAX_PROVIDER_CONTEXT_CHARS);
   const parsedOperational = JSON.parse(encodedOperational);
   assert(parsedOperational.categories.length === 0, "o cenario de teste precisa reproduzir o colapso real (categories zerado) no teto de 4K");
-  assert(!parsedOperational.recent_week_category_totals, "o cenario de teste precisa reproduzir a perda de recent_week_category_totals no teto de 4K");
+  assert(!parsedOperational.week_category_totals, "o cenario de teste precisa reproduzir a perda de week_category_totals no teto de 4K");
 
   const encodedReadOnly = serializeContextWithinBudget(context, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY);
   assert(encodedReadOnly.length <= MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY, "o contexto somente-leitura excedeu seu proprio teto");
   const parsedReadOnly = JSON.parse(encodedReadOnly);
   assert(Array.isArray(parsedReadOnly.categories) && parsedReadOnly.categories.length > 0, "categories nao pode ser zerado no teto somente-leitura para essa mesma conta");
   assert(
-    parsedReadOnly.recent_week_category_totals?.by_category?.some((row: { category: string }) => row.category === "Alimentação"),
-    "recent_week_category_totals precisa sobreviver ao corte no teto somente-leitura",
+    parsedReadOnly.week_category_totals?.previous_week?.by_category?.some((row: { category: string }) => row.category === "Alimentação"),
+    "week_category_totals precisa sobreviver ao corte no teto somente-leitura",
   );
 });
 
