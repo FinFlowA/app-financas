@@ -393,7 +393,20 @@ function categoryMonthComparisonAnswer(compactJson: string, normalizedMessage: s
   return `Seus ${noun} com ${category.name} ${direction} ${percentLabel}% em relação ao mês passado: ${formatMoneyBRL(currentTotal)} neste mês contra ${formatMoneyBRL(previousTotal)} no mês passado.`;
 }
 
-const CUT_SPENDING_VERB = /\b(?:cortar|corte|reduzir|reduza|diminuir|diminua|economizar|economize)\w*\b/;
+// Bug real: "Comparado no mês passado, meus gastos com transportes
+// aumentaram ou diminuiram?" caía aqui em vez de em
+// categoryMonthComparisonAnswer() -- o \w* solto depois de cada infinitivo
+// também combina com a flexão de pretérito perfeito plural da própria
+// pergunta (diminuir+am = diminuíram, reduzir+am = reduziram, cortar+am =
+// cortaram, economizar+am = economizaram, todas normalizadas sem acento),
+// então uma pergunta descrevendo o que JÁ aconteceu era lida como um pedido
+// de corte de gastos. Esta função roda ANTES do modelo (ver
+// categorySpendRankingDeterministicAnswer) e responde de forma
+// determinística, então o desvio nunca chegava a
+// categoryMonthComparisonAnswer(), que já tinha a lógica certa. O
+// lookahead barra só essa flexão "-am", sem afetar infinitivo, imperativo
+// ("corte", "reduza", "diminua", "economize") ou qualquer sufixo legítimo.
+const CUT_SPENDING_VERB = /\b(?:cortar(?!am\b)|corte|reduzir(?!am\b)|reduza|diminuir(?!am\b)|diminua|economizar(?!am\b)|economize)\w*\b/;
 const SPENDING_AREA_NOUN = /\b(?:area|areas|categoria|categorias|gasto|gastos|despesa|despesas)\b/;
 const CATEGORY_RANKING_COUNT_WORDS: Record<string, number> = {
   uma: 1, um: 1, duas: 2, dois: 2, tres: 3, quatro: 4, cinco: 5, seis: 6,
