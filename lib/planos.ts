@@ -209,17 +209,46 @@ export function msgLimiteAtingido(tipo: keyof LimitesPlano, plano: TipoPlano): s
     iaConsultasDia: "consultas à IA por dia",
   };
   const nomeTipo = mapa[tipo] ?? tipo;
+  const limite = Reflect.get(LIMITES_PLANOS[plano], tipo);
+  const descricaoLimite = typeof limite === "number" && limite > 0
+    ? `O plano ${nomePlano(plano)} permite até ${limite} ${nomeTipo}, e você já chegou a esse limite.`
+    : `Você atingiu o limite de ${nomeTipo} do plano ${nomePlano(plano)}.`;
 
   if (plano === "free") {
-    return `Você atingiu o limite de ${nomeTipo} do plano Free.\n\nFaça upgrade para continuar.`;
+    return `${descricaoLimite}\n\nMelhore seu plano para continuar.`;
   }
   if (plano === "smart") {
     if (tipo === "iaAcoesDia" || tipo === "iaConsultasDia") {
-      return `Você atingiu o limite de ${nomeTipo} do plano Smart.\n\nFaça upgrade para o Premium e aumente sua franquia diária.`;
+      return `${descricaoLimite}\n\nNo Premium sua franquia diária é maior.`;
     }
-    return `Você atingiu o limite de ${nomeTipo} do plano Smart.\n\nFaça upgrade para o Premium e tenha acesso ilimitado.`;
+    return `${descricaoLimite}\n\nNo Premium esse recurso é ilimitado.`;
   }
-  return `Limite de ${nomeTipo} atingido.`;
+  return descricaoLimite;
+}
+
+type ErroServidor = { message?: string | null; code?: string | null } | string | null | undefined;
+
+/**
+ * Traduz as recusas de limite de plano feitas pelo servidor (triggers de
+ * `contas`, `transacoes` etc.) para uma mensagem em linguagem natural. Retorna
+ * null quando o erro não é de limite de plano.
+ */
+export function mensagemErroLimitePlano(
+  erro: ErroServidor,
+  tipo: keyof LimitesPlano,
+  plano: TipoPlano,
+): string | null {
+  const texto = typeof erro === "string" ? erro : `${erro?.message ?? ""} ${erro?.code ?? ""}`;
+  if (/shared account exceeds partner plan limit/i.test(texto)) {
+    return "Não foi possível criar esta conta conjunta porque seu parceiro(a) já chegou ao limite de contas do plano dele(a).\n\n"
+      + "Contas conjuntas contam no limite de vocês dois. Crie como conta individual ou melhore o plano para liberar mais contas.";
+  }
+  // Os erros de domínio do servidor usam prefixos OFFLINE_/AI_; um P0001 sem
+  // prefixo é a recusa do trigger de limite de plano ("plan limit reached").
+  if (/plan limit reached/i.test(texto) || /^\s*P0001\s*$/.test(texto)) {
+    return msgLimiteAtingido(tipo, plano);
+  }
+  return null;
 }
 
 /** Retorna o nome do plano formatado */

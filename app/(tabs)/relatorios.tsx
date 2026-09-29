@@ -19,7 +19,6 @@ import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
-import FinFlowPopup from "../../components/FinFlowPopup";
 import {
   dataEfetivaTransacao,
   getMovimentoObjetivo,
@@ -121,7 +120,6 @@ export default function RelatoriosScreen() {
   const mesAtualIdx = hoje.getMonth();
 
   const [anoSelecionado, setAnoSelecionado] = useState<number>(anoAtualNum);
-  const [seletorAnoAberto, setSeletorAnoAberto] = useState(false);
   const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
   const [chartCardHeight, setChartCardHeight] = useState(0);
   const [chartChromeHeight, setChartChromeHeight] = useState(0);
@@ -189,8 +187,7 @@ export default function RelatoriosScreen() {
     [contasSelecionadasIds, idsContasAtivas],
   );
   const escopoFluxoEhTodas = idsSelecionadosValidos === null
-    || idsSelecionadosValidos.length === contas.length
-    || (contas.length > 0 && idsSelecionadosValidos.length === 0);
+    || idsSelecionadosValidos.length === contas.length;
   const contasFiltradas = useMemo(
     () => escopoFluxoEhTodas
       ? contas
@@ -204,15 +201,10 @@ export default function RelatoriosScreen() {
 
   const alternarContaFluxo = (contaId: number) => {
     setContasSelecionadasIds((idsAtuais) => {
-      // Ao sair da visão "Todas", o primeiro toque cria uma seleção
-      // individual; os próximos adicionam novas contas ao conjunto.
-      if (idsAtuais === null) return [contaId];
-
-      const idsValidos = idsAtuais.filter(id => idsContasAtivas.has(id));
-      if (idsValidos.includes(contaId)) {
-        if (idsValidos.length === 1) return idsValidos;
-        return idsValidos.filter(id => id !== contaId);
-      }
+      // null representa todas as contas marcadas; cada toque alterna somente
+      // a conta tocada. Desmarcar todas deixa o fluxo vazio.
+      const idsValidos = (idsAtuais ?? contas.map(conta => conta.id)).filter(id => idsContasAtivas.has(id));
+      if (idsValidos.includes(contaId)) return idsValidos.filter(id => id !== contaId);
 
       const proximosIds = [...idsValidos, contaId];
       return proximosIds.length === contas.length ? null : proximosIds;
@@ -408,8 +400,10 @@ export default function RelatoriosScreen() {
   const getBarH = (val: number) => Math.max(0, (val / chartRange) * chartHeight);
   const zeroY = getY(0);
 
-  // Build balance line points (absolute X positions)
-  const balancePoints = projecaoSaldo.map(p => ({
+  // Build balance line points (absolute X positions). Sem contas selecionadas
+  // o gráfico fica em branco, sem linha de saldo.
+  const semContasSelecionadas = contas.length > 0 && contasFiltradas.length === 0;
+  const balancePoints = (semContasSelecionadas ? [] : projecaoSaldo).map(p => ({
     x: barSectionWidth * p.mesIdx + barSectionWidth / 2,
     y: getY(p.saldo),
     saldo: p.saldo,
@@ -424,47 +418,17 @@ export default function RelatoriosScreen() {
     ? "Vis\u00e3o consolidada"
     : escopoFluxoEhTodas
       ? contas.length > 1 ? "Todas as contas" : contas[0]?.nome ?? "Vis\u00e3o consolidada"
+      : contasFiltradas.length === 0
+        ? "Nenhuma conta selecionada"
       : contasFiltradas.length === 1
         ? contasFiltradas[0].nome
         : `${contasFiltradas.length} contas selecionadas`;
-  const anosDisponiveis = Array.from({ length: 21 }, (_, index) => anoAtualNum - 10 + index);
 
   return (
     <SafeAreaView
       edges={["top", "left", "right"]}
       style={[styles.safe, { backgroundColor: Cores.fundo }]}
     >
-      <FinFlowPopup visible={seletorAnoAberto} transparent animationType="fade" onRequestClose={() => setSeletorAnoAberto(false)}>
-        <TouchableOpacity activeOpacity={1} style={styles.periodModalBackdrop} onPress={() => setSeletorAnoAberto(false)} accessibilityLabel="Fechar seleção de ano">
-          <TouchableOpacity activeOpacity={1} style={[styles.periodModalCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]} onPress={() => undefined} accessible={false}>
-            <View style={styles.periodModalHeader}>
-              <View>
-                <Text style={[styles.periodModalEyebrow, { color: novoTema.primary }]}>FLUXO DE CAIXA</Text>
-                <Text style={[styles.periodModalTitle, { color: Cores.textoPrincipal }]}>Selecione o ano</Text>
-              </View>
-              <TouchableOpacity onPress={() => setSeletorAnoAberto(false)} style={[styles.periodModalClose, { backgroundColor: Cores.pillFundo }]} accessibilityLabel="Fechar">
-                <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.yearGrid}>
-              {anosDisponiveis.map((optionYear) => {
-                const active = optionYear === anoSelecionado;
-                return (
-                  <TouchableOpacity
-                    key={optionYear}
-                    onPress={() => { setAnoSelecionado(optionYear); setMesProjSelecionado(optionYear === anoAtualNum ? mesAtualIdx : 0); setSeletorAnoAberto(false); }}
-                    style={[styles.yearOption, { borderColor: active ? novoTema.primary : Cores.borda, backgroundColor: active ? novoTema.primary : Cores.pillFundo }]}
-                    accessibilityRole="radio"
-                    accessibilityState={{ selected: active }}
-                  >
-                    <Text style={[styles.yearOptionText, { color: active ? "#FFF" : Cores.textoPrincipal }]}>{optionYear}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </FinFlowPopup>
       <View style={[styles.header, { backgroundColor: novoTema.header }]}>
         <View style={styles.headerTitleRow}>
           <Text style={[styles.title, { color: "#FFF" }]}>Fluxo de caixa</Text>
@@ -472,11 +436,10 @@ export default function RelatoriosScreen() {
             <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.headerYearButton} accessibilityLabel="Ano anterior">
               <MaterialIcons name="chevron-left" size={20} color="#FFF" />
             </TouchableOpacity>
-            <TouchableOpacity onPress={() => setSeletorAnoAberto(true)} style={styles.headerPeriodButton} accessibilityRole="button" accessibilityLabel={`Selecionar ano. Ano atual ${anoSelecionado}`}>
-              <MaterialIcons name="calendar-today" size={12} color="rgba(255,255,255,0.76)" />
+            {/* O ano só muda pelas setas; não há seletor em lista. */}
+            <View style={styles.headerPeriodButton} accessibilityLabel={`Ano analisado: ${anoSelecionado}`}>
               <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
-              <MaterialIcons name="arrow-drop-down" size={16} color="rgba(255,255,255,0.76)" />
-            </TouchableOpacity>
+            </View>
             <TouchableOpacity onPress={() => alterarAno(1)} style={styles.headerYearButton} accessibilityLabel="Próximo ano">
               <MaterialIcons name="chevron-right" size={20} color="#FFF" />
             </TouchableOpacity>
@@ -503,25 +466,9 @@ export default function RelatoriosScreen() {
             style={styles.headerAccountsScroll}
             contentContainerStyle={styles.headerAccountsContent}
           >
-            <TouchableOpacity
-              onPress={() => setContasSelecionadasIds(null)}
-              style={[
-                styles.contaChip,
-                escopoFluxoEhTodas ? styles.contaChipHeaderSelected : styles.contaChipHeaderIdle,
-              ]}
-            >
-              <MaterialIcons
-                name="account-balance-wallet"
-                size={13}
-                color={escopoFluxoEhTodas ? "#FFF" : "rgba(255,255,255,0.72)"}
-              />
-              <Text style={[styles.contaChipText, { color: escopoFluxoEhTodas ? "#FFF" : "rgba(255,255,255,0.72)" }]}>
-                Todas
-              </Text>
-            </TouchableOpacity>
-
+            {/* Sem opção "Todas": todas começam marcadas e cada chip alterna a própria conta. */}
             {contas.map(conta => {
-              const sel = !escopoFluxoEhTodas && idsEscopoFluxo.has(conta.id);
+              const sel = idsEscopoFluxo.has(conta.id);
               const cor = conta.cor || "#C7F6E5";
               return (
                 <TouchableOpacity
@@ -989,13 +936,4 @@ const styles = StyleSheet.create({
   detalheLabel: { flex: 1, fontSize: 11, lineHeight: 14 },
   detalheVal: { fontSize: 11, lineHeight: 14, fontWeight: "600" },
   detalheSep: { height: 1, marginVertical: 3 },
-  periodModalBackdrop: { flex: 1, justifyContent: "center", paddingHorizontal: 20, backgroundColor: "rgba(0,9,12,0.78)" },
-  periodModalCard: { width: "100%", maxWidth: 420, alignSelf: "center", borderWidth: 1, borderRadius: 24, padding: 18, elevation: 18 },
-  periodModalHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16 },
-  periodModalEyebrow: { fontSize: 10, lineHeight: 13, fontWeight: "900", letterSpacing: 1.2 },
-  periodModalTitle: { marginTop: 3, fontSize: 20, lineHeight: 25, fontWeight: "900" },
-  periodModalClose: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22 },
-  yearGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  yearOption: { width: "30.8%", minHeight: 46, alignItems: "center", justifyContent: "center", borderWidth: 1, borderRadius: 13 },
-  yearOptionText: { fontSize: 14, fontWeight: "800" },
 });

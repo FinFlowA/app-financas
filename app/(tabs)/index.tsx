@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Image } from "expo-image";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   AppState,
@@ -44,6 +45,7 @@ import {
   salvarCriacaoFinanceira,
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
+import { mensagemErroLimitePlano } from "../../lib/planos";
 import {
   adicionarRecorrencia,
   adicionarIdSerie,
@@ -229,7 +231,7 @@ const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total
 });
 
 export default function Dashboard() {
-  const { isDark, session, showToast, notificacoesAtivas, verificarLimite, temPopupPrioritario, limites, limitsEnabled } = useAppTheme();
+  const { isDark, session, showToast, notificacoesAtivas, verificarLimite, mostrarModalLimite, plano, temPopupPrioritario, limites, limitsEnabled } = useAppTheme();
   const iaDisponivel = usuarioPodeAcessarIA(
     limitsEnabled && limites.iaOperacional,
     limitsEnabled,
@@ -1364,6 +1366,8 @@ export default function Dashboard() {
         });
         setLoadingConta(false);
         if (resultado.state === "rejected") {
+          const mensagemLimite = mensagemErroLimitePlano(resultado.errorCode, "contas", plano);
+          if (mensagemLimite) return mostrarModalLimite(mensagemLimite, plano === "free" ? "smart" : "premium");
           return Alert.alert("Não foi possível salvar", "A conta foi recusada pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {
@@ -1391,11 +1395,15 @@ export default function Dashboard() {
     }
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
     let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
-    if (res.error) {
+    if (res.error && !mensagemErroLimitePlano(res.error, "contas", plano)) {
       res = await supabase.from("contas").insert([base]);
     }
     setLoadingConta(false);
-    if (res.error) return Alert.alert("Erro", `Falha ao salvar conta: ${res.error.message}`);
+    if (res.error) {
+      const mensagemLimite = mensagemErroLimitePlano(res.error, "contas", plano);
+      if (mensagemLimite) return mostrarModalLimite(mensagemLimite, plano === "free" ? "smart" : "premium");
+      return Alert.alert("Não foi possível salvar", "A conta não pôde ser salva. Verifique sua conexão e tente novamente.");
+    }
     setNomeConta("");
     setSaldoInicialConta("");
     setContaCompartilhada(false);
@@ -2718,60 +2726,129 @@ export default function Dashboard() {
       </Modal>
       )}
 
-      {/* MODAL NOVA CONTA */}
+      {/* MODAL NOVA CONTA: prévia no topo reflete nome, saldo, cor e se é
+          conjunta. Recusas de limite do servidor abrem o modal de plano
+          (ver salvarConta / mensagemErroLimitePlano). */}
       {modalContaVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalContaVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Conta</Text>
-
-            {temParceiro && (
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
-                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Conta Conjunta?</Text>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxHeight: "92%" }]}>
+            <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
+              <View style={styles.novaContaHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.novaContaTitulo, { color: Cores.textoPrincipal }]}>Nova conta</Text>
+                  <Text style={[styles.novaContaSubtitulo, { color: Cores.textoSecundario }]}>Banco, carteira ou qualquer lugar onde você guarda dinheiro.</Text>
                 </View>
-                <Switch value={contaCompartilhada} onValueChange={setContaCompartilhada} trackColor={{ false: "#767577", true: "#E76F51" }} />
-              </View>
-            )}
-
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Nome (ex: Itaú Casa, Carteira)*"
-              placeholderTextColor={Cores.textoSecundario}
-              value={nomeConta}
-              onChangeText={setNomeConta}
-            />
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Saldo inicial (R$ 0,00)"
-              placeholderTextColor={Cores.textoSecundario}
-              value={saldoInicialConta}
-              onChangeText={(texto) => setSaldoInicialConta(formatarEntradaMoeda(texto))}
-              keyboardType="numeric"
-            />
-
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor da Conta*:</Text>
-            <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
-              {PALETA_CORES.map((cor) => (
                 <TouchableOpacity
-                  key={cor}
-                  style={[styles.colorOption, { backgroundColor: cor }, corNovaConta === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
-                  onPress={() => setCorNovaConta(cor)}
+                  onPress={() => setModalContaVisivel(false)}
+                  style={[styles.novaContaFechar, { backgroundColor: Cores.pillFundo }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Fechar"
+                >
+                  <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Preview da conta */}
+              <View style={[styles.novaContaPreview, { backgroundColor: corNovaConta }]}>
+                <View style={styles.novaContaPreviewTopo}>
+                  <View style={styles.novaContaPreviewIcone}>
+                    <MaterialIcons name={contaCompartilhada ? "people" : "account-balance-wallet"} size={20} color="#FFF" />
+                  </View>
+                  {contaCompartilhada && (
+                    <View style={styles.novaContaPreviewChip}>
+                      <Text style={styles.novaContaPreviewChipTexto}>Conjunta</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.novaContaPreviewNome} numberOfLines={1}>{nomeConta.trim() || "Nome da conta"}</Text>
+                <Text style={styles.novaContaPreviewRotulo}>Saldo inicial</Text>
+                <Text style={styles.novaContaPreviewSaldo}>{fmtReais(valorDaEntradaMoeda(saldoInicialConta))}</Text>
+              </View>
+
+              <Text style={[styles.novaContaRotulo, { color: Cores.textoSecundario }]}>Nome da conta</Text>
+              <View style={[styles.novaContaCampo, { backgroundColor: Cores.inputFundo, borderColor: nomeConta ? corNovaConta : Cores.borda }]}>
+                <MaterialIcons name="edit" size={18} color={Cores.textoSecundario} />
+                <TextInput
+                  style={[styles.novaContaInput, { color: Cores.textoPrincipal }]}
+                  placeholder="Ex: Itaú, Carteira, Nubank"
+                  placeholderTextColor={Cores.textoSecundario}
+                  value={nomeConta}
+                  onChangeText={setNomeConta}
+                  maxLength={40}
                 />
-              ))}
+              </View>
+
+              <Text style={[styles.novaContaRotulo, { color: Cores.textoSecundario }]}>Saldo inicial</Text>
+              <View style={[styles.novaContaCampo, { backgroundColor: Cores.inputFundo, borderColor: saldoInicialConta ? corNovaConta : Cores.borda }]}>
+                <Text style={[styles.novaContaPrefixo, { color: Cores.textoSecundario }]}>R$</Text>
+                <TextInput
+                  style={[styles.novaContaInput, { color: Cores.textoPrincipal }]}
+                  placeholder="0,00"
+                  placeholderTextColor={Cores.textoSecundario}
+                  value={saldoInicialConta}
+                  onChangeText={(texto) => setSaldoInicialConta(formatarEntradaMoeda(texto))}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <Text style={[styles.novaContaRotulo, { color: Cores.textoSecundario }]}>Cor</Text>
+              <View style={styles.novaContaPaleta}>
+                {PALETA_CORES.map((cor) => {
+                  const selecionada = corNovaConta === cor;
+                  return (
+                    <TouchableOpacity
+                      key={cor}
+                      style={[styles.novaContaCor, { backgroundColor: cor }, selecionada && { borderColor: Cores.textoPrincipal }]}
+                      onPress={() => setCorNovaConta(cor)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: selecionada }}
+                      accessibilityLabel={`Cor ${cor}`}
+                    >
+                      {selecionada && <MaterialIcons name="check" size={18} color="#FFF" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {temParceiro && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setContaCompartilhada((valor) => !valor)}
+                  style={[styles.novaContaConjunta, { backgroundColor: Cores.inputFundo, borderColor: contaCompartilhada ? "#E76F51" : Cores.borda }]}
+                >
+                  <View style={[styles.novaContaConjuntaIcone, { backgroundColor: "rgba(231,111,81,0.16)" }]}>
+                    <MaterialIcons name="people" size={20} color="#E76F51" />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.novaContaConjuntaTitulo, { color: Cores.textoPrincipal }]}>Conta conjunta</Text>
+                    <Text style={[styles.novaContaConjuntaTexto, { color: Cores.textoSecundario }]}>Visível para você e seu parceiro(a)</Text>
+                  </View>
+                  <Switch value={contaCompartilhada} onValueChange={setContaCompartilhada} trackColor={{ false: "#767577", true: "#E76F51" }} />
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.novaContaBotoes}>
+                <TouchableOpacity
+                  style={[styles.novaContaBotao, { borderWidth: 1, borderColor: Cores.borda }]}
+                  onPress={() => setModalContaVisivel(false)}
+                >
+                  <Text style={[styles.novaContaBotaoTexto, { color: Cores.textoPrincipal }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.novaContaBotao, { backgroundColor: novoTema.primary, opacity: loadingConta ? 0.6 : 1 }]}
+                  onPress={salvarConta}
+                  disabled={loadingConta}
+                >
+                  {loadingConta
+                    ? <ActivityIndicator size="small" color="#FFF" />
+                    : <>
+                      <MaterialIcons name="check" size={18} color="#FFF" />
+                      <Text style={[styles.novaContaBotaoTexto, { color: "#FFF" }]}>Criar conta</Text>
+                    </>}
+                </TouchableOpacity>
+              </View>
             </ScrollView>
-
-            {/* Preview da conta */}
-            <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-              <Text style={{ color: "#FFF", fontWeight: "600" }}>{nomeConta || "Nome da Conta"}</Text>
-              <Text style={{ color: "#FFF", fontWeight: "bold" }}>{fmtReais(valorDaEntradaMoeda(saldoInicialConta))}</Text>
-            </View>
-
-            <View style={styles.modalButtons}>
-              <Button title="Cancelar" color="#999" onPress={() => setModalContaVisivel(false)} />
-              <Button title={loadingConta ? "Salvando..." : "Salvar"} color="#457B9D" onPress={salvarConta} disabled={loadingConta} />
-            </View>
           </View>
         </View>
       </Modal>
@@ -3828,6 +3905,31 @@ const styles = StyleSheet.create({
   categoryModalButtons: { justifyContent: "space-between", gap: 12, marginTop: 8, paddingBottom: Platform.OS === "android" ? 24 : 12 },
   categoryActionButton: { flex: 1, minWidth: 0 },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
+  novaContaHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 18 },
+  novaContaTitulo: { fontSize: 22, fontWeight: "800" },
+  novaContaSubtitulo: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  novaContaFechar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  novaContaPreview: { borderRadius: 18, padding: 16, marginBottom: 20, ...FinFlowShadow },
+  novaContaPreviewTopo: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  novaContaPreviewIcone: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)" },
+  novaContaPreviewChip: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.22)" },
+  novaContaPreviewChipTexto: { color: "#FFF", fontSize: 11, fontWeight: "800" },
+  novaContaPreviewNome: { color: "#FFF", fontSize: 17, fontWeight: "800" },
+  novaContaPreviewRotulo: { color: "rgba(255,255,255,0.78)", fontSize: 11, fontWeight: "600", marginTop: 10 },
+  novaContaPreviewSaldo: { color: "#FFF", fontSize: 24, fontWeight: "900", marginTop: 1 },
+  novaContaRotulo: { fontSize: 12, fontWeight: "700", letterSpacing: 0.4, marginBottom: 7 },
+  novaContaCampo: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, marginBottom: 16 },
+  novaContaInput: { flex: 1, minWidth: 0, paddingVertical: 13, fontSize: 16 },
+  novaContaPrefixo: { fontSize: 15, fontWeight: "700" },
+  novaContaPaleta: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },
+  novaContaCor: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "transparent" },
+  novaContaConjunta: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 6 },
+  novaContaConjuntaIcone: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  novaContaConjuntaTitulo: { fontSize: 14, fontWeight: "800" },
+  novaContaConjuntaTexto: { fontSize: 12, lineHeight: 16, marginTop: 1 },
+  novaContaBotoes: { flexDirection: "row", gap: 10, marginTop: 16 },
+  novaContaBotao: { flex: 1, minHeight: 48, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  novaContaBotaoTexto: { fontSize: 15, fontWeight: "800" },
   typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   typeButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, alignItems: "center", justifyContent: "center" },
   typeButtonText: { fontWeight: "bold", fontSize: 14, textAlign: "center" },

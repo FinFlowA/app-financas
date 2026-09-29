@@ -43,6 +43,7 @@ import {
   exibirEventoObrigatorioLocal,
   limparNotificacoesAoSair,
   pedirPermissaoNotificacoes,
+  registrarDispositivoPush,
   registrarNavegacaoPorNotificacao,
 } from "../lib/notifications";
 import {
@@ -97,12 +98,13 @@ type DecisaoCaixinha = {
 
 type NotificacaoParceria = {
   id: number;
-  tipo: "convite_parceria" | "parceria_aceita" | "parceria_recusada";
+  tipo: "convite_parceria" | "parceria_aceita" | "parceria_recusada" | "parceria_encerrada";
   referencia_id: number;
   titulo: string;
   mensagem: string;
   dados: Record<string, unknown> | null;
   criada_em: string;
+  push_enviado_em?: string | null;
 };
 
 const notificacoesParceriaIguais = (
@@ -926,8 +928,8 @@ export default function RootLayout() {
     try {
       const { data, error } = await supabase
         .from("notificacoes_sistema")
-        .select("id, tipo, referencia_id, titulo, mensagem, dados, criada_em")
-        .in("tipo", ["convite_parceria", "parceria_aceita", "parceria_recusada"])
+        .select("id, tipo, referencia_id, titulo, mensagem, dados, criada_em, push_enviado_em")
+        .in("tipo", ["convite_parceria", "parceria_aceita", "parceria_recusada", "parceria_encerrada"])
         .is("lida_em", null)
         .order("criada_em", { ascending: true })
         .order("id", { ascending: true })
@@ -949,12 +951,21 @@ export default function RootLayout() {
       const eventos = (data ?? []) as NotificacaoParceria[];
       if (!substituirNotificacoesParceria(eventos)) return;
       eventos.forEach((evento) => {
+        // Quando o servidor já entregou o push remoto, repetir o aviso como
+        // notificação local só duplicaria o alerta no aparelho.
+        if (evento.push_enviado_em) return;
         void exibirEventoObrigatorioLocal(uid, evento.id, evento.titulo, evento.mensagem);
       });
     } finally {
       buscandoNotificacoesParceria.current = false;
     }
   }, [session?.user?.id, substituirNotificacoesParceria]);
+
+  // Mantém o token de push deste aparelho vinculado à conta logada.
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (uid) void registrarDispositivoPush(uid);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     notificacoesParceriaIndisponiveis.current = false;
@@ -1208,6 +1219,7 @@ export default function RootLayout() {
         );
         return;
       }
+      void registrarDispositivoPush(userId);
     } else {
       await cancelarNotificacoesOpcionais(userId);
     }
@@ -1365,7 +1377,8 @@ export default function RootLayout() {
   const toastCor = toastTipo === "error" ? "#E76F51" : toastTipo === "info" ? "#457B9D" : "#2A9D8F";
   const notificacaoParceriaAtual = notificacoesParceria[0];
   const notificacaoEhConvite = notificacaoParceriaAtual?.tipo === "convite_parceria";
-  const notificacaoEhRecusa = notificacaoParceriaAtual?.tipo === "parceria_recusada";
+  const notificacaoEhEncerramento = notificacaoParceriaAtual?.tipo === "parceria_encerrada";
+  const notificacaoEhRecusa = notificacaoParceriaAtual?.tipo === "parceria_recusada" || notificacaoEhEncerramento;
 
   return (
     <FinFlowScreenProvider>
@@ -1555,7 +1568,7 @@ export default function RootLayout() {
               { backgroundColor: notificacaoEhRecusa ? "rgba(231,111,81,0.14)" : "rgba(42,157,143,0.14)" },
             ]}>
               <MaterialIcons
-                name={notificacaoEhConvite ? "person-add-alt-1" : notificacaoEhRecusa ? "person-remove" : "favorite"}
+                name={notificacaoEhConvite ? "person-add-alt-1" : notificacaoEhEncerramento ? "link-off" : notificacaoEhRecusa ? "person-remove" : "favorite"}
                 size={34}
                 color={notificacaoEhRecusa ? "#E76F51" : "#2A9D8F"}
               />
@@ -1826,6 +1839,7 @@ export default function RootLayout() {
                     const concedida = await pedirPermissaoNotificacoes();
                     await AsyncStorage.setItem(`@notificacoes_perguntado_${uid}`, "true");
                     if (!concedida) return setModalNotificacoes(null);
+                    void registrarDispositivoPush(uid);
                     setNotificacoesAtivas(true);
                     await AsyncStorage.setItem(`@notificacoes_enabled_${uid}`, "true");
                     setModalNotificacoes("ativado");
@@ -1918,7 +1932,7 @@ export default function RootLayout() {
             <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#666" }]}>
               {modalLimite.mensagem}
             </Text>
-            {modalLimite.planoNecessario && (
+            {(modalLimite.planoNecessario || plano !== "premium") && (
               <TouchableOpacity
                 style={styles.modalLimiteBtnUpgrade}
                 onPress={() => {
@@ -1927,9 +1941,7 @@ export default function RootLayout() {
                 }}
               >
                 <MaterialIcons name="arrow-upward" size={16} color="#FFF" />
-                <Text style={styles.modalLimiteBtnText}>
-                  Ver Plano {nomePlano(modalLimite.planoNecessario)}
-                </Text>
+                <Text style={styles.modalLimiteBtnText}>Melhorar meu plano</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity

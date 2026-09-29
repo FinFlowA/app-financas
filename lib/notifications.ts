@@ -205,6 +205,55 @@ export async function exibirEventoObrigatorioLocal(
   }
 }
 
+const CHAVE_TOKEN_PUSH = "@push_device_token";
+
+/**
+ * Registra este aparelho para receber push remoto dos avisos obrigatórios
+ * (convites e respostas de parceria) mesmo com o app fechado. Só age quando o
+ * sistema já concedeu permissão; nunca pede permissão por conta própria.
+ */
+export async function registrarDispositivoPush(userId: string): Promise<void> {
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+  try {
+    const { status } = await Notif.getPermissionsAsync();
+    if (status !== "granted") return;
+
+    await garantirCanalNotificacoesAndroid();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Constants = require("expo-constants").default;
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    if (!projectId) return;
+
+    const { data: token } = await Notif.getExpoPushTokenAsync({ projectId });
+    if (typeof token !== "string" || !token) return;
+
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user.id !== userId) return;
+
+    const { error } = await supabase.rpc("registrar_dispositivo_push", {
+      p_token: token,
+      p_plataforma: Platform.OS,
+    });
+    if (!error) await AsyncStorage.setItem(CHAVE_TOKEN_PUSH, token);
+  } catch {
+    // Sem Firebase/APNs configurados o token não é emitido; o aviso continua
+    // aparecendo dentro do app.
+  }
+}
+
+/** Desvincula este aparelho da conta antes do logout explícito. */
+export async function removerDispositivoPush(): Promise<void> {
+  if (LOCAL_DEMO || Platform.OS === "web") return;
+  try {
+    const token = await AsyncStorage.getItem(CHAVE_TOKEN_PUSH);
+    if (!token) return;
+    await supabase.rpc("remover_dispositivo_push", { p_token: token });
+    await AsyncStorage.removeItem(CHAVE_TOKEN_PUSH);
+  } catch {
+    // Best-effort: o logout nunca deve falhar por causa do push.
+  }
+}
+
 export async function notificacoesEstaoAtivas(): Promise<boolean> {
   if (LOCAL_DEMO) return false;
   try {

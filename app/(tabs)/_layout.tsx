@@ -18,7 +18,9 @@ const VISIBLE_TABS = [
 // Altura fixa do pill (não depende mais da área segura do aparelho) e a folga
 // entre a base do pill e a borda inferior da tela, que é o que de fato faz a
 // barra "flutuar" em vez de ficar encostada/colada no rodapé.
-const FLOATING_BAR_HEIGHT = 74;
+// A barra exibe apenas ícones: o nome de cada aba fica só no
+// accessibilityLabel, por isso a altura não reserva espaço para texto.
+const FLOATING_BAR_HEIGHT = 58;
 const FLOATING_BAR_GAP = 14;
 
 function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
@@ -66,7 +68,7 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
       {barWidth > 0 && (
         <Animated.View pointerEvents="none" style={[styles.slidingIndicator, { left: 1 + (itemWidth - 50) / 2, transform: [{ translateX: indicatorTranslate }] }]} />
       )}
-      {VISIBLE_TABS.map((tab, index) => {
+      {VISIBLE_TABS.map((tab) => {
         const route = state.routes.find((candidate) => candidate.name === tab.name);
         if (!route) return null;
         const focused = activeRouteName === tab.name;
@@ -74,11 +76,6 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
           const event = navigation.emit({ type: "tabPress", target: route.key, canPreventDefault: true });
           if (!focused && !event.defaultPrevented) navigation.navigate(route.name, route.params);
         };
-        const labelOpacity = indicatorPosition.interpolate({
-          inputRange: [index - 1, index, index + 1],
-          outputRange: [1, 0, 1],
-          extrapolate: "clamp",
-        });
         return (
           <TouchableOpacity
             key={tab.name}
@@ -93,7 +90,6 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
             <Animated.View style={[styles.iconShell, focused && { transform: [{ translateY: -4 }, { scale: iconPop }] }]}>
               <MaterialIcons name={tab.icon} size={focused ? 28 : 25} color={focused ? "#FFF" : theme.textMuted} />
             </Animated.View>
-            <Animated.Text style={[styles.customTabLabel, { color: focused ? theme.text : theme.textMuted, opacity: labelOpacity }]}>{tab.label}</Animated.Text>
           </TouchableOpacity>
         );
       })}
@@ -240,16 +236,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 21,
-  },
-  customTabLabel: {
-    position: "absolute",
-    top: 47,
-    left: 0,
-    right: 0,
-    textAlign: "center",
-    fontSize: 10,
-    lineHeight: 12,
-    fontWeight: "700",
   },
   iconShellActive: {
     width: 54,

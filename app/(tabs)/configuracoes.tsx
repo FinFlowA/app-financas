@@ -31,6 +31,7 @@ import {
   limparNotificacoesAoSair,
   obterPreferenciasNotificacoes,
   PREFERENCIAS_NOTIFICACOES_PADRAO,
+  removerDispositivoPush,
   salvarPreferenciasNotificacoes,
   type PreferenciasNotificacoes,
 } from "../../lib/notifications";
@@ -486,6 +487,7 @@ export default function ConfiguracoesScreen() {
       cor: "#E76F51",
       onConfirm: async () => {
         setModalConfirmarAcao(null);
+        await removerDispositivoPush();
         await limparNotificacoesAoSair(meuId);
         await supabase.auth.signOut({ scope: "local" });
       },
@@ -935,56 +937,95 @@ export default function ConfiguracoesScreen() {
 
           </>}
 
-          {/* CONTA CONJUNTA */}
-          <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>CONTA CONJUNTA (PARCEIRO)</Text>
-          <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda, padding: 15 }]}>
+          {/* CONTA CONJUNTA: quatro estados — sem vínculo (convite), convite
+              enviado, convite recebido e contas vinculadas. */}
+          <Text style={[styles.sectionTitle, { color: Cores.secundario, marginTop: 25 }]}>CONTA CONJUNTA</Text>
+          <View style={[styles.configGroup, { backgroundColor: Cores.card, borderColor: Cores.borda, padding: 18 }]}>
             {loadingParceria ? (
               <ActivityIndicator size="small" color="#2A9D8F" style={{ padding: 20 }} />
             ) : !parceria ? (
               <>
-                <Text style={[styles.helpText, { color: Cores.secundario }]}>
-                  Vincule a conta do seu cônjuge/parceiro para partilharem despesas. O parceiro deve ter uma conta cadastrada no FinFlow.
-                </Text>
-                <TextInput
-                  style={[styles.input, { backgroundColor: Cores.input, borderColor: Cores.borda, color: Cores.texto }]}
-                  placeholder="E-mail cadastrado no FinFlow"
-                  placeholderTextColor={Cores.secundario}
-                  value={emailConvite}
-                  onChangeText={(v) => setEmailConvite(v.toLowerCase().trim())}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="email-address"
-                />
+                <View style={styles.parceriaHeader}>
+                  <View style={[styles.parceriaIcon, { backgroundColor: novoTema.primarySoft }]}>
+                    <MaterialIcons name="people" size={26} color={novoTema.primary} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.parceriaTitle, { color: Cores.texto }]}>Finanças a dois</Text>
+                    <Text style={[styles.parceriaSubtitle, { color: Cores.secundario }]}>
+                      Vincule a conta do seu cônjuge ou parceiro(a) para dividirem despesas.
+                    </Text>
+                  </View>
+                </View>
+                <View style={[styles.parceriaBenefits, { backgroundColor: Cores.input }]}>
+                  <View style={styles.parceriaBenefitRow}>
+                    <MaterialIcons name="check-circle" size={16} color={novoTema.primary} />
+                    <Text style={[styles.parceriaBenefitText, { color: Cores.texto }]}>Compartilhe contas ao criar uma conta nova</Text>
+                  </View>
+                  <View style={styles.parceriaBenefitRow}>
+                    <MaterialIcons name="info-outline" size={16} color={Cores.secundario} />
+                    <Text style={[styles.parceriaBenefitText, { color: Cores.secundario }]}>O parceiro(a) precisa ter conta no FinFlow</Text>
+                  </View>
+                </View>
+                <View style={[styles.parceriaInputWrap, { backgroundColor: Cores.input, borderColor: emailConvite ? novoTema.primary : Cores.borda }]}>
+                  <MaterialIcons name="alternate-email" size={20} color={emailConvite ? novoTema.primary : Cores.secundario} />
+                  <TextInput
+                    style={[styles.parceriaInput, { color: Cores.texto }]}
+                    placeholder="E-mail do parceiro(a)"
+                    placeholderTextColor={Cores.secundario}
+                    value={emailConvite}
+                    onChangeText={(v) => setEmailConvite(v.toLowerCase().trim())}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="email-address"
+                    returnKeyType="send"
+                    onSubmitEditing={enviarConvite}
+                  />
+                </View>
                 <TouchableOpacity
-                  style={[styles.actionBtn, loadingParceria && { opacity: 0.6 }]}
+                  style={[styles.actionBtn, styles.parceriaBtn, loadingParceria && { opacity: 0.6 }]}
                   onPress={enviarConvite}
                   disabled={loadingParceria}
+                  activeOpacity={0.85}
                 >
                   {loadingParceria
                     ? <ActivityIndicator size="small" color="#FFF" />
-                    : <Text style={styles.actionBtnText}>Enviar Convite</Text>
+                    : <>
+                      <MaterialIcons name="send" size={18} color="#FFF" />
+                      <Text style={styles.actionBtnText}>Enviar convite</Text>
+                    </>
                   }
                 </TouchableOpacity>
               </>
             ) : parceria.status === "pendente" ? (
               parceria.solicitante_id === meuId ? (
                 <View style={styles.centerBox}>
-                  <MaterialIcons name="hourglass-empty" size={30} color="#F4A261" />
-                  <Text style={[styles.statusText, { color: Cores.texto }]}>Aguardando aceitação de:</Text>
-                  <Text style={[styles.emailText, { color: Cores.texto }]}>{parceria.convidado_email}</Text>
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#E76F51", marginTop: 15 }]} onPress={() => deletarParceria("Deseja cancelar este convite?", "cancelar_convite")}>
-                    <Text style={styles.actionBtnText}>Cancelar Convite</Text>
+                  <View style={[styles.parceriaIconLarge, { backgroundColor: "rgba(244,162,97,0.16)" }]}>
+                    <MaterialIcons name="hourglass-top" size={30} color="#F4A261" />
+                  </View>
+                  <Text style={[styles.parceriaTitle, { color: Cores.texto, marginTop: 12 }]}>Convite enviado</Text>
+                  <Text style={[styles.parceriaSubtitle, { color: Cores.secundario, textAlign: "center" }]}>Aguardando aceitação de</Text>
+                  <View style={[styles.parceriaEmailPill, { backgroundColor: Cores.input, borderColor: Cores.borda }]}>
+                    <MaterialIcons name="mail-outline" size={16} color={Cores.secundario} />
+                    <Text style={[styles.parceriaEmailText, { color: Cores.texto }]} numberOfLines={1}>{parceria.convidado_email}</Text>
+                  </View>
+                  <TouchableOpacity style={[styles.actionBtn, styles.parceriaBtn, styles.parceriaBtnOutline, { borderColor: "#E76F51" }]} onPress={() => deletarParceria("Deseja cancelar este convite?", "cancelar_convite")}>
+                    <MaterialIcons name="close" size={18} color="#E76F51" />
+                    <Text style={[styles.actionBtnText, { color: "#E76F51" }]}>Cancelar convite</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View style={styles.centerBox}>
-                  <MaterialIcons name="mail" size={30} color="#2A9D8F" />
-                  <Text style={[styles.statusText, { color: Cores.texto }]}>Você recebeu um convite para Conta Conjunta!</Text>
+                  <View style={[styles.parceriaIconLarge, { backgroundColor: novoTema.primarySoft }]}>
+                    <MaterialIcons name="mark-email-unread" size={30} color={novoTema.primary} />
+                  </View>
+                  <Text style={[styles.parceriaTitle, { color: Cores.texto, marginTop: 12 }]}>Você recebeu um convite</Text>
+                  <Text style={[styles.parceriaSubtitle, { color: Cores.secundario, textAlign: "center", marginBottom: 16 }]}>Aceite para vincular as contas e compartilhar despesas.</Text>
                   <View style={styles.rowBtns}>
-                    <TouchableOpacity style={[styles.actionBtn, { flex: 1, backgroundColor: "#E76F51", marginRight: 10 }]} onPress={() => deletarParceria("Deseja recusar o convite?", "recusar_convite")}>
-                      <Text style={styles.actionBtnText}>Recusar</Text>
+                    <TouchableOpacity style={[styles.actionBtn, styles.parceriaBtn, styles.parceriaBtnOutline, { flex: 1, borderColor: "#E76F51", marginRight: 10, marginTop: 0 }]} onPress={() => deletarParceria("Deseja recusar o convite?", "recusar_convite")}>
+                      <Text style={[styles.actionBtnText, { color: "#E76F51" }]}>Recusar</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity style={[styles.actionBtn, { flex: 1 }]} onPress={aceitarConvite}>
+                    <TouchableOpacity style={[styles.actionBtn, styles.parceriaBtn, { flex: 1 }]} onPress={aceitarConvite}>
+                      <MaterialIcons name="check" size={18} color="#FFF" />
                       <Text style={styles.actionBtnText}>Aceitar</Text>
                     </TouchableOpacity>
                   </View>
@@ -992,13 +1033,16 @@ export default function ConfiguracoesScreen() {
               )
             ) : (
               <View style={styles.centerBox}>
-                <MaterialIcons name="favorite" size={40} color="#E76F51" />
-                <Text style={[styles.statusText, { color: Cores.texto, marginTop: 10 }]}>Contas vinculadas com sucesso!</Text>
-                <Text style={[styles.helpText, { color: Cores.secundario, textAlign: "center", marginTop: 5 }]}>
-                  {"Agora você verá a opção “Compartilhar” ao criar uma Conta Nova."}
+                <View style={[styles.parceriaIconLarge, { backgroundColor: "rgba(231,111,81,0.14)" }]}>
+                  <MaterialIcons name="favorite" size={30} color="#E76F51" />
+                </View>
+                <Text style={[styles.parceriaTitle, { color: Cores.texto, marginTop: 12 }]}>Contas vinculadas</Text>
+                <Text style={[styles.parceriaSubtitle, { color: Cores.secundario, textAlign: "center" }]}>
+                  {"Agora você verá a opção “Compartilhar” ao criar uma conta nova."}
                 </Text>
-                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "transparent", borderWidth: 1, borderColor: "#E76F51", marginTop: 20 }]} onPress={() => deletarParceria("Tem certeza que deseja desfazer o vínculo com seu parceiro(a)?", "desfazer_vinculo")}>
-                  <Text style={[styles.actionBtnText, { color: "#E76F51" }]}>Desfazer Vínculo</Text>
+                <TouchableOpacity style={[styles.actionBtn, styles.parceriaBtn, styles.parceriaBtnOutline, { borderColor: "#E76F51" }]} onPress={() => deletarParceria("Tem certeza que deseja desfazer o vínculo com seu parceiro(a)?", "desfazer_vinculo")}>
+                  <MaterialIcons name="link-off" size={18} color="#E76F51" />
+                  <Text style={[styles.actionBtnText, { color: "#E76F51" }]}>Desfazer vínculo</Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -1516,14 +1560,25 @@ const styles = StyleSheet.create({
   apagarContaText: { color: "#FF4444", fontSize: 15, fontWeight: "bold", marginLeft: 8 },
   apagarContaAviso: { fontSize: 11, textAlign: "center", marginTop: 6, marginBottom: 30 },
 
-  helpText: { fontSize: 14, marginBottom: 15, lineHeight: 20 },
   input: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 15, marginBottom: 15 },
   actionBtn: { backgroundColor: "#2A9D8F", padding: 12, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   actionBtnText: { color: "#FFF", fontWeight: "bold", fontSize: 15 },
   centerBox: { alignItems: "center", paddingVertical: 10 },
-  statusText: { fontSize: 15, marginTop: 10, textAlign: "center" },
-  emailText: { fontSize: 16, fontWeight: "bold", marginTop: 5, marginBottom: 15 },
   rowBtns: { flexDirection: "row", width: "100%" },
+  parceriaHeader: { flexDirection: "row", alignItems: "center", gap: 14, marginBottom: 16 },
+  parceriaIcon: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center" },
+  parceriaIconLarge: { width: 60, height: 60, borderRadius: 30, alignItems: "center", justifyContent: "center" },
+  parceriaTitle: { fontSize: 17, fontWeight: "800" },
+  parceriaSubtitle: { fontSize: 13, lineHeight: 19, marginTop: 3 },
+  parceriaBenefits: { borderRadius: 14, paddingVertical: 12, paddingHorizontal: 14, gap: 9, marginBottom: 16 },
+  parceriaBenefitRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  parceriaBenefitText: { flex: 1, fontSize: 13, lineHeight: 18 },
+  parceriaInputWrap: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, marginBottom: 12 },
+  parceriaInput: { flex: 1, minWidth: 0, paddingVertical: 13, fontSize: 15 },
+  parceriaBtn: { flexDirection: "row", gap: 8, minHeight: 48, borderRadius: 14 },
+  parceriaBtnOutline: { backgroundColor: "transparent", borderWidth: 1, marginTop: 18, alignSelf: "stretch" },
+  parceriaEmailPill: { flexDirection: "row", alignItems: "center", gap: 8, maxWidth: "100%", borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 8, marginTop: 10 },
+  parceriaEmailText: { flexShrink: 1, fontSize: 14, fontWeight: "700" },
 
   modalOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "center", alignItems: "center", padding: 20 },
   modalContent: { width: "100%", maxWidth: 520, padding: 24, borderRadius: 22, elevation: 10 },
