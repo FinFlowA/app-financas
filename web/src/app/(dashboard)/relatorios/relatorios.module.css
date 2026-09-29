@@ -235,6 +235,12 @@
   background: color-mix(in srgb, var(--ff-primary) 10%, transparent);
 }
 
+.yearValue {
+  color: var(--foreground);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
 .periodPickerChevron {
   color: var(--ff-primary-bright);
   font-size: .85rem;
