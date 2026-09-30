@@ -237,7 +237,9 @@ select lives_ok(
   'Nome no limite de 150 caracteres é aceito'
 );
 
-reset role;
+-- O lançamento é de A: como A, as validações de dono passam e sobra só a
+-- regra de tamanho.
+select set_config('request.jwt.claims', '{"sub":"aaaaaaaa-0000-4000-8000-00000000000a","role":"authenticated","email":"teto-a@finflow.test"}', true);
 
 select throws_like(
   $$insert into public.transacoes (tipo, valor, data_vencimento, descricao, status, categoria_id, conta_id, user_id)
@@ -248,6 +250,8 @@ select throws_like(
   '%transacoes_descricao_tamanho%',
   'Descrição de lançamento com mais de 500 caracteres é recusada'
 );
+
+reset role;
 
 -- ---------------------------------------------------------------------------
 -- V09 e V12
