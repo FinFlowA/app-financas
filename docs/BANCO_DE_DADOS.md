@@ -4,7 +4,11 @@
 
 O PostgreSQL do Supabase é a fonte de verdade. As migrations versionadas ficam em `supabase/migrations/` e devem ser aplicadas em ordem lexical.
 
-O repositório ainda não contém uma baseline única que recrie todas as tabelas centrais antigas do zero. Antes de montar um ambiente vazio, gere e revise um schema do banco autorizado; não presuma que somente as migrations atuais bastam para reconstrução integral.
+Desde 30/09/2026 a primeira migration é a linha de base `20260929203600_linha_de_base_producao.sql`, gerada do schema de produção: ela recria o banco inteiro (tabelas, funções, RLS, permissões, tarefas `pg_cron` e o pre-request do MFA) num projeto Supabase vazio. As 73 migrations anteriores ficam em `supabase/migrations_archive/` só como histórico e fonte dos testes de contrato; não são mais aplicadas. O histórico de produção (`supabase_migrations.schema_migrations`) contém exatamente os arquivos de `supabase/migrations/`.
+
+Toda segunda-feira o workflow **schema** do repositório privado `FinFlowA/finflow-backups` aplica as migrations num banco vazio e compara com produção; qualquer diferença (mudança feita direto no banco ou migration não aplicada) faz o workflow falhar e o GitHub avisa por e-mail. Ele também pode ser rodado manualmente, inclusive contra uma branch (`ref`) antes do merge.
+
+Ficam fora das migrations e são refeitos à parte num ambiente novo: segredos do Vault (`finflow_push_function_url`), configuração do Auth, secrets das Edge Functions e dados.
 
 ## Entidades centrais
 
@@ -97,12 +101,12 @@ auth.users
 ## Processo de migration
 
 1. Atualize a `main` e confirme o projeto Supabase vinculado.
-2. Faça backup e consulte `supabase migration list --linked`.
-3. Revise SQL, impacto, locks, RLS, grants e rollback lógico.
-4. Execute `supabase db push --linked --dry-run`.
-5. Aplique primeiro em ambiente controlado.
-6. Rode testes de contrato e casos manuais.
-7. Só depois publique clientes que dependam da nova RPC.
+2. Crie o arquivo com `supabase migration new <nome>` (versão = data e hora). Todo arquivo novo precisa de um comentário `-- Reverter:` explicando como desfazer; o `security:check` do CI recusa a migration sem ele.
+3. Revise SQL, impacto, locks, RLS, grants e o plano de reversão.
+4. Rode o workflow **schema** contra a sua branch (`ref`) antes do merge: ele aplica a linha de base mais a migration nova num banco vazio. A diferença esperada em relação a produção é só a sua mudança.
+5. Aplique em produção com `supabase db push --linked` (confira antes com `--dry-run`), que grava a versão do arquivo no histórico. Se aplicar pelo painel ou pelo MCP, a versão registrada é a hora da aplicação e o histórico diverge: alinhe depois com o workflow **Histórico de migrations** do `finflow-backups`.
+6. Rode o workflow **schema** de novo: sem divergências significa que produção e repositório estão iguais.
+7. Rode testes de contrato e casos manuais; só depois publique clientes que dependam da nova RPC.
 
-Nunca edite uma migration já aplicada para tentar corrigi-la. Crie uma migration posterior com `create or replace`, `alter` ou correção de dados auditável.
+Nunca edite uma migration já aplicada (nem a linha de base) para tentar corrigi-la. Crie uma migration posterior com `create or replace`, `alter` ou correção de dados auditável.
 

@@ -2,7 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
-const migration = fs.readFileSync(path.join(root, "supabase", "migrations", "20260915000200_finflow_plan_matrix.sql"), "utf8");
+const migration = fs.readFileSync(path.join(root, "supabase", "migrations_archive", "20260915000200_finflow_plan_matrix.sql"), "utf8");
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 

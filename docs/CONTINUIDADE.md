@@ -1,6 +1,6 @@
 # Continuidade do projeto
 
-Atualizado em 22/09/2026.
+Atualizado em 30/09/2026.
 
 ## Estado confirmado
 
@@ -10,17 +10,17 @@ Atualizado em 22/09/2026.
 - Planos comerciais: Gratuito, Pro e Plus.
 - Google Play Billing ainda não foi implementado.
 - CI valida histórico de segredos, app e site; EAS Update depende desses jobs.
-- Migration mais recente do repositório: `20260922000100_complete_scheduled_transfer_with_archived_account.sql`.
+- Banco consolidado numa linha de base (`supabase/migrations/20260929203600_linha_de_base_producao.sql`); histórico de produção alinhado aos arquivos e comparado toda semana (ver `BANCO_DE_DADOS.md`).
 
 ## Pendências prioritárias
 
-1. Confirmar que todas as migrations da `main`, inclusive `20260922000100`, foram aplicadas ao Supabase usado pelos clientes.
+1. ~~Confirmar que todas as migrations da `main` foram aplicadas.~~ Feito em 29/09/2026: a `20260922000100` não estava aplicada e foi aplicada; as demais já estavam.
 2. Repetir o teste real de transferência parcelada agendada no aplicativo.
 3. Concluir aprovação do domínio e verificação da conta Paddle live.
 4. Validar catálogo, webhook, portal e um pagamento live somente depois da aprovação.
 5. ~~Corrigir o workflow de backup e testar restauração.~~ Feito em 29/09/2026: backup diário criptografado com restauração testada a cada execução no repositório privado `FinFlowA/finflow-backups` (ver `DEPLOY_E_OPERACAO.md`).
 6. Antes da Play Store, implementar Google Play Billing com validação server-side.
-7. Criar uma baseline reproduzível do schema para novos ambientes.
+7. ~~Criar uma baseline reproduzível do schema para novos ambientes.~~ Feito em 30/09/2026 (linha de base + comparação semanal).
 
 ## Áreas que exigem coordenação
 

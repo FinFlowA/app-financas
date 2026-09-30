@@ -510,7 +510,7 @@ async function run() {
     "Arquivar, reativar e excluir categorias devem passar pelo executor idempotente.");
 
   const migration = fs.readFileSync(
-    path.join(root, "supabase", "migrations", "20260808000100_secure_offline_action_receipts.sql"),
+    path.join(root, "supabase", "migrations_archive", "20260808000100_secure_offline_action_receipts.sql"),
     "utf8",
   );
   assert.match(migration, /caller is distinct from p_expected_user_id/);
@@ -521,7 +521,7 @@ async function run() {
   assert.doesNotMatch(migration.match(/array\[[\s\S]*?\]::text\[\]/)?.[0] ?? "", /update_|delete_|pay_invoice|complete_transaction/);
 
   const updateMigration = fs.readFileSync(
-    path.join(root, "supabase", "migrations", "20260808001400_offline_optimistic_updates.sql"),
+    path.join(root, "supabase", "migrations_archive", "20260808001400_offline_optimistic_updates.sql"),
     "utf8",
   );
   for (const table of ["contas", "categorias", "caixinhas", "cartoes", "transacoes"]) {

@@ -50,7 +50,7 @@ includesAll(webhook, [
 ], "Webhook Mercado Pago");
 assert(!webhook.includes('.from("subscription_events").insert'), "Webhook não pode confirmar por insert simples");
 
-const migration = read("supabase/migrations/20260808001000_harden_external_edges.sql");
+const migration = read("supabase/migrations_archive/20260808001000_harden_external_edges.sql");
 includesAll(migration, [
   "alter table public.%I enable row level security",
   "create or replace function private.finflow_validate_financial_references",

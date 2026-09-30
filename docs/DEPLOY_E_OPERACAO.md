@@ -110,6 +110,10 @@ Verifique periodicamente:
 - que nenhum `*.dump` ou `backups/` entra neste repositório (o `.gitignore`
   já bloqueia).
 
+## Schema do banco
+
+O workflow **schema** do `finflow-backups` compara toda segunda-feira o banco de produção com o que as migrations do repositório recriam num banco vazio, e falha se houver diferença. Detalhes e processo de migration em `BANCO_DE_DADOS.md`.
+
 ## Rollback
 
 - Código: reverta por novo commit; não reescreva a `main` compartilhada.

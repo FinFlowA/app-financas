@@ -5,35 +5,35 @@ const path = require("node:path");
 const root = path.resolve(__dirname, "..");
 // Arquivos fixos do proprio repositorio; nenhum caminho vem de entrada externa.
 const sql = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260808001100_atomic_partial_transaction_completion.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260808001100_atomic_partial_transaction_completion.sql"),
   "utf8",
 );
 const referenceGuard = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260808001000_harden_external_edges.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260808001000_harden_external_edges.sql"),
   "utf8",
 );
 const aiCore = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260802000100_secure_finance_ai.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260802000100_secure_finance_ai.sql"),
   "utf8",
 );
 const aiCompletion = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260808001500_unify_ai_transaction_completion.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260808001500_unify_ai_transaction_completion.sql"),
   "utf8",
 );
 const groupedPayments = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260808001600_group_partial_transaction_payments.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260808001600_group_partial_transaction_payments.sql"),
   "utf8",
 );
 const atomicTransferStatus = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260901000100_atomic_transfer_status.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260901000100_atomic_transfer_status.sql"),
   "utf8",
 );
 const unrestrictedAdjustments = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260902000100_allow_transaction_adjustments_on_any_date.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260902000100_allow_transaction_adjustments_on_any_date.sql"),
   "utf8",
 );
 const partnershipDissolution = fs.readFileSync(
-  path.join(root, "supabase", "migrations", "20260731000400_partnership_dissolution_summary.sql"),
+  path.join(root, "supabase", "migrations_archive", "20260731000400_partnership_dissolution_summary.sql"),
   "utf8",
 );
 const screen = fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8");

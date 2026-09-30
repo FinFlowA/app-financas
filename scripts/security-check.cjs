@@ -126,20 +126,20 @@ function collect(relativePath) {
 
 const files = [...new Set([...sourceRoots.flatMap(collect), ...rootFiles.filter((file) => fs.existsSync(path.join(root, file)))])];
 
-const migrationsDirectory = path.join(root, "supabase", "migrations");
-if (fs.existsSync(migrationsDirectory)) {
+// supabase/migrations: linha de base + migrations novas (aplicadas em novos
+// ambientes). supabase/migrations_archive: histórico anterior à linha de base.
+const BASELINE_MIGRATION_VERSION = "20260929203600";
+for (const [folder, active] of [["migrations", true], ["migrations_archive", false]]) {
+  const migrationsDirectory = path.join(root, "supabase", folder);
+  if (!fs.existsSync(migrationsDirectory)) continue;
   const versions = new Map();
   for (const migrationName of fs.readdirSync(migrationsDirectory)) {
     const version = migrationName.match(/^(\d+)_/)?.[1];
     if (!version) continue;
+    const relativePath = path.join("supabase", folder, migrationName);
     const previous = versions.get(version);
     if (previous) {
-      report(
-        "ERROR",
-        path.join("supabase", "migrations", migrationName),
-        1,
-        `Versao de migration duplicada com ${previous}: ${version}.`,
-      );
+      report("ERROR", relativePath, 1, `Versao de migration duplicada com ${previous}: ${version}.`);
     } else {
       versions.set(version, migrationName);
     }
@@ -150,26 +150,20 @@ if (fs.existsSync(migrationsDirectory)) {
       if (/\bjsonb_object_length\s*\(/u.test(migrationSql)) {
         report(
           "ERROR",
-          path.join("supabase", "migrations", migrationName),
+          relativePath,
           1,
           "jsonb_object_length nao existe no PostgreSQL; conte jsonb_object_keys de forma explicita.",
         );
       }
       for (const problem of findUndeclaredPlpgsqlLoopVariables(migrationSql)) {
-        report(
-          "ERROR",
-          path.join("supabase", "migrations", migrationName),
-          problem.line,
-          `Variavel de loop PL/pgSQL nao declarada: ${problem.variable}.`,
-        );
+        report("ERROR", relativePath, problem.line, `Variavel de loop PL/pgSQL nao declarada: ${problem.variable}.`);
       }
       for (const problem of findInvalidPostgresNulExpressions(migrationSql)) {
-        report(
-          "ERROR",
-          path.join("supabase", "migrations", migrationName),
-          problem.line,
-          problem.message,
-        );
+        report("ERROR", relativePath, problem.line, problem.message);
+      }
+      // Toda migration nova (depois da linha de base) explica como desfazer.
+      if (active && version > BASELINE_MIGRATION_VERSION && !/^--\s*Reverter:/imu.test(migrationSql)) {
+        report("ERROR", relativePath, 1, "Migration nova precisa de um comentario '-- Reverter:' explicando como desfazer.");
       }
     }
   }
@@ -268,18 +262,18 @@ requireText(
   "O hook público de SMS precisa validar a assinatura do Supabase.",
 );
 requireText(
-  "supabase/migrations/20260731000100_harden_core_rls.sql",
+  "supabase/migrations_archive/20260731000100_harden_core_rls.sql",
   "revoke all on table public.%I from anon",
   "A migração de RLS precisa revogar acesso anônimo às tabelas financeiras.",
 );
 
 requireText(
-  "supabase/migrations/20260808001100_atomic_partial_transaction_completion.sql",
+  "supabase/migrations_archive/20260808001100_atomic_partial_transaction_completion.sql",
   "create or replace function public.complete_transaction_with_partial",
   "A conclusão parcial precisa ser atômica no banco.",
 );
 requireText(
-  "supabase/migrations/20260808001100_atomic_partial_transaction_completion.sql",
+  "supabase/migrations_archive/20260808001100_atomic_partial_transaction_completion.sql",
   "create or replace function public.reopen_transaction_completion",
   "A reabertura de uma conclusão parcial precisa ser atômica no banco.",
 );
@@ -393,17 +387,17 @@ requireText(
   "Alteracoes sensiveis precisam enviar a senha atual para validacao no Auth.",
 );
 requireText(
-  "supabase/migrations/20260808001200_require_eligible_financial_profile.sql",
+  "supabase/migrations_archive/20260808001200_require_eligible_financial_profile.sql",
   "FINFLOW_PROFILE_REQUIRED",
   "O banco precisa impedir escrita financeira sem idade e aceite legal validos.",
 );
 requireText(
-  "supabase/migrations/20260808001200_require_eligible_financial_profile.sql",
+  "supabase/migrations_archive/20260808001200_require_eligible_financial_profile.sql",
   "'fatura_itens', 'compras_cartao'",
   "Compras do cartao tambem precisam respeitar idade e aceite legal.",
 );
 requireText(
-  "supabase/migrations/20260808001300_money_bounds.sql",
+  "supabase/migrations_archive/20260808001300_money_bounds.sql",
   "abs(%I) <= 999999999999.99",
   "O banco precisa limitar valores monetarios e sua precisao.",
 );
