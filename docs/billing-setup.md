@@ -17,8 +17,8 @@ desenvolvimento. Isso não transforma contas Free em Premium.
 1. Vincule o Supabase CLI ao projeto correto.
 2. Revise e aplique, nesta ordem:
 
-   - `supabase/migrations/20260730_secure_subscriptions.sql`
-   - `supabase/migrations/20260808001000_harden_external_edges.sql`
+   - `supabase/migrations_archive/20260730_secure_subscriptions.sql`
+   - `supabase/migrations_archive/20260808001000_harden_external_edges.sql`
 
    A segunda migration deve entrar antes das Edge Functions novas. Ela cria os
    claims idempotentes, os limites atômicos, a retenção e as validações de

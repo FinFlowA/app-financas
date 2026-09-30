@@ -342,7 +342,7 @@ describe("compras e faturas", () => {
 
 describe("executor financeiro manual", () => {
   it("permanece idempotente, autenticado e sem acesso anônimo", () => {
-    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations/20260815000100_secure_manual_financial_actions.sql"), "utf8");
+    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations_archive/20260815000100_secure_manual_financial_actions.sql"), "utf8");
     expect(migration).toContain("caller uuid := auth.uid()");
     expect(migration).toContain("pg_advisory_xact_lock");
     expect(migration).toContain("private.ai_action_state_fingerprint");
@@ -352,7 +352,7 @@ describe("executor financeiro manual", () => {
   });
 
   it("encaminha faturas pelas RPCs manuais sem usar a chave como action_id da IA", () => {
-    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations/20260815000100_secure_manual_financial_actions.sql"), "utf8");
+    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations_archive/20260815000100_secure_manual_financial_actions.sql"), "utf8");
     const invoiceBranch = migration.slice(
       migration.indexOf("if p_action_type = 'pay_invoice'"),
       migration.indexOf("else\n    -- A leitura com lock"),
