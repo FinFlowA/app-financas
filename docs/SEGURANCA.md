@@ -121,3 +121,5 @@ Se um secret for encontrado:
 
 Auditorias antigas em `docs/security/` são evidências históricas, não garantia do estado atual. Revalide recomendações contra a `main`.
 
+A mais recente é a [reauditoria de 30/09/2026](./security/REAUDITORIA_2026-09-30.md), que valida as correções da auditoria de setembro e lista as pendências de configuração do Auth hospedado.
+
