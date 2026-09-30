@@ -18,7 +18,7 @@ Validação final (Etapa 8) das correções da auditoria de setembro de 2026. Re
 | V03 Sem backup funcional nem restauração testada | Alta | Corrigido (Etapa 2) | Backup diário com teste de restauração automático |
 | V04 Sem MFA | Média | Corrigido (Etapa 5) | TOTP opcional exigido no banco (`finflow_guard.enforce_mfa`) |
 | V05 Troca de senha não encerra outras sessões | Média | Corrigido (Etapa 4) | Ver [SEGURANCA.md](../SEGURANCA.md) |
-| V06 Proteção contra senhas vazadas desligada | Média | Corrigido nas telas (Etapa 4) | HIBP no app e no site; ver R01 para a API direta |
+| V06 Proteção contra senhas vazadas desligada | Média | Corrigido (Etapa 4 e R01) | HIBP no app e no site; política de senha também no servidor desde R01 |
 | V07 Banco diferente das migrations | Média | Corrigido (Etapa 6) | Workflow "schema": "Sem divergências" em 30/09 |
 | V08 Sem limite no servidor para criação de dados | Média | Corrigido (Etapa 7) | Tetos por usuário; 37 testes pgTAP no CI |
 | V09 `anon` executava `refresh_my_recurring_schedules` | Baixa | Corrigido (Etapa 7) | Alerta sumiu dos Advisors |
@@ -75,12 +75,15 @@ Depois da Etapa 7, restam só alertas esperados:
 - **Evidência:** pela API direta, a troca de senha aceitou `abcdefgh` e uma senha de 7 caracteres. O `supabase/config.toml` exige 8 caracteres com minúscula, maiúscula, número e símbolo, mas esse arquivo não é aplicado automaticamente ao projeto hospedado.
 - **Impacto:** as telas do app e do site validam a senha, mas quem chama a API direto consegue definir uma senha fraca para a própria conta.
 - **Correção:** no painel do Supabase, em *Authentication → Providers → Email*, definir o tamanho mínimo 8 e a exigência "minúsculas, maiúsculas, números e símbolos".
+- **Situação:** corrigido no painel em 30/09/2026 e verificado. As mesmas senhas agora são recusadas com `weak_password`.
 
-### R02 — Reuso do token de renovação de sessão aceito (Média)
+### R02 — Reuso do token de renovação de sessão (descartado: erro do teste)
 
-- **Evidência:** um token de renovação já usado foi aceito de novo 15 segundos depois, e a sessão continuou válida.
-- **Impacto:** um token de renovação vazado continua útil mesmo depois de o dono renovar a sessão, e o Supabase não derruba a sessão comprometida.
-- **Correção:** no painel, em *Authentication → Sessions* (ou *Security*), ligar "Detect and revoke potentially compromised refresh tokens" e manter o intervalo de reuso em 10 segundos. Depois, repetir o teste.
+O primeiro teste errou duas vezes:
+1. Reaproveitou o token imediatamente anterior ao ativo. O Supabase aceita esse caso de propósito e devolve o token ativo, para o aparelho que não conseguiu guardar o token novo.
+2. Usou o token ativo dentro dos 10 segundos em que um token recém-revogado ainda vale.
+
+O teste corrigido renova duas vezes e reaproveita o primeiro token. Ele é recusado com `refresh_token_already_used`, e, passados os 10 segundos, a sessão inteira cai. Portanto a detecção funciona. A opção "Detect and revoke potentially compromised refresh tokens" fica ligada, como recomendado.
 
 ### R03 — Dependências do app (Baixa)
 
@@ -93,10 +96,11 @@ Depois da Etapa 7, restam só alertas esperados:
 
 ### R04 — Função legada `mercado-pago-webhook` desatualizada (Baixa)
 
-A função publicada é de 30/07/2026 (v14), cerca de 200 linhas atrás da `main`, e continua pública (`verify_jwt=false`). Os pagamentos migraram para o Paddle. É preciso decidir entre removê-la do projeto ou republicá-la a partir da `main`.
+A função publicada é de 30/07/2026 (v14), cerca de 200 linhas atrás da `main`, e continua pública (`verify_jwt=false`). Os pagamentos migraram para o Paddle.
+
+**Decisão (30/09/2026):** manter como está até a aprovação da conta no Paddle e decidir depois entre removê-la ou republicá-la.
 
 ## Pendências
 
-1. Corrigir R01 e R02 no painel do Supabase e repetir o teste de Auth.
-2. Decidir sobre R04.
-3. Testar o push de parceria num aparelho com o APK `versionCode 13`.
+1. R04: decidir depois da aprovação do Paddle.
+2. Testar o push de parceria num aparelho com o APK `versionCode 13`.
