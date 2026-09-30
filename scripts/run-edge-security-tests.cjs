@@ -33,6 +33,46 @@ includesAll(http, [
 ], "HTTP/CORS");
 assert(!http.includes('"Access-Control-Allow-Origin": "*"'), "CORS não pode liberar wildcard");
 
+// V11: localhost só em desenvolvimento. Executa o http.ts real com um Deno.env
+// simulado para cada ambiente.
+{
+  const os = require("node:os");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "finflow-edge-http-"));
+  const httpModulePath = path.join(tempDir, "http.cjs");
+  fs.writeFileSync(httpModulePath, ts.transpileModule(http, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText);
+  let env = {};
+  globalThis.Deno = { env: { get: (name) => env[name] } };
+  const { isRequestOriginAllowed, corsHeadersFor } = require(httpModulePath);
+  const fromOrigin = (origin) => new Request("https://edge.example/functions/v1/finance-ai", {
+    method: "POST",
+    headers: origin ? { origin } : {},
+  });
+
+  env = { SUPABASE_URL: "https://qxnfpnabyytdbzdkklet.supabase.co", FINFLOW_ALLOWED_ORIGINS: "https://finflow.example" };
+  assert(!isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "Produção não pode aceitar localhost sem opt-in");
+  assert(!isRequestOriginAllowed(fromOrigin("http://127.0.0.1:8081")), "Produção não pode aceitar 127.0.0.1 sem opt-in");
+  assert(!corsHeadersFor(fromOrigin("http://localhost:3100"))["Access-Control-Allow-Origin"], "Produção não pode devolver CORS para localhost");
+  assert(isRequestOriginAllowed(fromOrigin("https://finflow.example")), "Origem configurada precisa continuar aceita");
+  assert(isRequestOriginAllowed(fromOrigin(null)), "Apps nativos (sem Origin) precisam continuar aceitos");
+  assert(!isRequestOriginAllowed(fromOrigin("https://evil.example")), "Origem desconhecida precisa ser recusada");
+
+  env = { ...env, FINFLOW_ALLOW_LOCALHOST_ORIGINS: "true" };
+  assert(isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "O opt-in explícito precisa liberar localhost");
+
+  // No Supabase local a URL aponta para o próprio computador (ou para o
+  // container kong, dentro do Docker).
+  env = { SUPABASE_URL: "http://127.0.0.1:54321" };
+  assert(isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "Supabase local precisa aceitar localhost");
+  assert(!isRequestOriginAllowed(fromOrigin("https://evil.example")), "Supabase local não libera outras origens");
+
+  env = { SUPABASE_URL: "https://qxnfpnabyytdbzdkklet.supabase.co", FINFLOW_ALLOWED_ORIGINS: "http://localhost:3100" };
+  assert(isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "Origem localhost exata e configurada continua valendo");
+  assert(!isRequestOriginAllowed(fromOrigin("http://localhost:4000")), "Só a porta configurada é liberada");
+  delete globalThis.Deno;
+}
+
 const supabaseShared = read("supabase/functions/_shared/supabase.ts");
 const financeContext = read("supabase/functions/finance-ai/context.ts");
 assert(supabaseShared.includes("@supabase/supabase-js@2.111.0"), "Supabase Edge precisa de versão exata");

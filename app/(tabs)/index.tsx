@@ -46,6 +46,7 @@ import {
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
 import { mensagemErroLimitePlano } from "../../lib/planos";
+import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 import {
   adicionarRecorrencia,
   adicionarIdSerie,
@@ -1112,6 +1113,8 @@ export default function Dashboard() {
         });
         setLoadingCat(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           const mensagem = /AI_CATEGORY_LIMIT|AI_PLAN_LIMIT/u.test(resultado.errorCode)
             ? "O limite de categorias do seu plano foi atingido."
             : /AUTH|SESSION/u.test(resultado.errorCode)
@@ -1366,6 +1369,8 @@ export default function Dashboard() {
         });
         setLoadingConta(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           const mensagemLimite = mensagemErroLimitePlano(resultado.errorCode, "contas", plano);
           if (mensagemLimite) return mostrarModalLimite(mensagemLimite, plano === "free" ? "smart" : "premium");
           return Alert.alert("Não foi possível salvar", "A conta foi recusada pelo servidor. Revise os dados e tente novamente.");
@@ -1395,11 +1400,13 @@ export default function Dashboard() {
     }
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
     let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
-    if (res.error && !mensagemErroLimitePlano(res.error, "contas", plano)) {
+    if (res.error && !mensagemErroLimitePlano(res.error, "contas", plano) && !mensagemTetoSeguranca(res.error)) {
       res = await supabase.from("contas").insert([base]);
     }
     setLoadingConta(false);
     if (res.error) {
+      const avisoTeto = mensagemTetoSeguranca(res.error);
+      if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
       const mensagemLimite = mensagemErroLimitePlano(res.error, "contas", plano);
       if (mensagemLimite) return mostrarModalLimite(mensagemLimite, plano === "free" ? "smart" : "premium");
       return Alert.alert("Não foi possível salvar", "A conta não pôde ser salva. Verifique sua conexão e tente novamente.");
@@ -1605,6 +1612,8 @@ export default function Dashboard() {
         const resultado = await salvarCriacaoFinanceira("create_transaction", payload);
         setLoadingTrans(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           return Alert.alert("Não foi possível salvar", "O lançamento foi recusado pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {
@@ -1868,6 +1877,8 @@ export default function Dashboard() {
           "Entre novamente antes de criar os agendamentos. Nenhum reenvio automático foi feito.",
         );
       }
+      const avisoTeto = mensagemTetoSeguranca(error);
+      if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
       return Alert.alert(
         "Não foi possível salvar",
         "Nenhum lançamento foi criado. Confira sua conexão e tente novamente.",

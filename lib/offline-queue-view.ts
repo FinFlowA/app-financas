@@ -3,6 +3,7 @@ import type {
   OfflineQueueItem,
   OfflineQueueStatus,
 } from "./offline-queue-core";
+import { mensagemTetoSeguranca } from "./teto-seguranca";
 
 export type OfflineQueuePanelItem = Readonly<{
   id: string;
@@ -51,7 +52,7 @@ const GENERIC_FAILURE_MESSAGE = "Não foi possível sincronizar esta ação.";
 
 function safeFailureMessage(errorCode: string | null): string {
   if (!errorCode) return GENERIC_FAILURE_MESSAGE;
-  return FAILURE_MESSAGES[errorCode] ?? GENERIC_FAILURE_MESSAGE;
+  return FAILURE_MESSAGES[errorCode] ?? mensagemTetoSeguranca(errorCode) ?? GENERIC_FAILURE_MESSAGE;
 }
 
 export function buildOfflineQueuePanelSnapshot(

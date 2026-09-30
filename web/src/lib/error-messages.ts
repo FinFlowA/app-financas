@@ -49,8 +49,44 @@ const MENSAGENS: Record<string, string> = {
   AI_NO_OPEN_SERIES_ITEMS: "Não há itens pendentes desta série para excluir ou editar.",
 };
 
+const EMAIL_SUPORTE = "Finflowfinancas@gmail.com";
+const PADRAO_TETO_SEGURANCA = /FINFLOW_TETO_SEGURANCA:([a-z_]+):(diario|total):(\d+)/i;
+const RECURSOS_TETO: Readonly<Record<string, string>> = {
+  lancamentos: "lançamentos",
+  compras_cartao: "compras no cartão",
+  contas: "contas",
+  objetivos: "objetivos",
+  cartoes: "cartões",
+  categorias: "categorias",
+  convites_parceria: "convites de conta conjunta",
+  feedbacks: "feedbacks",
+  historico_finn: "mensagens no histórico do Finn",
+};
+
+/**
+ * Teto de segurança por usuário (auditoria V08). O banco recusa criações
+ * acima do teto com `FINFLOW_TETO_SEGURANCA:<recurso>:<diario|total>:<teto>`.
+ * Vale em qualquer plano; não é limite de plano, então não oferece upgrade.
+ * Mesmo texto do app (lib/teto-seguranca.ts). Retorna null para outros erros.
+ */
+export function mensagemTetoSeguranca(erro: string | { message?: string | null } | null | undefined): string | null {
+  const texto = typeof erro === "string" ? erro : erro?.message ?? "";
+  const encontrado = texto.match(PADRAO_TETO_SEGURANCA);
+  if (!encontrado) return null;
+  const teto = Number(encontrado[3]);
+  if (!Number.isSafeInteger(teto) || teto <= 0) return null;
+  const recurso = RECURSOS_TETO[encontrado[1].toLowerCase()] ?? "itens";
+  const quantidade = teto.toLocaleString("pt-BR");
+  if (encontrado[2].toLowerCase() === "diario") {
+    return `Você atingiu o limite de segurança de ${quantidade} ${recurso} por dia. Tente de novo amanhã. Se precisar de mais, fale com o suporte: ${EMAIL_SUPORTE}`;
+  }
+  return `Você atingiu o limite de segurança de ${quantidade} ${recurso}. Esse limite inclui os itens arquivados. Exclua o que não usa mais ou fale com o suporte: ${EMAIL_SUPORTE}`;
+}
+
 export function traduzirErro(codigo: string): string {
   if (MENSAGENS[codigo]) return MENSAGENS[codigo];
+  const teto = mensagemTetoSeguranca(codigo);
+  if (teto) return teto;
   if (codigo.includes("NOT_FOUND")) return "Não encontrei o item financeiro solicitado ou você não possui acesso a ele.";
   if (codigo.includes("ARCHIVED")) return "O item está arquivado e precisa ser reativado antes desta ação.";
   if (codigo.startsWith("AI_INVALID_") || codigo.startsWith("AI_MISSING_") || codigo.includes("REQUIRED")) {

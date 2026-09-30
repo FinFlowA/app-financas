@@ -92,6 +92,7 @@ import {
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
 import { invoicePresentationStatus } from "../../web/src/lib/invoice-status";
+import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
@@ -459,6 +460,8 @@ export default function CartoesScreen() {
         });
         setLoadingNovoCartao(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           return Alert.alert("Não foi possível salvar", "O cartão foi recusado pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {
@@ -556,6 +559,8 @@ export default function CartoesScreen() {
         const resultado = await salvarCriacaoFinanceira("create_card_purchase", payload);
         setLoadingCompra(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           return Alert.alert("Não foi possível salvar", "A compra foi recusada pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {

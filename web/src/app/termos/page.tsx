@@ -11,7 +11,7 @@ export default function TermsPage() {
     <LegalShell
       eyebrow="Documento legal"
       title="Termos de Uso"
-      updatedAt="8 de agosto de 2026"
+      updatedAt="30 de setembro de 2026"
       description="Regras essenciais para usar o FinFlow, incluindo conta, planos, parceria e assistente financeiro."
     >
       <LegalSection title="1. Aceitação">
@@ -36,6 +36,7 @@ export default function TermsPage() {
 
       <LegalSection title="4. Planos e cobrança">
         <p>O FinFlow pode oferecer planos com limites e recursos diferentes. Preço, periodicidade, cobrança recorrente, renovação, cancelamento e eventual reembolso são apresentados antes da contratação.</p>
+        <p>Recursos descritos como ilimitados, em qualquer plano, estão sujeitos a limites técnicos de segurança por usuário, fixados muito acima do uso normal, para proteger a estabilidade do serviço. Quem atingir um desses limites pode pedir revisão pelo canal de contato.</p>
         <p>Enquanto o meio de pagamento não estiver ativo e não houver confirmação expressa da compra, a exibição de plano ou preço não representa cobrança. O retorno do checkout também não ativa recursos sozinho: o status é confirmado diretamente com o provedor.</p>
       </LegalSection>
 

@@ -54,6 +54,38 @@ Não há códigos de recuperação nativos na versão atual do Supabase Auth (ch
 4. Oriente a pessoa a entrar e ativar a verificação de novo, de preferência com um autenticador reserva.
 5. Registre o atendimento (data, quem aprovou, como a identidade foi confirmada), sem copiar dados sensíveis.
 
+## Tetos de segurança por usuário (anti-abuso)
+
+Os limites de plano (Free/Smart) podem ficar desligados (`billing_settings.limits_enabled=false`). Os tetos de segurança não dependem disso: valem sempre, em qualquer plano, inclusive Premium, e impedem que uma conta sozinha, ou um script usando a API, encha o banco. Foram aprovados em 30/09/2026 com base no uso real, de 10 a 40 vezes acima do maior usuário.
+
+| Recurso (`private.tetos_antiabuso`) | Tabela | Teto total | Teto por dia |
+|---|---|---|---|
+| `lancamentos` | `transacoes` | 50.000 | 5.000 |
+| `compras_cartao` | `fatura_itens` | 20.000 | 3.000 |
+| `contas` | `contas` (inclui arquivadas) | 100 | — |
+| `objetivos` | `caixinhas` (inclui arquivados) | 100 | — |
+| `cartoes` | `cartoes` | 50 | — |
+| `categorias` | `categorias` (inclui inativas) | 300 | — |
+| `convites_parceria` | `parcerias` (quem convida) | — | 10 |
+| `feedbacks` | `feedbacks` | — | 10 |
+| `historico_finn` | `chat_historico` (legado) | 2.000 | 300 |
+
+- **Onde é aplicado:** gatilho `finflow_teto_antiabuso` (AFTER INSERT por comando) em cada tabela, com `private.aplicar_teto_antiabuso`. Um lote (série recorrente, parcelas) conta todas as linhas de uma vez. O dia segue o horário de Brasília e o contador fica em `private.criacoes_diarias` (limpo após 7 dias pela tarefa `finflow-cleanup-anti-abuse-counters`).
+- **Quem fica de fora:** `service_role` (Edge Functions, que têm limites próprios) e manutenção sem JWT (migrations, SQL editor, restauração de backup). As ações do Finn rodam com o login do usuário e contam normalmente.
+- **Recusa:** `P0001` com a mensagem `FINFLOW_TETO_SEGURANCA:<recurso>:<diario|total>:<teto>`. O app (`lib/teto-seguranca.ts`) e o site (`mensagemTetoSeguranca` em `web/src/lib/error-messages.ts`) mostram "Você atingiu o limite de segurança de …" com o e-mail do suporte; o Finn recebe `AI_SAFETY_LIMIT_REACHED`. Não é limite de plano: a mensagem não oferece upgrade.
+- **Tamanho dos textos:** CHECKs `<tabela>_<coluna>_tamanho` limitam descrição de lançamento (500), nomes (150), cor (32), ícone (64), feedback (5.000), e-mail do convite (254) e histórico do Finn (4.000), acima do que as telas aceitam.
+- **Suporte — usuário legítimo esbarrou no teto:** confira o uso com `select * from private.criacoes_diarias where user_id = '<id>' order by dia desc;` e, se fizer sentido, aumente o número para todos numa migration (`update private.tetos_antiabuso set ... where recurso = '...'`). Em urgência, o mesmo UPDATE pode ser aplicado direto e registrado depois numa migration. Os Termos de Uso (seção 4) avisam que recursos ilimitados têm limites técnicos de segurança.
+
+## CORS das Edge Functions
+
+- Só origens de `FINFLOW_ALLOWED_ORIGINS` são aceitas no navegador; apps nativos não enviam `Origin`.
+- Origens `localhost` só valem com a função rodando no Supabase local ou com o secret `FINFLOW_ALLOW_LOCALHOST_ORIGINS=true`, ligado de propósito para testar o site local contra produção. Desligue depois do teste: `supabase secrets unset FINFLOW_ALLOW_LOCALHOST_ORIGINS`.
+
+## Push remoto
+
+- O token de push fica em `dispositivos_push`, no máximo 10 por conta.
+- `registrar_dispositivo_push` só transfere um token de uma conta para outra quando o pedido traz o segredo da mesma instalação do app (gerado no aparelho, guardado no SecureStore; o banco guarda só o SHA-256). Quem sabe apenas o token não consegue desviar os avisos de outra pessoa.
+
 ## Compartilhamento
 
 - A parceria aceita é necessária, mas não suficiente: o recurso precisa estar marcado como compartilhado.

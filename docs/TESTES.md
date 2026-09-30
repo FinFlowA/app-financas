@@ -13,6 +13,8 @@ npm run test:finance-ai-state-guard
 npm run test:history-order
 npm run test:money-input
 npm run test:password
+npm run test:mfa
+npm run test:anti-abuse
 npm run test:transaction-completion
 npm run test:plan-trigger
 npm run test:plan-matrix
@@ -38,6 +40,17 @@ npm run build
 
 O build necessita placeholders ou variáveis válidas para integrações lidas durante renderização. Nunca use secrets reais em logs do CI.
 
+## Banco (pgTAP)
+
+`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net` e registro de push) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
+
+```bash
+supabase db start
+supabase test db
+```
+
+Cada arquivo roda numa transação desfeita no fim (`rollback`), então não deixa dados.
+
 ## CI
 
 `.github/workflows/security-ci.yml` executa:
@@ -45,7 +58,8 @@ O build necessita placeholders ou variáveis válidas para integrações lidas d
 1. Gitleaks em todo o histórico;
 2. lint, tipos, segurança e testes mobile;
 3. lint, testes e build web;
-4. EAS Update somente depois dos três jobs anteriores.
+4. banco: aplica as migrations num Supabase vazio dentro do runner e roda os testes pgTAP;
+5. EAS Update somente depois dos quatro jobs anteriores.
 
 ## Checklist manual financeiro
 

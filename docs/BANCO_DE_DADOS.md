@@ -54,7 +54,8 @@ O schema `private` contém recibos e controles internos, entre eles:
 - ledger de pagamento de fatura;
 - recibos e vínculos de conciliação bancária;
 - reservas de verificação telefônica;
-- limites de requisição das Edge Functions.
+- limites de requisição das Edge Functions;
+- tetos de segurança por usuário (`tetos_antiabuso`) e o contador diário de criações (`criacoes_diarias`), descritos em [SEGURANCA.md](./SEGURANCA.md).
 
 Essas tabelas não são API pública do cliente.
 

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { hasVerifiedFactor, totpErrorMessage, verifyTotpCode } from "@/lib/auth/mfa";
+import { mensagemTetoSeguranca } from "@/lib/error-messages";
 import { createClient } from "@/lib/supabase/server";
 import { parseMoney } from "@/lib/money";
 
@@ -134,7 +135,7 @@ export async function sendFeedbackAction(
     tipo: type,
     mensagem: message,
   });
-  if (error) return fail("Não foi possível enviar o feedback. Tente novamente.");
+  if (error) return fail(mensagemTetoSeguranca(error) ?? "Não foi possível enviar o feedback. Tente novamente.");
   return ok("Obrigado! Seu feedback foi enviado para a equipe FinFlow.");
 }
 
@@ -174,7 +175,7 @@ export async function invitePartnerAction(
       return fail("Esse e-mail ainda não possui uma conta FinFlow.");
     }
     if (error.code === "23505") return fail("Já existe um convite para esse e-mail.");
-    return fail("Não foi possível enviar o convite. Tente novamente.");
+    return fail(mensagemTetoSeguranca(error) ?? "Não foi possível enviar o convite. Tente novamente.");
   }
 
   refreshSettings();
