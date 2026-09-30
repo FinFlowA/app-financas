@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useActionState, useRef, useState, type ReactNode } from "react";
 import CurrencyInput from "@/components/ui/currency-input";
 import AccessibleConfirmationDialog from "@/components/ui/confirmation-dialog";
@@ -20,7 +21,7 @@ import styles from "./settings.module.css";
 const INPUT = styles.input;
 const INITIAL_SETTINGS_STATE: SettingsActionState = { status: "idle", message: "" };
 
-type IconName = "alert" | "check" | "feedback" | "goal" | "partnership" | "profile" | "trash" | "wallet";
+type IconName = "alert" | "check" | "feedback" | "goal" | "profile" | "trash" | "wallet";
 
 function Icon({ name }: { name: IconName }) {
   const paths: Record<IconName, React.ReactNode> = {
@@ -28,7 +29,6 @@ function Icon({ name }: { name: IconName }) {
     check: <><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.3 2.3 4.8-5" /></>,
     feedback: <><path d="M5 18.5 3.5 21v-5.2A8.5 8.5 0 1 1 7 19" /><path d="M8 9h8M8 13h5" /></>,
     goal: <><circle cx="12" cy="12" r="8.5" /><circle cx="12" cy="12" r="4.5" /><path d="m15 9 5-5M16 4h4v4" /></>,
-    partnership: <><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" /></>,
     profile: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
     trash: <><path d="M4 7h16M9 7V4h6v3M7 7l1 14h8l1-14M10 11v6M14 11v6" /></>,
     wallet: <><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H19v16H6.5A2.5 2.5 0 0 1 4 17.5z" /><path d="M4 7h15M15 11h6v5h-6a2.5 2.5 0 0 1 0-5Z" /></>,
@@ -168,8 +168,9 @@ export function PartnershipPanel({
   return (
     <section className={`ff-card p-5 sm:p-6 ${styles.panel}`}>
       <div className={styles.panelHeader}>
-        <div className={styles.headingGroup}>
-          <span className={styles.iconBox}><Icon name="partnership" /></span>
+        <div className={`${styles.headingGroup} ${styles.partnershipHeading}`}>
+          {/* Finn com a namorada: PNG com fundo transparente, compartilhado com o app. */}
+          <Image src="/finn-casal.png" alt="" width={84} height={76} className={styles.partnershipIllustration} />
           <div>
             <h2 className="text-lg font-extrabold text-foreground">Conta compartilhada</h2>
             <p className="mt-1 max-w-2xl text-sm leading-6 text-foreground-muted">Vincule-se a uma pessoa cadastrada. O compartilhamento de cada conta ou objetivo continua opcional.</p>
@@ -315,7 +316,7 @@ export function DissolutionDecisions({ accounts, goals }: { accounts: AccountDec
   );
 }
 
-export function DeleteAccountForm() {
+export function DeleteAccountForm({ requiresMfaCode = false }: { requiresMfaCode?: boolean }) {
   const [state, action, pending] = useActionState(deleteAccountAction, INITIAL_SETTINGS_STATE);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [passwordVisible, setPasswordVisible] = useState(false);
@@ -351,6 +352,20 @@ export function DeleteAccountForm() {
           </button>
         </span>
       </label>
+      {requiresMfaCode && (
+        <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-foreground-muted">
+          Código do app autenticador
+          <input
+            className={`${INPUT} text-center tracking-[.35em]`}
+            name="mfa_code"
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            required
+            maxLength={7}
+          />
+        </label>
+      )}
       <label className="mt-4 block text-xs font-bold uppercase tracking-wide text-foreground-muted">
         Para confirmar, digite EXCLUIR
         <input

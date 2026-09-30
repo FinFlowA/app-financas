@@ -18,6 +18,7 @@
     },
     "android": {
       "allowBackup": false,
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#062C2A",
         "foregroundImage": "./assets/images/android-icon-foreground-v2.png"

@@ -22,6 +22,7 @@ import { supabase } from "../lib/supabase";
 import { lerFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
 import { limparNotificacoesAoSair } from "../lib/notifications";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from "../lib/pwned-password";
 import { useAppTheme } from "./_layout";
 
 type PasswordFieldProps = {
@@ -161,6 +162,10 @@ export default function ResetPasswordScreen() {
     }
 
     setLoading(true);
+    if ((await checkPwnedPassword(novaSenha)) === "pwned") {
+      setLoading(false);
+      return Alert.alert("Senha exposta em vazamentos", PWNED_PASSWORD_MESSAGE);
+    }
     const { error } = await supabase.auth.updateUser({ password: novaSenha });
     setLoading(false);
 

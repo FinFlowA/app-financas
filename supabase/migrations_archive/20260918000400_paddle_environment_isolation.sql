@@ -1,3 +1,7 @@
+-- Recuperada em 29/09/2026 do histórico de produção
+-- (supabase_migrations.schema_migrations, versão 20260918000400): foi aplicada
+-- no banco sem que o arquivo tivesse sido adicionado ao repositório.
+
 -- Mantém os identificadores Paddle de sandbox e produção separados.
 -- Registros existentes pertencem ao sandbox e são preservados.
 
@@ -66,5 +70,6 @@ $$;
 
 revoke all on function public.bind_paddle_customer_environment(text,text,uuid,text)
   from public, anon, authenticated;
+
 grant execute on function public.bind_paddle_customer_environment(text,text,uuid,text)
   to service_role;

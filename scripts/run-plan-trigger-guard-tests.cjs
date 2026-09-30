@@ -6,7 +6,7 @@ const migration = fs.readFileSync(
   path.join(
     root,
     "supabase",
-    "migrations",
+    "migrations_archive",
     "20260816000100_guard_plan_trigger_table_fields.sql",
   ),
   "utf8",

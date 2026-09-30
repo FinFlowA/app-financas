@@ -15,14 +15,14 @@ export const finFlowTheme = (isDark: boolean) => ({
   surface: isDark ? "#142226" : "#FFFFFF",
   surfaceElevated: isDark ? "#1F3237" : "#EAF4F6",
   surfaceMuted: isDark ? "#1A2A2F" : "#EFF2F3",
-  text: isDark ? "#F2F6F6" : "#131819",
+  text: isDark ? "#F2F6F6" : "#263437",
   textMuted: isDark ? "#8E9C9F" : "#6E7C80",
   border: isDark ? "#2A3639" : "#DFE5E6",
   // Tons 300/400 no escuro — os 500+ das ramps não passam contraste sobre fundo escuro
   primary: isDark ? "#52B87A" : FinFlowColors.primary,
   primaryDark: isDark ? "#79CD98" : FinFlowColors.primaryDark,
   primarySoft: isDark ? "#1A5233" : FinFlowColors.primarySoft,
-  header: isDark ? "#0A2B32" : "#0E3B45",
+  header: isDark ? "#0A2B32" : "#286771",
   overlay: "rgba(2, 12, 15, 0.78)",
 });
 

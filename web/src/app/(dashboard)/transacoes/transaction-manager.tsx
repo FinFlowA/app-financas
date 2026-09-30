@@ -188,7 +188,7 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
   const [kind, setKind] = useState<TransactionKind>(initialKind);
   const [frequency, setFrequency] = useState("unica");
   const [valueMode, setValueMode] = useState("total");
-  const [status, setStatus] = useState("paga");
+  const [status, setStatus] = useState<"" | "paga" | "pendente">("");
   const [accountId, setAccountId] = useState("");
   const [destination, setDestination] = useState("");
   const [categoryId, setCategoryId] = useState("");
@@ -240,11 +240,16 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
         <Field label="Conta de origem"><FinFlowSelect name="account_id" required value={accountId} onChange={setAccountId} options={activeAccounts.map((account) => ({ value: String(account.id), label: account.nome }))} /></Field>
         {kind === "transferencia" ? <Field label="Destino"><FinFlowSelect required value={destination} onChange={setDestination} placeholder="Selecione uma conta ou objetivo" options={[...activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => ({ value: `account:${account.id}`, label: account.nome, group: "Contas" })), ...goals.filter((goal) => !goal.arquivado).map((goal) => ({ value: `goal:${goal.id}`, label: goal.nome, group: "Objetivos" }))]} /><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><FinFlowSelect key={kind} name="category_id" required value={categoryId} onChange={setCategoryId} options={compatibleCategories.map((category) => ({ value: String(category.id), label: category.nome }))} /></Field>}
         {kind === "transferencia" && <input type="hidden" name="category_id" value="0" />}
-        {recurring ? <input type="hidden" name="status" value="pendente" /> : <Field label="Status"><FinFlowSelect name="status" value={status} onChange={setStatus} options={[{ value: "paga", label: "Concluído na data" }, { value: "pendente", label: "Pendente" }]} /></Field>}
+        {recurring ? <input type="hidden" name="status" value="pendente" /> : <fieldset><legend className="mb-2 text-sm font-bold">Status</legend><div className="grid gap-2" role="radiogroup" aria-label="Status do lançamento">
+          {([['paga', 'Concluído na data'], ['pendente', 'Pendente']] as const).map(([value, label]) => <label key={value} className={`ff-focus flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-bold transition ${status === value ? 'border-primary bg-primary-soft text-primary-dark' : 'border-border bg-surface-muted text-foreground hover:border-primary/45'}`}>
+            <input type="radio" name="status" value={value} required checked={status === value} onChange={() => setStatus(value)} className="h-5 w-5 shrink-0 accent-primary" />
+            <span>{label}</span>
+          </label>)}
+        </div></fieldset>}
         {!recurring && <div className="hidden sm:block" />}
         {activeAccounts.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie ou reative uma conta antes de lançar.</p>}
         {kind !== "transferencia" && compatibleCategories.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie uma categoria ativa compatível antes de lançar.</p>}
-        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy || activeAccounts.length < 1 || (kind === "transferencia" && !destination) || (kind !== "transferencia" && compatibleCategories.length === 0)} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Criar lançamento"}</button></div>
+        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy || (!recurring && !status) || activeAccounts.length < 1 || (kind === "transferencia" && !destination) || (kind !== "transferencia" && compatibleCategories.length === 0)} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Criar lançamento"}</button></div>
       </form>
     </Modal>
   );

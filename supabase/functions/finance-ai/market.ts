@@ -161,13 +161,25 @@ function accumulate12Months(monthlyPoints: SeriesPoint[]): { latest: SeriesPoint
 // falha (rede, timeout, formato inesperado) nunca pode travar a resposta:
 // o chamador deve continuar explicando os conceitos de forma genérica e
 // informar que a taxa atual não pôde ser consultada agora.
-export async function fetchMarketIndicators(fetcher: typeof fetch = fetch): Promise<MarketIndicators | null> {
+//
+// Bug real: a Selic mostrava "ref. 04/11" com o usuário perguntando em
+// 25/09 -- uma data de referência no FUTURO para "a taxa atual". A série
+// 432 (Meta Selic) do SGS vem pré-preenchida várias semanas à frente (a
+// meta já está decidida e vale até a próxima reunião do Copom), e o código
+// não limitava a busca a "até hoje", então pegava esse ponto futuro como
+// "o mais recente". Filtra qualquer ponto com data posterior a hoje antes
+// de escolher o mais recente, para "ref." nunca vir do futuro.
+export async function fetchMarketIndicators(
+  fetcher: typeof fetch = fetch,
+  todayIso: string = new Date().toISOString().slice(0, 10),
+): Promise<MarketIndicators | null> {
+  const notInTheFuture = (points: SeriesPoint[]) => points.filter((point) => point.date <= todayIso);
   const [selicPoints, cdiPoints, ipcaPoints, igpmMonthlyPoints] = await Promise.all([
     fetchBcbSeriesRecent(BCB_SERIES.selic, RATE_LOOKBACK_DAYS, fetcher),
     fetchBcbSeriesRecent(BCB_SERIES.cdi, RATE_LOOKBACK_DAYS, fetcher),
     fetchBcbSeriesRecent(BCB_SERIES.ipca12m, IPCA_LOOKBACK_DAYS, fetcher),
     fetchBcbSeriesRecent(BCB_SERIES.igpmMonthly, IGPM_LOOKBACK_DAYS, fetcher),
-  ]);
+  ].map((promise) => promise.then(notInTheFuture)));
   const selic = latestWithLastChange(selicPoints);
   const cdi = latestWithLastChange(cdiPoints);
   // IPCA é mensal: cada ponto já é um mês distinto, então o anterior da

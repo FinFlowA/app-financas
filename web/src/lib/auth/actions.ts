@@ -12,6 +12,8 @@ import {
   logSafeAuthFailure,
   safeSignupErrorMessage,
 } from "@/lib/auth/safe-errors";
+import { totpErrorMessage, verifyTotpCode } from "@/lib/auth/mfa";
+import { isPwnedPassword, PWNED_PASSWORD_MESSAGE } from "@/lib/auth/pwned-password";
 import type { AuthActionState } from "@/lib/auth/state";
 import {
   validateLogin,
@@ -120,6 +122,9 @@ export async function signUpAction(
   }
 
   const { nome, email, telefoneE164, dataNascimento, senha } = validation.data;
+  if (await isPwnedPassword(senha)) {
+    return { status: "error", errors: { senha: PWNED_PASSWORD_MESSAGE }, values };
+  }
   let hasSession = false;
 
   try {
@@ -255,6 +260,9 @@ export async function defineOAuthPasswordAction(
 ): Promise<AuthActionState> {
   const validation = validateNewPassword(formData);
   if (!validation.ok) return { status: "error", errors: validation.errors };
+  if (await isPwnedPassword(validation.data.senha)) {
+    return { status: "error", errors: { senha: PWNED_PASSWORD_MESSAGE } };
+  }
   try {
     const supabase = await createClient();
     const { data, error: userError } = await supabase.auth.getUser();
@@ -279,6 +287,9 @@ export async function updatePasswordAction(
 ): Promise<AuthActionState> {
   const validation = validateNewPassword(formData);
   if (!validation.ok) return { status: "error", errors: validation.errors };
+  if (await isPwnedPassword(validation.data.senha)) {
+    return { status: "error", errors: { senha: PWNED_PASSWORD_MESSAGE } };
+  }
 
   try {
     const cookieStore = await cookies();
@@ -317,4 +328,46 @@ export async function updatePasswordAction(
   }
 
   redirect("/login?senha_alterada=1");
+}
+
+/**
+ * Checagem de senha vazada para o painel de Segurança, que troca a senha no
+ * navegador (o CSP não libera chamadas a terceiros). Exige sessão para não
+ * virar um proxy aberto do HaveIBeenPwned.
+ */
+export async function checkPasswordExposureAction(password: string): Promise<{ pwned: boolean }> {
+  if (typeof password !== "string" || password.length < 8 || password.length > 128) {
+    return { pwned: false };
+  }
+  try {
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    if (!data.user) return { pwned: false };
+    return { pwned: await isPwnedPassword(password) };
+  } catch {
+    return { pwned: false };
+  }
+}
+
+/**
+ * Segunda etapa do login para quem ativou a verificação em duas etapas:
+ * confere o código do app autenticador e eleva a sessão a AAL2.
+ */
+export async function verifyMfaChallengeAction(
+  _previousState: AuthActionState,
+  formData: FormData,
+): Promise<AuthActionState> {
+  const code = String(formData.get("codigo") ?? "").slice(0, 12);
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.auth.getUser();
+    if (error || !data.user) {
+      return { status: "error", message: "Sua sessão expirou. Entre novamente." };
+    }
+    const result = await verifyTotpCode(supabase, code);
+    if (result !== "ok") return { status: "error", errors: { codigo: totpErrorMessage(result) } };
+  } catch {
+    return { status: "error", message: safeUnexpectedMessage() };
+  }
+  redirect("/");
 }

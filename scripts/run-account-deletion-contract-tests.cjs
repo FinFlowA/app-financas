@@ -8,15 +8,15 @@ const expect = (condition, message) => {
   if (!condition) failures.push(message);
 };
 
-const migration = read("supabase/migrations/20260822000100_fix_atomic_account_deletion.sql");
+const migration = read("supabase/migrations_archive/20260822000100_fix_atomic_account_deletion.sql");
 const appSettings = read("app/(tabs)/configuracoes.tsx");
 const appLogin = read("app/login.tsx");
 const webSettings = read("web/src/app/(dashboard)/configuracoes/actions.ts");
 const authActions = read("web/src/lib/auth/actions.ts");
 const authDiagnostics = read("web/src/lib/auth/safe-errors.ts");
-const atomicCompletionCore = read("supabase/migrations/20260808001100_atomic_partial_transaction_completion.sql");
-const paymentCore = read("supabase/migrations/20260808001600_group_partial_transaction_payments.sql");
-const invoiceCore = read("supabase/migrations/20260802000100_secure_finance_ai.sql");
+const atomicCompletionCore = read("supabase/migrations_archive/20260808001100_atomic_partial_transaction_completion.sql");
+const paymentCore = read("supabase/migrations_archive/20260808001600_group_partial_transaction_payments.sql");
+const invoiceCore = read("supabase/migrations_archive/20260802000100_secure_finance_ai.sql");
 
 expect(
   /^\s*--[\s\S]*\bbegin;[\s\S]*commit;\s*$/i.test(migration),

@@ -5,14 +5,14 @@ const projectRoot = path.resolve(__dirname, "..");
 const migrationPath = path.join(
   projectRoot,
   "supabase",
-  "migrations",
+  "migrations_archive",
   "20260802000100_secure_finance_ai.sql",
 );
 const sql = fs.readFileSync(migrationPath, "utf8");
 const finalOverridePath = path.join(
   projectRoot,
   "supabase",
-  "migrations",
+  "migrations_archive",
   "20260802000400_harden_plan_limit_trigger.sql",
 );
 const finalOverrideSql = fs.readFileSync(finalOverridePath, "utf8");

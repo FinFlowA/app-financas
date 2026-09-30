@@ -6,10 +6,14 @@ import {
   financialSnapshotFromAggregate,
   informationalRequest,
   MAX_PROVIDER_CONTEXT_CHARS,
+  MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
   redactSensitiveText,
+  fetchCategoryTopTransactions,
+  fetchMonthlyExtremeTransactions,
   selectedMonth,
   selectRelevantRows,
   serializeContextWithinBudget,
+  transactionRelevanceSort,
   type FinancialRow,
 } from "./context.ts";
 
@@ -654,6 +658,51 @@ Deno.test("selectedMonth foca o mes de uma data DD/MM citada, mesmo fora do mes 
   assert(selectedMonth("Quanto vou ter em 2026-08-14?", currentMonth) === "2026-08", "data ISO completa continua funcionando");
 });
 
+Deno.test("selectedMonth prioriza a pergunta ATUAL sobre um mes citado so no historico", () => {
+  // Bug real: "Com base nos meus gastos deste mês, eu vou conseguir poupar
+  // R$ 500 até o dia 30?" focou agosto em vez de setembro (mes atual) --
+  // uma pergunta ANTERIOR na mesma conversa citava agosto, e a funcao
+  // varria o texto concatenado (historico + atual) sem dar prioridade
+  // nenhuma para a pergunta atual, que nem citava agosto e ainda dizia
+  // "deste mes" explicitamente.
+  const currentMonth = "2026-09";
+  const currentMessage = "Com base nos meus gastos deste mês, eu vou conseguir poupar R$ 500 até o dia 30?";
+  const requestContext = `Qual foi o meu maior gasto no mês de agosto?\nContinuação do usuário: ${currentMessage}`;
+  assert(
+    selectedMonth(requestContext, currentMonth, currentMessage) === currentMonth,
+    "'deste mes' na pergunta atual deveria vencer um mes citado so no historico",
+  );
+
+  // "este mes"/"esse mes"/"nesse mes" tambem devem ancorar no mes atual,
+  // mesmo sem nenhum historico contaminado -- nao eram reconhecidos antes.
+  assert(selectedMonth("Quanto gastei esse mês?", currentMonth) === currentMonth, "'esse mes' deveria resolver para o mes atual");
+  assert(selectedMonth("Como estão minhas contas neste mês?", currentMonth) === currentMonth, "'neste mes' deveria resolver para o mes atual");
+
+  // Continuidade legitima nao pode regredir: se a pergunta ATUAL nao cita
+  // nenhum mes nem "este mes", ainda deve herdar o mes do historico
+  // (mesmo comportamento de continuidade ja usado por outras perguntas).
+  const followUp = "E quanto sobrou depois disso?";
+  const historyWithAugust = `Qual foi meu maior gasto em agosto?\nContinuação do usuário: ${followUp}`;
+  assert(
+    selectedMonth(historyWithAugust, currentMonth, followUp) === "2026-08",
+    "continuacao sem sinal proprio de mes deveria continuar herdando o mes do historico",
+  );
+
+  // Isola a prioridade da pergunta ATUAL mesmo quando as DUAS mensagens
+  // citam um mes explícito (nao so "este mes"): antes desta correção, a
+  // função varria o texto concatenado e o loop de MONTHS_PT retornava o
+  // primeiro nome de mês encontrado na ordem do calendário (janeiro a
+  // dezembro) -- não o mais recente nem o da pergunta atual. Um "junho"
+  // qualquer no histórico vencia um "agosto" explícito na pergunta atual
+  // só por vir antes na ordem de iteração do objeto.
+  const currentAugust = "Quanto gastei em agosto?";
+  const historyWithJune = `Preciso revisar meu aluguel de junho.\nContinuação do usuário: ${currentAugust}`;
+  assert(
+    selectedMonth(historyWithJune, currentMonth, currentAugust) === "2026-08",
+    "mes explicito da pergunta ATUAL deve vencer outro mes explicito citado so no historico",
+  );
+});
+
 Deno.test("market_indicators cai primeiro no orcamento em vez de sacrificar contas por ~200 bytes", () => {
   // Reproduz o caso real: uma conversa sobre um objetivo ("Entrada casa")
   // que tambem menciona CDB (por isso ganha market_indicators) e tem varias
@@ -787,6 +836,115 @@ Deno.test("rede de seguranca final nunca deixa o contexto financeiro falhar por 
   assert(parsed.context_budget.truncated === true, "o contexto reduzido pela rede de seguranca ainda precisa ser sinalizado como truncado");
 });
 
+Deno.test("teto somente-leitura mais largo preserva categories e week_category_totals para uma conta bem movimentada", () => {
+  // Bug real em producao: "Quanto eu gastei com alimentacao na ultima
+  // semana?" respondia que nao havia dados, mesmo com lancamentos reais no
+  // banco (confirmados por SQL direto: 3 lancamentos somando R$68 na
+  // categoria). finance_ai_debug_log confirmou categoriesCount=0 e
+  // hasRecentWindow=false para essa pergunta -- a rede de seguranca final de
+  // serializeContextWithinBudget tinha zerado categories e derrubado
+  // week_category_totals por completo. Causa raiz: relevant_transactions
+  // sozinho pode passar de dezenas de milhares de caracteres (compactTransaction
+  // tem mais de 20 campos por linha, incluindo nomes de conta e categoria) para
+  // uma conta com uso normal (varios lancamentos recorrentes "(Fixa)" no mes,
+  // como o usuario real tinha). Combinado com scenario_candidates (recorrencias
+  // futuras) e o escopo de contas, o total bruto pode superar em muito o teto
+  // de MAX_PROVIDER_CONTEXT_CHARS (4K, calibrado para o prompt operacional, que
+  // fica perto do proprio teto do provedor) mesmo depois de reduzir tudo ao
+  // minimo -- o que nunca deveria acontecer no caminho somente-leitura, que tem
+  // prompt bem menor e sobra de orcamento nao usada.
+  const categoryNames = ["Alimentação", "Educação", "Lazer", "Moradia", "Outros", "Renda Extra", "Salário", "Saúde", "Tecnologia", "Transporte", "Assinaturas"];
+  const descriptions = ["Mercado", "Café", "Uber", "Farmacia", "Spotify", "EMTU", "Almoço", "McDonald's", "Aluguel", "Internet (Fixa)"];
+  const relevantTransactions = Array.from({ length: 80 }, (_, index) => ({
+    id: 8_000 + index,
+    type: index % 5 === 0 ? "receita" : "despesa",
+    value: 9.25 + index,
+    description: descriptions[index % descriptions.length],
+    status: "paga",
+    scheduled_date: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+    realization_date: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+    account: "Banco do Brasil",
+    account_id: 69,
+    category: categoryNames[index % categoryNames.length],
+    category_id: 300 + (index % categoryNames.length),
+    internal_transfer: false,
+    destination_account_id: null,
+    destination_account: null,
+    goal_id: null,
+    goal: null,
+    goal_operation: null,
+    series_id: null,
+    invoice_payment: false,
+    invoice_payment_card_id: null,
+    invoice_payment_month: null,
+    invoice_payment_mode: null,
+  }));
+  const scenarioCandidates = Array.from({ length: 120 }, (_, index) => ({
+    id: 9_000 + index,
+    type: "despesa",
+    value: 12.5,
+    description: "Refrigerante (Fixa semanal)",
+    status: "pendente",
+    scheduled_date: `2026-09-0${(index % 9) + 1}`,
+    realization_date: null,
+  }));
+  const context = {
+    current_date: "2026-09-24",
+    focus_month: "2026-09",
+    timezone: "America/Sao_Paulo",
+    plan: "free",
+    analytics_allowed: true,
+    personal_data_included: true,
+    // account_ids reflete todas as contas ativas da rede compartilhada do
+    // usuario, nao so as proprias -- nao tem corte proprio em nenhum passo de
+    // trimArray, entao sozinho ja contribui um bom pedaco do orcamento.
+    scope: { type: "active_accounts", account_ids: Array.from({ length: 300 }, (_, index) => index + 1), all_active_account_balance: 119.87 },
+    dataset_complete: { transactions: true, invoice_items: true },
+    month_summary: { current_account_balance: 119.87, predicted_end_balance: 40 },
+    monthly_cash_flow: [],
+    daily_cash_flow: [],
+    market_indicators: null,
+    accounts: [1, 2, 3, 4].map((id) => ({ id, name: `Conta ${id}`, active: true, balance: 30, shared: false, owned_by_user: true, can_update: true })),
+    categories: categoryNames.map((name, index) => ({ id: 300 + index, name, type: index % 2 === 0 ? "despesa" : "receita", active: true, owned_by_user: true, can_update: true })),
+    goals: [],
+    cards: [],
+    relevant_transactions: relevantTransactions,
+    relevant_invoice_items: [],
+    invoice_summaries: [],
+    categories_by_year: [],
+    scenario_candidates: scenarioCandidates,
+    week_category_totals: {
+      current_week: {
+        start_date: "2026-09-27",
+        end_date: "2026-09-29",
+        by_category: [{ category: "Alimentação", total: 12 }],
+      },
+      previous_week: {
+        start_date: "2026-09-20",
+        end_date: "2026-09-26",
+        by_category: [{ category: "Alimentação", total: 68 }],
+      },
+    },
+  };
+
+  // Prova que o cenario realmente estoura o teto apertado -- confirma que o
+  // bug era real e nao um artefato do teste (sem isso, a asserção abaixo
+  // passaria mesmo sem o corte causar dano nenhum).
+  const encodedOperational = serializeContextWithinBudget(context, MAX_PROVIDER_CONTEXT_CHARS);
+  const parsedOperational = JSON.parse(encodedOperational);
+  assert(parsedOperational.categories.length === 0, "o cenario de teste precisa reproduzir o colapso real (categories zerado) no teto de 4K");
+  assert(!parsedOperational.week_category_totals, "o cenario de teste precisa reproduzir a perda de week_category_totals no teto de 4K");
+
+  const encodedReadOnly = serializeContextWithinBudget(context, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY);
+  assert(encodedReadOnly.length <= MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY, "o contexto somente-leitura excedeu seu proprio teto");
+  const parsedReadOnly = JSON.parse(encodedReadOnly);
+  assert(Array.isArray(parsedReadOnly.categories) && parsedReadOnly.categories.length > 0, "categories nao pode ser zerado no teto somente-leitura para essa mesma conta");
+  assert(
+    parsedReadOnly.week_category_totals?.previous_week?.by_category?.some((row: { category: string }) => row.category === "Alimentação"),
+    "week_category_totals precisa sobreviver ao corte no teto somente-leitura",
+  );
+});
+
 Deno.test("contextNeeds busca os lancamentos quando a pergunta pede quais despesas/receitas, nao so o total", () => {
   // Bug real: "Quais despesas tenho neste mês?" respondia com o total
   // agregado (despesas realizadas + pendentes) em vez de listar os
@@ -804,4 +962,202 @@ Deno.test("contextNeeds busca os lancamentos quando a pergunta pede quais despes
   // prompt qual delas usar).
   const total = contextNeeds("Quanto gastei de despesas neste mês?", true);
   assert(total.categories, "pergunta de total continua trazendo o agregado por categoria");
+});
+
+Deno.test("contextNeeds busca os lancamentos quando a pergunta pede o maior/menor gasto especifico", () => {
+  // Bug real: "Qual foi o meu maior gasto no mês de agosto?" respondeu que
+  // os lançamentos completos de agosto não estavam disponíveis, porque
+  // "gasto" (sem o "-ei" de "gastei") só ativava categoryDomain (agregado
+  // por categoria) — o contexto trazia o total por categoria, mas nunca os
+  // lançamentos individuais necessários para apontar qual foi o maior.
+  const biggestExpense = contextNeeds("Qual foi o meu maior gasto no mês de agosto?", true);
+  assert(biggestExpense.transactionDetails, "pergunta pelo maior gasto precisa trazer os lancamentos individuais do mes");
+  // Mesmo com os lancamentos individuais buscados, a amostra enviada ao
+  // modelo cabe só ~24-40 itens por orçamento de contexto (ver
+  // transactionRelevanceAnchor em buildFinancialContext) -- um mês ativo
+  // pode ter bem mais lançamentos que isso, e o de maior valor podia nem
+  // estar na amostra. monthlyExtremeTransaction aciona o calculo
+  // deterministico no banco (fetchMonthlyExtremeTransactions), que nao
+  // depende de amostra nenhuma.
+  assert(biggestExpense.monthlyExtremeTransaction, "pergunta pelo maior gasto precisa calcular o extremo do mes no banco, nao so amostrar lancamentos");
+
+  const smallestExpense = contextNeeds("Qual foi minha menor despesa em setembro?", true);
+  assert(smallestExpense.transactionDetails, "pergunta pela menor despesa tambem precisa trazer os lancamentos");
+  assert(smallestExpense.monthlyExtremeTransaction, "pergunta pela menor despesa tambem precisa do calculo deterministico do extremo");
+
+  const mostExpensivePurchase = contextNeeds("Qual foi a compra mais cara do mês?", true);
+  assert(mostExpensivePurchase.transactionDetails, "pergunta pela compra mais cara precisa trazer os lancamentos");
+  assert(mostExpensivePurchase.monthlyExtremeTransaction, "pergunta pela compra mais cara tambem precisa do calculo deterministico do extremo");
+
+  // Uma pergunta agregada por categoria (sem pedir um lançamento específico)
+  // não precisa da lista individual nem do extremo — continua só com o
+  // agregado.
+  const categoryBreakdown = contextNeeds("Como estão meus gastos por categoria?", true);
+  assert(!categoryBreakdown.transactionDetails, "pergunta agregada por categoria nao deveria exigir os lancamentos individuais");
+  assert(!categoryBreakdown.monthlyExtremeTransaction, "pergunta agregada por categoria nao deveria calcular o extremo do mes");
+
+  // Bug real (continuação): depois de responder o maior gasto de agosto, a
+  // pergunta de acompanhamento "E a menor?" não repete "gasto"/"despesa" e
+  // cai fora do padrão isolado -- mas o histórico concatenado (requestContext)
+  // ainda carrega "maior gasto...agosto" da pergunta anterior, e é isso que
+  // precisa manter monthlyExtremeTransaction ligado nessa continuação
+  // (monthlyExtremeTransactionAnswer, em index.ts, decide sozinho se ainda
+  // faz sentido responder com base na mensagem atual e na anterior).
+  const followUpRequestContext = "Qual foi o meu maior gasto no mês de agosto?\nContinuação do usuário: E a menor?";
+  const followUp = contextNeeds(followUpRequestContext, true, "E a menor?");
+  assert(followUp.monthlyExtremeTransaction, "continuacao 'E a menor?' precisa manter o calculo do extremo ligado via o historico concatenado");
+});
+
+Deno.test("contextNeeds busca o total por categoria em dois meses quando a pergunta compara com o mes passado", () => {
+  // Bug real: "Comparando com o mês passado, meus gastos com transporte
+  // aumentaram ou diminuíram?" respondeu que não tinha os dados do mês
+  // anterior -- nenhum agregado existente cobre "total de uma categoria em
+  // dois meses especificos" (categories_by_year soma o ANO inteiro por
+  // categoria; month_summary não abre por categoria).
+  const comparison = contextNeeds("Comparando com o mês passado, meus gastos com transporte aumentaram ou diminuíram?", true);
+  assert(comparison.categoryMonthComparison, "pergunta de comparacao com o mes passado precisa buscar o total por categoria dos dois meses");
+
+  const comparisonAlt = contextNeeds("Minha receita de salário subiu ou caiu em relação ao mês anterior?", true);
+  assert(comparisonAlt.categoryMonthComparison, "'mes anterior' e outros verbos de variacao (subiu/caiu) tambem devem acionar a comparacao");
+
+  // Só "mês passado" sozinho (sem verbo de comparação) não é o suficiente
+  // -- pode ser só uma pergunta pelo total do mês anterior, sem comparar.
+  const justPreviousMonth = contextNeeds("Quanto eu gastei com transporte no mês passado?", true);
+  assert(!justPreviousMonth.categoryMonthComparison, "pergunta so pelo total do mes passado, sem verbo de comparacao, nao deveria acionar a comparacao");
+
+  // E um verbo de comparação sozinho, sem menção ao mês passado/anterior,
+  // também não deveria acionar (ex.: comparar duas categorias entre si).
+  const compareCategories = contextNeeds("Comparando categoria de alimentação com transporte, qual é maior?", true);
+  assert(!compareCategories.categoryMonthComparison, "comparacao sem mencionar o mes passado/anterior nao deveria acionar a comparacao de meses");
+});
+
+Deno.test("contextNeeds busca o total por categoria do mes quando a pergunta pede areas para cortar gastos", () => {
+  // Bug real: "Identifique tres areas onde eu posso cortar gastos para
+  // economizar no proximo mes" recebeu os totais certos de cada categoria,
+  // mas o proprio modelo errou a SELECAO do top-3 (pulou Educacao e Moradia,
+  // maiores que Alimentacao, que ele escolheu). Precisa do mesmo agregado de
+  // totais por categoria do mes (usado na comparacao com o mes passado) para
+  // que o ranking seja calculado de forma deterministica, direto do banco.
+  const cutSpending = contextNeeds("Identifique três áreas onde eu posso cortar gastos para economizar no próximo mês.", true);
+  assert(cutSpending.categoryMonthComparison, "pedido para cortar gastos por area precisa buscar os totais por categoria do mes");
+  // category_top_transactions (o maior lancamento genuino de cada
+  // categoria) so precisa ser buscado para o pedido de RANKING/corte, nao
+  // para uma comparacao simples de categoria entre meses.
+  assert(cutSpending.categorySpendRanking, "pedido para cortar gastos por area tambem precisa do maior lancamento por categoria");
+
+  const reduceExpenses = contextNeeds("Onde eu posso reduzir minhas despesas?", true);
+  assert(reduceExpenses.categoryMonthComparison, "'reduzir despesas' tambem deve acionar a busca dos totais por categoria");
+  assert(reduceExpenses.categorySpendRanking, "'reduzir despesas' tambem deve acionar a busca do maior lancamento por categoria");
+
+  // Verbo de corte/reducao sozinho, sem falar de area/categoria/gasto, nao
+  // deveria acionar (ex.: cortar um cartao, reduzir uma meta).
+  const unrelatedVerb = contextNeeds("Quero cortar meu cartão de crédito adicional.", true);
+  assert(!unrelatedVerb.categoryMonthComparison, "verbo de corte sem mencionar area/categoria/gasto nao deveria acionar o ranking");
+  assert(!unrelatedVerb.categorySpendRanking, "verbo de corte sem mencionar area/categoria/gasto nao deveria acionar a busca do maior lancamento");
+
+  // Substantivo de area/gasto sozinho, sem verbo de corte/reducao, tambem
+  // nao deveria acionar (ja coberto por outras necessidades, ex.: resumo).
+  const unrelatedNoun = contextNeeds("Quais são minhas categorias de despesa?", true);
+  assert(!unrelatedNoun.categoryMonthComparison, "substantivo de area/gasto sem verbo de corte/reducao nao deveria acionar o ranking");
+  assert(!unrelatedNoun.categorySpendRanking, "substantivo de area/gasto sem verbo de corte/reducao nao deveria acionar a busca do maior lancamento");
+});
+
+Deno.test("transactionRelevanceSort ancorado no mes em foco prioriza esse mes sobre o mes atual", () => {
+  // Bug real: a amostra de relevant_transactions sempre ordenava por
+  // proximidade a HOJE, mesmo perguntando por um mes diferente do atual.
+  // Como o mes perguntado fica sempre mais distante de hoje que o mes
+  // atual, seus lancamentos nunca entravam nem no preenchimento inicial
+  // (top 24) -- confirmado em producao: uma conta com 79 lancamentos em
+  // agosto e hoje em 24/09 tinha ZERO lancamentos de agosto nos 24
+  // primeiros ao ordenar por proximidade a hoje. Ancorar num dia do mes em
+  // foco (ex.: 15) resolve isso sem quebrar o caso comum (mes em foco =
+  // mes atual, onde o comportamento e identico a antes).
+  const rows: FinancialRow[] = [
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: 100 + index,
+      tipo: "despesa",
+      valor: 10,
+      status: "paga",
+      data_vencimento: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+      data_realizacao: `2026-09-${String((index % 28) + 1).padStart(2, "0")}`,
+    })),
+    { id: 1, tipo: "despesa", valor: 559.99, status: "paga", data_vencimento: "2026-08-10", data_realizacao: "2026-08-06" },
+    { id: 2, tipo: "despesa", valor: 14, status: "paga", data_vencimento: "2026-08-02", data_realizacao: "2026-08-02" },
+  ];
+
+  const sortedByToday = [...rows].sort(transactionRelevanceSort("2026-09-24"));
+  const augustInTop24ByToday = sortedByToday.slice(0, 24).filter((row) => String(row.data_vencimento).startsWith("2026-08")).length;
+  assert(augustInTop24ByToday === 0, "ancorado em hoje, nenhum lancamento de agosto deveria caber nos 24 primeiros (reproduz o bug)");
+
+  const sortedByFocusMonth = [...rows].sort(transactionRelevanceSort("2026-08-15"));
+  const augustInTop24ByFocusMonth = sortedByFocusMonth.slice(0, 24).filter((row) => String(row.data_vencimento).startsWith("2026-08")).length;
+  assert(augustInTop24ByFocusMonth === 2, "ancorado no meio do mes em foco, os 2 lancamentos de agosto devem caber nos 24 primeiros");
+});
+
+Deno.test("fetchMonthlyExtremeTransactions ignora transferencias, movimentacoes de objetivo e pagamentos de fatura", async () => {
+  // Bug real: "Qual foi o meu menor gasto no mês de agosto?" respondeu
+  // "Guardar em: TESTEEE" (um aporte de R$ 1,00 num objetivo/caixinha) como
+  // se fosse uma despesa comum -- o banco grava esses aportes como
+  // tipo=despesa, mas calculateFinancialSnapshot já exclui transferências,
+  // movimentações de objetivo e pagamentos de fatura dos agregados de
+  // categoria; o cálculo do extremo do mês precisa da mesma exclusão.
+  const rows = [
+    // Descrições reais confirmadas no banco: aportes/resgates de objetivo
+    // carregam tanto o prefixo legado [Transf.] quanto a marcação nova
+    // [Objetivo:ID:guardar|resgatar].
+    { id: 1, tipo: "despesa", valor: 1, descricao: "[Transf.] Guardar em: TESTEEE [Objetivo:58:guardar]", status: "paga", data_vencimento: "2026-08-19", data_realizacao: "2026-08-19" },
+    { id: 2, tipo: "despesa", valor: 2, descricao: "Conta [Transf.] [Destino:5]", status: "paga", data_vencimento: "2026-08-12", data_realizacao: "2026-08-12" },
+    { id: 3, tipo: "despesa", valor: 3, descricao: "Pagamento fatura [PagFatura:1:2026-08:full]", status: "paga", data_vencimento: "2026-08-05", data_realizacao: "2026-08-05" },
+    { id: 4, tipo: "despesa", valor: 5, descricao: "Anime (Fixa)", status: "paga", data_vencimento: "2026-08-10", data_realizacao: "2026-08-05" },
+    { id: 5, tipo: "despesa", valor: 559.99, descricao: "Denylson  (1/5)", status: "paga", data_vencimento: "2026-08-10", data_realizacao: "2026-08-06" },
+  ];
+  const fakeClient = {
+    from: () => ({
+      select: () => ({
+        or: () => Promise.resolve({ data: rows, error: null }),
+      }),
+    }),
+  };
+
+  const extremes = await fetchMonthlyExtremeTransactions(fakeClient as never, "2026-08", true);
+  assert(extremes !== null, "extremos deveriam ser calculados quando enabled=true");
+  assert(extremes!.expense_min?.description === "Anime (Fixa)", "a menor despesa real deveria ignorar o aporte em objetivo de R$ 1,00");
+  assert(extremes!.expense_min?.value === 5, "o valor da menor despesa real deveria ser R$ 5,00, nao o aporte de R$ 1,00");
+  assert(extremes!.expense_max?.description === "Denylson  (1/5)", "a maior despesa real deveria continuar sendo identificada normalmente");
+  assert(extremes!.expense_max?.value === 559.99, "o valor da maior despesa deveria ser R$ 559,99");
+});
+
+Deno.test("fetchCategoryTopTransactions acha o maior lancamento genuino por categoria, ignorando transferencia/objetivo/fatura", async () => {
+  // "Identifique três áreas onde eu posso cortar gastos" listava só o total
+  // da categoria, sem indicar ONDE cortar de fato. Citar o maior lançamento
+  // de cada categoria precisa da mesma exclusão de transferência/objetivo/
+  // fatura de fetchMonthlyExtremeTransactions -- senão um aporte grande em
+  // objetivo categorizado por engano, por exemplo, podia virar o "maior
+  // gasto" citado de uma categoria.
+  const rows = [
+    { id: 1, categoria_id: 279, tipo: "despesa", valor: 900, descricao: "[Transf.] Guardar em: Viagem [Objetivo:12:guardar]", status: "paga", data_vencimento: "2026-09-05", data_realizacao: "2026-09-05" },
+    { id: 2, categoria_id: 279, tipo: "despesa", valor: 559.99, descricao: "Denylson  (2/5)", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-03" },
+    { id: 3, categoria_id: 279, tipo: "despesa", valor: 5, descricao: "Anime (Fixa)", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-01" },
+    { id: 4, categoria_id: 277, tipo: "despesa", valor: 200, descricao: "Fretado (Fixa)", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-03" },
+    { id: 5, categoria_id: null, tipo: "despesa", valor: 999, descricao: "Sem categoria", status: "paga", data_vencimento: "2026-09-10", data_realizacao: "2026-09-03" },
+  ];
+  const fakeClient = {
+    from: () => ({
+      select: () => ({
+        or: () => Promise.resolve({ data: rows, error: null }),
+      }),
+    }),
+  };
+
+  const topTransactions = await fetchCategoryTopTransactions(fakeClient as never, "2026-09", true);
+  const lazer = topTransactions.find((item) => item.category_id === 279);
+  assert(lazer !== undefined, "categoria 279 (Lazer) deveria ter um maior lancamento identificado");
+  assert(lazer!.description === "Denylson  (2/5)", "o aporte em objetivo de R$ 900 nao deveria ser escolhido como maior gasto de Lazer");
+  assert(lazer!.value === 559.99, "o maior gasto genuino de Lazer deveria ser R$ 559,99");
+  const transporte = topTransactions.find((item) => item.category_id === 277);
+  assert(transporte?.description === "Fretado (Fixa)", "Transporte deveria identificar seu unico lancamento genuino");
+  assert(topTransactions.every((item) => item.category_id !== null), "lancamentos sem categoria nao deveriam aparecer no resultado");
+
+  const disabled = await fetchCategoryTopTransactions(fakeClient as never, "2026-09", false);
+  assert(disabled.length === 0, "enabled=false nao deveria buscar nem retornar nada");
 });

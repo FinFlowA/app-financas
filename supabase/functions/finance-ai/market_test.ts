@@ -18,6 +18,12 @@ function fakeFetcher(bySeries: Record<number, SeriesFixture>): typeof fetch {
   }) as typeof fetch;
 }
 
+// "2026-12-31" é só uma data-teto fixa posterior a todas as fixtures deste
+// arquivo (nenhuma passa de dezembro/2026) -- fetchMarketIndicators() sem
+// esse segundo argumento usaria a data real do relógio, o que tornaria os
+// testes dependentes de quando rodam (ver bug real logo abaixo).
+const FAR_FUTURE_TODAY = "2026-12-31";
+
 Deno.test("indicadores de mercado combinam Selic, CDI, IPCA e IGP-M quando todas as series respondem", async () => {
   const fetcher = fakeFetcher({
     432: { data: "18/09/2026", valor: "13.75" },
@@ -28,7 +34,7 @@ Deno.test("indicadores de mercado combinam Selic, CDI, IPCA e IGP-M quando todas
       valor: "1.00",
     })),
   });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result !== null, "indicadores nao deveriam ser nulos quando todas as series respondem");
   assert(result.selic_rate_annual === 13.75, "taxa Selic incorreta");
   assert(result.selic_reference_date === "2026-09-18", "data de referencia da Selic incorreta");
@@ -45,7 +51,7 @@ Deno.test("indicadores de mercado degradam por serie sem travar quando uma consu
     4389: "http_error",
     13522: "network_error",
   });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result !== null, "uma serie disponivel ja deveria compor o resultado");
   assert(result.selic_rate_annual === 13.75, "a serie que respondeu deveria ser preservada");
   assert(result.cdi_rate_annual === null, "serie com erro HTTP deveria virar null, nao travar tudo");
@@ -54,7 +60,7 @@ Deno.test("indicadores de mercado degradam por serie sem travar quando uma consu
 
 Deno.test("indicadores de mercado retornam nulo quando todas as series falham", async () => {
   const fetcher = fakeFetcher({ 432: "network_error", 4389: "network_error", 13522: "network_error" });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result === null, "sem nenhuma serie disponivel o resultado deveria ser nulo, nao lancar erro");
 });
 
@@ -64,7 +70,7 @@ Deno.test("indicadores de mercado ignoram payload com formato inesperado", async
     4389: { data: "17/09/2026", valor: "13.65" },
     13522: "network_error",
   });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result !== null, "a serie valida deveria compor o resultado mesmo com outra malformada");
   assert(result.selic_rate_annual === null, "payload malformado deveria virar null, nunca um valor inventado");
   assert(result.cdi_rate_annual === 13.65, "serie valida nao deveria ser afetada pela malformada");
@@ -87,7 +93,7 @@ Deno.test("indicadores de mercado acham a data da ultima mudanca real, nao so o 
       { data: "01/08/2026", valor: "4.22" },
     ],
   });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result !== null, "indicadores nao deveriam ser nulos");
   assert(result.selic_rate_annual === 13.75, "taxa Selic atual incorreta");
   assert(result.selic_reference_date === "2026-09-03", "data de referencia da Selic incorreta");
@@ -108,7 +114,7 @@ Deno.test("indicadores de mercado nao acham mudanca quando a serie e estavel na 
     4389: "network_error",
     13522: "network_error",
   });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result !== null, "indicadores nao deveriam ser nulos");
   assert(result.selic_previous_rate_annual === null, "sem mudanca real na janela, nao deveria inventar um valor anterior");
   assert(result.selic_previous_reference_date === null, "sem mudanca real na janela, a data anterior deveria ser nula");
@@ -123,7 +129,7 @@ Deno.test("IGP-M acumula 12 meses pelo metodo composto e compara com a janela an
     valor: "1.00",
   }));
   const fetcher = fakeFetcher({ 432: "network_error", 4389: "network_error", 13522: "network_error", 189: months });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result !== null, "indicadores nao deveriam ser nulos com o IGP-M disponivel");
   assert(result.igpm_12m_percent === 12.68, "acumulado atual do IGP-M incorreto");
   assert(result.igpm_previous_12m_percent === 12.68, "acumulado anterior do IGP-M incorreto (mesma janela de valores identicos)");
@@ -137,6 +143,30 @@ Deno.test("IGP-M vira nulo quando ha menos de 12 meses de historico disponiveis"
     13522: "network_error",
     189: Array.from({ length: 6 }, (_, index) => ({ data: `01/0${index + 1}/2026`, valor: "1.00" })),
   });
-  const result = await fetchMarketIndicators(fetcher);
+  const result = await fetchMarketIndicators(fetcher, FAR_FUTURE_TODAY);
   assert(result === null, "sem 12 meses completos, o IGP-M (e todos os demais, ausentes) deveria resultar em nulo geral");
+});
+
+Deno.test("indicadores de mercado ignoram pontos com data no futuro em relacao a hoje", async () => {
+  // Bug real: a Selic mostrou "ref. 04/11" com o usuario perguntando em
+  // 25/09 -- a serie 432 (Meta Selic) do SGS vem pre-preenchida varias
+  // semanas a frente (a meta ja esta decidida e vale ate a proxima reuniao
+  // do Copom), confirmado direto na API real do Banco Central. Sem excluir
+  // pontos futuros, "o mais recente" virava uma data no futuro para "a taxa
+  // atual".
+  const fetcher = fakeFetcher({
+    432: [
+      { data: "18/09/2026", valor: "13.75" },
+      { data: "19/09/2026", valor: "13.75" },
+      { data: "04/11/2026", valor: "13.75" },
+    ],
+    4389: "network_error",
+    13522: "network_error",
+  });
+  const result = await fetchMarketIndicators(fetcher, "2026-09-25");
+  assert(result !== null, "indicadores nao deveriam ser nulos");
+  assert(
+    result.selic_reference_date === "2026-09-19",
+    `data de referencia da Selic nao deveria vir do futuro (recebido: ${result.selic_reference_date})`,
+  );
 });

@@ -6,8 +6,8 @@ const read = (...parts) => fs.readFileSync(path.join(root, ...parts), "utf8");
 const failures = [];
 const expect = (condition, message) => { if (!condition) failures.push(message); };
 
-const paddle = read("supabase", "migrations", "20260918000300_paddle_fulfillment.sql");
-const google = read("supabase", "migrations", "20260923000100_google_play_billing.sql");
+const paddle = read("supabase", "migrations_archive", "20260918000300_paddle_fulfillment.sql");
+const google = read("supabase", "migrations", "20260930171930_google_play_billing.sql");
 const appSubscription = read("lib", "subscriptions.ts");
 const appLayout = read("app", "_layout.tsx");
 const webPlans = read("web", "src", "app", "(dashboard)", "planos", "page.tsx");

@@ -32,6 +32,7 @@ import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { useAppTheme } from "./_layout";
 import { finalizarLoginOAuth, PENDING_EMAIL_CONFIRMATION_KEY } from "../lib/auth-flow";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from "../lib/pwned-password";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -336,6 +337,10 @@ export default function LoginScreen() {
     const emailNormalizado = email.trim().toLowerCase();
     setLoading(true);
     try {
+      if ((await checkPwnedPassword(password)) === "pwned") {
+        Alert.alert("Senha exposta em vazamentos", PWNED_PASSWORD_MESSAGE);
+        return;
+      }
       const { data, error } = await supabase.auth.signUp({
         email: emailNormalizado,
         password,

@@ -1,4 +1,6 @@
 import { DIRECT_ACTIONS } from "./contracts.ts";
+import { MAX_PROVIDER_CONTEXT_CHARS, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY } from "./context.ts";
+import { MODEL_MAX_SYSTEM_PROMPT_CHARS } from "./provider.ts";
 import { buildReadOnlySystemPrompt, buildSystemPrompt, MAX_PROMPT_CONVERSATION_STATE_BYTES } from "./prompt.ts";
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -312,6 +314,19 @@ Deno.test("os dois prompts proibem markdown na mensagem, que a tela nao renderiz
   }
 });
 
+Deno.test("prompt somente leitura recusa pedido de traducao como conteudo alheio ao FinFlow", () => {
+  // Bug real: "Traduza a seguinte frase para o inglês: How old are you?"
+  // recebeu de volta "How old are you?" -- o modelo cumpriu o pedido em vez
+  // de recusar. Tradução de texto é a mesma categoria de piada/poema/receita
+  // já listada na regra 7, mas não estava explicitamente citada, e o modelo
+  // não a reconheceu como conteúdo alheio ao FinFlow.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("tradução"),
+    "o prompt somente leitura precisa citar traducao de texto como exemplo de conteudo alheio ao FinFlow",
+  );
+});
+
 Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens", () => {
   // Bug real visto pelo usuario: ao listar varios lancamentos numa unica
   // mensagem (ex.: resposta a "Quais os dias?"), o modelo escrevia
@@ -328,19 +343,39 @@ Deno.test("prompt somente leitura proibe travessao/hifen como separador de itens
   );
 });
 
-Deno.test("prompt somente leitura usa o total pronto de categoria dos ultimos 7 dias", () => {
+Deno.test("prompt somente leitura usa o total pronto de categoria da semana civil", () => {
   // Bug real: "Quanto eu gastei com alimentacao na ultima semana?" teve 3
   // falhas diferentes so nesta sessao pedindo pro modelo somar
   // relevant_transactions de cabeca (pediu pro usuario reclassificar,
   // excluiu um lancamento em silencio, e por fim respondeu um total sem
   // relacao nenhuma com os dados reais). A soma passou a ser calculada no
-  // banco (fetchRecentCategoryTotals/recent_week_category_totals em
-  // context.ts) para essa pergunta nao depender mais da aritmetica do
-  // modelo.
+  // banco (fetchCategoryTotalsWindow/week_category_totals em context.ts)
+  // para essa pergunta nao depender mais da aritmetica do modelo.
+  //
+  // Segundo bug real, descoberto depois: a janela usada era "ultimos 7 dias
+  // corridos" em vez da semana civil (domingo a sabado) que o usuario espera
+  // ao dizer "semana passada" -- corrigido para week_category_totals
+  // trazer current_week (domingo ate hoje) e previous_week (semana civil
+  // anterior completa) separadamente.
   const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
   assert(
-    readOnly.includes("recent_week_category_totals"),
-    "o prompt somente leitura precisa orientar o uso do total pronto de categoria dos ultimos 7 dias",
+    readOnly.includes("week_category_totals") && readOnly.includes("current_week.by_category") && readOnly.includes("previous_week.by_category"),
+    "o prompt somente leitura precisa orientar o uso do total pronto de categoria da semana atual e da semana anterior",
+  );
+});
+
+Deno.test("prompt somente leitura restringe o detalhamento de um total semanal a mesma janela", () => {
+  // Bug real: depois de responder corretamente "Na ultima semana voce gastou
+  // R$ 68,00 com Alimentacao" (usando week_category_totals), a pergunta de
+  // acompanhamento "Quais os dias que eu gastei?" nao repete "ultima semana"
+  // e cai fora do atalho deterministico de weeklyCategorySpendAnswer() (que
+  // exige "quanto"). O modelo respondeu listando lancamentos de ate 2
+  // semanas atras (R$ 94,00 no total), contradizendo o total de R$ 68,00 que
+  // ele mesmo acabara de informar.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("start_date–end_date de current_week ou previous_week"),
+    "o prompt somente leitura precisa restringir o detalhamento de um total semanal a mesma janela de start_date/end_date",
   );
 });
 
@@ -354,6 +389,88 @@ Deno.test("prompt somente leitura esclarece que contas a vencer sao lancamentos 
   assert(
     readOnly.includes("Contas a vencer/vencendo/que vencem"),
     "o prompt somente leitura precisa esclarecer que 'contas a vencer' significa lancamentos pendentes, nao contas bancarias",
+  );
+});
+
+Deno.test("prompt somente leitura manda conferir pending_income/pending_expense antes de negar compromissos", () => {
+  // Bug real: "Analise meus dados financeiros... e proximos compromissos"
+  // respondeu "Nao ha compromissos pendentes" para um usuario com uma
+  // receita pendente real de R$600 (Vale) e uma despesa pendente de
+  // R$45,25 (EMTU) no mes -- os dois numeros estavam disponiveis em
+  // month_summary.pending_income/pending_expense (campo sempre preservado,
+  // mesmo no corte de orcamento mais agressivo), mas o modelo nao os
+  // conferiu antes de responder. "Proximos compromissos/pendencias" precisa
+  // do mesmo tratamento de "contas a vencer", e o prompt precisa mandar
+  // checar o agregado, nao só a lista de relevant_transactions (que pode
+  // nao trazer o item especifico).
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("proximos compromissos/pendencias") || readOnly.includes("próximos compromissos/pendências"),
+    "o prompt somente leitura precisa tratar 'proximos compromissos/pendencias' como lancamentos pendentes",
+  );
+  assert(
+    readOnly.includes("month_summary.pending_income") && readOnly.includes("pending_expense"),
+    "o prompt somente leitura precisa mandar conferir month_summary.pending_income/pending_expense antes de negar compromissos pendentes",
+  );
+});
+
+Deno.test("prompt somente leitura explica o marcador de dado sensivel removido", () => {
+  // Teste de vulnerabilidade (privacidade): "anota aí o número do meu
+  // cartão de crédito: 4111 1111 1111 1111" já tem o número removido antes
+  // de chegar ao modelo (redactSensitiveText troca por
+  // [DADO_SENSIVEL_REMOVIDO]), então o número nunca é armazenado -- mas sem
+  // instrução explícita, o modelo não sabia o que esse marcador significa e
+  // podia responder de forma confusa em vez de explicar que o FinFlow não
+  // guarda esse tipo de dado.
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: "{}", analyticsAllowed: true });
+  assert(
+    readOnly.includes("[DADO_SENSIVEL_REMOVIDO]"),
+    "o prompt somente leitura precisa explicar o que o marcador [DADO_SENSIVEL_REMOVIDO] significa",
+  );
+});
+
+Deno.test("prompt somente leitura permanece dentro do teto de caracteres do provedor mesmo no pior caso de contexto", () => {
+  // A regra do dado sensivel removido soma caracteres ao prompt somente
+  // leitura, que já embute FINFLOW_DATA na mesma string enviada ao
+  // provedor -- confirma que mesmo no pior caso (contexto no teto de
+  // MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY) o prompt inteiro continua abaixo
+  // do teto do provedor (MODEL_MAX_SYSTEM_PROMPT_CHARS), evitando
+  // AI_CONTEXT_TOO_LARGE para pedidos legítimos com bastante dado.
+  const worstCaseContext = `{"padding":"${"x".repeat(MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY - 15)}"}`;
+  const readOnly = buildReadOnlySystemPrompt({ financialContext: worstCaseContext, analyticsAllowed: true, outputCanary: "a".repeat(32) });
+  assert(
+    readOnly.length <= MODEL_MAX_SYSTEM_PROMPT_CHARS,
+    `o prompt somente leitura no pior caso (${readOnly.length} chars) precisa caber no teto do provedor (${MODEL_MAX_SYSTEM_PROMPT_CHARS})`,
+  );
+});
+
+Deno.test("prompt operacional permanece dentro do teto de caracteres do provedor mesmo no pior caso", () => {
+  // Bug real: medido o prompt operacional com FINFLOW_DATA e
+  // CONVERSATION_STATE nos respectivos tetos (MAX_PROVIDER_CONTEXT_CHARS e
+  // MAX_PROMPT_CONVERSATION_STATE_BYTES), o total ultrapassava
+  // MODEL_MAX_SYSTEM_PROMPT_CHARS em mais de mil caracteres -- um pedido
+  // legítimo de um usuário com bastante dado financeiro podia lançar
+  // AI_CONTEXT_TOO_LARGE mesmo sem nada de errado no pedido em si.
+  // MAX_PROVIDER_CONTEXT_CHARS (context.ts) ficou como estava, para não
+  // reduzir os dados financeiros visíveis numa mutação; o orçamento coube
+  // reduzindo MAX_PROMPT_CONVERSATION_STATE_BYTES e reescrevendo o texto
+  // fixo das regras de forma mais compacta (ambos em prompt.ts). Este teste
+  // garante que a regressão não volta despercebida se o texto fixo crescer
+  // de novo no futuro.
+  const worstCaseFinancial = `{"padding":"${"x".repeat(MAX_PROVIDER_CONTEXT_CHARS - 15)}"}`;
+  const worstCaseState: Record<string, string> = {};
+  for (let index = 0; JSON.stringify(worstCaseState).length < MAX_PROMPT_CONVERSATION_STATE_BYTES - 40; index++) {
+    worstCaseState[`campo_${index}`] = "x".repeat(50);
+  }
+  const operational = buildSystemPrompt({
+    financialContext: worstCaseFinancial,
+    conversationState: worstCaseState,
+    analyticsAllowed: true,
+    outputCanary: "a".repeat(32),
+  });
+  assert(
+    operational.length <= MODEL_MAX_SYSTEM_PROMPT_CHARS,
+    `o prompt operacional no pior caso (${operational.length} chars) precisa caber no teto do provedor (${MODEL_MAX_SYSTEM_PROMPT_CHARS})`,
   );
 });
 

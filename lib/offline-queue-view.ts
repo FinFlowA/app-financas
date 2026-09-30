@@ -3,6 +3,7 @@ import type {
   OfflineQueueItem,
   OfflineQueueStatus,
 } from "./offline-queue-core";
+import { mensagemTetoSeguranca } from "./teto-seguranca";
 
 export type OfflineQueuePanelItem = Readonly<{
   id: string;
@@ -38,6 +39,7 @@ const ACTION_LABELS = {
 
 const FAILURE_MESSAGES: Readonly<Record<string, string>> = Object.freeze({
   OFFLINE_OPERATION_EXPIRED: "O prazo para sincronizar esta ação expirou.",
+  OFFLINE_MFA_REQUIRED: "Confirme a verificação em duas etapas para sincronizar.",
   OFFLINE_MAX_ATTEMPTS: "Não foi possível sincronizar após várias tentativas.",
   OFFLINE_SERVER_REJECTED: "O servidor recusou esta ação.",
   OFFLINE_RATE_LIMITED: "Muitas tentativas de sincronização. Tente novamente mais tarde.",
@@ -50,7 +52,7 @@ const GENERIC_FAILURE_MESSAGE = "Não foi possível sincronizar esta ação.";
 
 function safeFailureMessage(errorCode: string | null): string {
   if (!errorCode) return GENERIC_FAILURE_MESSAGE;
-  return FAILURE_MESSAGES[errorCode] ?? GENERIC_FAILURE_MESSAGE;
+  return FAILURE_MESSAGES[errorCode] ?? mensagemTetoSeguranca(errorCode) ?? GENERIC_FAILURE_MESSAGE;
 }
 
 export function buildOfflineQueuePanelSnapshot(

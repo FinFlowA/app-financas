@@ -45,7 +45,7 @@ Componentes principais:
 - `web/src/app/api/paddle/webhook/route.ts`: corpo bruto e verificação de assinatura;
 - `web/src/lib/paddle/process-webhook.ts`: roteamento e upserts;
 - `web/src/app/(dashboard)/planos/portal-actions.ts`: sessão do portal autenticada;
-- `supabase/migrations/20260918000300_paddle_fulfillment.sql`: espelho e RPCs.
+- `supabase/migrations_archive/20260918000300_paddle_fulfillment.sql`: espelho e RPCs.
 
 ### Eventos tratados
 

@@ -1,7 +1,11 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import { supabase } from "./supabase";
-import { digestForLocalDeduplication } from "./optional-native-modules";
+import {
+  digestForLocalDeduplication,
+  getOptionalExpoCrypto,
+  getOptionalSecureStore,
+} from "./optional-native-modules";
 
 const NOTIFICATION_SCHEDULE_VERSION = "2026-08-08-v5";
 const ANDROID_NOTIFICATION_CHANNEL_ID = "finflow-private-v2";
@@ -202,6 +206,100 @@ export async function exibirEventoObrigatorioLocal(
     }
   } catch {
     // Best-effort: o evento permanece salvo e visivel dentro do aplicativo.
+  }
+}
+
+const CHAVE_TOKEN_PUSH = "@push_device_token";
+const CHAVE_INSTALACAO_PUSH = "finflow_push_installation_id";
+const FORMATO_INSTALACAO_PUSH = /^[A-Za-z0-9-]{32,128}$/;
+
+/**
+ * Segredo aleatório desta instalação do app (auditoria V13). O servidor só
+ * passa um token de push de uma conta para outra quando o pedido traz o mesmo
+ * segredo, como na troca de login no mesmo aparelho; quem souber apenas o
+ * token não consegue tomá-lo. Fica no SecureStore quando o binário tem o
+ * módulo; senão, no AsyncStorage. Sem gerador seguro, nada é enviado e o
+ * servidor mantém o comportamento restritivo.
+ */
+async function obterSegredoInstalacaoPush(): Promise<string | null> {
+  const secureStore = getOptionalSecureStore();
+  try {
+    const existente = secureStore
+      ? await secureStore.getItemAsync(CHAVE_INSTALACAO_PUSH)
+      : await AsyncStorage.getItem(CHAVE_INSTALACAO_PUSH);
+    if (existente && FORMATO_INSTALACAO_PUSH.test(existente)) return existente;
+
+    const novo = gerarSegredoInstalacaoPush();
+    if (!novo) return null;
+    if (secureStore) await secureStore.setItemAsync(CHAVE_INSTALACAO_PUSH, novo);
+    else await AsyncStorage.setItem(CHAVE_INSTALACAO_PUSH, novo);
+    return novo;
+  } catch {
+    return null;
+  }
+}
+
+function gerarSegredoInstalacaoPush(): string | null {
+  try {
+    const nativo = getOptionalExpoCrypto();
+    if (nativo) return `${nativo.randomUUID()}${nativo.randomUUID()}`;
+  } catch {
+    // Tenta o gerador do runtime JavaScript abaixo.
+  }
+  const cryptoGlobal = (globalThis as { crypto?: { getRandomValues?: (valores: Uint8Array) => Uint8Array } }).crypto;
+  if (typeof cryptoGlobal?.getRandomValues !== "function") return null;
+  const bytes = new Uint8Array(32);
+  cryptoGlobal.getRandomValues(bytes);
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Registra este aparelho para receber push remoto dos avisos obrigatórios
+ * (convites e respostas de parceria) mesmo com o app fechado. Só age quando o
+ * sistema já concedeu permissão; nunca pede permissão por conta própria.
+ */
+export async function registrarDispositivoPush(userId: string): Promise<void> {
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+  try {
+    const { status } = await Notif.getPermissionsAsync();
+    if (status !== "granted") return;
+
+    await garantirCanalNotificacoesAndroid();
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const Constants = require("expo-constants").default;
+    const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
+    if (!projectId) return;
+
+    const { data: token } = await Notif.getExpoPushTokenAsync({ projectId });
+    if (typeof token !== "string" || !token) return;
+
+    const { data } = await supabase.auth.getSession();
+    if (data.session?.user.id !== userId) return;
+
+    const instalacao = await obterSegredoInstalacaoPush();
+    const { data: registrado, error } = await supabase.rpc("registrar_dispositivo_push", {
+      p_token: token,
+      p_plataforma: Platform.OS,
+      ...(instalacao ? { p_instalacao: instalacao } : {}),
+    });
+    // false: o token pertence a outra conta e o servidor não o transferiu.
+    if (!error && registrado !== false) await AsyncStorage.setItem(CHAVE_TOKEN_PUSH, token);
+  } catch {
+    // Sem Firebase/APNs configurados o token não é emitido; o aviso continua
+    // aparecendo dentro do app.
+  }
+}
+
+/** Desvincula este aparelho da conta antes do logout explícito. */
+export async function removerDispositivoPush(): Promise<void> {
+  if (LOCAL_DEMO || Platform.OS === "web") return;
+  try {
+    const token = await AsyncStorage.getItem(CHAVE_TOKEN_PUSH);
+    if (!token) return;
+    await supabase.rpc("remover_dispositivo_push", { p_token: token });
+    await AsyncStorage.removeItem(CHAVE_TOKEN_PUSH);
+  } catch {
+    // Best-effort: o logout nunca deve falhar por causa do push.
   }
 }
 

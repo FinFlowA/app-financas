@@ -1,7 +1,7 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { useFocusEffect } from "expo-router";
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   PanResponder,
   Platform,
@@ -123,10 +123,12 @@ export default function RelatoriosScreen() {
   const [mesProjSelecionado, setMesProjSelecionado] = useState<number>(mesAtualIdx);
   const [chartCardHeight, setChartCardHeight] = useState(0);
   const [chartChromeHeight, setChartChromeHeight] = useState(0);
+  const [chartViewportWidth, setChartViewportWidth] = useState(0);
   const [detailHeight, setDetailHeight] = useState(0);
   const [atualizandoTela, setAtualizandoTela] = useState(false);
 
   const projScrollRef = useRef<ScrollView>(null);
+  const chartInitialPositionDoneRef = useRef(false);
   const chartScrollXRef = useRef(0);
   const chartDragStartXRef = useRef(0);
   const chartDragResponder = useRef(
@@ -185,8 +187,7 @@ export default function RelatoriosScreen() {
     [contasSelecionadasIds, idsContasAtivas],
   );
   const escopoFluxoEhTodas = idsSelecionadosValidos === null
-    || idsSelecionadosValidos.length === contas.length
-    || (contas.length > 0 && idsSelecionadosValidos.length === 0);
+    || idsSelecionadosValidos.length === contas.length;
   const contasFiltradas = useMemo(
     () => escopoFluxoEhTodas
       ? contas
@@ -200,15 +201,10 @@ export default function RelatoriosScreen() {
 
   const alternarContaFluxo = (contaId: number) => {
     setContasSelecionadasIds((idsAtuais) => {
-      // Ao sair da visão "Todas", o primeiro toque cria uma seleção
-      // individual; os próximos adicionam novas contas ao conjunto.
-      if (idsAtuais === null) return [contaId];
-
-      const idsValidos = idsAtuais.filter(id => idsContasAtivas.has(id));
-      if (idsValidos.includes(contaId)) {
-        if (idsValidos.length === 1) return idsValidos;
-        return idsValidos.filter(id => id !== contaId);
-      }
+      // null representa todas as contas marcadas; cada toque alterna somente
+      // a conta tocada. Desmarcar todas deixa o fluxo vazio.
+      const idsValidos = (idsAtuais ?? contas.map(conta => conta.id)).filter(id => idsContasAtivas.has(id));
+      if (idsValidos.includes(contaId)) return idsValidos.filter(id => id !== contaId);
 
       const proximosIds = [...idsValidos, contaId];
       return proximosIds.length === contas.length ? null : proximosIds;
@@ -385,12 +381,29 @@ export default function RelatoriosScreen() {
   const barWidth = barSectionWidth * 0.28;
   const chartContentWidth = barSectionWidth * 12;
 
+  useEffect(() => {
+    if (chartViewportWidth <= 0) return;
+
+    const monthCenter = (mesProjSelecionado + 0.5) * barSectionWidth;
+    const maxOffset = Math.max(0, chartContentWidth + 8 - chartViewportWidth);
+    const centeredOffset = Math.max(0, Math.min(monthCenter - chartViewportWidth / 2, maxOffset));
+    const animated = chartInitialPositionDoneRef.current;
+
+    requestAnimationFrame(() => {
+      projScrollRef.current?.scrollTo({ x: centeredOffset, animated });
+      chartScrollXRef.current = centeredOffset;
+      chartInitialPositionDoneRef.current = true;
+    });
+  }, [barSectionWidth, chartContentWidth, chartViewportWidth, mesProjSelecionado]);
+
   const getY = (val: number) => chartHeight - ((val - chartMin) / chartRange) * chartHeight;
   const getBarH = (val: number) => Math.max(0, (val / chartRange) * chartHeight);
   const zeroY = getY(0);
 
-  // Build balance line points (absolute X positions)
-  const balancePoints = projecaoSaldo.map(p => ({
+  // Build balance line points (absolute X positions). Sem contas selecionadas
+  // o gráfico fica em branco, sem linha de saldo.
+  const semContasSelecionadas = contas.length > 0 && contasFiltradas.length === 0;
+  const balancePoints = (semContasSelecionadas ? [] : projecaoSaldo).map(p => ({
     x: barSectionWidth * p.mesIdx + barSectionWidth / 2,
     y: getY(p.saldo),
     saldo: p.saldo,
@@ -405,6 +418,8 @@ export default function RelatoriosScreen() {
     ? "Vis\u00e3o consolidada"
     : escopoFluxoEhTodas
       ? contas.length > 1 ? "Todas as contas" : contas[0]?.nome ?? "Vis\u00e3o consolidada"
+      : contasFiltradas.length === 0
+        ? "Nenhuma conta selecionada"
       : contasFiltradas.length === 1
         ? contasFiltradas[0].nome
         : `${contasFiltradas.length} contas selecionadas`;
@@ -421,8 +436,10 @@ export default function RelatoriosScreen() {
             <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.headerYearButton} accessibilityLabel="Ano anterior">
               <MaterialIcons name="chevron-left" size={20} color="#FFF" />
             </TouchableOpacity>
-            <MaterialIcons name="calendar-today" size={12} color="rgba(255,255,255,0.76)" />
-            <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
+            {/* O ano só muda pelas setas; não há seletor em lista. */}
+            <View style={styles.headerPeriodButton} accessibilityLabel={`Ano analisado: ${anoSelecionado}`}>
+              <Text style={styles.headerPeriodText}>{anoSelecionado}</Text>
+            </View>
             <TouchableOpacity onPress={() => alterarAno(1)} style={styles.headerYearButton} accessibilityLabel="Próximo ano">
               <MaterialIcons name="chevron-right" size={20} color="#FFF" />
             </TouchableOpacity>
@@ -449,25 +466,9 @@ export default function RelatoriosScreen() {
             style={styles.headerAccountsScroll}
             contentContainerStyle={styles.headerAccountsContent}
           >
-            <TouchableOpacity
-              onPress={() => setContasSelecionadasIds(null)}
-              style={[
-                styles.contaChip,
-                escopoFluxoEhTodas ? styles.contaChipHeaderSelected : styles.contaChipHeaderIdle,
-              ]}
-            >
-              <MaterialIcons
-                name="account-balance-wallet"
-                size={13}
-                color={escopoFluxoEhTodas ? "#FFF" : "rgba(255,255,255,0.72)"}
-              />
-              <Text style={[styles.contaChipText, { color: escopoFluxoEhTodas ? "#FFF" : "rgba(255,255,255,0.72)" }]}>
-                Todas
-              </Text>
-            </TouchableOpacity>
-
+            {/* Sem opção "Todas": todas começam marcadas e cada chip alterna a própria conta. */}
             {contas.map(conta => {
-              const sel = !escopoFluxoEhTodas && idsEscopoFluxo.has(conta.id);
+              const sel = idsEscopoFluxo.has(conta.id);
               const cor = conta.cor || "#C7F6E5";
               return (
                 <TouchableOpacity
@@ -559,6 +560,7 @@ export default function RelatoriosScreen() {
 
           <View
             {...chartDragResponder.panHandlers}
+            onLayout={({ nativeEvent }) => setChartViewportWidth(nativeEvent.layout.width)}
             style={[
               styles.chartDragViewport,
               Platform.OS === "web" && ({ cursor: "grab" } as any),
@@ -886,6 +888,7 @@ const styles = StyleSheet.create({
   headerTitleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerYearSelector: { flexDirection: "row", alignItems: "center", gap: 2, paddingHorizontal: 3, paddingVertical: 2, borderRadius: 17, backgroundColor: "rgba(0,0,0,0.15)" },
   headerYearButton: { width: 27, height: 27, alignItems: "center", justifyContent: "center", borderRadius: 14 },
+  headerPeriodButton: { minHeight: 32, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, paddingHorizontal: 5, borderRadius: 14 },
   headerPeriodText: { color: "#FFF", fontSize: 12, fontWeight: "700", minWidth: 35, textAlign: "center" },
   headerBalanceLabel: { color: "rgba(255,255,255,0.68)", fontSize: 10, lineHeight: 12, marginTop: 3 },
   headerBalanceRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 1 },

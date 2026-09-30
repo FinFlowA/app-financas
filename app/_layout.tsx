@@ -43,6 +43,7 @@ import {
   exibirEventoObrigatorioLocal,
   limparNotificacoesAoSair,
   pedirPermissaoNotificacoes,
+  registrarDispositivoPush,
   registrarNavegacaoPorNotificacao,
 } from "../lib/notifications";
 import {
@@ -60,6 +61,7 @@ import {
   garantirCategoriaOutros,
 } from "../lib/default-categories";
 import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import { reautenticacaoAtiva, registrarReavaliacaoMfa, sessaoAguardandoMfa } from "../lib/mfa";
 import {
   conexaoPermiteSincronizacao,
   OFFLINE_SYNC_COMPLETED_EVENT,
@@ -69,6 +71,7 @@ import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow
 import { getOptionalNetInfo, getOptionalScreenCapture } from "../lib/optional-native-modules";
 import { formatarEntradaMoeda, valorDaEntradaMoeda } from "../lib/utils";
 import FinFlowAlertHost from "../components/FinFlowAlertHost";
+import MfaChallengeScreen from "../components/MfaChallengeScreen";
 import FinFlowOnboarding from "../components/FinFlowOnboarding";
 import PartnershipDissolutionModals, {
   type DecisaoContaDissolucao,
@@ -97,12 +100,13 @@ type DecisaoCaixinha = {
 
 type NotificacaoParceria = {
   id: number;
-  tipo: "convite_parceria" | "parceria_aceita" | "parceria_recusada";
+  tipo: "convite_parceria" | "parceria_aceita" | "parceria_recusada" | "parceria_encerrada";
   referencia_id: number;
   titulo: string;
   mensagem: string;
   dados: Record<string, unknown> | null;
   criada_em: string;
+  push_enviado_em?: string | null;
 };
 
 const notificacoesParceriaIguais = (
@@ -214,6 +218,10 @@ export default function RootLayout() {
   const [erroDesbloqueio, setErroDesbloqueio] = useState("");
   const [isReady, setIsReady] = useState(false);
   const [session, setSession] = useState<any>(null);
+  // Sessão de quem ativou a verificação em duas etapas e ainda não digitou o
+  // código. Fica retida aqui (session = null) para nenhuma tela carregar dados
+  // que o banco recusaria; o app mostra a tela do código até a confirmação.
+  const [sessaoMfaPendente, setSessaoMfaPendente] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
   const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
@@ -490,29 +498,54 @@ export default function RootLayout() {
   useEffect(() => {
     carregarConfiguracoes();
 
+    // Libera a sessão para o app ou a retém na tela do código (MFA). Retorna
+    // true quando o app pode usar a sessão (e sincronizar dados).
+    const aplicarSessao = (novaSessao: any): boolean => {
+      const aguardandoCodigo = sessaoAguardandoMfa(novaSessao);
+      // Telas sensíveis reautenticam com a senha e pedem o código na própria
+      // tela; durante esse fluxo a sessão do mesmo usuário continua liberada.
+      const reautenticandoNaTela = aguardandoCodigo
+        && reautenticacaoAtiva()
+        && usuarioSessaoRef.current === novaSessao?.user?.id;
+      const liberada = Boolean(novaSessao) && (!aguardandoCodigo || reautenticandoNaTela);
+      setSessaoMfaPendente(aguardandoCodigo && !reautenticandoNaTela ? novaSessao : null);
+      setSession(liberada ? novaSessao : null);
+      usuarioSessaoRef.current = liberada ? novaSessao.user.id : null;
+      return liberada;
+    };
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      usuarioSessaoRef.current = session?.user?.id ?? null;
-      setSession(session);
+      const liberada = aplicarSessao(session);
       if (!session) void limparNotificacoesAoSair(null);
-      else void sincronizarPendenciasOffline();
+      else if (liberada) void sincronizarPendenciasOffline();
       setIsAuthReady(true);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const usuarioAnterior = usuarioSessaoRef.current;
-      usuarioSessaoRef.current = session?.user?.id ?? null;
-      setSession(session);
+      const liberada = aplicarSessao(session);
       if (event === "PASSWORD_RECOVERY") {
         void iniciarFluxoRecuperacaoSenha(session?.user.id);
       } else if (event === "SIGNED_OUT") {
         void AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
         void limparNotificacoesAoSair(usuarioAnterior);
-      } else if (session?.user?.id) {
+      } else if (liberada && session?.user?.id) {
         void sincronizarPendenciasOffline();
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Quando uma tela sensível termina ou desiste da reautenticação, a sessão
+    // atual é reavaliada: se ainda faltar o código, a tela de verificação abre.
+    const removerReavaliacao = registrarReavaliacaoMfa(() => {
+      void supabase.auth.getSession().then(({ data: { session } }) => {
+        if (aplicarSessao(session) && session?.user?.id) void sincronizarPendenciasOffline();
+      });
+    });
+
+    return () => {
+      subscription.unsubscribe();
+      removerReavaliacao();
+    };
   }, [carregarConfiguracoes, iniciarFluxoRecuperacaoSenha, sincronizarPendenciasOffline]);
 
   useEffect(() => {
@@ -926,8 +959,8 @@ export default function RootLayout() {
     try {
       const { data, error } = await supabase
         .from("notificacoes_sistema")
-        .select("id, tipo, referencia_id, titulo, mensagem, dados, criada_em")
-        .in("tipo", ["convite_parceria", "parceria_aceita", "parceria_recusada"])
+        .select("id, tipo, referencia_id, titulo, mensagem, dados, criada_em, push_enviado_em")
+        .in("tipo", ["convite_parceria", "parceria_aceita", "parceria_recusada", "parceria_encerrada"])
         .is("lida_em", null)
         .order("criada_em", { ascending: true })
         .order("id", { ascending: true })
@@ -949,12 +982,21 @@ export default function RootLayout() {
       const eventos = (data ?? []) as NotificacaoParceria[];
       if (!substituirNotificacoesParceria(eventos)) return;
       eventos.forEach((evento) => {
+        // Quando o servidor já entregou o push remoto, repetir o aviso como
+        // notificação local só duplicaria o alerta no aparelho.
+        if (evento.push_enviado_em) return;
         void exibirEventoObrigatorioLocal(uid, evento.id, evento.titulo, evento.mensagem);
       });
     } finally {
       buscandoNotificacoesParceria.current = false;
     }
   }, [session?.user?.id, substituirNotificacoesParceria]);
+
+  // Mantém o token de push deste aparelho vinculado à conta logada.
+  useEffect(() => {
+    const uid = session?.user?.id;
+    if (uid) void registrarDispositivoPush(uid);
+  }, [session?.user?.id]);
 
   useEffect(() => {
     notificacoesParceriaIndisponiveis.current = false;
@@ -1082,6 +1124,8 @@ export default function RootLayout() {
   // Guarda de rotas: redireciona conforme estado de autenticação
   useEffect(() => {
     if (!isReady || !isAuthReady) return;
+    // A tela do código substitui a navegação; nada de redirecionar por baixo.
+    if (sessaoMfaPendente) return;
 
     const seg = segments[0] as string;
     const inAuthGroup = seg === "login";
@@ -1099,7 +1143,7 @@ export default function RootLayout() {
     } else if (session && inAuthGroup && !needsGooglePassword) {
       router.replace("/(tabs)");
     }
-  }, [session, isReady, isAuthReady, router, segments]);
+  }, [session, sessaoMfaPendente, isReady, isAuthReady, router, segments]);
 
   const setPlano = useCallback(async (novoPlano: TipoPlano) => {
     // Compatibilidade temporária com telas antigas. O plano só pode mudar por
@@ -1219,6 +1263,7 @@ export default function RootLayout() {
         );
         return;
       }
+      void registrarDispositivoPush(userId);
     } else {
       await cancelarNotificacoesOpcionais(userId);
     }
@@ -1233,10 +1278,10 @@ export default function RootLayout() {
       // então uma futura troca de claro/escuro no aparelho volta a valer.
       setTemaManual(null);
       await AsyncStorage.removeItem("@dark_mode");
-      return;
+    } else {
+      setTemaManual(newValue);
+      await AsyncStorage.setItem("@dark_mode", newValue ? "true" : "false");
     }
-    setTemaManual(newValue);
-    await AsyncStorage.setItem("@dark_mode", newValue ? "true" : "false");
   }, [isDark, systemTheme]);
 
   const toggleBiometric = useCallback(async (value: boolean) => {
@@ -1302,6 +1347,10 @@ export default function RootLayout() {
         <ActivityIndicator size="large" color="#2A9D8F" />
       </View>
     );
+  }
+
+  if (sessaoMfaPendente) {
+    return <MfaChallengeScreen isDark={isDark} userId={sessaoMfaPendente?.user?.id} />;
   }
 
   if (session && isBiometricEnabled && !isUnlocked) {
@@ -1376,7 +1425,8 @@ export default function RootLayout() {
   const toastCor = toastTipo === "error" ? "#E76F51" : toastTipo === "info" ? "#457B9D" : "#2A9D8F";
   const notificacaoParceriaAtual = notificacoesParceria[0];
   const notificacaoEhConvite = notificacaoParceriaAtual?.tipo === "convite_parceria";
-  const notificacaoEhRecusa = notificacaoParceriaAtual?.tipo === "parceria_recusada";
+  const notificacaoEhEncerramento = notificacaoParceriaAtual?.tipo === "parceria_encerrada";
+  const notificacaoEhRecusa = notificacaoParceriaAtual?.tipo === "parceria_recusada" || notificacaoEhEncerramento;
 
   return (
     <FinFlowScreenProvider>
@@ -1392,7 +1442,10 @@ export default function RootLayout() {
               <Stack.Screen name="auth/callback" />
               <Stack.Screen name="seguranca" />
               <Stack.Screen name="planos" />
-              <Stack.Screen name="flow-screen" />
+              <Stack.Screen
+                name="flow-screen"
+                options={{ animation: "none", gestureEnabled: true }}
+              />
             </Stack>
             <StatusBar style={isDark ? "light" : "dark"} />
           </ThemeProvider>
@@ -1563,7 +1616,7 @@ export default function RootLayout() {
               { backgroundColor: notificacaoEhRecusa ? "rgba(231,111,81,0.14)" : "rgba(42,157,143,0.14)" },
             ]}>
               <MaterialIcons
-                name={notificacaoEhConvite ? "person-add-alt-1" : notificacaoEhRecusa ? "person-remove" : "favorite"}
+                name={notificacaoEhConvite ? "person-add-alt-1" : notificacaoEhEncerramento ? "link-off" : notificacaoEhRecusa ? "person-remove" : "favorite"}
                 size={34}
                 color={notificacaoEhRecusa ? "#E76F51" : "#2A9D8F"}
               />
@@ -1834,6 +1887,7 @@ export default function RootLayout() {
                     const concedida = await pedirPermissaoNotificacoes();
                     await AsyncStorage.setItem(`@notificacoes_perguntado_${uid}`, "true");
                     if (!concedida) return setModalNotificacoes(null);
+                    void registrarDispositivoPush(uid);
                     setNotificacoesAtivas(true);
                     await AsyncStorage.setItem(`@notificacoes_enabled_${uid}`, "true");
                     setModalNotificacoes("ativado");
@@ -1926,7 +1980,7 @@ export default function RootLayout() {
             <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#666" }]}>
               {modalLimite.mensagem}
             </Text>
-            {modalLimite.planoNecessario && (
+            {(modalLimite.planoNecessario || plano !== "premium") && (
               <TouchableOpacity
                 style={styles.modalLimiteBtnUpgrade}
                 onPress={() => {
@@ -1935,9 +1989,7 @@ export default function RootLayout() {
                 }}
               >
                 <MaterialIcons name="arrow-upward" size={16} color="#FFF" />
-                <Text style={styles.modalLimiteBtnText}>
-                  Ver Plano {nomePlano(modalLimite.planoNecessario)}
-                </Text>
+                <Text style={styles.modalLimiteBtnText}>Melhorar meu plano</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity

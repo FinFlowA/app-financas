@@ -20,7 +20,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Modal from "../../components/FinFlowScreen";
+import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
@@ -183,6 +183,7 @@ const normalizarBusca = (valor: string) => (valor || "")
 export default function TransacoesScreen() {
   const { isDark, session, showToast } = useAppTheme();
   const router = useRouter();
+  const navigateFromFlow = useFinFlowNavigation();
   const params = useLocalSearchParams<{ filtroPeriodo?: "hoje" | "proximos-7-dias" | "atrasados" | string }>();
   const novoTema = finFlowTheme(isDark);
 
@@ -1767,12 +1768,15 @@ export default function TransacoesScreen() {
     if (Platform.OS === "web") return;
     setTimeout(() => {
       const inputHandle = findNodeHandle(realizationFocusedInputRef.current);
-      if (inputHandle == null) return;
-      realizationScrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
-        inputHandle,
-        28,
-        true,
-      );
+      if (inputHandle != null) {
+        realizationScrollRef.current?.scrollResponderScrollNativeHandleToKeyboard(
+          inputHandle,
+          36,
+          true,
+        );
+      } else {
+        realizationScrollRef.current?.scrollToEnd({ animated: true });
+      }
     }, delay);
   };
 
@@ -2309,8 +2313,7 @@ export default function TransacoesScreen() {
                 style={{ minHeight: 52, borderRadius: 11, backgroundColor: "#2A9D8F", alignItems: "center", justifyContent: "center", marginBottom: 9 }}
                 onPress={() => {
                   const fatura = faturaAbrirCartao;
-                  setFaturaAbrirCartao(null);
-                  router.push({ pathname: "/cartoes", params: { pagarCartaoId: String(fatura.cartao_id), mesFatura: fatura.mes_fatura } } as any);
+                  navigateFromFlow({ pathname: "/cartoes", params: { pagarCartaoId: String(fatura.cartao_id), mesFatura: fatura.mes_fatura } } as any);
                 }}
               >
                 <Text style={{ color: "#FFF", fontWeight: "bold", fontSize: 15 }}>Continuar para o cartão</Text>
@@ -2600,7 +2603,7 @@ export default function TransacoesScreen() {
           <SafeAreaView style={styles.realizationModalOverlay} edges={["top", "right", "bottom", "left"]}>
             <KeyboardAvoidingView
               style={styles.realizationModalKeyboard}
-              behavior={Platform.OS === "ios" ? "padding" : "height"}
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
             >
               <ScrollView
                 ref={realizationScrollRef}
@@ -2611,6 +2614,7 @@ export default function TransacoesScreen() {
                 ]}
                 keyboardShouldPersistTaps="handled"
                 keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+                automaticallyAdjustKeyboardInsets={Platform.OS === "ios"}
                 showsVerticalScrollIndicator={false}
               >
               <View style={[styles.modalContent, styles.realizationModalContent, { backgroundColor: Cores.cardFundo }]}>
@@ -2705,7 +2709,7 @@ export default function TransacoesScreen() {
                         setAjusteValor(formatarEntradaMoeda(texto));
                       }} onFocus={() => {
                         realizationFocusedInputRef.current = realizationAdjustmentInputRef.current;
-                        mostrarCampoRealizacaoAcimaDoTeclado(320);
+                        mostrarCampoRealizacaoAcimaDoTeclado(120);
                       }} keyboardType="numeric" placeholder={`Valor do ${ajusteTipo === "juros" ? "juros" : "desconto"}`} placeholderTextColor={Cores.textoSecundario} style={{ color: Cores.textoPrincipal, flex: 1 }} />
                     </View>
                   )}
@@ -2727,7 +2731,7 @@ export default function TransacoesScreen() {
                       onChangeText={(texto) => setValorRealizado(formatarEntradaMoeda(texto))}
                       onFocus={() => {
                         realizationFocusedInputRef.current = realizationPrincipalInputRef.current;
-                        mostrarCampoRealizacaoAcimaDoTeclado(320);
+                        mostrarCampoRealizacaoAcimaDoTeclado(120);
                       }}
                       keyboardType="numeric"
                       placeholder="0,00"

@@ -32,7 +32,17 @@ const CARD_LIMIT = 200;
 // Mantém os agregados e os recursos mais relevantes dentro do teto de 8K TPM
 // da Groq. Quando necessário, os sinalizadores dataset_complete orientam a IA a
 // pedir um filtro em vez de inventar uma conclusão abrangente.
+// O contrato operacional completo (buildSystemPrompt) já ocupa boa parte do
+// teto de MODEL_MAX_SYSTEM_PROMPT_CHARS sozinho, então esse valor precisa
+// ficar apertado nesse caminho. O prompt somente-leitura é bem menor: usar o
+// mesmo teto de 4K aqui desperdiçava a folga e derrubava recursos baratos e
+// essenciais (categories, week_category_totals) para uma conta com
+// poucos anos de histórico -- confirmado em produção via
+// finance_ai_debug_log: categoriesCount=0 numa pergunta com dado real no
+// banco, porque o agregado bruto (finance_ai_context_snapshot) já passava de
+// 9 mil caracteres sozinho e a rede de segurança final zera categories.
 export const MAX_PROVIDER_CONTEXT_CHARS = 4_000;
+export const MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY = 8_000;
 const ACCOUNT_TRANSFER_DESTINATION = /\s*\[Destino:(\d+)\]\s*$/;
 const GOAL_TRANSFER = /\[Objetivo:(\d+):(guardar|resgatar)\]\s*$/;
 const SERIES_METADATA = /\[Serie:([A-Za-z0-9_-]+)\]/;
@@ -129,6 +139,17 @@ function daysBefore(date: string, days: number): string {
   return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}-${String(shifted.getUTCDate()).padStart(2, "0")}`;
 }
 
+// "Semana" para o FinFlow é domingo a sábado (convenção mais comum no
+// Brasil), não uma janela deslizante de 7 dias -- bug real: "quanto gastei
+// com alimentação na última semana?" somava os últimos 7 dias corridos, que
+// raramente coincide com a semana civil anterior e confundia quem esperava
+// o intervalo domingo-sábado.
+function startOfWeekSunday(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const dayOfWeek = new Date(Date.UTC(year, month - 1, day)).getUTCDay();
+  return daysBefore(date, dayOfWeek);
+}
+
 function currentDateInSaoPaulo(): string {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
@@ -138,7 +159,14 @@ function currentDateInSaoPaulo(): string {
   }).format(new Date());
 }
 
-export function selectedMonth(request: string, fallback: string): string {
+// Bug real: "Com base nos meus gastos deste mês, eu vou conseguir poupar
+// R$ 500 até o dia 30?" focou agosto, não setembro (mês atual) -- a
+// pergunta atual nem citava agosto, mas uma pergunta anterior na mesma
+// conversa citava, e a função varria o texto concatenado (histórico +
+// atual) sem dar prioridade nenhuma à pergunta ATUAL. "deste mês" também
+// não era reconhecido como pedido explícito do mês corrente, então nada
+// impedia esse mês antigo de vazar por cima do fallback correto.
+function resolveMonthFrom(request: string, fallback: string): string | null {
   const normalized = normalize(request);
   const explicit = normalized.match(/\b(19\d{2}|20\d{2})-(0[1-9]|1[0-2])\b/);
   if (explicit) return `${explicit[1]}-${explicit[2]}`;
@@ -157,11 +185,16 @@ export function selectedMonth(request: string, fallback: string): string {
   // caía no mês em foco por padrão e respondia com os dados do mês atual.
   if (/\b(mes que vem|proximo mes|mes seguinte|mes que vira)\b/.test(normalized)) return nextMonth(fallback);
   if (/\b(mes passado|mes anterior|mes retrasado)\b/.test(normalized)) return previousMonth(fallback);
+  if (/\b(este mes|esse mes|deste mes|desse mes|nesse mes|neste mes|mes atual|mes corrente)\b/.test(normalized)) return fallback;
   const year = normalized.match(/\b(19\d{2}|20\d{2})\b/)?.[1] ?? fallback.slice(0, 4);
   for (const [name, month] of Object.entries(MONTHS_PT)) {
     if (new RegExp(`\\b${name}\\b`).test(normalized)) return `${year}-${month}`;
   }
-  return fallback;
+  return null;
+}
+
+export function selectedMonth(request: string, fallback: string, currentMessage = request): string {
+  return resolveMonthFrom(currentMessage, fallback) ?? resolveMonthFrom(request, fallback) ?? fallback;
 }
 
 function selectedDate(request: string, focusMonth: string): string | null {
@@ -291,39 +324,155 @@ async function countTransactionsInFocusMonth(
   return count ?? 0;
 }
 
-type RecentCategoryWindow = {
+type CategoryTotalsWindow = {
   start_date: string;
   end_date: string;
   rows: { categoria_id: number | null; valor: number }[];
 };
 
-/** Total gasto/recebido por categoria nos últimos 7 dias (hoje incluso),
- * calculado no banco em vez de pedido ao modelo para somar
- * relevant_transactions de cabeça. Perguntas como "quanto gastei com
- * alimentação na última semana?" tiveram 3 falhas diferentes só nesta
- * sessão pedindo pro modelo somar manualmente (pediu pro usuário
- * reclassificar, excluiu um item em silêncio, e por fim inventou um total
- * sem relação nenhuma com os dados) -- soma é aritmética determinística,
- * não deveria depender do modelo acertar. */
-async function fetchRecentCategoryTotals(
+/** "Comparando com o mês passado, meus gastos com transporte aumentaram ou
+ * diminuíram?" precisa do total por categoria em DOIS meses específicos --
+ * dado que não existe em nenhum outro agregado (categories_by_year soma o
+ * ANO inteiro por categoria; month_summary não abre por categoria).
+ * Calculado no banco (soma determinística por categoria, uma vez por mês)
+ * em vez de pedido ao modelo para separar e somar relevant_transactions de
+ * cabeça em duas janelas distintas. */
+async function fetchCategoryTotalsWindow(
   client: SupabaseClient,
-  currentDate: string,
+  startDate: string,
+  endDate: string,
   enabled: boolean,
-): Promise<RecentCategoryWindow | null> {
+): Promise<CategoryTotalsWindow | null> {
   if (!enabled) return null;
-  const startDate = daysBefore(currentDate, 6);
   const { data, error } = await client.from("transacoes")
     .select("categoria_id,valor,status,data_vencimento,data_realizacao")
-    .or(`and(data_vencimento.gte.${startDate},data_vencimento.lte.${currentDate}),and(status.eq.paga,data_realizacao.gte.${startDate},data_realizacao.lte.${currentDate})`);
+    .or(`and(data_vencimento.gte.${startDate},data_vencimento.lte.${endDate}),and(status.eq.paga,data_realizacao.gte.${startDate},data_realizacao.lte.${endDate})`);
   if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
   return {
     start_date: startDate,
-    end_date: currentDate,
+    end_date: endDate,
     rows: (data ?? []).map((row) => ({
       categoria_id: row.categoria_id == null ? null : number(row.categoria_id),
       valor: number(row.valor),
     })),
   };
+}
+
+type MonthlyExtremeTransaction = {
+  id: number;
+  description: string;
+  value: number;
+  date: string;
+};
+
+type MonthlyExtremes = {
+  expense_max: MonthlyExtremeTransaction | null;
+  expense_min: MonthlyExtremeTransaction | null;
+  income_max: MonthlyExtremeTransaction | null;
+  income_min: MonthlyExtremeTransaction | null;
+};
+
+/** "Qual foi meu maior gasto em agosto?" precisa do lançamento individual
+ * exato, não de uma amostra: relevant_transactions cabe só ~24-40 itens
+ * por orçamento de contexto, e um mês ativo pode ter bem mais lançamentos
+ * que isso -- o de maior valor podia nem estar na amostra enviada ao
+ * modelo. Calculado no banco (min/max determinístico) em vez de pedido ao
+ * modelo para "adivinhar" a partir de uma lista parcial.
+ *
+ * Transferências entre contas, movimentações de objetivo e pagamentos de
+ * fatura usam tipo=despesa/receita no banco mas não são gasto/receita reais
+ * do dia a dia -- mesma exclusão já aplicada em calculateFinancialSnapshot
+ * para os agregados por categoria. Bug real: "Qual foi meu menor gasto em
+ * agosto?" respondeu "Guardar em: TESTEEE" (um aporte em objetivo de R$
+ * 1,00) como se fosse uma despesa comum. */
+export async function fetchMonthlyExtremeTransactions(
+  client: SupabaseClient,
+  focusMonth: string,
+  enabled: boolean,
+): Promise<MonthlyExtremes | null> {
+  if (!enabled) return null;
+  const monthStart = `${focusMonth}-01`;
+  const monthEnd = endOfMonth(focusMonth);
+  const { data, error } = await client.from("transacoes")
+    .select("id,tipo,valor,descricao,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  const genuineRows = (data ?? []).filter((row) => {
+    const description = text(row.descricao, 500);
+    return !isInternalTransfer(description) && !parseGoalMovement(description) && !isInvoicePayment(description);
+  });
+  const pick = (type: "despesa" | "receita", mode: "max" | "min"): MonthlyExtremeTransaction | null => {
+    let best: FinancialRow | null = null;
+    for (const row of genuineRows) {
+      if (row.tipo !== type) continue;
+      const value = number(row.valor);
+      const bestValue = best ? number(best.valor) : null;
+      if (bestValue === null || (mode === "max" ? value > bestValue : value < bestValue)) best = row;
+    }
+    if (!best) return null;
+    return {
+      id: number(best.id),
+      description: visibleDescription(best.descricao),
+      value: number(best.valor),
+      date: effectiveDate(best),
+    };
+  };
+  return {
+    expense_max: pick("despesa", "max"),
+    expense_min: pick("despesa", "min"),
+    income_max: pick("receita", "max"),
+    income_min: pick("receita", "min"),
+  };
+}
+
+type CategoryTopTransaction = {
+  category_id: number;
+  id: number;
+  description: string;
+  value: number;
+  date: string;
+};
+
+/** "Identifique três áreas onde eu posso cortar gastos" listava só o total
+ * de cada categoria, sem indicar ONDE cortar de fato -- conselho genérico
+ * demais pra ser acionável. Aponta o maior lançamento genuíno de cada
+ * categoria do mês em foco (mesma exclusão de transferência/objetivo/
+ * fatura de fetchMonthlyExtremeTransactions, pelo mesmo motivo: um aporte
+ * em objetivo ou pagamento de fatura não é o "gasto" que vale citar como
+ * alvo de corte), calculado no banco em vez de pedido ao modelo para
+ * escolher a partir de uma amostra parcial. */
+export async function fetchCategoryTopTransactions(
+  client: SupabaseClient,
+  focusMonth: string,
+  enabled: boolean,
+): Promise<CategoryTopTransaction[]> {
+  if (!enabled) return [];
+  const monthStart = `${focusMonth}-01`;
+  const monthEnd = endOfMonth(focusMonth);
+  const { data, error } = await client.from("transacoes")
+    .select("id,categoria_id,valor,descricao,status,data_vencimento,data_realizacao")
+    .or(`and(data_vencimento.gte.${monthStart},data_vencimento.lte.${monthEnd}),and(status.eq.paga,data_realizacao.gte.${monthStart},data_realizacao.lte.${monthEnd})`);
+  if (error) throw new Error(`FINANCIAL_CONTEXT_FAILED:${error.message}`);
+  const genuineRows = (data ?? []).filter((row) => {
+    const description = text(row.descricao, 500);
+    return row.categoria_id != null
+      && !isInternalTransfer(description)
+      && !parseGoalMovement(description)
+      && !isInvoicePayment(description);
+  });
+  const best = new Map<number, FinancialRow>();
+  for (const row of genuineRows) {
+    const categoryId = number(row.categoria_id);
+    const current = best.get(categoryId);
+    if (!current || number(row.valor) > number(current.valor)) best.set(categoryId, row);
+  }
+  return [...best.entries()].map(([categoryId, row]) => ({
+    category_id: categoryId,
+    id: number(row.id),
+    description: visibleDescription(row.descricao),
+    value: number(row.valor),
+    date: effectiveDate(row),
+  }));
 }
 
 async function fetchAllCashFlowTransactions(
@@ -1226,7 +1375,7 @@ export function aggregateScopeArgument(ids: Iterable<number>): number[] | null {
   return explicit;
 }
 
-function transactionRelevanceSort(currentDate: string) {
+export function transactionRelevanceSort(currentDate: string) {
   const timestamp = (date: string): number => {
     if (!validDate(date)) return Number.NaN;
     const [year, month, day] = date.split("-").map(Number);
@@ -1265,6 +1414,9 @@ type ContextNeeds = {
   cards: boolean;
   investmentEducation: boolean;
   marketIndicatorQuery: boolean;
+  monthlyExtremeTransaction: boolean;
+  categoryMonthComparison: boolean;
+  categorySpendRanking: boolean;
 };
 
 export function contextNeeds(request: string, analyticsAllowed: boolean, currentMessage = request): ContextNeeds {
@@ -1291,6 +1443,44 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
   const summaryDomain = /(resumo|balanco|resultado|como estao|minha situacao|visao geral)/.test(normalized);
   const transactionMutation = mutation && /(lanc|transa|receita|despesa|transfer|concl|reabr|pague|pagamento)/.test(normalized);
   const spendingDomain = /(gasto|despesa|categoria|orcament|balanco|resultado|resumo|econom)/.test(normalized);
+  // "Maior/menor gasto/despesa/receita/compra" pede o lançamento
+  // individual específico (ex.: qual foi a única compra mais cara do mês),
+  // não o agregado por categoria. "gasto" sozinho só ativava categoryDomain
+  // (agregado), então o contexto nunca trazia relevant_transactions e o
+  // modelo não tinha como identificar qual lançamento foi o maior -- bug
+  // real: "Qual foi meu maior gasto em agosto?" respondia que os
+  // lançamentos completos do mês não estavam disponíveis.
+  const superlativeTransactionPattern = /\b(?:maior|menor|mais car[oa]|mais barat[oa])\b.{0,25}\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b|\b(?:gasto|despesa|compra|receita|lancamento|transacao)\b.{0,25}\b(?:maior|menor|mais car[oa]|mais barat[oa])\b/;
+  const superlativeTransactionDomain = superlativeTransactionPattern.test(normalized);
+  // Ao contrário de marketIndicatorQuery, o agregado precisa continuar
+  // disponível numa continuação curta ("E a menor?" depois de "Qual foi o
+  // meu maior gasto em agosto?") que não repete "gasto"/"despesa" — bug
+  // real: sem isso, a pergunta de acompanhamento nem buscava
+  // month_extreme_transactions e caía inteiramente para o modelo, que a
+  // classificou como fora de escopo. monthlyExtremeTransactionAnswer() (em
+  // index.ts) resolve o tipo/direção priorizando a pergunta ATUAL e só usa
+  // a mensagem anterior como reforço quando a atual não é suficiente, então
+  // manter isto ligado ao histórico concatenado é seguro.
+  const monthlyExtremeTransaction = superlativeTransactionDomain;
+  // "Comparando com o mês passado, meus gastos com transporte aumentaram ou
+  // diminuíram?" precisa do total por categoria em dois meses específicos:
+  // nenhum agregado existente cobre isso (categories_by_year soma o ANO
+  // inteiro por categoria; month_summary não abre por categoria) -- bug
+  // real: o modelo respondia que não tinha os dados do mês anterior para
+  // comparar, mesmo eles existindo no banco.
+  const previousMonthComparisonDomain = /\bmes\s+(?:passado|anterior)\b/.test(normalized)
+    && /\b(?:compar|aument|diminui|subiu|subir|caiu|cair|cresceu|reduziu|variacao|diferenca)\w*\b/.test(normalized);
+  // "Identifique três áreas onde eu posso cortar gastos para economizar no
+  // próximo mês" pede um RANKING de categorias por gasto do mês -- mesmo
+  // dado que category_month_comparison.current_month.by_category já traz
+  // (total por categoria do mês atual), só que aqui para TODAS as
+  // categorias, não uma específica. Sem um ranking calculado no banco, o
+  // modelo tenta montar a lista sozinho a partir dos números disponíveis e
+  // erra a seleção -- bug real: recomendou uma categoria que era só a 5ª
+  // maior, pulando duas categorias maiores que ele tinha o dado mas não usou.
+  const categorySpendRankingDomain = /\b(?:cortar|corte|reduzir|reduza|diminuir|diminua|economizar|economize)\w*\b/.test(normalized)
+    && /\b(?:area|areas|categoria|categorias|gasto|gastos|despesa|despesas)\b/.test(normalized);
+  const categoryMonthComparison = previousMonthComparisonDomain || categorySpendRankingDomain;
   // Perguntas educativas sobre o mercado de investimentos (Tesouro Direto,
   // CDB, LCI/LCA, ações, fundos imobiliários, poupança, Selic/CDI/IPCA).
   // Não é uma mutação nem depende dos dados pessoais do usuário: só precisa
@@ -1328,7 +1518,7 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
     route,
     invoiceData: cardDomain || spendingDomain || (analyticsAllowed && categoryDomain),
     invoiceDetails: cardDomain,
-    transactionDetails: historyDomain || transactionMutation || goalDomain || cardDomain || cashFlowDomain || calendarDomain,
+    transactionDetails: historyDomain || transactionMutation || goalDomain || cardDomain || cashFlowDomain || calendarDomain || superlativeTransactionDomain,
     monthlyCashFlow: cashFlowDomain,
     dailyCashFlow: cashFlowDomain || calendarDomain,
     categoryAnalytics: analyticsAllowed && (categoryDomain || summaryDomain),
@@ -1337,6 +1527,9 @@ export function contextNeeds(request: string, analyticsAllowed: boolean, current
     cards: cardDomain || spendingDomain || summaryDomain,
     investmentEducation: investmentDomain,
     marketIndicatorQuery,
+    monthlyExtremeTransaction,
+    categoryMonthComparison,
+    categorySpendRanking: categorySpendRankingDomain,
   };
 }
 
@@ -1558,6 +1751,7 @@ export async function buildFinancialContext(
   requestContext = "",
   currentUserId = "",
   currentMessage = requestContext,
+  maxContextCharacters = MAX_PROVIDER_CONTEXT_CHARS,
 ): Promise<FinancialContext> {
   const analyticsAllowed = !limitsEnabled || plan === "premium";
   const currentDate = currentDateInSaoPaulo();
@@ -1582,9 +1776,19 @@ export async function buildFinancialContext(
     };
   }
   const needs = contextNeeds(requestContext, analyticsAllowed, currentMessage);
-  const focusMonth = selectedMonth(requestContext, currentMonth);
+  const focusMonth = selectedMonth(requestContext, currentMonth, currentMessage);
   const years = selectedYears(requestContext, Number(currentMonth.slice(0, 4)));
   years.add(Number(focusMonth.slice(0, 4)));
+  // A seleção de relevant_transactions usava sempre a proximidade com HOJE
+  // para escolher as 24 iniciais, mesmo quando o mês em foco é outro (ex.:
+  // "Qual foi meu maior gasto em agosto?" com hoje em setembro). Como o mês
+  // perguntado fica sempre mais distante de hoje do que o mês atual, seus
+  // lançamentos nunca entravam nem pelo preenchimento inicial nem pela
+  // correspondência de termos genéricos -- bug real: a pergunta buscava os
+  // dados (transactionDetails=true), mas relevant_transactions só trazia
+  // lançamentos de setembro. Ancorar num dia do mês em foco corrige isso
+  // sem alterar nada quando o mês perguntado já é o atual.
+  const transactionRelevanceAnchor = focusMonth === currentMonth ? currentDate : `${focusMonth}-15`;
 
   const [accounts, categories, goals, cards] = await Promise.all([
     selectOrThrow(client.from("contas").select("id,nome,saldo_inicial,cor,arquivado,compartilhado,user_id").order("nome").limit(ACCOUNT_LIMIT)),
@@ -1602,7 +1806,14 @@ export async function buildFinancialContext(
   const requestedCategoryIds = resolveRequestedIds(categories, requestContext, ["category_id"]);
   const requestedGoalIds = resolveRequestedIds(goals, requestContext, ["goal_id"]);
   const requestedCardIds = resolveRequestedIds(cards, requestContext, ["card_id"]);
-  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, recentCategoryWindow] = await Promise.all([
+  // "Essa semana"/"esta semana" e "última semana"/"semana passada" precisam
+  // de janelas diferentes sob a convenção domingo-sábado: a atual vai do
+  // domingo mais recente até hoje (ainda em andamento); a anterior é a
+  // semana civil completa logo antes dela.
+  const currentWeekStart = startOfWeekSunday(currentDate);
+  const previousWeekEnd = daysBefore(currentWeekStart, 1);
+  const previousWeekStart = daysBefore(currentWeekStart, 7);
+  const [aggregatePayload, transactionPage, invoicePage, cashFlowTransactions, marketIndicators, monthlyTransactionCount, currentWeekCategoryWindow, previousWeekCategoryWindow, monthlyExtremes, currentMonthCategoryWindow, previousMonthCategoryWindow, categoryTopTransactions] = await Promise.all([
     selectOrThrow<Record<string, unknown>>(client.rpc("finance_ai_context_snapshot", {
       p_current_date: currentDate,
       p_focus_month: focusMonth,
@@ -1616,9 +1827,22 @@ export async function buildFinancialContext(
     fetchTransactionDetails(client, requestContext, focusMonth, needs.transactionDetails),
     fetchInvoiceDetails(client, requestContext, focusMonth, needs.invoiceDetails),
     fetchAllCashFlowTransactions(client, needs.dailyCashFlow),
-    needs.marketIndicatorQuery ? fetchMarketIndicators() : Promise.resolve<MarketIndicators | null>(null),
+    needs.marketIndicatorQuery ? fetchMarketIndicators(fetch, currentDate) : Promise.resolve<MarketIndicators | null>(null),
     countTransactionsInFocusMonth(client, focusMonth, needs.transactionDetails),
-    fetchRecentCategoryTotals(client, currentDate, needs.transactionDetails),
+    fetchCategoryTotalsWindow(client, currentWeekStart, currentDate, needs.transactionDetails),
+    fetchCategoryTotalsWindow(client, previousWeekStart, previousWeekEnd, needs.transactionDetails),
+    fetchMonthlyExtremeTransactions(client, focusMonth, needs.monthlyExtremeTransaction),
+    fetchCategoryTotalsWindow(client, `${currentMonth}-01`, endOfMonth(currentMonth), needs.categoryMonthComparison),
+    fetchCategoryTotalsWindow(client, `${previousMonth(currentMonth)}-01`, endOfMonth(previousMonth(currentMonth)), needs.categoryMonthComparison),
+    // currentMonth, nao focusMonth: os totais de category_month_comparison
+    // (usados pelo ranking) ja sao calculados sobre currentMonth por design
+    // -- usar focusMonth aqui causava uma inconsistencia real: "...para
+    // economizar no PRÓXIMO mês" fazia selectedMonth() focar o mes seguinte
+    // (bug de deteccao de mes ja conhecido, nao a intencao da pergunta), e o
+    // "maior gasto" citado passava a vir de um mes diferente do total
+    // exibido ao lado dele (ex.: total de setembro ao lado do maior gasto
+    // de uma parcela futura de outubro que nem venceu ainda).
+    fetchCategoryTopTransactions(client, currentMonth, needs.categorySpendRanking),
   ]);
   const aggregate = financialSnapshotFromAggregate(aggregatePayload);
   const snapshot = aggregate.snapshot;
@@ -1635,21 +1859,32 @@ export async function buildFinancialContext(
       focusMonth,
     ).filter((row) => !requestedDate || row.date === requestedDate)
     : [];
-  const recentCategoryTotals = (() => {
-    if (!recentCategoryWindow) return null;
+  const categoryTotalsByWindow = (window: { start_date: string; end_date: string; rows: { categoria_id: number | null; valor: number }[] }) => {
     const totals = new Map<number, number>();
-    for (const row of recentCategoryWindow.rows) {
+    for (const row of window.rows) {
       if (row.categoria_id == null) continue;
       totals.set(row.categoria_id, (totals.get(row.categoria_id) ?? 0) + row.valor);
     }
     return {
-      start_date: recentCategoryWindow.start_date,
-      end_date: recentCategoryWindow.end_date,
+      start_date: window.start_date,
+      end_date: window.end_date,
       by_category: [...totals.entries()]
         .map(([id, total]) => ({ category: categoryById.get(id) ?? null, total: Math.round(total * 100) / 100 }))
         .filter((item): item is { category: string; total: number } => item.category !== null),
     };
-  })();
+  };
+  const weekCategoryComparisonResult = currentWeekCategoryWindow && previousWeekCategoryWindow
+    ? {
+      current_week: categoryTotalsByWindow(currentWeekCategoryWindow),
+      previous_week: categoryTotalsByWindow(previousWeekCategoryWindow),
+    }
+    : null;
+  const categoryMonthComparisonResult = currentMonthCategoryWindow && previousMonthCategoryWindow
+    ? {
+      current_month: categoryTotalsByWindow(currentMonthCategoryWindow),
+      previous_month: categoryTotalsByWindow(previousMonthCategoryWindow),
+    }
+    : null;
   // Completo em relação ao MÊS EM FOCO, não ao histórico inteiro da pessoa
   // (aggregate.sourceCounts.transactions soma todas as transações já
   // lançadas desde sempre — quase nunca bate com o que é buscado para uma
@@ -1714,7 +1949,7 @@ export async function buildFinancialContext(
       movementGoalId ? goalById.get(movementGoalId) : movement?.legacyName,
     ].filter(Boolean).join(" ");
   };
-  const sortedTransactions = [...transactions].sort(transactionRelevanceSort(currentDate));
+  const sortedTransactions = [...transactions].sort(transactionRelevanceSort(transactionRelevanceAnchor));
   const selectedTransactions = new Map<number, FinancialRow>();
   if (needs.transactionDetails) {
     sortedTransactions.slice(0, 24).forEach((row) => selectedTransactions.set(number(row.id), row));
@@ -1751,12 +1986,18 @@ export async function buildFinancialContext(
       if (matchesRequest(row, tokens, requestContext, related)) selectedInvoiceItems.set(number(row.id), row);
     }
   }
+  // scenario_candidates permanece ancorado em HOJE (recorrências futuras),
+  // mas a ordenação final de relevant_transactions usa o mesmo ancoragem do
+  // mês em foco: como o serializador corta arrays pelo fim quando o
+  // orçamento aperta, um lançamento de agosto ordenado por proximidade a
+  // setembro iria parar no fim da lista e seria o primeiro a ser cortado.
   const relevanceComparator = transactionRelevanceSort(currentDate);
+  const transactionFocusComparator = transactionRelevanceSort(transactionRelevanceAnchor);
   const selectedTransactionRows = [...selectedTransactions.values()].sort((left, right) => {
     const leftMatches = matchesRequest(left, tokens, requestContext, transactionRelatedText(left));
     const rightMatches = matchesRequest(right, tokens, requestContext, transactionRelatedText(right));
     if (leftMatches !== rightMatches) return leftMatches ? -1 : 1;
-    return relevanceComparator(left, right);
+    return transactionFocusComparator(left, right);
   });
   const selectedInvoiceRows = [...selectedInvoiceItems.values()].sort((left, right) => {
     const leftRelated = `${cardById.get(number(left.cartao_id)) ?? ""} ${categoryById.get(number(left.categoria_id)) ?? ""}`;
@@ -1901,7 +2142,18 @@ export async function buildFinancialContext(
     monthly_cash_flow: needs.monthlyCashFlow ? snapshot.monthlyCashFlow : [],
     daily_cash_flow: dailyCashFlow,
     market_indicators: needs.marketIndicatorQuery ? marketIndicators : null,
-    recent_week_category_totals: recentCategoryTotals,
+    week_category_totals: weekCategoryComparisonResult,
+    month_extreme_transactions: monthlyExtremes,
+    category_month_comparison: categoryMonthComparisonResult,
+    category_top_transactions: categoryTopTransactions
+      .map((item) => ({
+        category: categoryById.get(item.category_id) ?? null,
+        id: item.id,
+        description: item.description,
+        value: item.value,
+        date: item.date,
+      }))
+      .filter((item): item is { category: string; id: number; description: string; value: number; date: string } => item.category !== null),
     scenario_candidates: scenarioCandidates,
     accounts: contextAccounts.map((row) => {
       const owned = Boolean(currentUserId) && text(row.user_id, 50) === currentUserId;
@@ -2006,7 +2258,7 @@ export async function buildFinancialContext(
   };
 
   return {
-    compactJson: serializeContextWithinBudget(compact),
+    compactJson: serializeContextWithinBudget(compact, maxContextCharacters),
     analyticsAllowed,
   };
 }

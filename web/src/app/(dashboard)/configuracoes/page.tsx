@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { hasVerifiedFactor } from "@/lib/auth/mfa";
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "../sign-out-button";
 import PreferencesPanel from "./preferences-panel";
@@ -224,7 +225,7 @@ export default async function SettingsPage() {
         <p id="delete-account-warning" className="mx-auto mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">
           Esta ação é permanente. Por segurança, ela só é executada pela RPC protegida do banco e fica bloqueada enquanto houver assinatura, convite, parceria ou decisão de separação pendente.
         </p>
-        <DeleteAccountForm />
+        <DeleteAccountForm requiresMfaCode={hasVerifiedFactor(user)} />
       </section>
     </div>
   );

@@ -1,12 +1,15 @@
 import { MaterialIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import DateTimePicker from "@react-native-community/datetimepicker";
 import { useFocusEffect, useRouter } from "expo-router";
+import { Image } from "expo-image";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
+  Animated,
   AppState,
   DeviceEventEmitter,
+  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -19,7 +22,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Modal from "../../components/FinFlowScreen";
+import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -42,6 +45,8 @@ import {
   salvarCriacaoFinanceira,
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
+import { mensagemErroLimitePlano } from "../../lib/planos";
+import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 import {
   adicionarRecorrencia,
   adicionarIdSerie,
@@ -227,7 +232,7 @@ const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total
 });
 
 export default function Dashboard() {
-  const { isDark, session, showToast, notificacoesAtivas, verificarLimite, temPopupPrioritario, limites, limitsEnabled } = useAppTheme();
+  const { isDark, session, showToast, notificacoesAtivas, verificarLimite, mostrarModalLimite, plano, temPopupPrioritario, limites, limitsEnabled } = useAppTheme();
   const iaDisponivel = usuarioPodeAcessarIA(
     limitsEnabled && limites.iaOperacional,
     limitsEnabled,
@@ -235,6 +240,7 @@ export default function Dashboard() {
   const alertaVencidoMostrado = useRef(false);
   const ultimaRequisicaoDadosRef = useRef(0);
   const router = useRouter();
+  const navigateFromFlow = useFinFlowNavigation();
   const novoTema = finFlowTheme(isDark);
 
   const Cores = {
@@ -253,7 +259,6 @@ export default function Dashboard() {
   const [contas, setContas] = useState<Conta[]>([]);
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
   const [temParceiro, setTemParceiro] = useState(false);
-  const [isOffline, setIsOffline] = useState(false);
   const [modalIaEmBreve, setModalIaEmBreve] = useState(false);
   const [atualizandoTela, setAtualizandoTela] = useState(false);
 
@@ -356,6 +361,8 @@ export default function Dashboard() {
   const [modoValorParcelado, setModoValorParcelado] = useState<"total" | "parcela">("parcela");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
   const [mostrarCalendario, setMostrarCalendario] = useState(false);
+  const [mesExibidoTransacao, setMesExibidoTransacao] = useState(() => new Date());
+  const [seletorPeriodoTransacaoVisivel, setSeletorPeriodoTransacaoVisivel] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
   const conclusaoMovimentoObjetivoRequestIdsRef = useRef(new Map<string, string>());
   const corTipoTransacao = tipoTransacao === "despesa"
@@ -367,6 +374,10 @@ export default function Dashboard() {
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [modalBalancoAtualVisivel, setModalBalancoAtualVisivel] = useState(false);
   const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
+  const [modalAgendaVisivel, setModalAgendaVisivel] = useState(false);
+  const [dataAgenda, setDataAgenda] = useState(() => new Date());
+  const [filtroAgenda, setFiltroAgenda] = useState<"todos" | "concluidos" | "pendentes">("todos");
+  const [seletorPeriodoAgendaVisivel, setSeletorPeriodoAgendaVisivel] = useState(false);
   // Começa oculto para uma preferência salva como privada nunca piscar na tela.
   const [valoresVisiveis, setValoresVisiveis] = useState(false);
   const [assinaturaAvisosVisualizada, setAssinaturaAvisosVisualizada] = useState("");
@@ -381,6 +392,28 @@ export default function Dashboard() {
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
   const [confirmarEdicaoSaldo, setConfirmarEdicaoSaldo] = useState(false);
   const [qtdVencidas, setQtdVencidas] = useState(0);
+  const movimentoOndasHero = useRef(new Animated.Value(0)).current;
+
+  React.useEffect(() => {
+    const animacao = Animated.loop(
+      Animated.sequence([
+        Animated.timing(movimentoOndasHero, {
+          toValue: 1,
+          duration: 9000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(movimentoOndasHero, {
+          toValue: 0,
+          duration: 9000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animacao.start();
+    return () => animacao.stop();
+  }, [movimentoOndasHero]);
 
   // --- Cálculos ---
   const contasAtivas = useMemo(() => contas.filter((conta) => !conta.arquivado), [contas]);
@@ -563,6 +596,77 @@ export default function Dashboard() {
   const mostrarBadgeAvisos = leituraAvisosCarregada
     && temAvisosFinanceiros
     && assinaturaAvisosVisualizada !== assinaturaAvisosAtual;
+
+  const chaveDataAgenda = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dataAgenda.getDate()).padStart(2, "0")}`;
+  const itensAgendaPorData = useMemo(() => {
+    const itensTransacoes = transacoesEscopoHome
+      .filter((transacao) => dataEfetivaTransacao(transacao).slice(0, 10) === chaveDataAgenda)
+      .map((transacao) => ({
+        id: `transacao-${transacao.id}`,
+        descricao: transacao.descricao,
+        valor: Number(transacao.valor),
+        tipo: transacao.tipo === "receita" ? "receita" as const : "despesa" as const,
+        status: transacao.status === "paga" ? "Concluído" : "Pendente",
+        concluido: transacao.status === "paga",
+        origem: contas.find((conta) => conta.id === transacao.conta_id)?.nome ?? "Conta",
+      }));
+    const itensCartao = escopoHomeEhTodas
+      ? comprasCartao
+        .filter((compra) => compra.data_compra.slice(0, 10) === chaveDataAgenda && !isInvoicePaymentAdjustment(compra.descricao))
+        .map((compra) => ({
+          id: `cartao-${compra.id}`,
+          descricao: compra.descricao,
+          valor: Number(compra.valor),
+          tipo: "despesa" as const,
+          status: compra.pago ? "Concluído" : "Na fatura",
+          concluido: compra.pago,
+          origem: "Cartão de crédito",
+        }))
+      : [];
+    return [...itensTransacoes, ...itensCartao].filter((item) =>
+      filtroAgenda === "todos"
+      || (filtroAgenda === "concluidos" && item.concluido)
+      || (filtroAgenda === "pendentes" && !item.concluido));
+  }, [chaveDataAgenda, comprasCartao, contas, escopoHomeEhTodas, filtroAgenda, transacoesEscopoHome]);
+
+  const datasComAgenda = useMemo(() => {
+    const datas = new Set<string>();
+    transacoesEscopoHome.forEach((transacao) => {
+      const concluido = transacao.status === "paga";
+      if (filtroAgenda === "todos" || (filtroAgenda === "concluidos" && concluido) || (filtroAgenda === "pendentes" && !concluido)) {
+        datas.add(dataEfetivaTransacao(transacao).slice(0, 10));
+      }
+    });
+    if (escopoHomeEhTodas) comprasCartao.forEach((compra) => {
+      if (!isInvoicePaymentAdjustment(compra.descricao)
+        && (filtroAgenda === "todos" || (filtroAgenda === "concluidos" && compra.pago) || (filtroAgenda === "pendentes" && !compra.pago))) {
+        datas.add(compra.data_compra.slice(0, 10));
+      }
+    });
+    return datas;
+  }, [comprasCartao, escopoHomeEhTodas, filtroAgenda, transacoesEscopoHome]);
+
+  const diasCalendarioAgenda = useMemo(() => {
+    const ano = dataAgenda.getFullYear();
+    const mes = dataAgenda.getMonth();
+    const primeiroDia = new Date(ano, mes, 1).getDay();
+    const totalDias = new Date(ano, mes + 1, 0).getDate();
+    return [
+      ...Array.from({ length: primeiroDia }, () => null),
+      ...Array.from({ length: totalDias }, (_, indice) => indice + 1),
+    ];
+  }, [dataAgenda]);
+
+  const diasCalendarioTransacao = useMemo(() => {
+    const ano = mesExibidoTransacao.getFullYear();
+    const mes = mesExibidoTransacao.getMonth();
+    const primeiroDia = new Date(ano, mes, 1).getDay();
+    const totalDias = new Date(ano, mes + 1, 0).getDate();
+    return [
+      ...Array.from({ length: primeiroDia }, () => null),
+      ...Array.from({ length: totalDias }, (_, indice) => indice + 1),
+    ];
+  }, [mesExibidoTransacao]);
 
   React.useEffect(() => {
     let efeitoAtivo = true;
@@ -768,7 +872,6 @@ export default function Dashboard() {
       const temParc = resParceria.data ? resParceria.data.length > 0 : false;
       setTemParceiro(temParc);
 
-      setIsOffline(false);
       cacheHomePorUsuario.set(session.user.id, {
         categorias: categoriasCarregadas,
         contas: contasCarregadas,
@@ -820,26 +923,16 @@ export default function Dashboard() {
     } catch (error) {
       if (requisicaoAtual !== ultimaRequisicaoDadosRef.current) return;
       if (__DEV__) console.error("Falha ao atualizar a Home:", error);
-      const cache = cacheHomePorUsuario.get(session.user.id);
-      if (cache) {
-        setCategorias(cache.categorias);
-        setContas(cache.contas);
-        setTransacoes(cache.transacoes);
-        setCaixinhas(cache.caixinhas);
-        setTemParceiro(cache.temParceiro);
-      } else {
-        setCategorias([]);
-        setContas([]);
-        setTransacoes([]);
-        setCaixinhas([]);
-        setComprasCartao([]);
-        setTemParceiro(false);
-      }
+      setCategorias([]);
+      setContas([]);
+      setTransacoes([]);
+      setCaixinhas([]);
+      setComprasCartao([]);
+      setTemParceiro(false);
       void AsyncStorage.multiRemove(CHAVES_CACHE_HOME_LEGADO).catch(() => {});
       // Uma falha de consulta também pode vir do servidor, de permissão ou de
       // um recurso temporariamente indisponível. Só apresente o estado offline
       // quando o monitor do dispositivo confirmar ausência de conexão.
-      setIsOffline(await dispositivoSemConexao());
     }
   }, [notificacoesAtivas, session?.user?.id]);
 
@@ -1020,6 +1113,8 @@ export default function Dashboard() {
         });
         setLoadingCat(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           const mensagem = /AI_CATEGORY_LIMIT|AI_PLAN_LIMIT/u.test(resultado.errorCode)
             ? "O limite de categorias do seu plano foi atingido."
             : /AUTH|SESSION/u.test(resultado.errorCode)
@@ -1274,6 +1369,10 @@ export default function Dashboard() {
         });
         setLoadingConta(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
+          const mensagemLimite = mensagemErroLimitePlano(resultado.errorCode, "contas", plano);
+          if (mensagemLimite) return mostrarModalLimite(mensagemLimite, plano === "free" ? "smart" : "premium");
           return Alert.alert("Não foi possível salvar", "A conta foi recusada pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {
@@ -1301,11 +1400,17 @@ export default function Dashboard() {
     }
     const base = { nome: nomeConta, saldo_inicial: saldoNum, user_id: session.user.id, compartilhado: contaCompartilhada };
     let res = await supabase.from("contas").insert([{ ...base, cor: corNovaConta }]);
-    if (res.error) {
+    if (res.error && !mensagemErroLimitePlano(res.error, "contas", plano) && !mensagemTetoSeguranca(res.error)) {
       res = await supabase.from("contas").insert([base]);
     }
     setLoadingConta(false);
-    if (res.error) return Alert.alert("Erro", `Falha ao salvar conta: ${res.error.message}`);
+    if (res.error) {
+      const avisoTeto = mensagemTetoSeguranca(res.error);
+      if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
+      const mensagemLimite = mensagemErroLimitePlano(res.error, "contas", plano);
+      if (mensagemLimite) return mostrarModalLimite(mensagemLimite, plano === "free" ? "smart" : "premium");
+      return Alert.alert("Não foi possível salvar", "A conta não pôde ser salva. Verifique sua conexão e tente novamente.");
+    }
     setNomeConta("");
     setSaldoInicialConta("");
     setContaCompartilhada(false);
@@ -1442,10 +1547,6 @@ export default function Dashboard() {
   };
 
   // --- Transação ---
-  const aoMudarData = (_event: any, dataEscolhida?: Date) => {
-    setMostrarCalendario(false);
-    if (dataEscolhida) setDataSelecionada(dataEscolhida);
-  };
 
   const formatarDataBR = (data: Date) => {
     const d = String(data.getDate()).padStart(2, "0");
@@ -1511,6 +1612,8 @@ export default function Dashboard() {
         const resultado = await salvarCriacaoFinanceira("create_transaction", payload);
         setLoadingTrans(false);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           return Alert.alert("Não foi possível salvar", "O lançamento foi recusado pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {
@@ -1774,6 +1877,8 @@ export default function Dashboard() {
           "Entre novamente antes de criar os agendamentos. Nenhum reenvio automático foi feito.",
         );
       }
+      const avisoTeto = mensagemTetoSeguranca(error);
+      if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
       return Alert.alert(
         "Não foi possível salvar",
         "Nenhum lançamento foi criado. Confira sua conexão e tente novamente.",
@@ -1868,9 +1973,27 @@ export default function Dashboard() {
       >
         <View style={[styles.homeHero, { backgroundColor: novoTema.header }]}>
           <View pointerEvents="none" style={styles.homeHeroWaves}>
-            <View style={[styles.homeHeroWave, styles.homeHeroWaveOne]} />
-            <View style={[styles.homeHeroWave, styles.homeHeroWaveTwo]} />
-            <View style={[styles.homeHeroWave, styles.homeHeroWaveThree]} />
+            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveOne, {
+              transform: [
+                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-18, 22] }) },
+                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-5, 8] }) },
+                { rotate: "-10deg" },
+              ],
+            }]} />
+            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveTwo, {
+              transform: [
+                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [20, -15] }) },
+                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [7, -6] }) },
+                { rotate: "12deg" },
+              ],
+            }]} />
+            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveThree, {
+              transform: [
+                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-10, 16] }) },
+                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [4, -5] }) },
+                { rotate: "-7deg" },
+              ],
+            }]} />
           </View>
           <View style={styles.homeHeroContent}>
           <View style={styles.homeHeroTop}>
@@ -1917,11 +2040,22 @@ export default function Dashboard() {
             { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => setModalTransVisivel(true) },
             { label: "Categorias", icon: "category", color: "#4D76E8", action: () => setModalGerenciarCatVisivel(true) },
             { label: "Cartões", icon: "credit-card", color: "#C0392E", action: () => router.push("/(tabs)/cartoes" as any) },
-            { label: "IA", icon: "auto-awesome", color: "#805AD5", action: () => router.push("/chat-ia") },
+            { label: "IA", icon: "auto-awesome", color: "#805AD5", finn: true, action: () => router.push("/chat-ia") },
           ].map((item) => (
             <TouchableOpacity key={item.label} style={styles.homeActionItem} onPress={item.action}>
               <View style={[styles.homeActionIcon, { backgroundColor: `${item.color}1F` }]}>
-                <MaterialIcons name={item.icon as any} size={23} color={item.color} />
+                {item.finn ? (
+                  <View style={styles.homeActionFinnPortrait}>
+                    <Image
+                      source={require("../../assets/images/finn-home-avatar.png")}
+                      style={styles.homeActionFinnPortraitImage}
+                      contentFit="contain"
+                      accessibilityLabel="Finn, assistente do FinFlow"
+                    />
+                  </View>
+                ) : (
+                  <MaterialIcons name={item.icon as any} size={23} color={item.color} />
+                )}
                 {item.label === "Cartões" && temFaturaVencidaHome && <View style={styles.homeActionAlert} />}
               </View>
               <Text style={[styles.homeActionLabel, { color: novoTema.text }]}>{item.label}</Text>
@@ -1932,7 +2066,21 @@ export default function Dashboard() {
         <View style={[styles.homeMonthCard, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
           <View style={styles.homeSectionTop}>
             <Text style={[styles.homeSectionTitle, { color: novoTema.text }]}>Visão do mês</Text>
-            <View style={[styles.homeCalendarIcon, { backgroundColor: novoTema.surfaceMuted }]}><MaterialIcons name="calendar-today" size={15} color={novoTema.textMuted} /></View>
+            <TouchableOpacity
+              style={[styles.homeCalendarIcon, { backgroundColor: `${novoTema.primary}1F`, borderColor: `${novoTema.primary}55` }]}
+              onPress={() => {
+                const hoje = new Date();
+                const ultimoDia = new Date(mesAtual.getFullYear(), mesAtual.getMonth() + 1, 0).getDate();
+                setDataAgenda(new Date(mesAtual.getFullYear(), mesAtual.getMonth(), Math.min(hoje.getDate(), ultimoDia)));
+                setFiltroAgenda("todos");
+                setSeletorPeriodoAgendaVisivel(false);
+                setModalAgendaVisivel(true);
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Abrir agenda por data"
+            >
+              <MaterialIcons name="calendar-month" size={19} color={novoTema.primary} />
+            </TouchableOpacity>
           </View>
           <View style={styles.homeMonthMetrics}>
             <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(receitasDoMes)}</Text></View>
@@ -1985,7 +2133,7 @@ export default function Dashboard() {
           </TouchableOpacity>
         </View>
 
-        {isOffline && (
+        {false && (
           <View style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#F59E0B22", borderRadius: 10, paddingHorizontal: 14, paddingVertical: 10, marginBottom: 12, borderWidth: 1, borderColor: "#F59E0B55" }}>
             <MaterialIcons name="wifi-off" size={16} color="#F59E0B" style={{ marginRight: 8 }} />
             <Text style={{ color: "#B45309", fontSize: 13, fontWeight: "600", flex: 1 }}>Sem conexão — exibindo os dados salvos neste dispositivo</Text>
@@ -2137,6 +2285,8 @@ export default function Dashboard() {
       {modalContasHomeVisivel && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalContasHomeVisivel(false)}>
         <View style={styles.modalOverlay}>
+          <View style={styles.accountScopePageShell}>
+          <View style={styles.accountScopeCenterStage}>
           <View style={[styles.accountScopePanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.accountScopeHeader}>
               <View style={[styles.accountScopeHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
@@ -2274,6 +2424,8 @@ export default function Dashboard() {
               </TouchableOpacity>
             </View>
           </View>
+          </View>
+          </View>
         </View>
       </Modal>
       )}
@@ -2308,6 +2460,8 @@ export default function Dashboard() {
       {modalNotificacoesHome && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalNotificacoesHome(false)}>
         <View style={styles.modalOverlay}>
+          <View style={styles.notificationPageShell}>
+          <View style={styles.notificationCenterStage}>
           <View style={[styles.notificationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={styles.notificationHeader}>
               <View style={[styles.notificationHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
@@ -2327,8 +2481,7 @@ export default function Dashboard() {
             <View style={styles.notificationList}>
               {qtdVencidasHome > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  setModalNotificacoesHome(false);
-                  router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+                  navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E76F5122" }]}><MaterialIcons name="warning-amber" size={20} color="#E76F51" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Lançamentos atrasados</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencidasHome} pendência{qtdVencidasHome === 1 ? "" : "s"} precisa{qtdVencidasHome === 1 ? "" : "m"} de atenção.</Text></View>
@@ -2337,8 +2490,7 @@ export default function Dashboard() {
               )}
               {qtdVencendoHoje > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  setModalNotificacoesHome(false);
-                  router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
+                  navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: `${novoTema.primary}22` }]}><MaterialIcons name="today" size={20} color={novoTema.primary} /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Agendamentos vencendo hoje</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencendoHoje} lançamento{qtdVencendoHoje === 1 ? "" : "s"} precisa{qtdVencendoHoje === 1 ? "" : "m"} ser acompanhado{qtdVencendoHoje === 1 ? "" : "s"} hoje.</Text></View>
@@ -2347,8 +2499,7 @@ export default function Dashboard() {
               )}
               {qtdProximosVencimentos > 0 && (
                 <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  setModalNotificacoesHome(false);
-                  router.replace({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
+                  navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
                 }}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#E9C46A22" }]}><MaterialIcons name="event" size={20} color="#C99B25" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Próximos 7 dias</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdProximosVencimentos} lançamento{qtdProximosVencimentos === 1 ? "" : "s"} pendente{qtdProximosVencimentos === 1 ? "" : "s"}.</Text></View>
@@ -2356,7 +2507,7 @@ export default function Dashboard() {
                 </TouchableOpacity>
               )}
               {temFaturaVencidaHome && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => { setModalNotificacoesHome(false); router.replace("/(tabs)/cartoes" as any); }}>
+                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => navigateFromFlow("/(tabs)/cartoes" as any)}>
                   <View style={[styles.notificationItemIcon, { backgroundColor: "#C0392E22" }]}><MaterialIcons name="credit-card" size={20} color="#C0392E" /></View>
                   <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Fatura vencida</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>Existe uma fatura em aberto após o vencimento.</Text></View>
                   <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
@@ -2372,12 +2523,13 @@ export default function Dashboard() {
             </View>
 
             <TouchableOpacity style={[styles.notificationSettings, { borderColor: Cores.borda }]} onPress={() => {
-              setModalNotificacoesHome(false);
-              router.replace({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
+              navigateFromFlow({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
             }}>
               <MaterialIcons name="tune" size={18} color={novoTema.primary} />
               <Text style={[styles.notificationSettingsText, { color: novoTema.primary }]}>Configurar notificações</Text>
             </TouchableOpacity>
+          </View>
+          </View>
           </View>
         </View>
       </Modal>
@@ -2429,6 +2581,8 @@ export default function Dashboard() {
       {mostrarPickerMesAno && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setMostrarPickerMesAno(false)}>
         <View style={styles.modalOverlay}>
+          <View style={styles.pickerPageShell}>
+          <View style={styles.pickerCenterStage}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "85%" }]}>
             <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Selecionar Mês e Ano</Text>
 
@@ -2469,6 +2623,8 @@ export default function Dashboard() {
                 setMostrarPickerMesAno(false);
               }} />
             </View>
+          </View>
+          </View>
           </View>
         </View>
       </Modal>
@@ -2581,60 +2737,129 @@ export default function Dashboard() {
       </Modal>
       )}
 
-      {/* MODAL NOVA CONTA */}
+      {/* MODAL NOVA CONTA: prévia no topo reflete nome, saldo, cor e se é
+          conjunta. Recusas de limite do servidor abrem o modal de plano
+          (ver salvarConta / mensagemErroLimitePlano). */}
       {modalContaVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalContaVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Nova Conta</Text>
-
-            {temParceiro && (
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15, padding: 10, backgroundColor: Cores.pillFundo, borderRadius: 8 }}>
-                <View style={{ flexDirection: "row", alignItems: "center" }}>
-                  <MaterialIcons name="people" size={20} color="#E76F51" style={{ marginRight: 8 }} />
-                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "500" }}>Conta Conjunta?</Text>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, maxHeight: "92%" }]}>
+            <ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag" showsVerticalScrollIndicator={false}>
+              <View style={styles.novaContaHeader}>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <Text style={[styles.novaContaTitulo, { color: Cores.textoPrincipal }]}>Nova conta</Text>
+                  <Text style={[styles.novaContaSubtitulo, { color: Cores.textoSecundario }]}>Banco, carteira ou qualquer lugar onde você guarda dinheiro.</Text>
                 </View>
-                <Switch value={contaCompartilhada} onValueChange={setContaCompartilhada} trackColor={{ false: "#767577", true: "#E76F51" }} />
-              </View>
-            )}
-
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Nome (ex: Itaú Casa, Carteira)*"
-              placeholderTextColor={Cores.textoSecundario}
-              value={nomeConta}
-              onChangeText={setNomeConta}
-            />
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Saldo inicial (R$ 0,00)"
-              placeholderTextColor={Cores.textoSecundario}
-              value={saldoInicialConta}
-              onChangeText={(texto) => setSaldoInicialConta(formatarEntradaMoeda(texto))}
-              keyboardType="numeric"
-            />
-
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor da Conta*:</Text>
-            <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
-              {PALETA_CORES.map((cor) => (
                 <TouchableOpacity
-                  key={cor}
-                  style={[styles.colorOption, { backgroundColor: cor }, corNovaConta === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
-                  onPress={() => setCorNovaConta(cor)}
+                  onPress={() => setModalContaVisivel(false)}
+                  style={[styles.novaContaFechar, { backgroundColor: Cores.pillFundo }]}
+                  accessibilityRole="button"
+                  accessibilityLabel="Fechar"
+                >
+                  <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+                </TouchableOpacity>
+              </View>
+
+              {/* Preview da conta */}
+              <View style={[styles.novaContaPreview, { backgroundColor: corNovaConta }]}>
+                <View style={styles.novaContaPreviewTopo}>
+                  <View style={styles.novaContaPreviewIcone}>
+                    <MaterialIcons name={contaCompartilhada ? "people" : "account-balance-wallet"} size={20} color="#FFF" />
+                  </View>
+                  {contaCompartilhada && (
+                    <View style={styles.novaContaPreviewChip}>
+                      <Text style={styles.novaContaPreviewChipTexto}>Conjunta</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.novaContaPreviewNome} numberOfLines={1}>{nomeConta.trim() || "Nome da conta"}</Text>
+                <Text style={styles.novaContaPreviewRotulo}>Saldo inicial</Text>
+                <Text style={styles.novaContaPreviewSaldo}>{fmtReais(valorDaEntradaMoeda(saldoInicialConta))}</Text>
+              </View>
+
+              <Text style={[styles.novaContaRotulo, { color: Cores.textoSecundario }]}>Nome da conta</Text>
+              <View style={[styles.novaContaCampo, { backgroundColor: Cores.inputFundo, borderColor: nomeConta ? corNovaConta : Cores.borda }]}>
+                <MaterialIcons name="edit" size={18} color={Cores.textoSecundario} />
+                <TextInput
+                  style={[styles.novaContaInput, { color: Cores.textoPrincipal }]}
+                  placeholder="Ex: Itaú, Carteira, Nubank"
+                  placeholderTextColor={Cores.textoSecundario}
+                  value={nomeConta}
+                  onChangeText={setNomeConta}
+                  maxLength={40}
                 />
-              ))}
+              </View>
+
+              <Text style={[styles.novaContaRotulo, { color: Cores.textoSecundario }]}>Saldo inicial</Text>
+              <View style={[styles.novaContaCampo, { backgroundColor: Cores.inputFundo, borderColor: saldoInicialConta ? corNovaConta : Cores.borda }]}>
+                <Text style={[styles.novaContaPrefixo, { color: Cores.textoSecundario }]}>R$</Text>
+                <TextInput
+                  style={[styles.novaContaInput, { color: Cores.textoPrincipal }]}
+                  placeholder="0,00"
+                  placeholderTextColor={Cores.textoSecundario}
+                  value={saldoInicialConta}
+                  onChangeText={(texto) => setSaldoInicialConta(formatarEntradaMoeda(texto))}
+                  keyboardType="numeric"
+                />
+              </View>
+
+              <Text style={[styles.novaContaRotulo, { color: Cores.textoSecundario }]}>Cor</Text>
+              <View style={styles.novaContaPaleta}>
+                {PALETA_CORES.map((cor) => {
+                  const selecionada = corNovaConta === cor;
+                  return (
+                    <TouchableOpacity
+                      key={cor}
+                      style={[styles.novaContaCor, { backgroundColor: cor }, selecionada && { borderColor: Cores.textoPrincipal }]}
+                      onPress={() => setCorNovaConta(cor)}
+                      accessibilityRole="radio"
+                      accessibilityState={{ selected: selecionada }}
+                      accessibilityLabel={`Cor ${cor}`}
+                    >
+                      {selecionada && <MaterialIcons name="check" size={18} color="#FFF" />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {temParceiro && (
+                <TouchableOpacity
+                  activeOpacity={0.8}
+                  onPress={() => setContaCompartilhada((valor) => !valor)}
+                  style={[styles.novaContaConjunta, { backgroundColor: Cores.inputFundo, borderColor: contaCompartilhada ? "#E76F51" : Cores.borda }]}
+                >
+                  <View style={[styles.novaContaConjuntaIcone, { backgroundColor: "rgba(231,111,81,0.16)" }]}>
+                    <MaterialIcons name="people" size={20} color="#E76F51" />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.novaContaConjuntaTitulo, { color: Cores.textoPrincipal }]}>Conta conjunta</Text>
+                    <Text style={[styles.novaContaConjuntaTexto, { color: Cores.textoSecundario }]}>Visível para você e seu parceiro(a)</Text>
+                  </View>
+                  <Switch value={contaCompartilhada} onValueChange={setContaCompartilhada} trackColor={{ false: "#767577", true: "#E76F51" }} />
+                </TouchableOpacity>
+              )}
+
+              <View style={styles.novaContaBotoes}>
+                <TouchableOpacity
+                  style={[styles.novaContaBotao, { borderWidth: 1, borderColor: Cores.borda }]}
+                  onPress={() => setModalContaVisivel(false)}
+                >
+                  <Text style={[styles.novaContaBotaoTexto, { color: Cores.textoPrincipal }]}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.novaContaBotao, { backgroundColor: novoTema.primary, opacity: loadingConta ? 0.6 : 1 }]}
+                  onPress={salvarConta}
+                  disabled={loadingConta}
+                >
+                  {loadingConta
+                    ? <ActivityIndicator size="small" color="#FFF" />
+                    : <>
+                      <MaterialIcons name="check" size={18} color="#FFF" />
+                      <Text style={[styles.novaContaBotaoTexto, { color: "#FFF" }]}>Criar conta</Text>
+                    </>}
+                </TouchableOpacity>
+              </View>
             </ScrollView>
-
-            {/* Preview da conta */}
-            <View style={{ backgroundColor: corNovaConta, padding: 12, borderRadius: 10, flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 }}>
-              <Text style={{ color: "#FFF", fontWeight: "600" }}>{nomeConta || "Nome da Conta"}</Text>
-              <Text style={{ color: "#FFF", fontWeight: "bold" }}>{fmtReais(valorDaEntradaMoeda(saldoInicialConta))}</Text>
-            </View>
-
-            <View style={styles.modalButtons}>
-              <Button title="Cancelar" color="#999" onPress={() => setModalContaVisivel(false)} />
-              <Button title={loadingConta ? "Salvando..." : "Salvar"} color="#457B9D" onPress={salvarConta} disabled={loadingConta} />
-            </View>
           </View>
         </View>
       </Modal>
@@ -2755,14 +2980,26 @@ export default function Dashboard() {
       {modalCatVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalCatVisivel(false)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, styles.categoryModalContent, { backgroundColor: Cores.cardFundo }]}>
+          <View style={[styles.modalContent, styles.categoryModalContent, FinFlowShadow, { backgroundColor: Cores.cardFundo, borderWidth: 1, borderColor: Cores.borda }]}>
+            <View style={styles.categoryModalHeader}>
+              <View style={[styles.transactionHeaderIcon, { backgroundColor: corSelecionada }]}>
+                <MaterialIcons name={iconeSelecionado as any} size={23} color="#FFF" />
+              </View>
+              <View style={styles.transactionHeaderCopy}>
+                <Text style={[styles.transactionTitle, { color: Cores.textoPrincipal }]}>Nova categoria</Text>
+                <Text style={[styles.transactionSubtitle, { color: Cores.textoSecundario }]}>Escolha o tipo, nome, cor e ícone.</Text>
+              </View>
+              <TouchableOpacity style={[styles.transactionClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalCatVisivel(false)} accessibilityLabel="Fechar">
+                <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
             <ScrollView
               style={styles.categoryModalScroll}
               contentContainerStyle={styles.categoryModalBody}
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Criar Categoria</Text>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Tipo</Text>
             <View style={[styles.typeSelector, { borderColor: Cores.borda }]}>
               <TouchableOpacity style={[styles.typeButton, tipoNovaCategoria === "despesa" && styles.expenseSelected]} onPress={() => setTipoNovaCategoria("despesa")}>
                 <Text style={[styles.typeButtonText, tipoNovaCategoria === "despesa" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Despesas</Text>
@@ -2771,40 +3008,66 @@ export default function Dashboard() {
                 <Text style={[styles.typeButtonText, tipoNovaCategoria === "receita" ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>Receitas</Text>
               </TouchableOpacity>
             </View>
-            <TextInput
-              style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, color: Cores.textoPrincipal }]}
-              placeholder="Nome (ex: Lazer, Vendas)"
-              placeholderTextColor={Cores.textoSecundario}
-              value={nomeCategoria}
-              onChangeText={setNomeCategoria}
-            />
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
-            <View style={styles.categoryOptionsGrid}>
-              {PALETA_CORES.map((cor) => (
-                <TouchableOpacity
-                  key={cor}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: corSelecionada === cor }}
-                  accessibilityLabel={`Selecionar cor ${cor}`}
-                  style={[styles.colorOption, styles.categoryColorOption, { backgroundColor: cor }, corSelecionada === cor && { borderWidth: 3, borderColor: Cores.textoPrincipal }]}
-                  onPress={() => setCorSelecionada(cor)}
-                />
-              ))}
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Nome</Text>
+            <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}>
+              <MaterialIcons name="label" size={19} color={corSelecionada} />
+              <TextInput
+                style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]}
+                placeholder="Ex: Lazer, Vendas"
+                placeholderTextColor={Cores.textoSecundario}
+                value={nomeCategoria}
+                onChangeText={setNomeCategoria}
+              />
             </View>
-            <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Ícone:</Text>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Cor</Text>
             <View style={styles.categoryOptionsGrid}>
-              {LISTA_ICONES.map((icone) => (
-                <TouchableOpacity
-                  key={icone}
-                  accessibilityRole="radio"
-                  accessibilityState={{ checked: iconeSelecionado === icone }}
-                  accessibilityLabel={`Selecionar ícone ${icone}`}
-                  style={[styles.iconeOpcao, styles.categoryIconOption, { backgroundColor: iconeSelecionado === icone ? corSelecionada : Cores.pillFundo }]}
-                  onPress={() => setIconeSelecionado(icone)}
-                >
-                  <MaterialIcons name={icone as any} size={24} color={iconeSelecionado === icone ? "#FFF" : Cores.textoSecundario} />
-                </TouchableOpacity>
-              ))}
+              {PALETA_CORES.map((cor) => {
+                const selecionada = corSelecionada === cor;
+                return (
+                  <TouchableOpacity
+                    key={cor}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selecionada }}
+                    accessibilityLabel={`Selecionar cor ${cor}`}
+                    style={[styles.colorOption, styles.categoryColorOption, { backgroundColor: cor }]}
+                    onPress={() => setCorSelecionada(cor)}
+                  >
+                    {selecionada && <MaterialIcons name="check" size={18} color="#FFF" />}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Ícone</Text>
+            <View style={styles.categoryOptionsGrid}>
+              {LISTA_ICONES.map((icone) => {
+                const selecionado = iconeSelecionado === icone;
+                return (
+                  <TouchableOpacity
+                    key={icone}
+                    accessibilityRole="radio"
+                    accessibilityState={{ checked: selecionado }}
+                    accessibilityLabel={`Selecionar ícone ${icone}`}
+                    style={[styles.iconeOpcao, styles.categoryIconOption, { backgroundColor: selecionado ? corSelecionada : Cores.pillFundo }, selecionado && FinFlowShadow]}
+                    onPress={() => setIconeSelecionado(icone)}
+                  >
+                    <MaterialIcons name={icone as any} size={24} color={selecionado ? "#FFF" : Cores.textoSecundario} />
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Pré-visualização</Text>
+            <View style={[styles.categoryPreview, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <View style={[styles.categoryPreviewIcon, { backgroundColor: corSelecionada }]}>
+                <MaterialIcons name={iconeSelecionado as any} size={20} color="#FFF" />
+              </View>
+              <Text style={[styles.categoryPreviewName, { color: Cores.textoPrincipal }]} numberOfLines={1}>
+                {nomeCategoria.trim() || "Nome da categoria"}
+              </Text>
+              <View style={[styles.categoryPreviewBadge, { backgroundColor: tipoNovaCategoria === "despesa" ? "#E76F5122" : "#2A9D8F22" }]}>
+                <Text style={[styles.categoryPreviewBadgeText, { color: tipoNovaCategoria === "despesa" ? "#E76F51" : "#2A9D8F" }]}>
+                  {tipoNovaCategoria === "despesa" ? "Despesa" : "Receita"}
+                </Text>
+              </View>
             </View>
             </ScrollView>
             <View style={[styles.modalButtons, styles.categoryModalButtons]}>
@@ -2867,6 +3130,98 @@ export default function Dashboard() {
       </Modal>
       )}
 
+      {modalAgendaVisivel && (
+      <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setModalAgendaVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.agendaPanel, FinFlowShadow, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
+            <View style={styles.agendaHeader}>
+              <View style={[styles.agendaHeaderIcon, { backgroundColor: `${novoTema.primary}1F` }]}>
+                <MaterialIcons name="calendar-month" size={23} color={novoTema.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.agendaTitle, { color: novoTema.text }]}>Agenda financeira</Text>
+                <Text style={[styles.agendaSubtitle, { color: novoTema.textMuted }]}>Consulte os lançamentos de cada data.</Text>
+              </View>
+              <TouchableOpacity style={styles.agendaClose} onPress={() => setModalAgendaVisivel(false)} accessibilityLabel="Fechar agenda">
+                <MaterialIcons name="close" size={21} color={novoTema.textMuted} />
+              </TouchableOpacity>
+            </View>
+            <View style={[styles.agendaCalendar, { backgroundColor: novoTema.surfaceMuted, borderColor: novoTema.border }]}>
+              <View style={styles.agendaMonthRow}>
+                <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear(), data.getMonth() - 1, 1))} accessibilityLabel="Mês anterior"><MaterialIcons name="chevron-left" size={22} color={novoTema.text} /></TouchableOpacity>
+                <TouchableOpacity style={[styles.agendaPeriodButton, { borderColor: novoTema.border }]} onPress={() => setSeletorPeriodoAgendaVisivel((visivel) => !visivel)} accessibilityLabel="Selecionar mês e ano">
+                  <Text style={[styles.agendaMonthTitle, { color: novoTema.text }]}>{mesesEmPortugues[dataAgenda.getMonth()]} {dataAgenda.getFullYear()}</Text>
+                  <MaterialIcons name={seletorPeriodoAgendaVisivel ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={18} color={novoTema.textMuted} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear(), data.getMonth() + 1, 1))} accessibilityLabel="Próximo mês"><MaterialIcons name="chevron-right" size={22} color={novoTema.text} /></TouchableOpacity>
+              </View>
+              {seletorPeriodoAgendaVisivel ? (
+                <View>
+                  <View style={styles.agendaYearRow}>
+                    <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear() - 1, data.getMonth(), 1))} accessibilityLabel="Ano anterior"><MaterialIcons name="chevron-left" size={23} color={novoTema.text} /></TouchableOpacity>
+                    <Text style={[styles.agendaYearText, { color: novoTema.text }]}>{dataAgenda.getFullYear()}</Text>
+                    <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setDataAgenda((data) => new Date(data.getFullYear() + 1, data.getMonth(), 1))} accessibilityLabel="Próximo ano"><MaterialIcons name="chevron-right" size={23} color={novoTema.text} /></TouchableOpacity>
+                  </View>
+                  <View style={styles.agendaMonthGrid}>
+                    {mesesEmPortugues.map((mes, indice) => {
+                      const ativo = indice === dataAgenda.getMonth();
+                      return <TouchableOpacity key={mes} style={[styles.agendaMonthOption, ativo && { backgroundColor: novoTema.primary }]} onPress={() => { setDataAgenda((data) => new Date(data.getFullYear(), indice, 1)); setSeletorPeriodoAgendaVisivel(false); }}><Text style={[styles.agendaMonthOptionText, { color: ativo ? "#FFF" : novoTema.text }]}>{mes.slice(0, 3)}</Text></TouchableOpacity>;
+                    })}
+                  </View>
+                </View>
+              ) : (<>
+              <View style={styles.agendaWeekRow}>{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <Text key={`${dia}-${indice}`} style={[styles.agendaWeekDay, { color: novoTema.textMuted }]}>{dia}</Text>)}</View>
+              <View style={styles.agendaDaysGrid}>
+                {diasCalendarioAgenda.map((dia, indice) => {
+                  if (dia === null) return <View key={`vazio-${indice}`} style={styles.agendaDayCell} />;
+                  const chave = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dia).padStart(2, "0")}`;
+                  const selecionado = dia === dataAgenda.getDate();
+                  return (
+                    <TouchableOpacity key={chave} style={styles.agendaDayCell} onPress={() => setDataAgenda((data) => new Date(data.getFullYear(), data.getMonth(), dia))} accessibilityLabel={`Selecionar dia ${dia}`}>
+                      <View style={[styles.agendaDayCircle, selecionado && { backgroundColor: novoTema.primary }]}><Text style={[styles.agendaDayText, { color: selecionado ? "#FFF" : novoTema.text }]}>{dia}</Text></View>
+                      {datasComAgenda.has(chave) && <View style={[styles.agendaDayDot, { backgroundColor: selecionado ? "#FFF" : novoTema.primary }]} />}
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              </>)}
+            </View>
+            {!seletorPeriodoAgendaVisivel && (<>
+            <View style={[styles.agendaFilters, { backgroundColor: novoTema.surfaceMuted, borderColor: novoTema.border }]}>
+              {([
+                ["todos", "Todos"],
+                ["concluidos", "Concluídos"],
+                ["pendentes", "Pendentes"],
+              ] as const).map(([valor, rotulo]) => {
+                const ativo = filtroAgenda === valor;
+                return <TouchableOpacity key={valor} style={[styles.agendaFilterOption, ativo && { backgroundColor: novoTema.primary }]} onPress={() => setFiltroAgenda(valor)}><Text style={[styles.agendaFilterText, { color: ativo ? "#FFF" : novoTema.textMuted }]}>{rotulo}</Text></TouchableOpacity>;
+              })}
+            </View>
+            <Text style={[styles.agendaSelectedTitle, { color: novoTema.text }]}>{dataAgenda.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })}</Text>
+            <ScrollView style={styles.agendaItems} contentContainerStyle={itensAgendaPorData.length === 0 ? styles.agendaEmptyContent : undefined} showsVerticalScrollIndicator={false}>
+              {itensAgendaPorData.length === 0 ? (
+                <View style={styles.agendaEmpty}>
+                  <MaterialIcons name="event-available" size={28} color={novoTema.textMuted} />
+                  <Text style={[styles.agendaEmptyTitle, { color: novoTema.text }]}>Nada nesta data</Text>
+                  <Text style={[styles.agendaEmptyText, { color: novoTema.textMuted }]}>Não há lançamentos ou compras registrados.</Text>
+                </View>
+              ) : itensAgendaPorData.map((item) => (
+                <View key={item.id} style={[styles.agendaItem, { backgroundColor: novoTema.surfaceMuted, borderColor: novoTema.border }]}>
+                  <View style={[styles.agendaItemIcon, { backgroundColor: item.tipo === "receita" ? "#24A87320" : "#C0392E20" }]}><MaterialIcons name={item.tipo === "receita" ? "arrow-downward" : "arrow-upward"} size={18} color={item.tipo === "receita" ? "#24A873" : "#C0392E"} /></View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={[styles.agendaItemTitle, { color: novoTema.text }]} numberOfLines={1}>{item.descricao}</Text>
+                    <Text style={[styles.agendaItemMeta, { color: novoTema.textMuted }]}>{item.origem} · {item.status}</Text>
+                  </View>
+                  <Text style={[styles.agendaItemValue, { color: item.tipo === "receita" ? "#24A873" : "#C0392E" }]}>{item.tipo === "receita" ? "+" : "−"}{formatarValorPrivado(item.valor)}</Text>
+                </View>
+              ))}
+            </ScrollView>
+            </>)}
+          </View>
+        </View>
+      </FinFlowPopup>
+      )}
+
       {/* MODAL LANÇAMENTOS VENCIDOS */}
       {modalVencidosVisivel && !temPopupPrioritario && (
       <FinFlowPopup
@@ -2891,8 +3246,7 @@ export default function Dashboard() {
             <TouchableOpacity
               style={{ width: "100%", minHeight: 50, backgroundColor: novoTema.primary, borderRadius: FinFlowRadius.medium, alignItems: "center", justifyContent: "center", marginBottom: 10 }}
               onPress={() => {
-                setModalVencidosVisivel(false);
-                router.push({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
+                navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
               }}
             >
               <Text style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}>Ver no Histórico</Text>
@@ -3040,12 +3394,100 @@ export default function Dashboard() {
                 <TextInput style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={descTransacao} onChangeText={setDescTransacao} />
               </View>
 
-              <TouchableOpacity style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]} onPress={() => setMostrarCalendario(true)}>
+              <TouchableOpacity
+                style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}
+                onPress={() => {
+                  setMesExibidoTransacao(dataSelecionada);
+                  setSeletorPeriodoTransacaoVisivel(false);
+                  setMostrarCalendario(true);
+                }}
+              >
                 <MaterialIcons name="calendar-today" size={19} color={corTipoTransacao} />
                 <Text style={[styles.datePickerText, { color: Cores.textoPrincipal }]}>{formatarDataBR(dataSelecionada)}</Text>
                 <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginLeft: "auto" }} />
               </TouchableOpacity>
-              {mostrarCalendario && <DateTimePicker value={dataSelecionada} mode="date" display="default" onChange={aoMudarData} />}
+              {mostrarCalendario && (
+              <FinFlowPopup animationType="fade" transparent visible onRequestClose={() => setMostrarCalendario(false)}>
+                <View style={styles.modalOverlay}>
+                  <View style={[styles.datePickerPanel, FinFlowShadow, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+                    <View style={styles.agendaHeader}>
+                      <View style={[styles.agendaHeaderIcon, { backgroundColor: `${corTipoTransacao}22` }]}>
+                        <MaterialIcons name="calendar-month" size={22} color={corTipoTransacao} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.agendaTitle, { color: Cores.textoPrincipal }]}>Selecionar data</Text>
+                        <Text style={[styles.agendaSubtitle, { color: Cores.textoSecundario }]}>Escolha o dia do lançamento.</Text>
+                      </View>
+                      <TouchableOpacity style={[styles.agendaClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setMostrarCalendario(false)} accessibilityLabel="Fechar calendário">
+                        <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+                      </TouchableOpacity>
+                    </View>
+                    <View style={[styles.agendaCalendar, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                      <View style={styles.agendaMonthRow}>
+                        <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear(), data.getMonth() - 1, 1))} accessibilityLabel="Mês anterior">
+                          <MaterialIcons name="chevron-left" size={22} color={Cores.textoPrincipal} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.agendaPeriodButton, { borderColor: Cores.borda }]} onPress={() => setSeletorPeriodoTransacaoVisivel((visivel) => !visivel)} accessibilityLabel="Selecionar mês e ano">
+                          <Text style={[styles.agendaMonthTitle, { color: Cores.textoPrincipal }]}>{mesesEmPortugues[mesExibidoTransacao.getMonth()]} {mesExibidoTransacao.getFullYear()}</Text>
+                          <MaterialIcons name={seletorPeriodoTransacaoVisivel ? "keyboard-arrow-up" : "keyboard-arrow-down"} size={18} color={Cores.textoSecundario} />
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear(), data.getMonth() + 1, 1))} accessibilityLabel="Próximo mês">
+                          <MaterialIcons name="chevron-right" size={22} color={Cores.textoPrincipal} />
+                        </TouchableOpacity>
+                      </View>
+                      {seletorPeriodoTransacaoVisivel ? (
+                        <View>
+                          <View style={styles.agendaYearRow}>
+                            <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear() - 1, data.getMonth(), 1))} accessibilityLabel="Ano anterior">
+                              <MaterialIcons name="chevron-left" size={23} color={Cores.textoPrincipal} />
+                            </TouchableOpacity>
+                            <Text style={[styles.agendaYearText, { color: Cores.textoPrincipal }]}>{mesExibidoTransacao.getFullYear()}</Text>
+                            <TouchableOpacity style={styles.agendaMonthArrow} onPress={() => setMesExibidoTransacao((data) => new Date(data.getFullYear() + 1, data.getMonth(), 1))} accessibilityLabel="Próximo ano">
+                              <MaterialIcons name="chevron-right" size={23} color={Cores.textoPrincipal} />
+                            </TouchableOpacity>
+                          </View>
+                          <View style={styles.agendaMonthGrid}>
+                            {mesesEmPortugues.map((mes, indice) => {
+                              const ativo = indice === mesExibidoTransacao.getMonth();
+                              return (
+                                <TouchableOpacity key={mes} style={[styles.agendaMonthOption, ativo && { backgroundColor: corTipoTransacao }]} onPress={() => { setMesExibidoTransacao((data) => new Date(data.getFullYear(), indice, 1)); setSeletorPeriodoTransacaoVisivel(false); }}>
+                                  <Text style={[styles.agendaMonthOptionText, { color: ativo ? "#FFF" : Cores.textoPrincipal }]}>{mes.slice(0, 3)}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </View>
+                      ) : (<>
+                      <View style={styles.agendaWeekRow}>{["D", "S", "T", "Q", "Q", "S", "S"].map((dia, indice) => <Text key={`${dia}-${indice}`} style={[styles.agendaWeekDay, { color: Cores.textoSecundario }]}>{dia}</Text>)}</View>
+                      <View style={styles.agendaDaysGrid}>
+                        {diasCalendarioTransacao.map((dia, indice) => {
+                          if (dia === null) return <View key={`vazio-${indice}`} style={styles.agendaDayCell} />;
+                          const selecionado = dia === dataSelecionada.getDate()
+                            && mesExibidoTransacao.getMonth() === dataSelecionada.getMonth()
+                            && mesExibidoTransacao.getFullYear() === dataSelecionada.getFullYear();
+                          return (
+                            <TouchableOpacity
+                              key={`dia-${dia}`}
+                              style={styles.agendaDayCell}
+                              onPress={() => {
+                                setDataSelecionada(new Date(mesExibidoTransacao.getFullYear(), mesExibidoTransacao.getMonth(), dia));
+                                setMostrarCalendario(false);
+                              }}
+                              accessibilityLabel={`Selecionar dia ${dia}`}
+                            >
+                              <View style={[styles.agendaDayCircle, selecionado && { backgroundColor: corTipoTransacao }]}>
+                                <Text style={[styles.agendaDayText, { color: selecionado ? "#FFF" : Cores.textoPrincipal }]}>{dia}</Text>
+                              </View>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      </>)}
+                    </View>
+                  </View>
+                </View>
+              </FinFlowPopup>
+              )}
               <View
                 style={styles.rowInputs}
                 onLayout={({ nativeEvent }) => {
@@ -3109,6 +3551,20 @@ export default function Dashboard() {
 
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
+                {contasAtivas.length === 0 && (
+                  <TouchableOpacity
+                    style={[styles.transactionEmptyAction, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
+                    onPress={() => setModalContaVisivel(true)}
+                    accessibilityRole="button"
+                    accessibilityLabel="Criar minha primeira conta"
+                  >
+                    <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
+                      <MaterialIcons name="add" size={19} color={novoTema.primary} />
+                    </View>
+                    <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira conta</Text>
+                    <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
+                  </TouchableOpacity>
+                )}
                 {contasAtivas.map((conta) => (
                   <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
                     <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
@@ -3141,6 +3597,23 @@ export default function Dashboard() {
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Categoria</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
+                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).length === 0 && (
+                      <TouchableOpacity
+                        style={[styles.transactionEmptyAction, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
+                        onPress={() => {
+                          setTipoNovaCategoria(tipoTransacao);
+                          setModalCatVisivel(true);
+                        }}
+                        accessibilityRole="button"
+                        accessibilityLabel="Criar minha primeira categoria"
+                      >
+                        <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
+                          <MaterialIcons name="add" size={19} color={novoTema.primary} />
+                        </View>
+                        <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira categoria</Text>
+                        <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
+                      </TouchableOpacity>
+                    )}
                     {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).map((cat) => (
                       <TouchableOpacity key={cat.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: catSelecionadaId === cat.id ? corTipoTransacao : Cores.borda }]} onPress={() => setCatSelecionadaId(cat.id)}>
                         <View style={[styles.colorDot, { backgroundColor: cat.cor }]} />
@@ -3191,9 +3664,9 @@ const styles = StyleSheet.create({
   homeHero: { borderRadius: 24, padding: 20, paddingBottom: 24, overflow: "hidden", minHeight: 190 },
   homeHeroWaves: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
   homeHeroWave: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.08)" },
-  homeHeroWaveOne: { width: 420, height: 155, right: -175, top: 45, transform: [{ rotate: "-10deg" }] },
-  homeHeroWaveTwo: { width: 390, height: 135, left: -205, top: 92, backgroundColor: "rgba(255,255,255,0.06)", transform: [{ rotate: "12deg" }] },
-  homeHeroWaveThree: { width: 330, height: 105, right: -105, bottom: -58, backgroundColor: "rgba(0,55,48,0.10)", transform: [{ rotate: "-7deg" }] },
+  homeHeroWaveOne: { width: 420, height: 155, right: -175, top: 45 },
+  homeHeroWaveTwo: { width: 390, height: 135, left: -205, top: 92, backgroundColor: "rgba(255,255,255,0.06)" },
+  homeHeroWaveThree: { width: 330, height: 105, right: -105, bottom: -58, backgroundColor: "rgba(0,55,48,0.10)" },
   homeHeroContent: { zIndex: 2 },
   homeHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   homeHeroGreeting: { color: "#FFF", fontSize: 20, fontWeight: "800" },
@@ -3208,14 +3681,16 @@ const styles = StyleSheet.create({
   homeHeroTrend: { flexDirection: "row", alignItems: "center", gap: 5, marginTop: 9, backgroundColor: "rgba(0,0,0,0.13)", borderRadius: 14, paddingHorizontal: 9, paddingVertical: 5, alignSelf: "flex-start" },
   homeHeroTrendText: { color: "#B8F4D7", fontSize: 10, fontWeight: "600" },
   homeActions: { marginHorizontal: 10, marginTop: -12, borderRadius: 20, borderWidth: 1, paddingVertical: 14, paddingHorizontal: 8, flexDirection: "row", justifyContent: "space-around", elevation: 6 },
-  homeActionItem: { flex: 1, alignItems: "center", gap: 7 },
+  homeActionItem: { flex: 1, alignItems: "center", gap: 7, overflow: "visible" },
   homeActionIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
+  homeActionFinnPortrait: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: "#6EA8FF", backgroundColor: "#102A45", overflow: "visible", alignItems: "center", justifyContent: "center" },
+  homeActionFinnPortraitImage: { width: 55, height: 55, marginTop: -7 },
   homeActionLabel: { fontSize: 11, fontWeight: "700" },
   homeActionAlert: { position: "absolute", right: 1, top: 1, width: 9, height: 9, borderRadius: 5, backgroundColor: "#EE4B4B", borderWidth: 1.5, borderColor: "#FFF" },
   homeMonthCard: { marginTop: 14, borderRadius: 20, borderWidth: 1, padding: 16, elevation: 2 },
   homeSectionTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 15 },
   homeSectionTitle: { fontSize: 15, fontWeight: "800" },
-  homeCalendarIcon: { width: 30, height: 30, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  homeCalendarIcon: { width: 36, height: 36, borderRadius: 18, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   homeMonthMetrics: { flexDirection: "row", justifyContent: "space-between" },
   homeMetricColumn: { flex: 1, minWidth: 0 },
   homeMetricInfoButton: { borderRadius: 10, paddingVertical: 2 },
@@ -3223,6 +3698,44 @@ const styles = StyleSheet.create({
   homeMetricLabel: { fontSize: 10, marginBottom: 4 },
   homeMetricValue: { fontSize: 14, fontWeight: "800" },
   homeMonthTrack: { height: 5, borderRadius: 3, overflow: "hidden", flexDirection: "row", marginTop: 14 },
+  agendaPanel: { width: "92%", maxWidth: 520, maxHeight: "88%", borderRadius: 24, borderWidth: 1, padding: 18, elevation: 12 },
+  datePickerPanel: { width: "90%", maxWidth: 380, borderRadius: 24, borderWidth: 1, padding: 18, elevation: 12 },
+  agendaHeader: { flexDirection: "row", alignItems: "center", gap: 11, marginBottom: 15 },
+  agendaHeaderIcon: { width: 42, height: 42, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  agendaTitle: { fontSize: 18, fontWeight: "900" },
+  agendaSubtitle: { fontSize: 11, marginTop: 2 },
+  agendaClose: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  agendaCalendar: { borderWidth: 1, borderRadius: 18, padding: 11 },
+  agendaMonthRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  agendaMonthArrow: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
+  agendaPeriodButton: { minHeight: 35, minWidth: 150, borderRadius: 12, borderWidth: 1, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
+  agendaMonthTitle: { fontSize: 14, fontWeight: "900", textTransform: "capitalize" },
+  agendaYearRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 22, marginBottom: 8 },
+  agendaYearText: { fontSize: 17, fontWeight: "900", minWidth: 56, textAlign: "center" },
+  agendaMonthGrid: { flexDirection: "row", flexWrap: "wrap", rowGap: 7 },
+  agendaMonthOption: { width: "25%", height: 34, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  agendaMonthOptionText: { fontSize: 11, fontWeight: "800", textTransform: "capitalize" },
+  agendaWeekRow: { flexDirection: "row" },
+  agendaWeekDay: { width: `${100 / 7}%`, textAlign: "center", fontSize: 9, fontWeight: "900", paddingVertical: 4 },
+  agendaDaysGrid: { flexDirection: "row", flexWrap: "wrap" },
+  agendaDayCell: { width: `${100 / 7}%`, height: 38, alignItems: "center", justifyContent: "center" },
+  agendaDayCircle: { width: 29, height: 29, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  agendaDayText: { fontSize: 12, fontWeight: "700" },
+  agendaDayDot: { position: "absolute", bottom: 1, width: 4, height: 4, borderRadius: 2 },
+  agendaFilters: { minHeight: 42, borderRadius: 14, borderWidth: 1, padding: 3, flexDirection: "row", marginTop: 10 },
+  agendaFilterOption: { flex: 1, minWidth: 0, borderRadius: 10, alignItems: "center", justifyContent: "center", paddingHorizontal: 3 },
+  agendaFilterText: { fontSize: 10, fontWeight: "800" },
+  agendaSelectedTitle: { fontSize: 13, fontWeight: "900", textTransform: "capitalize", marginTop: 15, marginBottom: 8 },
+  agendaItems: { maxHeight: 190 },
+  agendaItem: { minHeight: 58, borderRadius: 15, borderWidth: 1, paddingHorizontal: 11, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  agendaItemIcon: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  agendaItemTitle: { fontSize: 13, fontWeight: "800" },
+  agendaItemMeta: { fontSize: 10, marginTop: 3 },
+  agendaItemValue: { fontSize: 12, fontWeight: "900" },
+  agendaEmptyContent: { flexGrow: 1 },
+  agendaEmpty: { alignItems: "center", justifyContent: "center", paddingVertical: 18 },
+  agendaEmptyTitle: { fontSize: 14, fontWeight: "800", marginTop: 5 },
+  agendaEmptyText: { fontSize: 11, textAlign: "center", marginTop: 3 },
   header: { flexDirection: "row", alignItems: "center", marginBottom: 16, backgroundColor: "#15966E", padding: 18, borderRadius: 22, minHeight: 104 },
   greeting: { fontSize: 24, fontWeight: "bold" },
   subtitle: { fontSize: 14, marginTop: 2 },
@@ -3269,6 +3782,8 @@ const styles = StyleSheet.create({
   graficoCard: { padding: 16, borderRadius: 16, borderWidth: 1, marginBottom: 15 },
   graficoTitulo: { fontSize: 14, fontWeight: "bold" },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.7)", justifyContent: "center", alignItems: "center" },
+  pickerPageShell: { flex: 1, width: "100%" },
+  pickerCenterStage: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingVertical: 72 },
   modalContent: { width: "92%", maxWidth: 520, padding: 22, borderRadius: 22, elevation: 10 },
   balanceExplanationPanel: { width: "92%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 22, elevation: 12 },
   balanceExplanationIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 14 },
@@ -3324,10 +3839,15 @@ const styles = StyleSheet.create({
   transactionPlainInput: { minHeight: 52, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 14, fontSize: 15, marginBottom: 14 },
   transactionChipRow: { paddingRight: 12 },
   transactionChip: { minHeight: 42, borderWidth: 1.5, paddingHorizontal: 13, marginRight: 9 },
+  transactionEmptyAction: { minHeight: 50, minWidth: 245, borderWidth: 1.5, borderRadius: 15, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 9, marginRight: 9 },
+  transactionEmptyActionIcon: { width: 32, height: 32, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  transactionEmptyActionText: { flex: 1, fontSize: 13, fontWeight: "900" },
   transactionActions: { flexDirection: "row", gap: 10, marginTop: "auto", paddingTop: 18 },
   transactionActionButton: { flex: 1, minWidth: 0, borderRadius: FinFlowRadius.medium },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  notificationPanel: { width: "92%", maxWidth: 520, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  notificationPageShell: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, paddingVertical: 24 },
+  notificationCenterStage: { width: "100%", maxWidth: 520, alignItems: "center", justifyContent: "center" },
+  notificationPanel: { width: "100%", borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
   notificationHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
   notificationHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   notificationTitle: { fontSize: 18, fontWeight: "900" },
@@ -3344,6 +3864,8 @@ const styles = StyleSheet.create({
   notificationSettings: { minHeight: 46, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 17 },
   notificationSettingsText: { fontSize: 13, fontWeight: "800" },
   accountScopePanel: { width: "92%", maxWidth: 520, maxHeight: "90%", flexShrink: 1, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
+  accountScopePageShell: { flex: 1, width: "100%" },
+  accountScopeCenterStage: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingVertical: 68 },
   accountScopeHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 16 },
   accountScopeHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
   accountScopeTitle: { fontSize: 18, fontWeight: "900" },
@@ -3380,14 +3902,45 @@ const styles = StyleSheet.create({
   colorOption: { width: 35, height: 35, borderRadius: 17.5 },
   iconeOpcao: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   categoryModalContent: { justifyContent: "flex-start", overflow: "hidden" },
+  categoryModalHeader: { flexDirection: "row", alignItems: "center", marginBottom: 16 },
   categoryModalScroll: { flex: 1, minHeight: 0 },
   categoryModalBody: { flexGrow: 1, paddingBottom: 8 },
   categoryOptionsGrid: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: 10, marginBottom: 20 },
-  categoryColorOption: { width: 40, height: 40, borderRadius: 20 },
+  categoryColorOption: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
   categoryIconOption: { width: 46, height: 46, borderRadius: 12 },
+  categoryPreview: { flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, marginBottom: 6 },
+  categoryPreviewIcon: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  categoryPreviewName: { flex: 1, minWidth: 0, fontSize: 14, fontWeight: "800" },
+  categoryPreviewBadge: { borderRadius: 10, paddingHorizontal: 9, paddingVertical: 4 },
+  categoryPreviewBadgeText: { fontSize: 11, fontWeight: "800" },
   categoryModalButtons: { justifyContent: "space-between", gap: 12, marginTop: 8, paddingBottom: Platform.OS === "android" ? 24 : 12 },
   categoryActionButton: { flex: 1, minWidth: 0 },
   modalButtons: { flexDirection: "row", justifyContent: "space-around", marginTop: 20 },
+  novaContaHeader: { flexDirection: "row", alignItems: "flex-start", gap: 12, marginBottom: 18 },
+  novaContaTitulo: { fontSize: 22, fontWeight: "800" },
+  novaContaSubtitulo: { fontSize: 13, lineHeight: 18, marginTop: 3 },
+  novaContaFechar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
+  novaContaPreview: { borderRadius: 18, padding: 16, marginBottom: 20, ...FinFlowShadow },
+  novaContaPreviewTopo: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
+  novaContaPreviewIcone: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.22)" },
+  novaContaPreviewChip: { borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, backgroundColor: "rgba(255,255,255,0.22)" },
+  novaContaPreviewChipTexto: { color: "#FFF", fontSize: 11, fontWeight: "800" },
+  novaContaPreviewNome: { color: "#FFF", fontSize: 17, fontWeight: "800" },
+  novaContaPreviewRotulo: { color: "rgba(255,255,255,0.78)", fontSize: 11, fontWeight: "600", marginTop: 10 },
+  novaContaPreviewSaldo: { color: "#FFF", fontSize: 24, fontWeight: "900", marginTop: 1 },
+  novaContaRotulo: { fontSize: 12, fontWeight: "700", letterSpacing: 0.4, marginBottom: 7 },
+  novaContaCampo: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, marginBottom: 16 },
+  novaContaInput: { flex: 1, minWidth: 0, paddingVertical: 13, fontSize: 16 },
+  novaContaPrefixo: { fontSize: 15, fontWeight: "700" },
+  novaContaPaleta: { flexDirection: "row", flexWrap: "wrap", gap: 10, marginBottom: 18 },
+  novaContaCor: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "transparent" },
+  novaContaConjunta: { flexDirection: "row", alignItems: "center", gap: 12, borderWidth: 1, borderRadius: 16, padding: 12, marginBottom: 6 },
+  novaContaConjuntaIcone: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  novaContaConjuntaTitulo: { fontSize: 14, fontWeight: "800" },
+  novaContaConjuntaTexto: { fontSize: 12, lineHeight: 16, marginTop: 1 },
+  novaContaBotoes: { flexDirection: "row", gap: 10, marginTop: 16 },
+  novaContaBotao: { flex: 1, minHeight: 48, borderRadius: 14, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 },
+  novaContaBotaoTexto: { fontSize: 15, fontWeight: "800" },
   typeSelector: { flexDirection: "row", marginBottom: 15, borderWidth: 1, borderRadius: 8, overflow: "hidden" },
   typeButton: { flex: 1, paddingVertical: 12, paddingHorizontal: 8, alignItems: "center", justifyContent: "center" },
   typeButtonText: { fontWeight: "bold", fontSize: 14, textAlign: "center" },

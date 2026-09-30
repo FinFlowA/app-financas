@@ -58,6 +58,24 @@ Deno.test("bloqueia saída fora do escopo e aceita resposta financeira", () => {
   assert(safeAssistantMessage("Aqui está uma piada sobre dinheiro", "financial_summary") === null, "Saída externa deveria ser bloqueada.");
 });
 
+Deno.test("bloqueia traducao de texto quando a propria resposta sinaliza a traducao", () => {
+  // Bug real: "Traduza a seguinte frase para o inglês: How old are you?"
+  // recebeu de volta "How old are you?" -- o modelo classificou como
+  // casual_conversation e traduziu em vez de recusar (ver teste abaixo:
+  // esse atalho aceita qualquer texto curto sem palavra-gatilho). Este
+  // teste cobre o caso em que a própria resposta cita a tradução
+  // explicitamente (ex.: "aqui está a tradução: ...") -- a mesma categoria
+  // de piada/poema/receita, mas que não estava na lista nem no padrão de
+  // detecção de saída fora do escopo. A defesa principal contra a forma
+  // "só a frase traduzida, sem nenhuma palavra-gatilho" é a instrução no
+  // prompt (regra 7) para o modelo nunca classificar tradução como
+  // conversa casual -- ver prompt_test.ts.
+  assert(
+    safeAssistantMessage("Aqui está a tradução: How old are you?", "financial_summary") === null,
+    "Uma resposta que contém uma tradução deveria ser bloqueada como saída fora do escopo.",
+  );
+});
+
 Deno.test("aceita saída casual do Finn sem liberar afirmações de execução", () => {
   assert(safeAssistantMessage("Oi! Como você está?", "casual_conversation", "answer") !== null, "Cumprimento seguro deveria passar.");
   assert(safeAssistantMessage("Eu sou o Finn, seu assistente no FinFlow.", "casual_conversation", "answer") !== null, "Apresentação do Finn deveria passar.");

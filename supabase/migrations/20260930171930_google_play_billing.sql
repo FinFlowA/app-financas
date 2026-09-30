@@ -1,5 +1,17 @@
 -- Google Play Billing: recibos verificados no servidor e eventos RTDN idempotentes.
 -- Purchase tokens sao confidenciais e nunca ficam acessiveis ao cliente.
+--
+-- Criada na branch feature/paddle-live-readiness em 23/09/2026 (versão
+-- original 20260923000100) e renomeada para depois da linha de base de
+-- 29/09/2026, que passou a ser a primeira migration. Ainda NÃO aplicada em
+-- produção: aplicar junto com a publicação da Google Play (APK com expo-iap).
+--
+-- Reverter: drop function public.upsert_google_play_subscription(uuid, text,
+-- text, text, text, text, text, text, text, timestamptz, timestamptz, boolean,
+-- text, text, jsonb); drop table public.google_play_rtdn_events,
+-- public.google_play_purchases. Os updates de billing_products só regravam
+-- os preços atuais e não precisam ser desfeitos. Assinaturas já gravadas com
+-- provider = 'google_play' em public.subscriptions ficam como histórico.
 
 update public.billing_products set amount_brl = 19.90, updated_at = now() where code = 'smart_monthly';
 update public.billing_products set amount_brl = 199.00, updated_at = now() where code = 'smart_annual';

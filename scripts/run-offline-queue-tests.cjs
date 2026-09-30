@@ -16,6 +16,13 @@ const modulePath = path.join(tempDir, "offline-queue-core.cjs");
 fs.writeFileSync(modulePath, output);
 const { createOfflineQueue } = require(modulePath);
 
+// offline-queue-view importa "./teto-seguranca"; o .js permite o require.
+const safetyLimitOutput = ts.transpileModule(
+  fs.readFileSync(path.join(root, "lib", "teto-seguranca.ts"), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText;
+fs.writeFileSync(path.join(tempDir, "teto-seguranca.js"), safetyLimitOutput);
+
 const viewSource = fs.readFileSync(path.join(root, "lib", "offline-queue-view.ts"), "utf8");
 const viewOutput = ts.transpileModule(viewSource, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -120,6 +127,37 @@ async function run() {
   assert.deepEqual(await domainFailureExecutor(executionRequest), {
     ok: false, retryable: false, errorCode: "AI_LIMIT_BELOW_USED",
   });
+  // Verificação em duas etapas pendente: o banco recusa (42501), mas a ação
+  // precisa continuar na fila até o usuário confirmar o código.
+  const mfaPendingExecutor = createSupabaseOfflineExecutor({
+    auth: { getUser: async () => ({ data: { user: { id: USER_A } }, error: null }) },
+    rpc: async () => ({ data: null, error: { code: "42501", message: "FINFLOW_MFA_REQUIRED" }, status: 403 }),
+  });
+  assert.deepEqual(await mfaPendingExecutor(executionRequest), {
+    ok: false, retryable: true, errorCode: "OFFLINE_MFA_REQUIRED",
+  });
+  // Teto de segurança por usuário (V08): também é P0001, mas não pode virar
+  // "limite de plano" nem ser reenviado; o código leva o teto para a tela.
+  const safetyLimitExecutor = createSupabaseOfflineExecutor({
+    auth: { getUser: async () => ({ data: { user: { id: USER_A } }, error: null }) },
+    rpc: async () => ({
+      data: null,
+      error: { code: "P0001", message: "FINFLOW_TETO_SEGURANCA:lancamentos:diario:5000" },
+      status: 400,
+    }),
+  });
+  assert.deepEqual(await safetyLimitExecutor(executionRequest), {
+    ok: false, retryable: false, errorCode: "FINFLOW_TETO_SEGURANCA:LANCAMENTOS:DIARIO:5000",
+  });
+  assert.match(
+    buildOfflineQueuePanelSnapshot([{
+      id: uuid(900), userId: USER_A, idempotencyKey: uuid(901), actionType: "create_transaction",
+      payload: {}, status: "failed", attempts: 1, createdAt: new Date().toISOString(),
+      lastErrorCode: "FINFLOW_TETO_SEGURANCA:LANCAMENTOS:DIARIO:5000",
+    }]).items[0].failureMessage,
+    /limite de segurança de 5\.000 lançamentos por dia/,
+    "A pendência recusada pelo teto precisa explicar o limite.",
+  );
 
   let optimisticRpcName;
   let optimisticRpcPayload;
@@ -420,7 +458,16 @@ async function run() {
   const syncSource = fs.readFileSync(path.join(root, "lib", "offline-sync.ts"), "utf8");
   assert.match(syncSource, /Salvo no dispositivo\. Sincronizaremos automaticamente quando a conexão voltar\./);
   assert.match(syncSource, /IS_LOCAL_DEMO/);
-  assert.match(syncSource, /sincronizarAcoesOffline\(executor\)/);
+  assert.match(
+    syncSource,
+    /export async function sincronizarFilaFinanceiraOffline\(\): Promise<OfflineSyncSummary \| null> \{\s*return null;\s*\}/,
+    "A sincronizacao offline deve permanecer desativada no app.",
+  );
+  assert.doesNotMatch(
+    syncSource,
+    /sincronizarAcoesOffline\(executor\)/,
+    "O app nao deve voltar a processar automaticamente a fila offline.",
+  );
   assert.match(syncSource, /if \(!item \|\| !canRemoveOfflineQueueItem\(item\)\) return false/,
     "A camada de serviço deve impedir a remoção de itens que ainda aguardam sincronização.");
 
@@ -434,20 +481,10 @@ async function run() {
   const settingsSource = fs.readFileSync(path.join(root, "app", "(tabs)", "configuracoes.tsx"), "utf8");
   assert.match(settingsSource, /limparFilaFinanceiraDoUsuario\(meuId\)/,
     "Exclusão explícita da conta deve remover sua fila local.");
-  const panelStart = settingsSource.indexOf("{modalFilaOfflineVisivel && (");
-  const panelEnd = settingsSource.indexOf("{modalPreferenciasNotificacoes && (", panelStart);
-  assert(panelStart >= 0 && panelEnd > panelStart, "O modal da fila offline deve existir em Ajustes.");
-  const panelSource = settingsSource.slice(panelStart, panelEnd);
-  assert.match(panelSource, /Sincronizar agora/);
-  assert.match(panelSource, /resumoFilaOffline\.queued/);
-  assert.match(panelSource, /resumoFilaOffline\.failed/);
-  assert.match(panelSource, /confirmarRemocaoItemOffline\(item\)/);
-  assert.match(settingsSource, /Esta ação local será descartada e não chegará ao servidor/,
-    "Remover uma falha exige confirmação destrutiva explícita.");
-  assert.doesNotMatch(panelSource, /payload|lastErrorCode|idempotencyKey|userId/,
-    "O painel não pode acessar nem renderizar dados internos da fila.");
-  assert.doesNotMatch(panelSource, /Limpar tudo|limparAcoesOfflineDoUsuarioAtual/,
-    "O painel não pode oferecer limpeza total silenciosa.");
+  assert.match(settingsSource, /\{false && <>\{\/\* SINCRONIZA/,
+    "A secao de sincronizacao offline deve permanecer oculta em Ajustes.");
+  assert.match(settingsSource, /\{false && modalFilaOfflineVisivel && \(/,
+    "O modal da fila offline nao deve ser renderizado.");
 
   const creationSources = [
     path.join(root, "app", "(tabs)", "index.tsx"),
@@ -502,7 +539,7 @@ async function run() {
     "Arquivar, reativar e excluir categorias devem passar pelo executor idempotente.");
 
   const migration = fs.readFileSync(
-    path.join(root, "supabase", "migrations", "20260808000100_secure_offline_action_receipts.sql"),
+    path.join(root, "supabase", "migrations_archive", "20260808000100_secure_offline_action_receipts.sql"),
     "utf8",
   );
   assert.match(migration, /caller is distinct from p_expected_user_id/);
@@ -513,7 +550,7 @@ async function run() {
   assert.doesNotMatch(migration.match(/array\[[\s\S]*?\]::text\[\]/)?.[0] ?? "", /update_|delete_|pay_invoice|complete_transaction/);
 
   const updateMigration = fs.readFileSync(
-    path.join(root, "supabase", "migrations", "20260808001400_offline_optimistic_updates.sql"),
+    path.join(root, "supabase", "migrations_archive", "20260808001400_offline_optimistic_updates.sql"),
     "utf8",
   );
   for (const table of ["contas", "categorias", "caixinhas", "cartoes", "transacoes"]) {

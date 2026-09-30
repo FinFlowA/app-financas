@@ -9,7 +9,7 @@ import {
   formString,
 } from "@/lib/finance-action";
 import { hojeEmSaoPaulo } from "@/lib/date";
-import { traduzirErro } from "@/lib/error-messages";
+import { mensagemTetoSeguranca, traduzirErro } from "@/lib/error-messages";
 import { parseMoney } from "@/lib/money";
 import { descricaoTransferenciaPendenteObjetivo, descricaoVisivel, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import { createClient } from "@/lib/supabase/server";
@@ -157,6 +157,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
     return { erro: "Use entre 2 e 120 parcelas." };
   }
   if (frequency === "parcelada" && !["total", "parcela"].includes(valueMode)) return { erro: "Escolha se o valor é total ou por parcela." };
+  if (frequency === "unica" && !["paga", "pendente"].includes(requestedStatus)) return { erro: "Escolha se o lançamento foi concluído ou está pendente." };
 
   const status = frequency === "unica" && requestedStatus === "paga" ? "paga" : "pendente";
   if (status === "paga" && scheduledDate > hojeEmSaoPaulo()) return { erro: "Um lançamento futuro deve ficar pendente." };
@@ -216,7 +217,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
             conta_id: accountId,
             categoria_id: null,
           });
-          if (insertError) return { erro: "Não foi possível confirmar o agendamento. Confira o Histórico antes de tentar novamente para evitar duplicidade." };
+          if (insertError) return { erro: mensagemTetoSeguranca(insertError) ?? "Não foi possível confirmar o agendamento. Confira o Histórico antes de tentar novamente para evitar duplicidade." };
         }
       } else {
         const goalPayload: Record<string, unknown> = { operation: "guardar", goal_id: destinationGoalId, account_id: accountId, value: totalValue, description, frequency };

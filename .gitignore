@@ -22,6 +22,11 @@ expo-env.d.ts
 *.mobileprovision
 credentials.json
 service-account*.json
+# Chave de conta de serviço do Firebase (FCM V1), baixada do console
+*firebase-adminsdk*.json
+# Dumps do banco nunca devem entrar no repositório
+*.dump
+backups/
 google-services.json
 GoogleService-Info.plist
 

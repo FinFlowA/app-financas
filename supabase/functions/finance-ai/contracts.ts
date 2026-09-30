@@ -253,6 +253,7 @@ export const MODEL_OUTPUT_FORMAT = {
 export function publicErrorMessage(code: string): string {
   const messages: Record<string, string> = {
     UNAUTHORIZED: "Sua sessão expirou. Entre novamente para usar a IA financeira.",
+    AI_MFA_REQUIRED: "Digite o código da verificação em duas etapas para usar a IA financeira.",
     METHOD_NOT_ALLOWED: "Esta operação não é aceita pela IA financeira.",
     AI_CONFIGURATION_FAILED: "Não consegui acessar meus recursos financeiros agora por uma falha de configuração.",
     AI_HISTORY_FAILED: "Não consegui acessar o histórico da conversa agora.",
@@ -273,6 +274,8 @@ export function publicErrorMessage(code: string): string {
     AI_SHARED_TRANSACTION_OWNERSHIP_IMMUTABLE: "Não é possível transferir a propriedade de um lançamento compartilhado.",
     AI_DAILY_MESSAGE_LIMIT: "Você atingiu o limite diário de consultas à IA do seu plano. O acesso renova à meia-noite, no horário de Brasília.",
     AI_DAILY_SAFETY_LIMIT: "Precisei pausar meu atendimento nesta conta hoje após muitas tentativas sem conclusão. Tente novamente amanhã.",
+    // Teto de segurança por usuário do banco (auditoria V08), igual para todos os planos.
+    AI_SAFETY_LIMIT_REACHED: "Você atingiu um limite de segurança da sua conta para este tipo de item, e nenhuma alteração foi aplicada. Se precisar de mais, fale com o suporte: Finflowfinancas@gmail.com",
     AI_PROPOSAL_RATE_LIMITED: "Muitas ações foram preparadas em pouco tempo. Aguarde alguns minutos e tente novamente.",
     AI_TOO_MANY_PENDING_ACTIONS: "Você possui muitas ações aguardando confirmação. Confirme ou cancele alguma delas antes de continuar.",
     AI_IDEMPOTENCY_CONFLICT: "O pedido foi alterado durante o processamento. Envie-o novamente para gerar uma nova prévia.",

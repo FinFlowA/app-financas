@@ -26,7 +26,7 @@ function assertSameContract(clientName, edgeName) {
 }
 
 function assertSqlSafetyGuards() {
-  const migrationsRoot = path.join(projectRoot, "supabase", "migrations");
+  const migrationsRoot = path.join(projectRoot, "supabase", "migrations_archive");
   const core = fs.readFileSync(
     path.join(migrationsRoot, "20260802000100_secure_finance_ai.sql"),
     "utf8",

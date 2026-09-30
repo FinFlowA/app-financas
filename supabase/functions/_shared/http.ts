@@ -48,12 +48,31 @@ function isLocalOrigin(origin: string): boolean {
   }
 }
 
+const LOCAL_SUPABASE_HOSTS = new Set(["localhost", "127.0.0.1", "kong", "host.docker.internal"]);
+
+/**
+ * Origens localhost só valem em desenvolvimento (auditoria V11): quando a
+ * função roda no Supabase local (`supabase functions serve`, em que
+ * SUPABASE_URL aponta para o próprio computador) ou quando o secret
+ * FINFLOW_ALLOW_LOCALHOST_ORIGINS=true é ligado de propósito, por exemplo
+ * para testar o site local contra produção. Uma origem localhost exata em
+ * FINFLOW_ALLOWED_ORIGINS continua valendo, como qualquer origem configurada.
+ */
+function localOriginsAllowed(): boolean {
+  if (Deno.env.get("FINFLOW_ALLOW_LOCALHOST_ORIGINS") === "true") return true;
+  try {
+    return LOCAL_SUPABASE_HOSTS.has(new URL(Deno.env.get("SUPABASE_URL") ?? "").hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function isRequestOriginAllowed(req?: Request): boolean {
   const origin = requestOrigin(req);
   // Aplicativos nativos não enviam Origin e não dependem de CORS.
   if (origin === null) return true;
   if (origin === "invalid") return false;
-  return isLocalOrigin(origin) || configuredOrigins().has(origin);
+  return (isLocalOrigin(origin) && localOriginsAllowed()) || configuredOrigins().has(origin);
 }
 
 export function corsHeadersFor(req?: Request): Record<string, string> {

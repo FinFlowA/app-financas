@@ -4,6 +4,40 @@ Data: 18 de setembro de 2026
 Branch: `feature/paddle-live-readiness`  
 Não publicar em produção antes de concluir a verificação e aprovação do domínio live.
 
+## Atualização de 30/09/2026 — leia primeiro
+
+**Branch atualizada com a `main`.** Ela recebeu as 8 etapas da auditoria de segurança. Nada desta branch foi para a `main`, porque ela continua em trabalho até ficar pronta.
+
+- **Site da branch:** Next.js 16.3.7 e `npm audit` sem alertas. Antes da atualização, o site rodava 16.3.1, com 1 alerta crítico e 3 altos (a falha V02 da auditoria). Por isso, não publique um preview desta branch que tenha sido gerado antes de 30/09.
+- **`proxy.ts`:** o bloqueio de MFA vindo da `main` passou a usar `sameOriginUrl`, a mesma função que a branch usa para redirecionar sem sair do domínio atual.
+- **Migrations:**
+  - `20260918000400_paddle_environment_isolation.sql` saiu de `supabase/migrations/`. Ela já foi aplicada em produção (21/09), está em `supabase/migrations_archive/` e faz parte da linha de base `20260929203600`.
+  - A migration da Google Play virou `20260930171930_google_play_billing.sql`, com plano de reversão. Ela ainda **não foi aplicada** em produção. Aplique junto com a publicação da Google Play, seguindo `docs/BANCO_DE_DADOS.md`.
+- **Runtime `2.0.0-r3`:** o `expo-iap` exige um APK novo. O EAS Update do CI tem uma trava ("Conferir runtime do app.json") que impede publicar este bundle para os APKs `2.0.0-r2` e `2.0.0`, que não têm o módulo e poderiam fechar ao abrir. No merge para a `main`:
+  1. gere o APK `r3`;
+  2. atualize a matriz do job `eas-update` e o `RUNTIME_ATUAL` dessa trava;
+  3. decida o que fazer com os APKs antigos, que deixam de receber atualizações.
+- **Termos e reembolso prontos para a verificação do Paddle:**
+  - texto obrigatório da Paddle.com como Merchant of Record, em inglês e em português;
+  - vendedor pessoa física: Gabriel Henrique Alves de Lima. Confira a grafia no documento de identidade: a Privacidade e os Termos antigos usavam "Gabriel Henrique de Alves Lima";
+  - garantia de 30 dias na primeira cobrança;
+  - contato só por e-mail, por enquanto. O guia do vendedor do Paddle pede também um telefone.
+- **Bloqueio: o staging não é público.** `finflow-paddle-live-preview.vercel.app` está atrás da proteção de login da Vercel (Deployment Protection). O revisor do Paddle não consegue ver o site, o que explica os domínios pendentes, e o webhook live apontado para o staging também é barrado. Solução recomendada: um projeto separado na Vercel que publique esta branch como produção dele. Assim só ela fica pública, e os previews das outras branches continuam protegidos.
+
+### Próximos passos (roteiro do Paddle)
+
+1. **Passo 01, live account.** O catálogo, o token, a chave de API e o destino de notificação já existem (ver abaixo). Falta no painel:
+   - formas de pagamento em *Checkout settings*;
+   - dados bancários em *Payouts*;
+   - o Default payment link, depois que o domínio for aprovado.
+2. **Staging público**, para liberar a revisão do domínio e o webhook live.
+3. **Passo 02, verificação.** Você preenche no painel os dados pessoais e do negócio e informa o site público.
+4. **Passo 03, teste live** com cupom de 100%, só depois da verificação e da aprovação do domínio.
+5. **Integração com a `main`.**
+   - Atualize de novo a partir da `origin/main`.
+   - Revise a trava de runtime.
+   - Promova as variáveis live para Production junto com o apontamento do webhook para o domínio oficial.
+
 ## Retomada em outra máquina
 
 1. Clone ou atualize o repositório `FinFlowA/app-financas`.

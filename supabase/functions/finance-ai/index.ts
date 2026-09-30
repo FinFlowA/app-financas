@@ -1,5 +1,5 @@
 import { handleOptions, json } from "../_shared/http.ts";
-import { adminClient, authenticatedClient } from "../_shared/supabase.ts";
+import { adminClient, authenticatedClient, mfaSatisfied } from "../_shared/supabase.ts";
 import {
   fieldsToPayload,
   hasRemainingActionQuota,
@@ -8,7 +8,7 @@ import {
   type ConversationMessage,
   type NavigationIntent,
 } from "./contracts.ts";
-import { buildFinancialContext } from "./context.ts";
+import { buildFinancialContext, MAX_PROVIDER_CONTEXT_CHARS, MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY } from "./context.ts";
 import {
   containsSensitiveData,
   debugSafeAssistantMessageRejection,
@@ -62,7 +62,15 @@ const MAX_SCOPE_RETRY_ATTEMPTS = 1;
 // sistema absorve essa espera sozinho em vez de expor o erro ou depender do
 // usuário espaçar os envios manualmente.
 const RATE_LIMIT_RETRY_CODES = new Set(["AI_RATE_LIMITED", "AI_TEMPORARILY_PAUSED", "AI_PROVIDER_RATE_LIMITED"]);
-const RATE_LIMIT_BACKOFF_MS = 1_500;
+// Uma única espera de 1,5s nem sempre bastava: confirmado em produção que
+// duas tentativas seguidas (a chamada inicial e a única espera+retentativa)
+// devolveram AI_PROVIDER_RATE_LIMITED em sequência, obrigando o usuário a
+// reenviar a mesma pergunta manualmente. O teto de tokens/minuto da Groq é
+// compartilhado por toda a base e sua janela pode levar dezenas de segundos
+// para liberar espaço. Um backoff crescente ao longo de até ~18s cobre a
+// maioria dos picos transitórios sem expor o erro, mantendo o total baixo o
+// bastante para não parecer que o app travou (a tela já mostra "digitando").
+const RATE_LIMIT_BACKOFF_SCHEDULE_MS = [1_500, 3_000, 5_000, 8_000];
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -196,21 +204,30 @@ function clientAccountBalances(compactJson: string): ClientAccountBalancesCard |
 }
 
 const WEEKLY_CATEGORY_SPEND_VERB = /\b(?:gastei|gastou|gasto|recebi|recebeu|ganhei|ganhou)\b/;
-const WEEKLY_CATEGORY_SPEND_WINDOW = /\b(?:ultima semana|essa semana|esta semana|semana passada|ultimos 7 dias)\b/;
+// "Semana" no FinFlow é domingo a sábado (ver startOfWeekSunday em
+// context.ts), não uma janela deslizante de 7 dias -- por isso "essa
+// semana"/"esta semana" (semana civil em andamento, domingo até hoje) e
+// "última semana"/"semana passada" (semana civil anterior completa) usam
+// janelas diferentes e precisam de dois padrões separados aqui.
+const WEEKLY_CATEGORY_SPEND_WINDOW_CURRENT = /\b(?:essa semana|esta semana)\b/;
+const WEEKLY_CATEGORY_SPEND_WINDOW_PREVIOUS = /\b(?:ultima semana|semana passada)\b/;
 
 function formatMoneyBRL(value: number): string {
   return `R$ ${value.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-// recent_week_category_totals (ver context.ts) já traz o total por categoria
-// dos últimos 7 dias calculado no banco. Resolve a categoria citada na
-// pergunta ATUAL (nunca o histórico concatenado, mesmo motivo do cartão de
-// saldo) e monta a frase aqui — só quando exatamente uma categoria bate,
-// para nunca arriscar citar a errada por ambiguidade.
+// week_category_totals (ver context.ts) já traz o total por categoria da
+// semana civil calculado no banco, tanto para a semana atual quanto para a
+// anterior. Resolve a categoria citada na pergunta ATUAL (nunca o histórico
+// concatenado, mesmo motivo do cartão de saldo) e monta a frase aqui — só
+// quando exatamente uma categoria bate, para nunca arriscar citar a errada
+// por ambiguidade.
 function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: string): string | null {
   if (!/\bquanto\b/.test(normalizedMessage)) return null;
   if (!WEEKLY_CATEGORY_SPEND_VERB.test(normalizedMessage)) return null;
-  if (!WEEKLY_CATEGORY_SPEND_WINDOW.test(normalizedMessage)) return null;
+  const isCurrentWeek = WEEKLY_CATEGORY_SPEND_WINDOW_CURRENT.test(normalizedMessage);
+  const isPreviousWeek = WEEKLY_CATEGORY_SPEND_WINDOW_PREVIOUS.test(normalizedMessage);
+  if (isCurrentWeek === isPreviousWeek) return null;
   let parsed: JsonRecord;
   try {
     parsed = asObject(JSON.parse(compactJson));
@@ -226,19 +243,374 @@ function weeklyCategorySpendAnswer(compactJson: string, normalizedMessage: strin
     .filter((row) => row.name.length >= 3 && normalizedMessage.includes(normalizeText(row.name)));
   if (matches.length !== 1) return null;
   const category = matches[0];
-  const rawWindow = parsed.recent_week_category_totals;
+  const rawComparison = parsed.week_category_totals;
+  if (!rawComparison || typeof rawComparison !== "object") return null;
+  const rawWindow = (rawComparison as JsonRecord)[isCurrentWeek ? "current_week" : "previous_week"];
   if (!rawWindow || typeof rawWindow !== "object") return null;
   const byCategoryRaw = (rawWindow as JsonRecord).by_category;
   const byCategory = Array.isArray(byCategoryRaw) ? byCategoryRaw.map((row) => asObject(row)) : [];
   const entry = byCategory.find((row) => stringOrNull(row.category) === category.name);
   const total = entry ? numberOrNull(entry.total) ?? 0 : 0;
+  const timeframe = isCurrentWeek ? "essa semana" : "na semana passada";
+  const sentencePrefix = isCurrentWeek ? "Essa semana" : "Na semana passada";
   if (total <= 0) {
     return category.type === "receita"
-      ? `Você não recebeu nada de ${category.name} na última semana.`
-      : `Você não teve gastos com ${category.name} na última semana.`;
+      ? `Você não recebeu nada de ${category.name} ${timeframe}.`
+      : `Você não teve gastos com ${category.name} ${timeframe}.`;
   }
   const verb = category.type === "receita" ? "recebeu" : "gastou";
-  return `Na última semana você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
+  return `${sentencePrefix} você ${verb} ${formatMoneyBRL(total)} com ${category.name}.`;
+}
+
+const MONTH_NAMES_PT: readonly string[] = [
+  "janeiro", "fevereiro", "março", "abril", "maio", "junho",
+  "julho", "agosto", "setembro", "outubro", "novembro", "dezembro",
+];
+
+function displayDateBR(isoDate: string): string {
+  return `${isoDate.slice(8, 10)}/${isoDate.slice(5, 7)}/${isoDate.slice(0, 4)}`;
+}
+
+// "Qual foi o meu maior gasto em agosto?" seguido de "E a menor?" -- a
+// direção muda mas a pergunta de acompanhamento não repete "gasto"/
+// "despesa". Resolve cada campo (direção, tipo) pela pergunta ATUAL
+// primeiro; só recorre à mensagem anterior quando a atual não decide
+// sozinha (nenhuma palavra do par apareceu) -- nunca quando a atual já é
+// ambígua sozinha (as duas palavras do par apareceram nela).
+function resolveFromCurrentThenPrevious(
+  currentNormalized: string,
+  previousNormalized: string,
+  patternA: RegExp,
+  patternB: RegExp,
+): boolean | null {
+  const currentA = patternA.test(currentNormalized);
+  const currentB = patternB.test(currentNormalized);
+  if (currentA !== currentB) return currentA;
+  if (currentA && currentB) return null;
+  const previousA = patternA.test(previousNormalized);
+  const previousB = patternB.test(previousNormalized);
+  return previousA !== previousB ? previousA : null;
+}
+
+// month_extreme_transactions (ver context.ts) já calcula no banco o
+// lançamento de maior/menor valor do mês em foco. relevant_transactions
+// cabe só uma amostra limitada por orçamento de contexto — um mês ativo
+// pode ter bem mais lançamentos que essa amostra, e o de maior/menor valor
+// podia nem estar nela (confirmado em produção: "Qual foi meu maior gasto
+// em agosto?" com um mês de 79 lançamentos, dos quais só ~24 cabiam na
+// amostra). Resolve o tipo (despesa/receita) e a direção (maior/menor) e
+// monta a frase a partir do valor já calculado, sem depender do modelo
+// escolher entre uma lista parcial.
+function monthlyExtremeTransactionAnswer(compactJson: string, normalizedMessage: string, previousNormalizedMessage: string): string | null {
+  // A mensagem anterior só preenche o que falta numa continuação real; se a
+  // pergunta ATUAL não tiver nenhuma palavra do assunto (nem direção, nem
+  // tipo), não é uma continuação -- é um pedido novo e não relacionado, que
+  // não pode herdar "maior"/"despesa" de uma pergunta antiga só porque ela
+  // ficou nas últimas mensagens (bug real: "Quanto gastei no Uber?" logo
+  // após "Qual foi o meu maior gasto em agosto?" respondia com o maior
+  // gasto do mês inteiro, ignorando a pergunta sobre Uber).
+  const currentHasAnySignal = /\b(?:maior|menor|mais car[oa]|mais barat[oa]|gasto|despesa|compra|receita)\b/.test(normalizedMessage);
+  if (!currentHasAnySignal) return null;
+  const isMax = resolveFromCurrentThenPrevious(
+    normalizedMessage, previousNormalizedMessage,
+    /\b(?:maior|mais car[oa])\b/, /\b(?:menor|mais barat[oa])\b/,
+  );
+  if (isMax === null) return null;
+  const isExpense = resolveFromCurrentThenPrevious(
+    normalizedMessage, previousNormalizedMessage,
+    /\b(?:gasto|despesa|compra)\b/, /\breceita\b/,
+  );
+  if (isExpense === null) return null;
+  const isIncome = !isExpense;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const extremes = asObject(parsed.month_extreme_transactions);
+  const key = `${isIncome ? "income" : "expense"}_${isMax ? "max" : "min"}`;
+  const entry = asObject(extremes[key]);
+  const value = numberOrNull(entry.value);
+  const description = stringOrNull(entry.description);
+  const date = stringOrNull(entry.date);
+  const focusMonth = stringOrNull(parsed.focus_month);
+  const monthLabel = focusMonth && /^\d{4}-\d{2}$/.test(focusMonth)
+    ? ` em ${MONTH_NAMES_PT[Number(focusMonth.slice(5, 7)) - 1]}`
+    : "";
+  const noun = isIncome ? "receita" : "despesa";
+  if (value === null || !description || !date) {
+    return `Não encontrei nenhuma ${noun}${monthLabel} para identificar a ${isMax ? "maior" : "menor"}.`;
+  }
+  const superlative = isMax ? "maior" : "menor";
+  return `Sua ${superlative} ${noun}${monthLabel} foi "${description}", de ${formatMoneyBRL(value)}, em ${displayDateBR(date)}.`;
+}
+
+const CATEGORY_MONTH_COMPARISON_PREVIOUS_MONTH = /\bmes\s+(?:passado|anterior)\b/;
+const CATEGORY_MONTH_COMPARISON_VERB = /\b(?:compar|aument|diminui|subiu|subir|caiu|cair|cresceu|reduziu|variacao|diferenca)\w*\b/;
+
+// category_month_comparison (ver context.ts) já traz o total por categoria
+// do mês atual e do mês passado calculado no banco -- nenhum outro agregado
+// cobre isso (categories_by_year soma o ANO inteiro por categoria;
+// month_summary não abre por categoria). Resolve a categoria citada na
+// pergunta ATUAL (mesmo motivo dos outros atalhos determinísticos) e monta
+// a comparação a partir dos totais já calculados, sem depender do modelo
+// separar e somar relevant_transactions de cabeça em duas janelas.
+function categoryMonthComparisonAnswer(compactJson: string, normalizedMessage: string): string | null {
+  if (!CATEGORY_MONTH_COMPARISON_PREVIOUS_MONTH.test(normalizedMessage)) return null;
+  if (!CATEGORY_MONTH_COMPARISON_VERB.test(normalizedMessage)) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const rawCategories = parsed.categories;
+  if (!Array.isArray(rawCategories)) return null;
+  const matches = rawCategories
+    .map((row) => asObject(row))
+    .filter((row) => row.active !== false)
+    .map((row) => ({ name: stringOrNull(row.name) ?? "", type: stringOrNull(row.type) ?? "" }))
+    .filter((row) => row.name.length >= 3 && normalizedMessage.includes(normalizeText(row.name)));
+  if (matches.length !== 1) return null;
+  const category = matches[0];
+  const comparison = asObject(parsed.category_month_comparison);
+  const currentMonthData = asObject(comparison.current_month);
+  const previousMonthData = asObject(comparison.previous_month);
+  const currentByCategoryRaw = currentMonthData.by_category;
+  const previousByCategoryRaw = previousMonthData.by_category;
+  if (!Array.isArray(currentByCategoryRaw) || !Array.isArray(previousByCategoryRaw)) return null;
+  const currentByCategory = currentByCategoryRaw.map((row) => asObject(row));
+  const previousByCategory = previousByCategoryRaw.map((row) => asObject(row));
+  const currentEntry = currentByCategory.find((row) => stringOrNull(row.category) === category.name);
+  const previousEntry = previousByCategory.find((row) => stringOrNull(row.category) === category.name);
+  const currentTotal = currentEntry ? numberOrNull(currentEntry.total) ?? 0 : 0;
+  const previousTotal = previousEntry ? numberOrNull(previousEntry.total) ?? 0 : 0;
+  const noun = category.type === "receita" ? "recebimentos" : "gastos";
+  if (currentTotal <= 0 && previousTotal <= 0) {
+    return `Você não teve ${noun} com ${category.name} neste mês nem no mês passado.`;
+  }
+  if (previousTotal <= 0) {
+    return `No mês passado você não teve ${noun} com ${category.name}; neste mês, o total foi ${formatMoneyBRL(currentTotal)}.`;
+  }
+  if (currentTotal <= 0) {
+    return `Neste mês você ainda não teve ${noun} com ${category.name}, contra ${formatMoneyBRL(previousTotal)} no mês passado.`;
+  }
+  const delta = currentTotal - previousTotal;
+  const percent = (Math.abs(delta) / previousTotal) * 100;
+  const percentLabel = percent.toLocaleString("pt-BR", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  if (delta === 0) {
+    return `Seus ${noun} com ${category.name} ficaram iguais em relação ao mês passado: ${formatMoneyBRL(currentTotal)} nos dois meses.`;
+  }
+  const direction = delta > 0 ? "aumentaram" : "diminuíram";
+  return `Seus ${noun} com ${category.name} ${direction} ${percentLabel}% em relação ao mês passado: ${formatMoneyBRL(currentTotal)} neste mês contra ${formatMoneyBRL(previousTotal)} no mês passado.`;
+}
+
+// Bug real: "Comparado no mês passado, meus gastos com transportes
+// aumentaram ou diminuiram?" caía aqui em vez de em
+// categoryMonthComparisonAnswer() -- o \w* solto depois de cada infinitivo
+// também combina com a flexão de pretérito perfeito plural da própria
+// pergunta (diminuir+am = diminuíram, reduzir+am = reduziram, cortar+am =
+// cortaram, economizar+am = economizaram, todas normalizadas sem acento),
+// então uma pergunta descrevendo o que JÁ aconteceu era lida como um pedido
+// de corte de gastos. Esta função roda ANTES do modelo (ver
+// categorySpendRankingDeterministicAnswer) e responde de forma
+// determinística, então o desvio nunca chegava a
+// categoryMonthComparisonAnswer(), que já tinha a lógica certa. O
+// lookahead barra só essa flexão "-am", sem afetar infinitivo, imperativo
+// ("corte", "reduza", "diminua", "economize") ou qualquer sufixo legítimo.
+const CUT_SPENDING_VERB = /\b(?:cortar(?!am\b)|corte|reduzir(?!am\b)|reduza|diminuir(?!am\b)|diminua|economizar(?!am\b)|economize)\w*\b/;
+const SPENDING_AREA_NOUN = /\b(?:area|areas|categoria|categorias|gasto|gastos|despesa|despesas)\b/;
+const CATEGORY_RANKING_COUNT_WORDS: Record<string, number> = {
+  uma: 1, um: 1, duas: 2, dois: 2, tres: 3, quatro: 4, cinco: 5, seis: 6,
+};
+
+function parseRequestedCategoryCount(normalizedMessage: string): number {
+  const digitMatch = normalizedMessage.match(/\b([1-9])\b/);
+  if (digitMatch) return Number(digitMatch[1]);
+  for (const [word, value] of Object.entries(CATEGORY_RANKING_COUNT_WORDS)) {
+    if (new RegExp(`\\b${word}\\b`).test(normalizedMessage)) return value;
+  }
+  return 3;
+}
+
+// "Identifique três áreas onde eu posso cortar gastos para economizar no
+// próximo mês" pede um RANKING de categorias por gasto do mês -- não existe
+// em nenhum agregado pronto (categories_by_year soma o ANO inteiro por
+// categoria; month_summary não abre por categoria). Sem um ranking
+// calculado, o modelo tenta montar a lista sozinho a partir dos números
+// disponíveis e erra a seleção (bug real: recomendou uma categoria que era
+// só a 5ª maior, pulando duas categorias maiores que ele tinha o dado mas
+// não usou). Reaproveita o mesmo total por categoria do mês atual já
+// calculado para category_month_comparison, só que para TODAS as
+// categorias de despesa em vez de uma específica, ordenadas aqui de forma
+// determinística.
+function categorySpendRankingAnswer(compactJson: string, normalizedMessage: string): string | null {
+  if (!CUT_SPENDING_VERB.test(normalizedMessage)) return null;
+  if (!SPENDING_AREA_NOUN.test(normalizedMessage)) return null;
+  let parsed: JsonRecord;
+  try {
+    parsed = asObject(JSON.parse(compactJson));
+  } catch {
+    return null;
+  }
+  const byCategoryRaw = asObject(asObject(parsed.category_month_comparison).current_month).by_category;
+  if (!Array.isArray(byCategoryRaw)) return null;
+  const rawCategories = parsed.categories;
+  if (!Array.isArray(rawCategories)) return null;
+  const expenseCategoryNames = new Set(
+    rawCategories
+      .map((row) => asObject(row))
+      .filter((row) => row.active !== false && row.type === "despesa")
+      .map((row) => stringOrNull(row.name))
+      .filter((name): name is string => Boolean(name)),
+  );
+  const ranked = byCategoryRaw
+    .map((row) => asObject(row))
+    .map((row) => ({ category: stringOrNull(row.category) ?? "", total: numberOrNull(row.total) ?? 0 }))
+    .filter((row) => expenseCategoryNames.has(row.category) && row.total > 0)
+    .sort((left, right) => right.total - left.total);
+  if (ranked.length === 0) return null;
+  const requestedCount = parseRequestedCategoryCount(normalizedMessage);
+  const top = ranked.slice(0, Math.min(requestedCount, ranked.length, 10));
+
+  // Só o total da categoria é conselho genérico demais ("corte gastos
+  // aqui") -- citar o maior lançamento genuíno dela dá um alvo concreto
+  // de revisão, calculado no banco (category_top_transactions), não
+  // escolhido pelo modelo a partir de uma amostra parcial.
+  const topTransactionByCategory = new Map<string, { description: string; value: number; date: string }>();
+  const rawTopTransactions = parsed.category_top_transactions;
+  if (Array.isArray(rawTopTransactions)) {
+    for (const row of rawTopTransactions) {
+      const entry = asObject(row);
+      const category = stringOrNull(entry.category);
+      const description = stringOrNull(entry.description);
+      const value = numberOrNull(entry.value);
+      const date = stringOrNull(entry.date);
+      if (category && description && value !== null && date) {
+        topTransactionByCategory.set(category, { description, value, date });
+      }
+    }
+  }
+
+  // A tela não renderiza markdown nem separa itens por hífen/travessão (ver
+  // prompt.ts) -- ela só destaca automaticamente valores/datas e quebra a
+  // mensagem em blocos visuais a cada limite de frase (". " seguido de
+  // maiúscula). Uma frase por categoria, sem travessão, aproveita essa
+  // quebra automática em vez de virar um parágrafo único cheio de ponto e
+  // vírgula.
+  const categoryList = top.map((row) => `${row.category} (${formatMoneyBRL(row.total)})`);
+  const summary = categoryList.length > 1
+    ? `${categoryList.slice(0, -1).join(", ")} e ${categoryList[categoryList.length - 1]}`
+    : categoryList[0];
+  // Cada frase precisa fechar com uma recomendação de corte explícita --
+  // só relatar "o maior gasto foi X" sem dizer o que fazer com isso deixa
+  // a pergunta original ("onde posso cortar gastos") sem resposta direta.
+  // Repetir a mesma frase de recomendação em toda categoria soa repetitivo
+  // (bug real apontado pelo usuário) -- alterna entre algumas variações,
+  // nunca repetindo a mesma na categoria seguinte.
+  const CUT_RECOMMENDATION_VARIANTS = [
+    "considere cortar ou reduzir esse gasto primeiro",
+    "vale a pena rever esse gasto para economizar",
+    "esse é um bom ponto de partida para cortar",
+    "priorize esse item se quiser economizar",
+    "avalie se dá para reduzir ou eliminar esse gasto",
+  ];
+  const categorySentences = top.map((row, index) => {
+    const recommendation = CUT_RECOMMENDATION_VARIANTS[index % CUT_RECOMMENDATION_VARIANTS.length];
+    const highlight = topTransactionByCategory.get(row.category);
+    if (!highlight) return `Em ${row.category}, ${recommendation}.`;
+    return `Em ${row.category}, o maior gasto foi ${highlight.description}, de ${formatMoneyBRL(highlight.value)}, em ${displayDateBR(highlight.date)}; ${recommendation}.`;
+  });
+  return [`As categorias com maior gasto neste mês são ${summary}.`, ...categorySentences].join(" ");
+}
+
+// categorySpendRankingAnswer() sempre SUBSTITUI a resposta do modelo quando
+// dá match -- chamar o modelo antes só pra descartar o resultado gastava
+// tokens à toa e, pior, bug real: essa pergunta busca category_month_comparison
+// (totais de duas janelas de mês) + category_top_transactions (maior
+// lançamento por categoria) inteiros, o que deixa o contexto grande o
+// bastante pra, em alguns casos, o provedor rejeitar a requisição com 400
+// (AI_PROVIDER_REQUEST_INVALID) -- sem nenhum benefício, já que a resposta
+// do modelo seria jogada fora de qualquer jeito. Vira resposta determinística
+// ANTES da chamada ao modelo, no mesmo padrão de deterministicDatedAnswer().
+function categorySpendRankingDeterministicAnswer(
+  compactJson: string,
+  normalizedMessage: string,
+  outputCanary: string,
+): { message: string; intent: "financial_summary" } | null {
+  const rankingMessage = categorySpendRankingAnswer(compactJson, normalizedMessage);
+  if (!rankingMessage) return null;
+  const safeMessage = safeAssistantMessage(rankingMessage, "financial_summary", "answer", outputCanary);
+  return safeMessage ? { message: safeMessage, intent: "financial_summary" } : null;
+}
+
+function parseBrazilianAmount(raw: string): number | null {
+  const cleaned = raw.replace(/\./g, "").replace(",", ".");
+  const value = Number(cleaned);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+function parseInterestRate(normalizedMessage: string): { percent: number; isMonthly: boolean } | null {
+  const direct = normalizedMessage.match(/(\d+(?:[.,]\d+)?)\s*%\s*(?:ao\s+)?(mes|ano)\b/);
+  if (direct) {
+    const percent = Number(direct[1].replace(",", "."));
+    return Number.isFinite(percent) && percent > 0 ? { percent, isMonthly: direct[2] === "mes" } : null;
+  }
+  const worded = normalizedMessage.match(/taxa\s+(?:de\s+juros\s+)?(mensal|anual)[^%\d]{0,20}?(\d+(?:[.,]\d+)?)\s*%/);
+  if (worded) {
+    const percent = Number(worded[2].replace(",", "."));
+    return Number.isFinite(percent) && percent > 0 ? { percent, isMonthly: worded[1] === "mensal" } : null;
+  }
+  return null;
+}
+
+// "Calcule o impacto dos juros compostos se eu atrasar a fatura do cartão
+// de crédito de R$ 2.000 por 15 dias" -- pergunta hipotética sem nenhum
+// dado real da conta envolvido, só a aritmética de juros compostos sobre os
+// números que a própria pergunta fornece. Bug real: o modelo respondeu um
+// acréscimo de R$ 154, quando o correto pela própria taxa que ele citou
+// (5% ao mês) é ~R$ 49 -- composição diária é aritmética determinística,
+// não deveria depender do modelo acertar. Quando a pergunta não informa
+// nenhuma taxa (como no bug real), o modelo estava simplesmente inventando
+// uma -- aqui a resposta pede a taxa em vez de arriscar assumir um número
+// que ninguém informou.
+function compoundInterestDelayAnswer(normalizedMessage: string): { message: string; intent: "financial_summary" } | null {
+  if (!/\bjuros\s+compostos?\b/.test(normalizedMessage)) return null;
+  const amountMatch = normalizedMessage.match(/r\$\s*([\d.,]+)/);
+  const daysMatch = normalizedMessage.match(/\b(\d{1,4})\s*dias?\b/);
+  if (!amountMatch || !daysMatch) return null;
+  const principal = parseBrazilianAmount(amountMatch[1]);
+  const days = Number(daysMatch[1]);
+  if (principal === null || !Number.isFinite(days) || days <= 0 || days > 3650) return null;
+
+  const rate = parseInterestRate(normalizedMessage);
+  const daysLabel = days === 1 ? "dia" : "dias";
+  if (!rate) {
+    return {
+      message: `Para calcular o impacto dos juros compostos em ${formatMoneyBRL(principal)} por ${days} ${daysLabel}, preciso saber a taxa de juros a considerar (normalmente informada na fatura como juros rotativo ou CET). Qual taxa mensal ou anual devo usar?`,
+      intent: "financial_summary",
+    };
+  }
+  const periodDays = rate.isMonthly ? 30 : 365;
+  const dailyRate = Math.pow(1 + rate.percent / 100, 1 / periodDays) - 1;
+  const total = principal * Math.pow(1 + dailyRate, days);
+  const extra = total - principal;
+  const rateLabel = rate.percent.toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  return {
+    message: `Com juros compostos diários a uma taxa de ${rateLabel}% ao ${rate.isMonthly ? "mês" : "ano"}, um atraso de ${days} ${daysLabel} em uma fatura de ${formatMoneyBRL(principal)} gera um acréscimo de aproximadamente ${formatMoneyBRL(extra)}, resultando em um total de aproximadamente ${formatMoneyBRL(total)}.`,
+    intent: "financial_summary",
+  };
+}
+
+function compoundInterestDeterministicAnswer(
+  normalizedMessage: string,
+  outputCanary: string,
+): { message: string; intent: "financial_summary" } | null {
+  const answer = compoundInterestDelayAnswer(normalizedMessage);
+  if (!answer) return null;
+  const safeMessage = safeAssistantMessage(answer.message, "financial_summary", "answer", outputCanary);
+  return safeMessage ? { message: safeMessage, intent: "financial_summary" } : null;
 }
 
 type OperationalReferences = Pick<JsonRecord, "accounts" | "categories" | "goals" | "cards">;
@@ -341,7 +713,11 @@ function clarificationChoices(
     .slice(0, 30);
 }
 
-function deterministicDatedAnswer(message: string, compactJson: string): { message: string; intent: "cash_flow" | "list_transactions" } | null {
+function deterministicDatedAnswer(
+  message: string,
+  compactJson: string,
+  currentMessage: string = message,
+): { message: string; intent: "cash_flow" | "list_transactions" } | null {
   let context: JsonRecord;
   try {
     context = asObject(JSON.parse(compactJson));
@@ -349,6 +725,28 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
     return null;
   }
   const normalized = normalizeText(message);
+  // Bug real: "eu vou conseguir poupar R$ 500 até o dia 30?" foi tratado
+  // como pedido de lista de lançamentos agendados porque a mensagem
+  // anterior na conversa era "Quais dias?" -- "quais" vazou pelo texto
+  // concatenado (message) e acionou asksItems por engano. Qual TIPO de
+  // pergunta datada é esta só pode vir da pergunta ATUAL; o texto
+  // concatenado continua servindo só para extrair a data em si (ex.: uma
+  // referência de dia feita num turno anterior).
+  const currentNormalized = normalizeText(currentMessage);
+  // Bug real: "Se eu investir R$ 300 por mês a uma taxa de 10% ao ano,
+  // quanto terei em 5 anos?" (uma conta de juros compostos hipotética, sem
+  // nenhuma relação com o saldo real da conta) respondeu "Em 01/10/2026,
+  // seu saldo projetado é R$ 636,87" -- "quanto terei" é a mesma frase
+  // usada pelo ramo de saldo projetado numa data (mais abaixo), e como a
+  // pergunta não cita nenhuma data explícita, o código caía no fallback de
+  // "só existe um dia em daily_cash_flow, deve ser esse" mesmo a pergunta
+  // não tendo nada a ver com uma data real. Uma pergunta de investimento
+  // hipotético (taxa/rendimento/juros informados na própria pergunta) é um
+  // cálculo matemático, não uma projeção do saldo real -- não é o domínio
+  // desta função.
+  if (/\binvestir\b|\btaxa\s+de\s+\d|\d+\s*%\s*(?:ao\s+)?(?:ano|m[êe]s)|\bjuros\s+compostos?\b/.test(currentNormalized)) {
+    return null;
+  }
   const daily = Array.isArray(context.daily_cash_flow) ? context.daily_cash_flow.map(asObject) : [];
   const monthNames: Record<string, string> = {
     janeiro: "01", fevereiro: "02", marco: "03", abril: "04", maio: "05", junho: "06",
@@ -370,7 +768,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
   }
 
   const money = (value: unknown) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
-  const asksFutureExpenseByName = /\bquanto\b.*\b(?:vou\s+)?gastar\b/.test(normalized);
+  const asksFutureExpenseByName = /\bquanto\b.*\b(?:vou\s+)?gastar\b/.test(currentNormalized);
   if (asksFutureExpenseByName && requestedDate) {
     const ignoredWords = new Set([
       "quanto", "vou", "gastar", "gasto", "despesa", "despesas", "ate", "fim", "ano", "mes",
@@ -411,7 +809,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
   const date = String(row.date ?? "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
   const displayDate = `${date.slice(8, 10)}/${date.slice(5, 7)}/${date.slice(0, 4)}`;
-  const conditionalExclusion = /(nao\s+(?:vou\s+)?(?:gastar|pagar|receber)|\bsem\b|desconsider|retir|exclu)/.test(normalized);
+  const conditionalExclusion = /(nao\s+(?:vou\s+)?(?:gastar|pagar|receber)|\bsem\b|desconsider|retir|exclu)/.test(currentNormalized);
   if (conditionalExclusion) {
     const ignoredWords = new Set([
       "quanto", "conta", "saldo", "sera", "terei", "gastar", "pagar", "receber", "dia", "mes",
@@ -461,7 +859,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
     }
     return null;
   }
-  const asksItems = /(o que|quais|lancamento|agend|programad|calendario|agenda)/.test(normalized);
+  const asksItems = /(o que|quais|lancamento|agend|programad|calendario|agenda)/.test(currentNormalized);
 
   if (asksItems) {
     const transactions = (Array.isArray(context.relevant_transactions) ? context.relevant_transactions : [])
@@ -479,7 +877,7 @@ function deterministicDatedAnswer(message: string, compactJson: string): { messa
     return { message: `Em ${displayDate}: ${details.join("; ")}.${suffix}`, intent: "list_transactions" };
   }
 
-  if (/(saldo|quanto terei|quanto vou ter|previs)/.test(normalized)) {
+  if (/(saldo|quanto terei|quanto vou ter|previs)/.test(currentNormalized)) {
     const projected = Boolean(row.balance_is_projection);
     return {
       message: `Em ${displayDate}, seu saldo ${projected ? "projetado" : "realizado"} é ${money(row.account_balance)}.`,
@@ -591,13 +989,23 @@ function isDraftCancellation(message: string): boolean {
   return /^(cancelar?|cancela|desistir|desisto|deixa pra la|esquece|nao quero|vamos falar de outra coisa|quero mudar de assunto)(?:[.!\s]|$)/.test(normalizeText(message));
 }
 
+const MUTATION_VERBS = "crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir";
+
 function isLikelyMutationRequest(message: string): boolean {
   const normalized = normalizeText(message);
   if (/\b(como|posso|onde|qual a forma)\b/.test(normalized)) return false;
+  // Bug real: "Analise meus dados financeiros atuais... sem criar ou
+  // alterar nenhum registro" foi tratado como pedido de mutação porque
+  // "criar"/"alterar" aparecem na frase -- o regex de verbos de ação não
+  // tinha noção de negação, então ignorava o "sem" logo antes. Isso jogou
+  // um pedido puramente informativo pro caminho operacional (orçamento de
+  // contexto mais apertado, prompt voltado a criar/editar registros), e o
+  // modelo respondeu como se não houvesse nenhum dado financeiro.
+  if (new RegExp(`\\bsem\\s+(?:\\w+\\s+){0,4}(?:${MUTATION_VERBS})\\w*`).test(normalized)) return false;
   if (!/\b(quanto|qual|mostre|liste|compare)\b/.test(normalized)
       && /\b(gastei|paguei|comprei|recebi|ganhei)\b/.test(normalized)
       && /(?:r\$\s*)?\d/.test(normalized)) return true;
-  return /(crie|criar|adicione|adicionar|lance|lancar|registre|registrar|edite|editar|altere|alterar|apague|apagar|exclua|excluir|arquive|arquivar|reative|reativar|conclua|concluir|pague|pagar|transfira|transferir|guarde|guardar|resgate|resgatar|reabra|reabrir)/.test(normalized)
+  return new RegExp(`(?:${MUTATION_VERBS})`).test(normalized)
     && /(conta|categoria|objetiv|caixinha|lanc|transa|receit|despes|cartao|compra|fatura|transfer)/.test(normalized);
 }
 
@@ -919,10 +1327,11 @@ function errorStatus(code: string): number {
   if (code === "AI_PROVIDER_REQUEST_TOO_LARGE") return 413;
   if (code === "AI_TEMPORARILY_PAUSED") return 503;
   if (["AI_RATE_LIMITED", "AI_DAILY_MESSAGE_LIMIT", "AI_DAILY_SAFETY_LIMIT", "AI_DAILY_QUOTA_EXCEEDED", "AI_DAILY_LIMIT_REACHED", "AI_PROVIDER_RATE_LIMITED", "AI_PROPOSAL_RATE_LIMITED"].includes(code)) return 429;
-  if (["AI_NOT_AVAILABLE", "AI_PLAN_REQUIRED", "AI_ANALYTICS_PLAN_REQUIRED", "AI_PLAN_RESOURCE_LIMIT"].includes(code)) return 403;
+  if (["AI_NOT_AVAILABLE", "AI_PLAN_REQUIRED", "AI_ANALYTICS_PLAN_REQUIRED", "AI_PLAN_RESOURCE_LIMIT", "AI_MFA_REQUIRED"].includes(code)) return 403;
   if (code === "AI_ACTION_NOT_FOUND" || code === "PENDING_ACTION_NOT_FOUND" || code.includes("_NOT_FOUND")) return 404;
   if (code === "INVALID_REQUEST" || code === "AI_SENSITIVE_DATA_REJECTED" || code.startsWith("INVALID_") || code.startsWith("AI_INVALID_") || code.startsWith("AI_MISSING_")) return 400;
-  if (code === "AI_ACTION_STATE_CHANGED") return 409;
+  // 409 encerra a prévia no app: repetir a confirmação esbarraria no mesmo teto.
+  if (code === "AI_ACTION_STATE_CHANGED" || code === "AI_SAFETY_LIMIT_REACHED") return 409;
   if ([
     "AI_ACTION_EXPIRED", "AI_ACTION_CANCELLED", "AI_ACTION_NOT_EXECUTABLE", "AI_ACTION_NOT_CANCELLABLE",
     "AI_IDEMPOTENCY_CONFLICT", "AI_INSUFFICIENT_GOAL_BALANCE",
@@ -947,6 +1356,9 @@ Deno.serve(async (req) => {
     const client = authenticatedClient(req);
     const { data: authData, error: authError } = await client.auth.getUser();
     if (authError || !authData.user) throw new Error("UNAUTHORIZED");
+    // Histórico e limpeza usam a service_role; sem esta checagem uma sessão
+    // que ainda não digitou o código da verificação em duas etapas leria o chat.
+    if (!mfaSatisfied(authData.user, req.headers.get("Authorization") ?? "")) throw new Error("AI_MFA_REQUIRED");
     const user = authData.user;
     const body = await parseRequest(req);
     const mode = requestMode(body.mode);
@@ -1089,6 +1501,15 @@ Deno.serve(async (req) => {
         contextRequest,
         user.id,
         safeMessage,
+        // O caminho operacional (mutationRequested) embute este JSON dentro
+        // de buildSystemPrompt, que já está perto do teto de caracteres do
+        // provedor sozinho -- precisa do teto apertado de 4K. O prompt
+        // somente-leitura (buildReadOnlySystemPrompt) é bem mais enxuto e
+        // sobrava muito espaço não usado com o mesmo teto de 4K, a ponto de
+        // a rede de segurança final de serializeContextWithinBudget zerar
+        // categories/week_category_totals para contas com mais de
+        // um ano de histórico mesmo sem o pedido precisar de tanto dado.
+        mutationRequested ? MAX_PROVIDER_CONTEXT_CHARS : MAX_PROVIDER_CONTEXT_CHARS_READ_ONLY,
       );
       const operationalReferences = mutationRequested
         ? await loadOperationalReferences(client)
@@ -1179,7 +1600,11 @@ Deno.serve(async (req) => {
 
       const deterministicAnswer = fallbackProductGuidance(safeMessage)
         ?? await deterministicNamedFutureExpense(client, safeMessage)
-        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson);
+        ?? deterministicDatedAnswer(semanticMessage, financialContext.compactJson, safeMessage)
+        ?? (!mutationRequested ? compoundInterestDeterministicAnswer(normalizeText(safeMessage), outputCanary) : null)
+        ?? (!mutationRequested
+          ? categorySpendRankingDeterministicAnswer(financialContext.compactJson, normalizeText(safeMessage), outputCanary)
+          : null);
       if (deterministicAnswer) {
         conversation = existingConversation ?? await getOrCreateConversation(admin, user.id, body.conversationId);
         await saveMessage(admin, { userId: user.id, conversationId: conversation.id, role: "user", content: safeMessage });
@@ -1255,19 +1680,20 @@ Deno.serve(async (req) => {
     // compartilhado, não um problema com a pergunta em si -- confirmado em
     // produção que a chamada INICIAL (não só a tentativa extra de escopo, já
     // tratada mais abaixo) pode esbarrar nisso e devolver
-    // AI_PROVIDER_RATE_LIMITED direto ao usuário. Uma única espera+nova
-    // tentativa aqui evita expor esse detalhe interno sem custar uma segunda
-    // reserva de cota: é a mesma chamada, não uma tentativa de classificação.
-    let usedRateLimitBackoff = false;
+    // AI_PROVIDER_RATE_LIMITED direto ao usuário. Uma espera+nova tentativa
+    // ao longo de todo o RATE_LIMIT_BACKOFF_SCHEDULE_MS evita expor esse
+    // detalhe interno sem custar uma segunda reserva de cota: é a mesma
+    // chamada, não uma tentativa de classificação.
+    let rateLimitRetryIndex = 0;
     while (true) {
       try {
         modelResult = await requestModel(prompt, history, safetyId);
         break;
       } catch (providerError) {
         const providerErrorCode = monitoringErrorCode(providerError, "AI_PROVIDER_FAILED");
-        if (RATE_LIMIT_RETRY_CODES.has(providerErrorCode) && !usedRateLimitBackoff) {
-          usedRateLimitBackoff = true;
-          await sleep(RATE_LIMIT_BACKOFF_MS);
+        if (RATE_LIMIT_RETRY_CODES.has(providerErrorCode) && rateLimitRetryIndex < RATE_LIMIT_BACKOFF_SCHEDULE_MS.length) {
+          await sleep(RATE_LIMIT_BACKOFF_SCHEDULE_MS[rateLimitRetryIndex]);
+          rateLimitRetryIndex += 1;
           continue;
         }
         const providerMetadata = providerFailureMetadata(providerError);
@@ -1328,10 +1754,11 @@ Deno.serve(async (req) => {
       // Uma tentativa extra pode esbarrar num limite de taxa transitório
       // (nosso ou da Groq) mesmo quando a pergunta em si está correta --
       // confirmado em produção. Isso não é o mesmo problema que motivou a
-      // tentativa extra (classificação errada), então ganha uma única
-      // rodada de espera+nova tentativa própria, silenciosa, sem consumir
-      // outra iteração de retryAttempt nem expor o motivo ao usuário.
-      let rateLimitBackoffUsed = false;
+      // tentativa extra (classificação errada), então ganha sua própria
+      // rodada de espera+nova tentativa ao longo do
+      // RATE_LIMIT_BACKOFF_SCHEDULE_MS, silenciosa, sem consumir outra
+      // iteração de retryAttempt nem expor o motivo ao usuário.
+      let rateLimitRetryIndex = 0;
       innerAttempt:
       while (true) {
         const retryStartedAt = Date.now();
@@ -1377,9 +1804,9 @@ Deno.serve(async (req) => {
               errorCode,
             }).catch(() => undefined);
           }
-          if (RATE_LIMIT_RETRY_CODES.has(errorCode) && !rateLimitBackoffUsed) {
-            rateLimitBackoffUsed = true;
-            await sleep(RATE_LIMIT_BACKOFF_MS);
+          if (RATE_LIMIT_RETRY_CODES.has(errorCode) && rateLimitRetryIndex < RATE_LIMIT_BACKOFF_SCHEDULE_MS.length) {
+            await sleep(RATE_LIMIT_BACKOFF_SCHEDULE_MS[rateLimitRetryIndex]);
+            rateLimitRetryIndex += 1;
             continue innerAttempt;
           }
           // Tentativa extra é só um bônus best-effort (ex.: cota de mensagens
@@ -1396,7 +1823,7 @@ Deno.serve(async (req) => {
     // modelo somar valores de cabeça e falhou de formas diferentes 4 vezes
     // na mesma sessão (pediu para o usuário reclassificar um lançamento,
     // excluiu esse lançamento em silêncio, inventou um total sem relação
-    // com os dados, e mesmo com o valor pronto em recent_week_category_totals
+    // com os dados, e mesmo com o valor pronto em week_category_totals
     // continuou errando). Soma é aritmética determinística: para esse padrão
     // específico e inequívoco (exatamente uma categoria citada, sem
     // ambiguidade), a resposta é montada aqui a partir do valor já calculado
@@ -1409,6 +1836,28 @@ Deno.serve(async (req) => {
       if (safeWeeklySpendMessage) {
         output = { kind: "answer", intent: "financial_summary", message: safeWeeklySpendMessage, missing_fields: [], data: [] };
         outputMessage = safeWeeklySpendMessage;
+      } else {
+        const previousUserMessage = history.slice(0, -1).filter((item) => item.role === "user").at(-1)?.content ?? "";
+        const extremeMessage = monthlyExtremeTransactionAnswer(financialContext.compactJson, normalizeText(message), normalizeText(previousUserMessage));
+        const safeExtremeMessage = extremeMessage
+          ? safeAssistantMessage(extremeMessage, "financial_summary", "answer", outputCanary)
+          : null;
+        if (safeExtremeMessage) {
+          output = { kind: "answer", intent: "financial_summary", message: safeExtremeMessage, missing_fields: [], data: [] };
+          outputMessage = safeExtremeMessage;
+        } else {
+          // categorySpendRankingAnswer não entra aqui mais -- vira uma
+          // resposta determinística ANTES da chamada ao modelo (ver mais
+          // acima), então nunca chega a este ponto.
+          const comparisonMessage = categoryMonthComparisonAnswer(financialContext.compactJson, normalizeText(message));
+          const safeComparisonMessage = comparisonMessage
+            ? safeAssistantMessage(comparisonMessage, "financial_summary", "answer", outputCanary)
+            : null;
+          if (safeComparisonMessage) {
+            output = { kind: "answer", intent: "financial_summary", message: safeComparisonMessage, missing_fields: [], data: [] };
+            outputMessage = safeComparisonMessage;
+          }
+        }
       }
     }
 

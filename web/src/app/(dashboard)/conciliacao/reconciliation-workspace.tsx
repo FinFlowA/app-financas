@@ -2,8 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
+import CurrencyInput from "@/components/ui/currency-input";
 import FinFlowSelect from "@/components/ui/finflow-select";
 import { formatarReais } from "@/lib/format";
+import { parseMoney } from "@/lib/money";
 import { parseBankStatement, statementFingerprint, type StatementEntry } from "@/lib/bank-statement";
 import type { Categoria, Conta } from "@/lib/types";
 import { ignoreStatementEntries, ignoreStatementEntry, reconcileStatementEntry } from "./actions";
@@ -25,12 +27,12 @@ export type ReconciliationCandidate = {
 export type ReconciliationProgress = { receipt_id: number; account_id: number; entry_fingerprint: string; entry_amount: number; reconciled_amount: number };
 
 type ImportedEntry = StatementEntry & { fingerprint: string; reconciliationReceiptId?: number };
+type NewEntryDraft = { id: string; categoryId: number | null; description: string; value: number | null };
 type Draft = {
   mode: "existing" | "new";
   transactionId: number | null;
   transactionIds: number[];
-  categoryId: number | null;
-  description: string;
+  newEntries: NewEntryDraft[];
   requestId: string;
   busy: boolean;
   error: string | null;
@@ -38,7 +40,8 @@ type Draft = {
   month: string;
 };
 
-const SESSION_KEY = "finflow:bank-statement-workspace:v2";
+// v3: troca categoryId/description por newEntries (divisao em varios lancamentos novos).
+const SESSION_KEY = "finflow:bank-statement-workspace:v3";
 
 type StoredWorkspace = {
   accountId: number;
@@ -131,6 +134,50 @@ function CandidatePicker({ entry, draft, candidates, onChange }: {
   </div>;
 }
 
+function NewEntryEditor({ entry, draft, categories, onChange }: {
+  entry: ImportedEntry;
+  draft: Draft;
+  categories: Categoria[];
+  onChange: (changes: Partial<Draft>) => void;
+}) {
+  const splitting = draft.newEntries.length > 1;
+  const total = Math.round(draft.newEntries.reduce((sum, item) => sum + (item.value ?? 0), 0) * 100) / 100;
+  const difference = Math.round((entry.amount - total) * 100) / 100;
+
+  function updateEntry(id: string, changes: Partial<NewEntryDraft>) {
+    onChange({ newEntries: draft.newEntries.map((item) => (item.id === id ? { ...item, ...changes } : item)) });
+  }
+
+  return <div className="mt-4 grid gap-3">
+    {draft.newEntries.map((item, index) => (
+      <div key={item.id} className="grid gap-3 rounded-2xl border border-border bg-surface-muted/45 p-4 sm:grid-cols-2">
+        {splitting && <div className="flex items-center justify-between sm:col-span-2">
+          <p className="text-xs font-extrabold uppercase tracking-[.1em] text-foreground-muted">Lançamento {index + 1}</p>
+          <button type="button" onClick={() => onChange({ newEntries: draft.newEntries.filter((row) => row.id !== item.id) })} className="ff-focus rounded-full px-2.5 py-1 text-xs font-bold text-red transition hover:bg-red/10">Remover</button>
+        </div>}
+        <label className="grid gap-2 text-sm font-bold text-foreground sm:col-span-2">
+          <span>Descrição</span>
+          <input value={item.description} maxLength={100} onChange={(event) => updateEntry(item.id, { description: event.target.value })} className="ff-focus min-h-12 rounded-xl border border-border bg-surface px-4" />
+        </label>
+        <div className="text-sm font-bold text-foreground">
+          <span>Categoria</span>
+          <FinFlowSelect value={item.categoryId ? String(item.categoryId) : ""} onChange={(value) => updateEntry(item.id, { categoryId: Number(value) || null })} options={categories.map((category) => ({ value: String(category.id), label: category.nome }))} />
+        </div>
+        {splitting && <label className="grid gap-2 text-sm font-bold text-foreground">
+          <span>Valor</span>
+          <CurrencyInput name={`value-${item.id}`} defaultValue={item.value ?? undefined} onValueChange={(formatted) => updateEntry(item.id, { value: parseMoney(formatted) || 0 })} />
+        </label>}
+      </div>
+    ))}
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <button type="button" onClick={() => onChange({ newEntries: [...draft.newEntries, { id: crypto.randomUUID(), categoryId: categories[0]?.id ?? null, description: "", value: null }] })} className="ff-focus rounded-full border border-primary/35 px-4 py-2 text-xs font-extrabold text-primary transition hover:bg-primary/10">+ Dividir em outro lançamento</button>
+      {splitting && <div className={`rounded-xl border px-3 py-2 text-sm font-bold ${difference === 0 ? "border-primary/35 bg-primary/10 text-primary" : "border-orange/35 bg-orange/10 text-orange"}`}>
+        {formatarReais(total)} de {formatarReais(entry.amount)}{difference > 0 ? ` · faltam ${formatarReais(difference)}` : difference < 0 ? ` · excede ${formatarReais(-difference)}` : " · valor exato"}
+      </div>}
+    </div>
+  </div>;
+}
+
 export default function ReconciliationWorkspace({
   accounts,
   categories,
@@ -170,7 +217,7 @@ export default function ReconciliationWorkspace({
           if (accounts.some((account) => account.id === stored.accountId)) {
             setAccountId(stored.accountId);
             setEntries(Array.isArray(stored.entries) ? stored.entries : []);
-            setDrafts(stored.drafts && typeof stored.drafts === "object" ? Object.fromEntries(Object.entries(stored.drafts).map(([id, draft]) => [id, { ...draft, transactionIds: Array.isArray(draft.transactionIds) ? draft.transactionIds : draft.transactionId ? [draft.transactionId] : [], busy: false, error: null, search: draft.search ?? "", month: draft.month ?? "" }])) : {});
+            setDrafts(stored.drafts && typeof stored.drafts === "object" ? Object.fromEntries(Object.entries(stored.drafts).map(([id, draft]) => [id, { ...draft, transactionIds: Array.isArray(draft.transactionIds) ? draft.transactionIds : draft.transactionId ? [draft.transactionId] : [], newEntries: Array.isArray(draft.newEntries) ? draft.newEntries : [], busy: false, error: null, search: draft.search ?? "", month: draft.month ?? "" }])) : {});
             setFileName(typeof stored.fileName === "string" ? stored.fileName : "");
             setIgnoredCount(Number.isFinite(stored.ignoredCount) ? stored.ignoredCount : 0);
           }
@@ -224,8 +271,12 @@ export default function ReconciliationWorkspace({
           mode: exact ? "existing" : "new",
           transactionId: exact?.id ?? sameMonth[0]?.id ?? null,
           transactionIds: exact?.id ? [exact.id] : sameMonth[0]?.id ? [sameMonth[0].id] : [],
-          categoryId: exact?.categoryId ?? compatibleCategories[0]?.id ?? null,
-          description: entry.description.slice(0, 100),
+          newEntries: [{
+            id: crypto.randomUUID(),
+            categoryId: exact?.categoryId ?? compatibleCategories[0]?.id ?? null,
+            description: entry.description.slice(0, 100),
+            value: entry.amount,
+          }],
           requestId: crypto.randomUUID(), busy: false, error: null, search: "", month: exact?.dueDate.slice(0, 7) ?? entry.date.slice(0, 7),
         };
       }
@@ -263,6 +314,13 @@ export default function ReconciliationWorkspace({
       setDrafts((current) => ({ ...current, [entry.id]: { ...draft, error: "Selecione lançamentos ou movimentos de caixinha cuja soma seja exatamente igual ao valor do extrato." } }));
       return;
     }
+    if (draft.mode === "new" && draft.newEntries.length > 1) {
+      const newEntriesTotal = Math.round(draft.newEntries.reduce((sum, item) => sum + (item.value ?? 0), 0) * 100) / 100;
+      if (newEntriesTotal !== Math.round(entry.amount * 100) / 100) {
+        setDrafts((current) => ({ ...current, [entry.id]: { ...draft, error: "A soma dos novos lançamentos precisa ser exatamente igual ao valor do extrato." } }));
+        return;
+      }
+    }
     const excess = draft.mode === "existing" && selectedIds.length === 1 && selected && selected.status !== "paga" ? Math.round((entry.amount - selected.remainingValue) * 100) / 100 : 0;
     const remainingAfterPartial = selectedIds.length === 1 && selected?.status !== "paga" ? Math.round(((selected?.remainingValue ?? 0) - entry.amount) * 100) / 100 : 0;
     if (excess > 0 && confirmation !== "interest") {
@@ -278,9 +336,10 @@ export default function ReconciliationWorkspace({
     setDrafts((current) => ({ ...current, [entry.id]: { ...draft, busy: true, error: null } }));
     const result = await reconcileStatementEntry({
       accountId, fingerprint: entry.fingerprint, date: entry.date, type: entry.type, amount: entry.amount,
-      mode: draft.mode, transactionId: draft.transactionId, categoryId: draft.categoryId,
+      mode: draft.mode, transactionId: draft.transactionId,
       transactionIds: selectedIds,
-      description: draft.description, requestId: draft.requestId, excessAsInterest: excess > 0,
+      newEntries: draft.newEntries.map((item) => ({ categoryId: item.categoryId, description: item.description, value: item.value ?? 0 })),
+      requestId: draft.requestId, excessAsInterest: excess > 0,
       existingKind: selected?.kind,
       existingStatus: selected?.status,
       reconciliationReceiptId: entry.reconciliationReceiptId,
@@ -385,9 +444,9 @@ export default function ReconciliationWorkspace({
           <div className="mb-3 flex justify-end"><label className="ff-focus flex cursor-pointer items-center gap-2 rounded-full border border-border bg-surface-muted px-3 py-2 text-xs font-bold text-foreground-muted"><input type="checkbox" checked={selectedEntryIds.has(entry.id)} onChange={() => toggleSelectedEntry(entry.id)} className="h-4 w-4 accent-primary" />Selecionar</label></div>
           <div className="flex flex-wrap items-start justify-between gap-4"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${entry.type === "receita" ? "bg-primary/10 text-primary" : "bg-red/10 text-red"}`}>{entry.type}</span>{exact && <span className="rounded-full bg-mint/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-mint">Agendamento do mesmo valor encontrado</span>}</div><h3 className="mt-2 break-words text-lg font-extrabold text-foreground">{entry.description}</h3><p className="mt-1 text-xs font-semibold text-foreground-muted">Data do banco: {formatDate(entry.date)}</p></div><strong data-private-value="true" className={`text-xl font-black ${entry.type === "receita" ? "text-primary" : "text-red"}`}>{entry.type === "receita" ? "+" : "−"}{formatarReais(entry.amount)}</strong></div>
           <div className="mt-5 grid gap-3 sm:grid-cols-2"><button type="button" onClick={() => updateDraft(entry.id, { mode: "existing", transactionId: draft.transactionId ?? ranked[0]?.id ?? null })} disabled={!ranked.length || draft.busy} className={`rounded-xl border p-4 text-left transition ${draft.mode === "existing" ? "border-primary bg-primary/10" : "border-border bg-surface-muted"} disabled:opacity-45`}><strong className="block text-sm text-foreground">Conciliar com lançamento existente</strong><small className="mt-1 block text-xs text-foreground-muted">Dá baixa total ou parcial e mantém eventual saldo pendente.</small></button><button type="button" onClick={() => updateDraft(entry.id, { mode: "new" })} disabled={draft.busy} className={`rounded-xl border p-4 text-left transition ${draft.mode === "new" ? "border-primary bg-primary/10" : "border-border bg-surface-muted"}`}><strong className="block text-sm text-foreground">Criar nova {entry.type}</strong><small className="mt-1 block text-xs text-foreground-muted">Usa o valor e a data apresentados no extrato.</small></button></div>
-          {draft.mode === "existing" ? <CandidatePicker entry={entry} draft={draft} candidates={ranked} onChange={(changes) => updateDraft(entry.id, changes)} /> : <div className="mt-4 grid gap-4 sm:grid-cols-2"><label className="grid gap-2 text-sm font-bold text-foreground">Descrição<input value={draft.description} maxLength={100} onChange={(event) => updateDraft(entry.id, { description: event.target.value })} className="ff-focus min-h-12 rounded-xl border border-border bg-surface-muted px-4" /></label><div className="text-sm font-bold text-foreground"><span>Categoria</span><FinFlowSelect value={draft.categoryId ? String(draft.categoryId) : ""} onChange={(value) => updateDraft(entry.id, { categoryId: Number(value) || null })} options={compatibleCategories.map((category) => ({ value: String(category.id), label: category.nome }))} /></div></div>}
+          {draft.mode === "existing" ? <CandidatePicker entry={entry} draft={draft} candidates={ranked} onChange={(changes) => updateDraft(entry.id, changes)} /> : <NewEntryEditor entry={entry} draft={draft} categories={compatibleCategories} onChange={(changes) => updateDraft(entry.id, changes)} />}
           {draft.error && <p role="alert" className="mt-4 rounded-xl bg-red/10 p-3 text-sm font-semibold text-red">{draft.error}</p>}
-          <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><button type="button" disabled={draft.busy} onClick={() => setIgnoreEntryId(entry.id)} className="ff-focus min-h-11 rounded-full border border-red/30 px-5 text-sm font-bold text-red transition hover:bg-red/10 disabled:opacity-45">Excluir do extrato</button><button type="button" disabled={draft.busy || (draft.mode === "existing" ? !draft.transactionId : !draft.categoryId || !draft.description.trim())} onClick={() => void reconcile(entry)} className="ff-focus min-h-11 rounded-full bg-primary px-6 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,.2)] disabled:cursor-not-allowed disabled:opacity-45">{draft.busy ? "Conciliando..." : "Confirmar conciliação"}</button></div>
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3"><button type="button" disabled={draft.busy} onClick={() => setIgnoreEntryId(entry.id)} className="ff-focus min-h-11 rounded-full border border-red/30 px-5 text-sm font-bold text-red transition hover:bg-red/10 disabled:opacity-45">Excluir do extrato</button><button type="button" disabled={draft.busy || (draft.mode === "existing" ? !draft.transactionId : draft.newEntries.length === 0 || draft.newEntries.some((item) => !item.categoryId || !item.description.trim() || !item.value || item.value <= 0))} onClick={() => void reconcile(entry)} className="ff-focus min-h-11 rounded-full bg-primary px-6 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,.2)] disabled:cursor-not-allowed disabled:opacity-45">{draft.busy ? "Conciliando..." : "Confirmar conciliação"}</button></div>
         </article>;
       })}
       {fileName && entries.length === 0 && <section className="ff-card grid min-h-56 place-content-center p-6 text-center"><span className="text-4xl text-primary">✓</span><h2 className="mt-3 text-xl font-black text-foreground">Extrato conciliado</h2><p className="mt-2 text-sm text-foreground-muted">Não há novas movimentações para revisar neste arquivo.</p></section>}

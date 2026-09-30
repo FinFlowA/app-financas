@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { hasVerifiedFactor, totpErrorMessage, verifyTotpCode } from "@/lib/auth/mfa";
+import { mensagemTetoSeguranca } from "@/lib/error-messages";
 import { createClient } from "@/lib/supabase/server";
 import { parseMoney } from "@/lib/money";
 
@@ -133,7 +135,7 @@ export async function sendFeedbackAction(
     tipo: type,
     mensagem: message,
   });
-  if (error) return fail("Não foi possível enviar o feedback. Tente novamente.");
+  if (error) return fail(mensagemTetoSeguranca(error) ?? "Não foi possível enviar o feedback. Tente novamente.");
   return ok("Obrigado! Seu feedback foi enviado para a equipe FinFlow.");
 }
 
@@ -173,7 +175,7 @@ export async function invitePartnerAction(
       return fail("Esse e-mail ainda não possui uma conta FinFlow.");
     }
     if (error.code === "23505") return fail("Já existe um convite para esse e-mail.");
-    return fail("Não foi possível enviar o convite. Tente novamente.");
+    return fail(mensagemTetoSeguranca(error) ?? "Não foi possível enviar o convite. Tente novamente.");
   }
 
   refreshSettings();
@@ -351,6 +353,14 @@ export async function deleteAccountAction(
     password: currentPassword,
   });
   if (reauthenticationError) return fail("Senha atual incorreta. Nenhum dado foi removido.");
+
+  // Entrar com a senha cria uma sessão sem o segundo fator. Quem ativou a
+  // verificação em duas etapas confirma o código antes de qualquer consulta,
+  // já que o banco recusa sessões sem ele (finflow_guard.enforce_mfa).
+  if (hasVerifiedFactor(auth.user)) {
+    const result = await verifyTotpCode(auth.supabase, rawText(formData, "mfa_code", 12));
+    if (result !== "ok") return fail(`${totpErrorMessage(result)} Nenhum dado foi removido.`);
+  }
 
   const [partnerships, subscriptions, accountDecisions, goalDecisions] = await Promise.all([
     openPartnershipsForUser(auth.supabase, auth.user.id, email),

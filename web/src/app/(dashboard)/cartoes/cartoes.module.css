@@ -590,6 +590,110 @@
   font-weight: 800;
 }
 
+.heroPurchaseButton {
+  display: inline-flex;
+  min-width: 210px;
+  min-height: 58px;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid color-mix(in srgb, var(--ff-primary-bright) 38%, transparent);
+  border-radius: 16px;
+  background: linear-gradient(135deg, var(--ff-action-primary), var(--ff-action-primary-hover));
+  padding: 8px 17px 8px 10px;
+  color: #fff;
+  box-shadow: 0 18px 40px -20px color-mix(in srgb, var(--ff-primary) 95%, transparent);
+  text-align: left;
+  transition: box-shadow 160ms ease, transform 160ms ease;
+}
+
+.heroPurchaseButton:hover:not(:disabled) {
+  box-shadow: 0 22px 46px -18px color-mix(in srgb, var(--ff-primary) 100%, transparent);
+  transform: translateY(-2px);
+}
+
+.heroPurchaseButton:disabled {
+  cursor: not-allowed;
+  filter: grayscale(.35);
+  opacity: .55;
+}
+
+.heroPurchaseIcon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / .24);
+  border-radius: 12px;
+  background: rgb(255 255 255 / .14);
+}
+
+.heroPurchaseCopy,
+.heroPurchaseCopy strong,
+.heroPurchaseCopy small {
+  display: block;
+}
+
+.heroPurchaseCopy strong {
+  font-size: .9rem;
+  font-weight: 880;
+}
+
+.heroPurchaseCopy small {
+  margin-top: 2px;
+  color: rgb(255 255 255 / .76);
+  font-size: .68rem;
+  font-weight: 650;
+}
+
+.purchaseUnavailableNotice {
+  margin: -7px 0 18px;
+  color: var(--ff-red);
+  font-size: .75rem;
+  font-weight: 750;
+  text-align: right;
+}
+
+.purchaseModalBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  overflow-y: auto;
+  place-items: center;
+  background: rgb(2 9 12 / .82);
+  padding: 20px;
+  backdrop-filter: blur(6px);
+}
+
+.purchaseModal {
+  width: min(100%, 680px);
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid color-mix(in srgb, var(--ff-primary) 34%, var(--border));
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 100% 0, color-mix(in srgb, var(--ff-primary) 15%, transparent), transparent 34%),
+    var(--surface-raised);
+  padding: clamp(20px, 4vw, 30px);
+  color: var(--foreground);
+  box-shadow: 0 34px 110px rgb(0 0 0 / .5);
+}
+
+.purchaseModal .formActions {
+  margin-top: 18px;
+}
+
+.modalEyebrow {
+  margin: 0 0 5px;
+  color: var(--ff-primary-dark);
+  font-size: .66rem;
+  font-weight: 850;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+}
+
 .invoiceNav {
   position: relative;
   margin-bottom: 17px;
@@ -940,6 +1044,14 @@
     width: 100%;
   }
 
+  .heroPurchaseButton {
+    width: 100%;
+  }
+
+  .purchaseUnavailableNotice {
+    text-align: left;
+  }
+
   .cardsGrid,
   .formGrid,
   .smallFormGrid {
@@ -981,6 +1093,21 @@
   .formActions > button,
   .formActions > a {
     flex: 1 1 auto;
+  }
+
+  .purchaseModalBackdrop {
+    align-items: end;
+    padding: 0;
+  }
+
+  .purchaseModal {
+    width: 100%;
+    max-height: calc(100dvh - 12px);
+    border-right: 0;
+    border-bottom: 0;
+    border-left: 0;
+    border-radius: 24px 24px 0 0;
+    padding: 20px 16px max(20px, env(safe-area-inset-bottom));
   }
 }
 

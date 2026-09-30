@@ -15,6 +15,7 @@ type SupabaseLikeError = {
 };
 
 const RETRYABLE_CODES = new Set([
+  "OFFLINE_MFA_REQUIRED",
   "OFFLINE_RATE_LIMITED",
   "OFFLINE_NETWORK_ERROR",
   "PGRST003",
@@ -33,11 +34,18 @@ function safeCode(value: unknown): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9_:-]/g, "_").slice(0, 80);
 }
 
+// Sessão sem o código da verificação em duas etapas (finflow_guard.enforce_mfa):
+// a ação continua na fila e é reenviada depois que o usuário confirmar o código.
+function isMfaRequired(error: SupabaseLikeError | null): boolean {
+  return (error?.message ?? "").includes("FINFLOW_MFA_REQUIRED");
+}
+
 function isRetryableSupabaseError(error: SupabaseLikeError | null): boolean {
   const code = safeCode(error?.code ?? "");
   const status = error?.status;
   return (
     RETRYABLE_CODES.has(code) ||
+    isMfaRequired(error) ||
     code.startsWith("08") ||
     status === 408 ||
     status === 429 ||
@@ -47,7 +55,13 @@ function isRetryableSupabaseError(error: SupabaseLikeError | null): boolean {
 }
 
 function errorCodeFromSupabase(error: SupabaseLikeError | null): string {
+  if (isMfaRequired(error)) return "OFFLINE_MFA_REQUIRED";
   if (isRetryableSupabaseError(error) && !error?.code) return "OFFLINE_NETWORK_ERROR";
+  // Teto de segurança por usuário (V08): também chega como P0001, mas não é
+  // limite de plano. O código leva recurso, período e teto para a tela montar
+  // a mensagem (lib/teto-seguranca.ts); a recusa é definitiva, sem reenvio.
+  const safetyLimit = error?.message?.match(/\bFINFLOW_TETO_SEGURANCA:[a-z_]+:(?:diario|total):\d+\b/i)?.[0];
+  if (safetyLimit) return safeCode(safetyLimit);
   const domainCode = error?.message?.match(/\b(?:OFFLINE|AI)_[A-Z0-9_]+\b/)?.[0];
   return safeCode(domainCode ?? error?.code ?? "OFFLINE_SERVER_ERROR");
 }

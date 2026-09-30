@@ -1,6 +1,7 @@
 import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { collectPaymentSummaryRows } from "@/lib/payment-summaries";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/pagination";
 import { shouldReturnHomeAfterCreation } from "@/lib/transaction-entry";
 import type { Caixinha, Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
 import TransactionManager from "./transaction-manager";
@@ -53,10 +54,11 @@ export default async function TransactionsPage({
     supabase.from("caixinhas")
       .select("id,user_id,nome,meta_valor,saldo_atual,cor,icone,compartilhado,data_prazo,arquivado,version")
       .order("arquivado").order("nome"),
-    supabase
+    fetchAllRows((from, to) => supabase
       .from("categorias")
       .select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version")
-      .order("nome"),
+      .order("nome")
+      .range(from, to)),
     supabase
       .from("cartoes")
       .select("id, user_id, nome, cor, limite, dia_vencimento, dia_fechamento, ativo, version")

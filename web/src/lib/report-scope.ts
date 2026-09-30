@@ -17,10 +17,6 @@ export function nextReportAccountSelection(
   clickedId: number,
 ): number[] {
   if (!availableAccountIds.includes(clickedId)) return selectedIds;
-  const allSelected = availableAccountIds.length > 0
-    && selectedIds.length === availableAccountIds.length
-    && availableAccountIds.every((id) => selectedIds.includes(id));
-  if (allSelected) return [clickedId];
   if (selectedIds.includes(clickedId)) return selectedIds.filter((id) => id !== clickedId);
-  return [...selectedIds, clickedId];
+  return availableAccountIds.filter((id) => id === clickedId || selectedIds.includes(id));
 }

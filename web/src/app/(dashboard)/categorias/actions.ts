@@ -14,12 +14,18 @@ import { CATEGORY_COLORS, CATEGORY_ICONS } from "./category-options";
 export type CategoriaActionState = { erro: string | null; sucesso?: string };
 
 const CATEGORY_TYPES = ["receita", "despesa"] as const;
+// Toda tela que le a tabela categorias precisa ser revalidada aqui, senao uma
+// categoria criada/editada/arquivada fica invisivel nela ate um refresh
+// manual. Calendario e Conciliacao ficaram de fora por um tempo -- uma
+// categoria nova nao aparecia no lancamento rapido de despesa dessas telas.
 function refreshCategories() {
   revalidatePath("/");
   revalidatePath("/categorias");
   revalidatePath("/transacoes");
   revalidatePath("/cartoes");
   revalidatePath("/relatorios");
+  revalidatePath("/calendario");
+  revalidatePath("/conciliacao");
 }
 
 export async function criarCategoria(_: CategoriaActionState, formData: FormData): Promise<CategoriaActionState> {

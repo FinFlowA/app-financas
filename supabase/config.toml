@@ -49,3 +49,7 @@ verify_jwt = true
 
 [functions.send-auth-sms]
 verify_jwt = false
+
+[functions.send-system-push]
+# Chamada pelo gatilho do banco (pg_net); o corpo traz so o id do aviso.
+verify_jwt = false

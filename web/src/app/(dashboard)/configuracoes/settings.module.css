@@ -44,6 +44,24 @@
   box-shadow: inset 0 1px color-mix(in srgb, white 6%, transparent);
 }
 
+/* Cabeçalho da conta compartilhada: ilustração do Finn no lugar do ícone. */
+.partnershipHeading {
+  align-items: center;
+}
+
+.partnershipIllustration {
+  width: 5.25rem;
+  height: auto;
+  flex: 0 0 auto;
+  object-fit: contain;
+}
+
+@media (max-width: 640px) {
+  .partnershipIllustration {
+    width: 4.25rem;
+  }
+}
+
 .iconBox svg {
   width: 1.25rem;
   height: 1.25rem;

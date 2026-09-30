@@ -33,6 +33,46 @@ includesAll(http, [
 ], "HTTP/CORS");
 assert(!http.includes('"Access-Control-Allow-Origin": "*"'), "CORS não pode liberar wildcard");
 
+// V11: localhost só em desenvolvimento. Executa o http.ts real com um Deno.env
+// simulado para cada ambiente.
+{
+  const os = require("node:os");
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "finflow-edge-http-"));
+  const httpModulePath = path.join(tempDir, "http.cjs");
+  fs.writeFileSync(httpModulePath, ts.transpileModule(http, {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText);
+  let env = {};
+  globalThis.Deno = { env: { get: (name) => env[name] } };
+  const { isRequestOriginAllowed, corsHeadersFor } = require(httpModulePath);
+  const fromOrigin = (origin) => new Request("https://edge.example/functions/v1/finance-ai", {
+    method: "POST",
+    headers: origin ? { origin } : {},
+  });
+
+  env = { SUPABASE_URL: "https://qxnfpnabyytdbzdkklet.supabase.co", FINFLOW_ALLOWED_ORIGINS: "https://finflow.example" };
+  assert(!isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "Produção não pode aceitar localhost sem opt-in");
+  assert(!isRequestOriginAllowed(fromOrigin("http://127.0.0.1:8081")), "Produção não pode aceitar 127.0.0.1 sem opt-in");
+  assert(!corsHeadersFor(fromOrigin("http://localhost:3100"))["Access-Control-Allow-Origin"], "Produção não pode devolver CORS para localhost");
+  assert(isRequestOriginAllowed(fromOrigin("https://finflow.example")), "Origem configurada precisa continuar aceita");
+  assert(isRequestOriginAllowed(fromOrigin(null)), "Apps nativos (sem Origin) precisam continuar aceitos");
+  assert(!isRequestOriginAllowed(fromOrigin("https://evil.example")), "Origem desconhecida precisa ser recusada");
+
+  env = { ...env, FINFLOW_ALLOW_LOCALHOST_ORIGINS: "true" };
+  assert(isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "O opt-in explícito precisa liberar localhost");
+
+  // No Supabase local a URL aponta para o próprio computador (ou para o
+  // container kong, dentro do Docker).
+  env = { SUPABASE_URL: "http://127.0.0.1:54321" };
+  assert(isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "Supabase local precisa aceitar localhost");
+  assert(!isRequestOriginAllowed(fromOrigin("https://evil.example")), "Supabase local não libera outras origens");
+
+  env = { SUPABASE_URL: "https://qxnfpnabyytdbzdkklet.supabase.co", FINFLOW_ALLOWED_ORIGINS: "http://localhost:3100" };
+  assert(isRequestOriginAllowed(fromOrigin("http://localhost:3100")), "Origem localhost exata e configurada continua valendo");
+  assert(!isRequestOriginAllowed(fromOrigin("http://localhost:4000")), "Só a porta configurada é liberada");
+  delete globalThis.Deno;
+}
+
 const supabaseShared = read("supabase/functions/_shared/supabase.ts");
 const financeContext = read("supabase/functions/finance-ai/context.ts");
 assert(supabaseShared.includes("@supabase/supabase-js@2.111.0"), "Supabase Edge precisa de versão exata");
@@ -50,7 +90,7 @@ includesAll(webhook, [
 ], "Webhook Mercado Pago");
 assert(!webhook.includes('.from("subscription_events").insert'), "Webhook não pode confirmar por insert simples");
 
-const migration = read("supabase/migrations/20260808001000_harden_external_edges.sql");
+const migration = read("supabase/migrations_archive/20260808001000_harden_external_edges.sql");
 includesAll(migration, [
   "alter table public.%I enable row level security",
   "create or replace function private.finflow_validate_financial_references",
@@ -141,5 +181,31 @@ for (const file of edgeFiles) {
   const errors = (result.diagnostics ?? []).filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
   assert(errors.length === 0, `${path.relative(root, file)}: sintaxe TypeScript inválida`);
 }
+
+// Verificação em duas etapas: as Edge Functions agem com a service_role, que
+// não passa pelo pre-request do banco (finflow_guard.enforce_mfa).
+const mfaModuleSource = ts.transpileModule(supabaseShared.replace(/^import .*$/gm, ""), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const mfaModulePath = path.join(fs.mkdtempSync(path.join(require("node:os").tmpdir(), "finflow-edge-mfa-")), "supabase-shared.cjs");
+fs.writeFileSync(mfaModulePath, mfaModuleSource);
+const mfaExports = require(mfaModulePath);
+const bearer = (claims) => `Bearer header.${Buffer.from(JSON.stringify(claims)).toString("base64url")}.assinatura`;
+const verified = { factors: [{ status: "verified" }] };
+assert(mfaExports.mfaSatisfied({ factors: [] }, bearer({ aal: "aal1" })), "MFA: sem fator ativo não pode exigir código");
+assert(mfaExports.mfaSatisfied({}, bearer({ aal: "aal1" })), "MFA: usuário sem lista de fatores não pode exigir código");
+assert(mfaExports.mfaSatisfied({ factors: [{ status: "unverified" }] }, bearer({ aal: "aal1" })), "MFA: fator não verificado não ativa a exigência");
+assert(!mfaExports.mfaSatisfied(verified, bearer({ aal: "aal1" })), "MFA: sessão aal1 com MFA ativo precisa ser recusada");
+assert(!mfaExports.mfaSatisfied(verified, bearer({})), "MFA: token sem aal com MFA ativo precisa ser recusado");
+assert(!mfaExports.mfaSatisfied(verified, "Bearer token-ilegivel"), "MFA: token ilegível com MFA ativo precisa ser recusado");
+assert(mfaExports.mfaSatisfied(verified, bearer({ aal: "aal2" })), "MFA: sessão aal2 precisa passar");
+assert(supabaseShared.includes('throw new Error("MFA_REQUIRED")'), "authenticatedUser precisa recusar MFA pendente");
+for (const fn of ["cancel-subscription", "sync-subscription", "create-subscription-checkout"]) {
+  assert(read(`supabase/functions/${fn}/index.ts`).includes("MFA_REQUIRED"), `${fn}: MFA_REQUIRED precisa virar 403`);
+}
+const financeIndex = read("supabase/functions/finance-ai/index.ts");
+const mfaCheckAt = financeIndex.indexOf('throw new Error("AI_MFA_REQUIRED")');
+assert(mfaCheckAt > 0, "finance-ai precisa checar MFA");
+assert(mfaCheckAt < financeIndex.indexOf("await handleHistory(admin, user.id"), "finance-ai: MFA precisa ser checado antes do histórico (service_role)");
 
 console.log("Edge security validation tests passed.");

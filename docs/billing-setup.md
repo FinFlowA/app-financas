@@ -17,8 +17,8 @@ desenvolvimento. Isso não transforma contas Free em Premium.
 1. Vincule o Supabase CLI ao projeto correto.
 2. Revise e aplique, nesta ordem:
 
-   - `supabase/migrations/20260730_secure_subscriptions.sql`
-   - `supabase/migrations/20260808001000_harden_external_edges.sql`
+   - `supabase/migrations_archive/20260730_secure_subscriptions.sql`
+   - `supabase/migrations_archive/20260808001000_harden_external_edges.sql`
 
    A segunda migration deve entrar antes das Edge Functions novas. Ela cria os
    claims idempotentes, os limites atômicos, a retenção e as validações de
@@ -96,7 +96,8 @@ FINFLOW_ALLOWED_ORIGINS
 
 `FINFLOW_ALLOWED_ORIGINS` recebe origens web completas separadas por vírgula,
 por exemplo `https://app.exemplo.com,https://preview.exemplo.com`. `*` é
-ignorado. Localhost continua liberado para desenvolvimento. Android e iOS não
+ignorado. Localhost só é aceito no Supabase local ou com o secret
+`FINFLOW_ALLOW_LOCALHOST_ORIGINS=true` (ver `SEGURANCA.md`). Android e iOS não
 enviam `Origin` e, por isso, não dependem de CORS.
 
 A configuração da IA é independente da cobrança e está documentada em

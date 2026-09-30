@@ -2,11 +2,16 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
   Alert,
+  Animated,
   AppState,
+  Easing,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -14,6 +19,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import type { Factor } from "@supabase/supabase-js";
 
 import Button from "../components/FinFlowButton";
 import {
@@ -25,6 +31,15 @@ import {
 import { supabase } from "../lib/supabase";
 import { formatarTelefoneBrasil, telefoneBrasilE164 } from "../lib/phone";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
+import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from "../lib/pwned-password";
+import {
+  definirReautenticacao,
+  hasVerifiedFactor,
+  MAX_TOTP_FACTORS,
+  normalizeTotpCode,
+  totpErrorMessage,
+  verifyTotpCode,
+} from "../lib/mfa";
 import { useAppTheme } from "./_layout";
 
 const SECURITY_WINDOW_MS = 5 * 60 * 1000;
@@ -118,6 +133,7 @@ export default function SegurancaScreen() {
   const router = useRouter();
   const { isDark, session, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
+  const entranceProgress = useRef(new Animated.Value(0)).current;
 
   const currentEmail = session?.user?.email?.trim() ?? "";
   const metadataPhone = typeof session?.user?.user_metadata?.telefone === "string"
@@ -150,6 +166,33 @@ export default function SegurancaScreen() {
   const securityTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const verifiedPasswordRef = useRef("");
 
+  // Verificação em duas etapas: quem ativou confirma a senha e, na sequência,
+  // o código do autenticador. Entre as duas etapas a sessão ainda não tem o
+  // código; reautenticandoRef avisa o _layout para não trocar de tela.
+  const hasMfa = hasVerifiedFactor(session?.user);
+  const reautenticandoRef = useRef(false);
+  const [unlockStage, setUnlockStage] = useState<"senha" | "codigo">("senha");
+  const [unlockCode, setUnlockCode] = useState("");
+  const [factors, setFactors] = useState<Factor[]>([]);
+  const [enrollment, setEnrollment] = useState<{ factorId: string; secret: string; uri: string } | null>(null);
+  const [enrollCode, setEnrollCode] = useState("");
+  const [removalCandidate, setRemovalCandidate] = useState<string | null>(null);
+  const [isMfaBusy, setIsMfaBusy] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduceMotion) => {
+      if (!active) return;
+      Animated.timing(entranceProgress, {
+        toValue: 1,
+        duration: reduceMotion ? 1 : 420,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }).start();
+    });
+    return () => { active = false; };
+  }, [entranceProgress]);
+
   const lockSecurity = useCallback(() => {
     if (securityTimerRef.current) {
       clearTimeout(securityTimerRef.current);
@@ -157,6 +200,16 @@ export default function SegurancaScreen() {
     }
     securityDeadlineRef.current = 0;
     verifiedPasswordRef.current = "";
+    if (reautenticandoRef.current) {
+      // Desistiu antes do código: o _layout reavalia e abre a verificação.
+      reautenticandoRef.current = false;
+      definirReautenticacao(false);
+    }
+    setUnlockStage("senha");
+    setUnlockCode("");
+    setEnrollment(null);
+    setEnrollCode("");
+    setRemovalCandidate(null);
     setIsUnlocked(false);
     setCurrentPassword("");
     setShowCurrentPassword(false);
@@ -198,6 +251,10 @@ export default function SegurancaScreen() {
   useEffect(() => {
     return () => {
       if (securityTimerRef.current) clearTimeout(securityTimerRef.current);
+      if (reautenticandoRef.current) {
+        reautenticandoRef.current = false;
+        definirReautenticacao(false);
+      }
     };
   }, []);
 
@@ -226,6 +283,11 @@ export default function SegurancaScreen() {
 
     setIsCheckingPassword(true);
     const expectedUserId = session?.user?.id;
+    const precisaCodigo = hasMfa;
+    if (precisaCodigo) {
+      reautenticandoRef.current = true;
+      definirReautenticacao(true);
+    }
     const { data, error } = await supabase.auth.signInWithPassword({
       email: currentEmail,
       password: currentPassword,
@@ -233,6 +295,10 @@ export default function SegurancaScreen() {
     setIsCheckingPassword(false);
 
     if (error) {
+      if (precisaCodigo) {
+        reautenticandoRef.current = false;
+        definirReautenticacao(false);
+      }
       setCurrentPassword("");
       const tooManyAttempts = error.code === "over_request_rate_limit";
       Alert.alert(
@@ -252,7 +318,130 @@ export default function SegurancaScreen() {
 
     verifiedPasswordRef.current = currentPassword;
     setCurrentPassword("");
+    if (precisaCodigo) {
+      setUnlockStage("codigo");
+      return;
+    }
     setIsUnlocked(true);
+    void refreshFactors();
+  }
+
+  async function confirmUnlockCode() {
+    if (isCheckingPassword) return;
+    setIsCheckingPassword(true);
+    const result = await verifyTotpCode(supabase, unlockCode);
+    setIsCheckingPassword(false);
+    if (result !== "ok") {
+      setUnlockCode("");
+      Alert.alert("Código não confere", totpErrorMessage(result));
+      return;
+    }
+    reautenticandoRef.current = false;
+    definirReautenticacao(false);
+    setUnlockCode("");
+    setUnlockStage("senha");
+    setIsUnlocked(true);
+    void refreshFactors();
+  }
+
+  async function refreshFactors() {
+    const { data } = await supabase.auth.mfa.listFactors();
+    setFactors(data?.totp ?? []);
+  }
+
+  async function startEnrollment() {
+    if (!hasValidSecurityWindow() || isMfaBusy) return;
+    setIsMfaBusy(true);
+    setRemovalCandidate(null);
+    // Cadastros abandonados ficam como fatores não verificados; limpamos antes
+    // de começar outro para não esbarrar no limite do Auth.
+    const { data: current } = await supabase.auth.mfa.listFactors();
+    for (const factor of current?.all ?? []) {
+      if (factor.status !== "verified") await supabase.auth.mfa.unenroll({ factorId: factor.id });
+    }
+    const agora = new Date();
+    const doisDigitos = (valor: number) => String(valor).padStart(2, "0");
+    const friendlyName = `Autenticador de ${doisDigitos(agora.getDate())}/${doisDigitos(agora.getMonth() + 1)}/${agora.getFullYear()} ${doisDigitos(agora.getHours())}:${doisDigitos(agora.getMinutes())}`;
+    const { data, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName, issuer: "FinFlow" });
+    setIsMfaBusy(false);
+    if (error || !data) {
+      Alert.alert("Não foi possível ativar", "Tente novamente em instantes.");
+      return;
+    }
+    setEnrollCode("");
+    setEnrollment({ factorId: data.id, secret: data.totp.secret, uri: data.totp.uri });
+  }
+
+  async function openAuthenticator() {
+    if (!enrollment) return;
+    try {
+      await Linking.openURL(enrollment.uri);
+    } catch {
+      Alert.alert(
+        "Nenhum app autenticador encontrado",
+        "Instale o Google Authenticator ou o Microsoft Authenticator, ou digite a chave manualmente no app que você já usa.",
+      );
+    }
+  }
+
+  async function shareSecret() {
+    if (!enrollment) return;
+    await Share.share({ message: enrollment.secret }).catch(() => undefined);
+  }
+
+  async function cancelEnrollment() {
+    if (!enrollment) return;
+    setIsMfaBusy(true);
+    await supabase.auth.mfa.unenroll({ factorId: enrollment.factorId });
+    setEnrollment(null);
+    setEnrollCode("");
+    setIsMfaBusy(false);
+  }
+
+  async function confirmEnrollment() {
+    if (!enrollment || !hasValidSecurityWindow() || isMfaBusy) return;
+    const code = normalizeTotpCode(enrollCode);
+    if (!code) {
+      Alert.alert("Código incompleto", "Digite os 6 dígitos que aparecem no app autenticador.");
+      return;
+    }
+    setIsMfaBusy(true);
+    const firstFactor = factors.length === 0;
+    const { error } = await supabase.auth.mfa.challengeAndVerify({ factorId: enrollment.factorId, code });
+    setIsMfaBusy(false);
+    if (error) {
+      setEnrollCode("");
+      Alert.alert("Código não confere", totpErrorMessage(error.status === 429 ? "rate_limited" : "invalid"));
+      return;
+    }
+    setEnrollment(null);
+    setEnrollCode("");
+    await refreshFactors();
+    Alert.alert(
+      firstFactor ? "Verificação em duas etapas ativada" : "Autenticador reserva adicionado",
+      firstFactor
+        ? "A partir de agora o FinFlow pede o código do autenticador ao entrar. Outros aparelhos conectados foram desconectados."
+        : "Você pode usar o código de qualquer um dos autenticadores cadastrados.",
+    );
+  }
+
+  async function removeFactor(factorId: string) {
+    if (!hasValidSecurityWindow() || isMfaBusy) return;
+    if (removalCandidate !== factorId) {
+      setRemovalCandidate(factorId);
+      return;
+    }
+    setIsMfaBusy(true);
+    const lastFactor = factors.length === 1;
+    const { error } = await supabase.auth.mfa.unenroll({ factorId });
+    setRemovalCandidate(null);
+    setIsMfaBusy(false);
+    if (error) {
+      Alert.alert("Não foi possível remover", "Bloqueie e desbloqueie a área de segurança e tente novamente.");
+      return;
+    }
+    await refreshFactors();
+    Alert.alert(lastFactor ? "Verificação em duas etapas desativada" : "Autenticador removido");
   }
 
   async function sendPasswordReset() {
@@ -329,6 +518,11 @@ export default function SegurancaScreen() {
     }
 
     setIsUpdatingPassword(true);
+    if ((await checkPwnedPassword(newPassword)) === "pwned") {
+      setIsUpdatingPassword(false);
+      Alert.alert("Senha exposta em vazamentos", PWNED_PASSWORD_MESSAGE);
+      return;
+    }
     const { error } = await supabase.auth.updateUser({
       password: newPassword,
       current_password: verifiedPasswordRef.current,
@@ -387,6 +581,10 @@ export default function SegurancaScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <Animated.View style={[styles.container, {
+        opacity: entranceProgress,
+        transform: [{ translateY: entranceProgress.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
+      }]}>
       <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
@@ -416,9 +614,11 @@ export default function SegurancaScreen() {
               <View style={[styles.hero, { backgroundColor: theme.header }]}>
                 <View style={styles.heroDecorationLarge} />
                 <View style={styles.heroDecorationSmall} />
-                <View style={styles.heroIcon}>
+                <Animated.View style={[styles.heroIcon, {
+                  transform: [{ scale: entranceProgress.interpolate({ inputRange: [0, 0.75, 1], outputRange: [0.82, 1.06, 1] }) }],
+                }]}>
                   <MaterialIcons name="password" size={37} color={theme.primaryDark} />
-                </View>
+                </Animated.View>
                 <Text style={styles.heroEyebrow}>ÁREA PROTEGIDA</Text>
                 <Text style={styles.heroTitle}>Confirme que é você</Text>
                 <Text style={styles.heroSubtitle}>A senha atual é obrigatória. A biometria não libera esta área.</Text>
@@ -430,26 +630,60 @@ export default function SegurancaScreen() {
                   <Text style={[styles.accountPillText, { color: theme.text }]} numberOfLines={1}>{currentEmail}</Text>
                 </View>
 
-                <SecurityPasswordField
-                  theme={theme}
-                  label="Senha atual"
-                  placeholder="Digite sua senha atual"
-                  value={currentPassword}
-                  onChangeText={setCurrentPassword}
-                  visible={showCurrentPassword}
-                  onToggleVisibility={() => setShowCurrentPassword((value) => !value)}
-                  autoComplete="current-password"
-                  textContentType="password"
-                  onSubmitEditing={() => void unlockSecurity()}
-                />
+                {unlockStage === "codigo" ? (
+                  <>
+                    <Text style={[styles.cardDescription, { color: theme.textMuted }]}>
+                      Senha confirmada. Sua conta usa verificação em duas etapas: digite o código de 6 dígitos do app autenticador.
+                    </Text>
+                    <TextInput
+                      style={[styles.codeInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
+                      placeholder="000000"
+                      placeholderTextColor={theme.textMuted}
+                      value={unlockCode}
+                      onChangeText={(value) => setUnlockCode(value.replace(/\D/g, "").slice(0, 6))}
+                      keyboardType="number-pad"
+                      textContentType="oneTimeCode"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      autoFocus
+                      accessibilityLabel="Código do app autenticador"
+                      onSubmitEditing={() => void confirmUnlockCode()}
+                    />
+                    <Button
+                      title={isCheckingPassword ? "Verificando..." : "Confirmar código"}
+                      color={theme.primary}
+                      disabled={isCheckingPassword || unlockCode.length !== 6}
+                      onPress={() => void confirmUnlockCode()}
+                      style={styles.fullButton}
+                    />
+                    <TouchableOpacity style={styles.forgotButton} onPress={lockSecurity} accessibilityRole="button">
+                      <Text style={[styles.forgotButtonText, { color: theme.textMuted }]}>Cancelar</Text>
+                    </TouchableOpacity>
+                  </>
+                ) : (
+                  <>
+                    <SecurityPasswordField
+                      theme={theme}
+                      label="Senha atual"
+                      placeholder="Digite sua senha atual"
+                      value={currentPassword}
+                      onChangeText={setCurrentPassword}
+                      visible={showCurrentPassword}
+                      onToggleVisibility={() => setShowCurrentPassword((value) => !value)}
+                      autoComplete="current-password"
+                      textContentType="password"
+                      onSubmitEditing={() => void unlockSecurity()}
+                    />
 
-                <Button
-                  title={isCheckingPassword ? "Validando..." : "Acessar segurança"}
-                  color={theme.primary}
-                  disabled={isCheckingPassword || !currentPassword}
-                  onPress={() => void unlockSecurity()}
-                  style={styles.fullButton}
-                />
+                    <Button
+                      title={isCheckingPassword ? "Validando..." : "Acessar segurança"}
+                      color={theme.primary}
+                      disabled={isCheckingPassword || !currentPassword}
+                      onPress={() => void unlockSecurity()}
+                      style={styles.fullButton}
+                    />
+                  </>
+                )}
 
                 <TouchableOpacity
                   style={styles.forgotButton}
@@ -477,6 +711,98 @@ export default function SegurancaScreen() {
                 <TouchableOpacity onPress={lockSecurity} style={styles.lockNowButton} accessibilityLabel="Bloquear agora">
                   <MaterialIcons name="lock" size={19} color={theme.textMuted} />
                 </TouchableOpacity>
+              </View>
+
+              <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>VERIFICAÇÃO EM DUAS ETAPAS</Text>
+              <View style={[styles.card, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+                <Text style={[styles.cardTitle, { color: theme.text }]}>
+                  {factors.length > 0 ? "Ativada" : "Desativada"}
+                </Text>
+                <Text style={[styles.cardDescription, { color: theme.textMuted }]}>
+                  Além da senha, o FinFlow pede um código de 6 dígitos gerado por um app autenticador (Google Authenticator, Microsoft Authenticator…).
+                </Text>
+
+                {factors.map((factor) => (
+                  <View key={factor.id} style={[styles.factorRow, { borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}>
+                    <MaterialIcons name="phonelink-lock" size={19} color={theme.primary} />
+                    <Text style={[styles.factorName, { color: theme.text }]} numberOfLines={1}>{factor.friendly_name || "Autenticador"}</Text>
+                    <TouchableOpacity
+                      onPress={() => void removeFactor(factor.id)}
+                      disabled={isMfaBusy}
+                      style={[styles.factorRemove, removalCandidate === factor.id && { backgroundColor: FinFlowColors.red }]}
+                      accessibilityRole="button"
+                    >
+                      <Text style={[styles.factorRemoveText, { color: removalCandidate === factor.id ? "#FFF" : FinFlowColors.red }]}>
+                        {removalCandidate === factor.id ? (factors.length === 1 ? "Confirmar: desativar" : "Confirmar") : "Remover"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                ))}
+
+                {enrollment ? (
+                  <View style={[styles.enrollBox, { borderColor: `${theme.primary}45`, backgroundColor: theme.primarySoft }]}>
+                    <Text style={[styles.enrollStep, { color: theme.text }]}>1. Cadastre o FinFlow no app autenticador</Text>
+                    <Button title="Abrir no app autenticador" color={theme.primary} onPress={() => void openAuthenticator()} style={styles.fullButton} />
+                    <Text style={[styles.cardDescription, { color: theme.textMuted, marginBottom: 4 }]}>
+                      Ou digite esta chave no app (toque e segure para copiar):
+                    </Text>
+                    <Text selectable style={[styles.secretText, { color: theme.text }]}>
+                      {enrollment.secret.replace(/(.{4})/g, "$1 ").trim()}
+                    </Text>
+                    <TouchableOpacity style={styles.forgotButton} onPress={() => void shareSecret()} accessibilityRole="button">
+                      <MaterialIcons name="share" size={17} color={theme.primary} />
+                      <Text style={[styles.forgotButtonText, { color: theme.primary }]}>Compartilhar chave</Text>
+                    </TouchableOpacity>
+                    <Text style={[styles.enrollStep, { color: theme.text }]}>2. Digite o código que o app mostra agora</Text>
+                    <TextInput
+                      style={[styles.codeInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
+                      placeholder="000000"
+                      placeholderTextColor={theme.textMuted}
+                      value={enrollCode}
+                      onChangeText={(value) => setEnrollCode(value.replace(/\D/g, "").slice(0, 6))}
+                      keyboardType="number-pad"
+                      textContentType="oneTimeCode"
+                      maxLength={6}
+                      accessibilityLabel="Código do app autenticador"
+                      onSubmitEditing={() => void confirmEnrollment()}
+                    />
+                    <Button
+                      title={isMfaBusy ? "Verificando..." : "Ativar"}
+                      color={theme.primary}
+                      disabled={isMfaBusy || enrollCode.length !== 6}
+                      onPress={() => void confirmEnrollment()}
+                      style={styles.fullButton}
+                    />
+                    <TouchableOpacity style={styles.forgotButton} onPress={() => void cancelEnrollment()} disabled={isMfaBusy} accessibilityRole="button">
+                      <Text style={[styles.forgotButtonText, { color: theme.textMuted }]}>Cancelar</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : factors.length < MAX_TOTP_FACTORS ? (
+                  <>
+                    <Button
+                      title={factors.length > 0 ? "Adicionar autenticador reserva" : "Ativar verificação em duas etapas"}
+                      color={theme.primary}
+                      disabled={isMfaBusy}
+                      onPress={() => void startEnrollment()}
+                      style={styles.fullButton}
+                    />
+                    <Text style={[styles.cardDescription, { color: theme.textMuted, marginTop: 8, marginBottom: 0 }]}>
+                      {factors.length > 0
+                        ? "Um segundo aparelho (outro celular ou tablet) evita perder o acesso se o principal for perdido."
+                        : "Ao ativar, outros aparelhos conectados serão desconectados e passarão a pedir o código no próximo acesso."}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={[styles.cardDescription, { color: theme.textMuted, marginBottom: 0 }]}>
+                    Você já cadastrou o máximo de {MAX_TOTP_FACTORS} autenticadores.
+                  </Text>
+                )}
+
+                {factors.length > 0 ? (
+                  <Text style={[styles.cardDescription, { color: theme.textMuted, marginTop: 10, marginBottom: 0 }]}>
+                    Perdeu o celular com o autenticador? Fale com o suporte pelo e-mail Finflowfinancas@gmail.com para recuperar o acesso.
+                  </Text>
+                ) : null}
               </View>
 
               <Text style={[styles.sectionLabel, { color: theme.textMuted }]}>DADOS ATUAIS</Text>
@@ -642,6 +968,7 @@ export default function SegurancaScreen() {
           )}
         </ScrollView>
       </KeyboardAvoidingView>
+      </Animated.View>
     </SafeAreaView>
   );
 }
@@ -747,6 +1074,32 @@ const styles = StyleSheet.create({
   dataValue: { fontSize: 14, fontWeight: "800", marginTop: 2 },
   dataStatus: { fontSize: 10, fontWeight: "800", marginTop: 3 },
   cardTitle: { fontSize: 16, fontWeight: "900" },
+  codeInput: {
+    minHeight: 56,
+    borderWidth: 1,
+    borderRadius: FinFlowRadius.medium,
+    marginBottom: 12,
+    fontSize: 24,
+    fontWeight: "800",
+    letterSpacing: 8,
+    textAlign: "center",
+  },
+  factorRow: {
+    minHeight: 50,
+    borderWidth: 1,
+    borderRadius: FinFlowRadius.medium,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  factorName: { flex: 1, fontSize: 13, fontWeight: "800" },
+  factorRemove: { borderRadius: 10, paddingHorizontal: 10, paddingVertical: 7 },
+  factorRemoveText: { fontSize: 12, fontWeight: "900" },
+  enrollBox: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 14, marginTop: 4 },
+  enrollStep: { fontSize: 13, fontWeight: "900", marginBottom: 10, marginTop: 4 },
+  secretText: { fontSize: 16, fontWeight: "800", letterSpacing: 1, textAlign: "center", marginBottom: 4 },
   cardDescription: { fontSize: 11, lineHeight: 17, marginTop: 4, marginBottom: 15 },
   pendingNotice: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 11, flexDirection: "row", alignItems: "center", marginBottom: 13 },
   pendingCopy: { flex: 1, marginLeft: 9, minWidth: 0 },

@@ -39,6 +39,7 @@ import {
   salvarCriacaoFinanceira,
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
+import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 
 interface Caixinha {
   id: number;
@@ -421,6 +422,8 @@ export default function CaixinhasScreen() {
       try {
         const resultado = await salvarCriacaoFinanceira("create_goal", payload);
         if (resultado.state === "rejected") {
+          const avisoTeto = mensagemTetoSeguranca(resultado.errorCode);
+          if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
           return Alert.alert("Não foi possível salvar", "O objetivo foi recusado pelo servidor. Revise os dados e tente novamente.");
         }
         if (resultado.state === "uncertain") {
@@ -450,7 +453,9 @@ export default function CaixinhasScreen() {
       compartilhado: caixinhaCompartilhada, data_prazo: prazoStr,
     }]);
 
-    if (error) { Alert.alert("Erro", "Não foi possível criar a caixinha."); }
+    const avisoTeto = error ? mensagemTetoSeguranca(error) : null;
+    if (avisoTeto) { Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto); }
+    else if (error) { Alert.alert("Erro", "Não foi possível criar a caixinha."); }
     else {
       setNomeCaixinha(""); setMetaValor(""); setSaldoInicialCaixinha("");
       setIconeSelecionado("savings"); setCaixinhaCompartilhada(false); setDataPrazoCriacao(null);

@@ -254,8 +254,16 @@ export default function CartaoDetalheManager({
           </div>
           <p>Limite {formatarReais(Number(cartao.limite))} · Fecha dia {cartao.dia_fechamento} · Vence dia {cartao.dia_vencimento}</p>
         </div>
-        {!cartao.ativo && <span className={styles.cardStatus}>Cartão arquivado</span>}
+        {!cartao.ativo ? (
+          <span className={styles.cardStatus}>Cartão arquivado</span>
+        ) : (
+          <NovaCompraForm cartaoId={cartao.id} diaFechamento={cartao.dia_fechamento} categorias={categorias} initiallyOpen={abrirNovaCompra} />
+        )}
       </header>
+
+      {cartao.ativo && !categorias.some((categoria) => Boolean(categoria.ativa)) && (
+        <p className={styles.purchaseUnavailableNotice}>Crie uma categoria de despesa ativa antes de adicionar compras.</p>
+      )}
 
       <nav aria-label="Navegação de faturas" className={styles.invoiceNav}>
         <div className={styles.invoiceNavRow}>
@@ -341,13 +349,6 @@ export default function CartaoDetalheManager({
           {itensDaFatura.length === 0 && <div className={styles.emptyState}>Nenhuma cobrança nesta fatura.</div>}
         </div>
       </section>
-
-      {cartao.ativo && (
-        <section className={styles.subPanel}>
-          <NovaCompraForm cartaoId={cartao.id} diaFechamento={cartao.dia_fechamento} categorias={categorias} initiallyOpen={abrirNovaCompra} />
-          {!categorias.some((categoria) => Boolean(categoria.ativa)) && <p className={styles.errorText}>Crie uma categoria de despesa ativa antes de adicionar compras.</p>}
-        </section>
-      )}
 
       {pagamentos.length > 0 && (
         <section className={`${styles.invoicePanel} mt-5`}>

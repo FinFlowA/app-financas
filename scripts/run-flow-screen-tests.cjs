@@ -49,6 +49,21 @@ if (!flowScreen.includes('from "react-native-safe-area-context"')) {
 if (!flowScreen.includes('edges={["top", "right", "bottom", "left"]}')) {
   throw new Error("As telas de fluxo precisam respeitar todas as areas seguras do aparelho.");
 }
+if (!flowScreen.includes("routeOpenRef") || !flowScreen.includes('router.push("/flow-screen")')) {
+  throw new Error("Os fluxos devem compartilhar uma unica rota para nao acumular telas vazias.");
+}
+if (!flowScreen.includes("closeAndNavigate") || !flowScreen.includes("pendingDestinationRef")) {
+  throw new Error("A navegacao iniciada em um fluxo deve aguardar a rota fechar por completo.");
+}
+if (flowScreen.includes('pathname: "/flow-screen", params: { id }')) {
+  throw new Error("Cada modal nao pode criar sua propria rota /flow-screen.");
+}
+if (/setModalNotificacoesHome\(false\);\s*router\.(?:push|replace)/s.test(home)) {
+  throw new Error("Avisos nao podem fechar e navegar no mesmo evento; isso disputa a pilha de rotas.");
+}
+if (!home.includes("navigateFromFlow({ pathname: \"/(tabs)/transacoes\", params: { filtroPeriodo: \"hoje\" }")) {
+  throw new Error("O aviso de agendamentos de hoje deve fechar o fluxo antes de trocar de aba.");
+}
 if (!home.includes('transactionForm: { flexGrow: 1') || !home.includes('marginTop: "auto"')) {
   throw new Error("A acao da tela de transacao precisa permanecer alinhada ao rodape.");
 }
@@ -62,7 +77,7 @@ if (!newCategoryFlow.includes("styles.categoryOptionsGrid") || /<ScrollView\s+ho
 if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includes('offlineQueueList: { flex: 1')) {
   throw new Error("As acoes de notificacao e sincronizacao precisam permanecer alinhadas ao rodape.");
 }
-if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("64 + bottomInset")) {
+if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("FLOATING_BAR_HEIGHT + bottomInset + FLOATING_BAR_GAP")) {
   throw new Error("A barra de abas precisa reservar a area de navegacao do aparelho.");
 }
 if (!home.includes("transactionFormRef.current?.scrollTo") || !home.includes("transactionValueYRef.current")) {

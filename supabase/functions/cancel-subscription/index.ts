@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
     return json({ cancelled: true, accessUntil }, 200, req);
   } catch (error) {
     if (error instanceof Error && error.message === "UNAUTHORIZED") return json({ error: "UNAUTHORIZED" }, 401, req);
+    if (error instanceof Error && error.message === "MFA_REQUIRED") return json({ error: "MFA_REQUIRED" }, 403, req);
     const code = error instanceof Error && /^[A-Z][A-Z0-9_]{2,79}$/.test(error.message)
       ? error.message
       : "UNKNOWN";

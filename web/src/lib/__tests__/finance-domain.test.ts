@@ -114,10 +114,11 @@ describe("filtro de contas do fluxo", () => {
     expect(parseReportAccountSelection("", [1, 2, 3])).toEqual([1, 2, 3]);
   });
 
-  it("ao sair de Todas seleciona somente a conta tocada, igual ao app", () => {
-    expect(nextReportAccountSelection([1, 2, 3], [1, 2, 3], 2)).toEqual([2]);
-    expect(nextReportAccountSelection([2], [1, 2, 3], 3)).toEqual([2, 3]);
-    expect(nextReportAccountSelection([2, 3], [1, 2, 3], 2)).toEqual([3]);
+  it("alterna cada conta individualmente, partindo de todas selecionadas", () => {
+    expect(nextReportAccountSelection([1, 2, 3], [1, 2, 3], 2)).toEqual([1, 3]);
+    expect(nextReportAccountSelection([1, 3], [1, 2, 3], 2)).toEqual([1, 2, 3]);
+    expect(nextReportAccountSelection([3], [1, 2, 3], 1)).toEqual([1, 3]);
+    expect(nextReportAccountSelection([2], [1, 2, 3], 999)).toEqual([2]);
   });
 });
 
@@ -341,7 +342,7 @@ describe("compras e faturas", () => {
 
 describe("executor financeiro manual", () => {
   it("permanece idempotente, autenticado e sem acesso anônimo", () => {
-    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations/20260815000100_secure_manual_financial_actions.sql"), "utf8");
+    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations_archive/20260815000100_secure_manual_financial_actions.sql"), "utf8");
     expect(migration).toContain("caller uuid := auth.uid()");
     expect(migration).toContain("pg_advisory_xact_lock");
     expect(migration).toContain("private.ai_action_state_fingerprint");
@@ -351,7 +352,7 @@ describe("executor financeiro manual", () => {
   });
 
   it("encaminha faturas pelas RPCs manuais sem usar a chave como action_id da IA", () => {
-    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations/20260815000100_secure_manual_financial_actions.sql"), "utf8");
+    const migration = readFileSync(resolve(process.cwd(), "../supabase/migrations_archive/20260815000100_secure_manual_financial_actions.sql"), "utf8");
     const invoiceBranch = migration.slice(
       migration.indexOf("if p_action_type = 'pay_invoice'"),
       migration.indexOf("else\n    -- A leitura com lock"),

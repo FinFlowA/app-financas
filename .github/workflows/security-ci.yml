@@ -71,12 +71,16 @@ jobs:
       - run: npm run test:history-order
       - run: npm run test:money-input
       - run: npm run test:password
+      - run: npm run test:mfa
+      - run: npm run test:anti-abuse
+      - run: npm run test:cross-platform-entitlement
       - run: npm run test:transaction-completion
       - run: npm run test:plan-trigger
       - run: npm run test:account-deletion
       - run: npm run test:offline-queue
       - run: npm run test:native-compat
       - run: npm run test:release-notes-modal
+      - run: npm run test:finn-product-guidance
       - run: npm run test:flow-screens
       - run: npm run test:edge-security
       - run: npm run test:local-demo
@@ -108,9 +112,35 @@ jobs:
       - name: npm audit (informativo — não bloqueia o merge)
         run: npm audit --audit-level=high || true
 
+  database:
+    name: Banco — migrations num banco vazio e testes SQL
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+      # Projeto Supabase descartável dentro do runner, só com as migrations e
+      # os testes do repositório: a config de produção (hooks, secrets) não é
+      # necessária para o banco. Confirma que as migrations recriam o banco do
+      # zero e roda os testes pgTAP de supabase/tests.
+      - name: Aplicar as migrations e rodar os testes pgTAP
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/db" && cd "$RUNNER_TEMP/db"
+          supabase init --force > /dev/null
+          mkdir -p supabase/migrations supabase/tests
+          cp "$GITHUB_WORKSPACE"/supabase/migrations/*.sql supabase/migrations/
+          cp "$GITHUB_WORKSPACE"/supabase/tests/*.sql supabase/tests/
+          supabase db start
+          supabase test db
+
   eas-update:
     name: EAS Update / ${{ matrix.label }}
-    needs: [secret-scan, mobile, web]
+    needs: [secret-scan, mobile, web, database]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
@@ -147,6 +177,15 @@ jobs:
           fi
       - name: Instalar dependências
         run: npm ci
+      # A matriz acima força o runtime de cada APK publicado. Se o app.json
+      # mudou de runtime (novo módulo nativo, como o expo-iap da Google Play),
+      # publicar o bundle novo nesses APKs antigos pode fechar o app ao abrir.
+      # Atualize a matriz e esta conferência junto com o build nativo novo.
+      - name: Conferir runtime do app.json
+        env:
+          RUNTIME_ATUAL: 2.0.0-r2
+        run: |
+          node -e "const v=require('./app.json').expo.runtimeVersion; if (v !== process.env.RUNTIME_ATUAL) { console.error('::error::O app.json usa o runtime ' + v + ', mas o EAS Update publica para ' + process.env.RUNTIME_ATUAL + ' e 2.0.0. Gere o APK do runtime novo e atualize a matriz deste job antes de publicar.'); process.exit(1); }"
       - name: Selecionar runtime do aplicativo
         env:
           TARGET_RUNTIME: ${{ matrix.runtime }}
