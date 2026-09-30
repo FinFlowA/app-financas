@@ -1,6 +1,6 @@
 # Termos de Uso — FinFlow
 
-**Última atualização:** 8 de agosto de 2026
+**Última atualização:** 30 de setembro de 2026
 
 ## 1. Aceitação
 
@@ -35,6 +35,14 @@ O acesso ao FinFlow não depende do recebimento de SMS. A confirmação do e-mai
 O aplicativo poderá oferecer planos com limites e recursos diferentes. Preço, periodicidade, cobrança, renovação, cancelamento e eventual reembolso serão apresentados antes da contratação.
 
 Enquanto não houver meio de pagamento ativo e confirmação expressa da compra, exibir plano ou preço no aplicativo não representa cobrança.
+
+Recursos descritos como ilimitados, em qualquer plano, estão sujeitos a limites técnicos de segurança por usuário, fixados muito acima do uso normal, para proteger a estabilidade do serviço. Quem atingir um desses limites pode pedir revisão pelo canal de contato.
+
+Os planos pagos do FinFlow são oferecidos por **Gabriel Henrique Alves de Lima**, pessoa física responsável pela venda. Os preços vigentes estão na página Preços (`/precos`), e as regras de cancelamento e de reembolso, incluindo a garantia de 30 dias, estão na Política de Cancelamento e Reembolso (`/reembolso`).
+
+> Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle provides all customer service inquiries and handles returns.
+
+Em português: o processo de compra é conduzido pela nossa revendedora online Paddle.com. A Paddle.com é a vendedora registrada (Merchant of Record) de todos os nossos pedidos, atende as solicitações de atendimento sobre compras e cuida das devoluções.
 
 ## 5. Uso permitido
 
@@ -97,4 +105,5 @@ Aplicam-se as leis brasileiras. Permanecem preservados os direitos do consumidor
 ## 14. Contato
 
 - **Responsáveis:** Luís Henrique Palácio e Gabriel Henrique
+- **Vendedor dos planos pagos:** Gabriel Henrique Alves de Lima (pessoa física)
 - **E-mail:** Finflowfinancas@gmail.com

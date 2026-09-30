@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import LegalShell, { LegalList, LegalSection } from "@/components/legal/legal-shell";
 
 export const metadata: Metadata = {
@@ -11,7 +12,7 @@ export default function TermsPage() {
     <LegalShell
       eyebrow="Documento legal"
       title="Termos de Uso"
-      updatedAt="8 de agosto de 2026"
+      updatedAt="30 de setembro de 2026"
       description="Regras essenciais para usar o FinFlow, incluindo conta, planos, parceria e assistente financeiro."
     >
       <LegalSection title="1. Aceitação">
@@ -36,7 +37,11 @@ export default function TermsPage() {
 
       <LegalSection title="4. Planos e cobrança">
         <p>O FinFlow pode oferecer planos com limites e recursos diferentes. Preço, periodicidade, cobrança recorrente, renovação, cancelamento e eventual reembolso são apresentados antes da contratação.</p>
+        <p>Recursos descritos como ilimitados, em qualquer plano, estão sujeitos a limites técnicos de segurança por usuário, fixados muito acima do uso normal, para proteger a estabilidade do serviço. Quem atingir um desses limites pode pedir revisão pelo canal de contato.</p>
         <p>Enquanto o meio de pagamento não estiver ativo e não houver confirmação expressa da compra, a exibição de plano ou preço não representa cobrança. O retorno do checkout também não ativa recursos sozinho: o status é confirmado diretamente com o provedor.</p>
+        <p>Os planos pagos do FinFlow são oferecidos por <strong className="text-foreground">Gabriel Henrique Alves de Lima</strong>, pessoa física responsável pela venda. Os preços vigentes estão em <Link className="font-bold text-primary hover:underline" href="/precos">Preços</Link>, e as regras de cancelamento e de reembolso, incluindo a garantia de 30 dias, estão na <Link className="font-bold text-primary hover:underline" href="/reembolso">Política de Cancelamento e Reembolso</Link>.</p>
+        <p lang="en">Our order process is conducted by our online reseller Paddle.com. Paddle.com is the Merchant of Record for all our orders. Paddle provides all customer service inquiries and handles returns.</p>
+        <p>Em português: o processo de compra é conduzido pela nossa revendedora online Paddle.com. A Paddle.com é a vendedora registrada (Merchant of Record) de todos os nossos pedidos, atende as solicitações de atendimento sobre compras e cuida das devoluções.</p>
       </LegalSection>
 
       <LegalSection title="5. Uso permitido">
@@ -94,7 +99,8 @@ export default function TermsPage() {
       </LegalSection>
 
       <LegalSection title="14. Contato">
-        <p><strong className="text-foreground">Responsáveis:</strong> Luís Henrique Palácio e Gabriel Henrique de Alves Lima.</p>
+        <p><strong className="text-foreground">Responsáveis:</strong> Luís Henrique Palácio e Gabriel Henrique Alves de Lima.</p>
+        <p><strong className="text-foreground">Vendedor dos planos pagos:</strong> Gabriel Henrique Alves de Lima (pessoa física).</p>
         <p><strong className="text-foreground">E-mail:</strong> <a className="font-bold text-primary hover:underline" href="mailto:Finflowfinancas@gmail.com?subject=%5BFinFlow%20-%20Termos%5D">Finflowfinancas@gmail.com</a></p>
       </LegalSection>
     </LegalShell>

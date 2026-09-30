@@ -15,7 +15,7 @@ export default function PrivacyPage() {
       description="Entenda quais dados são tratados, para quais finalidades e como exercer seus direitos sob a LGPD."
     >
       <LegalSection title="1. Responsáveis pelo tratamento">
-        <p>O <strong className="text-foreground">FinFlow</strong> é um aplicativo de organização financeira pessoal desenvolvido e mantido por <strong className="text-foreground">Luís Henrique Palácio e Gabriel Henrique de Alves Lima</strong>, responsáveis pelas decisões sobre o tratamento descrito nesta Política.</p>
+        <p>O <strong className="text-foreground">FinFlow</strong> é um aplicativo de organização financeira pessoal desenvolvido e mantido por <strong className="text-foreground">Luís Henrique Palácio e Gabriel Henrique Alves de Lima</strong>, responsáveis pelas decisões sobre o tratamento descrito nesta Política.</p>
         <p>Contato: <a className="font-bold text-primary hover:underline" href="mailto:Finflowfinancas@gmail.com?subject=%5BFinFlow%20-%20Privacidade%5D">Finflowfinancas@gmail.com</a></p>
       </LegalSection>
 
