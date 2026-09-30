@@ -1,6 +1,6 @@
 # Termos de Uso — FinFlow
 
-**Última atualização:** 8 de agosto de 2026
+**Última atualização:** 30 de setembro de 2026
 
 ## 1. Aceitação
 
@@ -35,6 +35,8 @@ O acesso ao FinFlow não depende do recebimento de SMS. A confirmação do e-mai
 O aplicativo poderá oferecer planos com limites e recursos diferentes. Preço, periodicidade, cobrança, renovação, cancelamento e eventual reembolso serão apresentados antes da contratação.
 
 Enquanto não houver meio de pagamento ativo e confirmação expressa da compra, exibir plano ou preço no aplicativo não representa cobrança.
+
+Recursos descritos como ilimitados, em qualquer plano, estão sujeitos a limites técnicos de segurança por usuário, fixados muito acima do uso normal, para proteger a estabilidade do serviço. Quem atingir um desses limites pode pedir revisão pelo canal de contato.
 
 ## 5. Uso permitido
 

@@ -1330,7 +1330,8 @@ function errorStatus(code: string): number {
   if (["AI_NOT_AVAILABLE", "AI_PLAN_REQUIRED", "AI_ANALYTICS_PLAN_REQUIRED", "AI_PLAN_RESOURCE_LIMIT", "AI_MFA_REQUIRED"].includes(code)) return 403;
   if (code === "AI_ACTION_NOT_FOUND" || code === "PENDING_ACTION_NOT_FOUND" || code.includes("_NOT_FOUND")) return 404;
   if (code === "INVALID_REQUEST" || code === "AI_SENSITIVE_DATA_REJECTED" || code.startsWith("INVALID_") || code.startsWith("AI_INVALID_") || code.startsWith("AI_MISSING_")) return 400;
-  if (code === "AI_ACTION_STATE_CHANGED") return 409;
+  // 409 encerra a prévia no app: repetir a confirmação esbarraria no mesmo teto.
+  if (code === "AI_ACTION_STATE_CHANGED" || code === "AI_SAFETY_LIMIT_REACHED") return 409;
   if ([
     "AI_ACTION_EXPIRED", "AI_ACTION_CANCELLED", "AI_ACTION_NOT_EXECUTABLE", "AI_ACTION_NOT_CANCELLABLE",
     "AI_IDEMPOTENCY_CONFLICT", "AI_INSUFFICIENT_GOAL_BALANCE",

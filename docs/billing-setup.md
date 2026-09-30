@@ -96,7 +96,8 @@ FINFLOW_ALLOWED_ORIGINS
 
 `FINFLOW_ALLOWED_ORIGINS` recebe origens web completas separadas por vírgula,
 por exemplo `https://app.exemplo.com,https://preview.exemplo.com`. `*` é
-ignorado. Localhost continua liberado para desenvolvimento. Android e iOS não
+ignorado. Localhost só é aceito no Supabase local ou com o secret
+`FINFLOW_ALLOW_LOCALHOST_ORIGINS=true` (ver `SEGURANCA.md`). Android e iOS não
 enviam `Origin` e, por isso, não dependem de CORS.
 
 A configuração da IA é independente da cobrança e está documentada em

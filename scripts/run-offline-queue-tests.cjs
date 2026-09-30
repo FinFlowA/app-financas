@@ -16,6 +16,13 @@ const modulePath = path.join(tempDir, "offline-queue-core.cjs");
 fs.writeFileSync(modulePath, output);
 const { createOfflineQueue } = require(modulePath);
 
+// offline-queue-view importa "./teto-seguranca"; o .js permite o require.
+const safetyLimitOutput = ts.transpileModule(
+  fs.readFileSync(path.join(root, "lib", "teto-seguranca.ts"), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText;
+fs.writeFileSync(path.join(tempDir, "teto-seguranca.js"), safetyLimitOutput);
+
 const viewSource = fs.readFileSync(path.join(root, "lib", "offline-queue-view.ts"), "utf8");
 const viewOutput = ts.transpileModule(viewSource, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -129,6 +136,28 @@ async function run() {
   assert.deepEqual(await mfaPendingExecutor(executionRequest), {
     ok: false, retryable: true, errorCode: "OFFLINE_MFA_REQUIRED",
   });
+  // Teto de segurança por usuário (V08): também é P0001, mas não pode virar
+  // "limite de plano" nem ser reenviado; o código leva o teto para a tela.
+  const safetyLimitExecutor = createSupabaseOfflineExecutor({
+    auth: { getUser: async () => ({ data: { user: { id: USER_A } }, error: null }) },
+    rpc: async () => ({
+      data: null,
+      error: { code: "P0001", message: "FINFLOW_TETO_SEGURANCA:lancamentos:diario:5000" },
+      status: 400,
+    }),
+  });
+  assert.deepEqual(await safetyLimitExecutor(executionRequest), {
+    ok: false, retryable: false, errorCode: "FINFLOW_TETO_SEGURANCA:LANCAMENTOS:DIARIO:5000",
+  });
+  assert.match(
+    buildOfflineQueuePanelSnapshot([{
+      id: uuid(900), userId: USER_A, idempotencyKey: uuid(901), actionType: "create_transaction",
+      payload: {}, status: "failed", attempts: 1, createdAt: new Date().toISOString(),
+      lastErrorCode: "FINFLOW_TETO_SEGURANCA:LANCAMENTOS:DIARIO:5000",
+    }]).items[0].failureMessage,
+    /limite de segurança de 5\.000 lançamentos por dia/,
+    "A pendência recusada pelo teto precisa explicar o limite.",
+  );
 
   let optimisticRpcName;
   let optimisticRpcPayload;

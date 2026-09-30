@@ -36,6 +36,7 @@ import {
   type PreferenciasNotificacoes,
 } from "../../lib/notifications";
 import { definirReautenticacao, hasVerifiedFactor, normalizeTotpCode, totpErrorMessage, verifyTotpCode } from "../../lib/mfa";
+import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 import {
   limparFilaFinanceiraDoUsuario,
   OFFLINE_SYNC_COMPLETED_EVENT,
@@ -386,6 +387,8 @@ export default function ConfiguracoesScreen() {
         return;
       }
 
+      const avisoTeto = mensagemTetoSeguranca(error);
+      if (avisoTeto) return Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
       Alert.alert("Erro", "Não foi possível enviar o convite. Tente novamente.");
     }
     else {
@@ -676,7 +679,9 @@ export default function ConfiguracoesScreen() {
       });
       setLoadingFeedback(false);
       if (error) {
-        Alert.alert("Erro", "Não foi possível enviar o feedback. Tente novamente.");
+        const avisoTeto = mensagemTetoSeguranca(error);
+        if (avisoTeto) Alert.alert(TITULO_TETO_SEGURANCA, avisoTeto);
+        else Alert.alert("Erro", "Não foi possível enviar o feedback. Tente novamente.");
       } else {
         Alert.alert("Obrigado!", "Seu feedback foi enviado com sucesso. Vamos analisar e melhorar o FinFlow!");
         setMensagemFeedback("");

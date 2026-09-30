@@ -55,7 +55,7 @@ Secrets são configurados no Supabase, nunca em `.env` versionado:
 
 | Grupo | Variáveis |
 |---|---|
-| CORS | `FINFLOW_ALLOWED_ORIGINS` |
+| CORS | `FINFLOW_ALLOWED_ORIGINS`; `FINFLOW_ALLOW_LOCALHOST_ORIGINS=true` só enquanto testar o site local contra produção |
 | SMS | `SEND_SMS_HOOK_SECRET`, `BREVO_API_KEY`, `BREVO_SMS_SENDER` |
 | IA | `FINFLOW_AI_PROVIDER`, `FINFLOW_AI_ROLLOUT_MODE`, `FINFLOW_AI_ALLOWED_EMAILS`, `FINFLOW_AI_REQUESTS_PER_MINUTE` |
 | Groq | `GROQ_API_KEY`, `FINFLOW_GROQ_MODEL`, `FINFLOW_GROQ_REASONING_EFFORT` |

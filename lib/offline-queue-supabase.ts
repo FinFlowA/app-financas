@@ -57,6 +57,11 @@ function isRetryableSupabaseError(error: SupabaseLikeError | null): boolean {
 function errorCodeFromSupabase(error: SupabaseLikeError | null): string {
   if (isMfaRequired(error)) return "OFFLINE_MFA_REQUIRED";
   if (isRetryableSupabaseError(error) && !error?.code) return "OFFLINE_NETWORK_ERROR";
+  // Teto de segurança por usuário (V08): também chega como P0001, mas não é
+  // limite de plano. O código leva recurso, período e teto para a tela montar
+  // a mensagem (lib/teto-seguranca.ts); a recusa é definitiva, sem reenvio.
+  const safetyLimit = error?.message?.match(/\bFINFLOW_TETO_SEGURANCA:[a-z_]+:(?:diario|total):\d+\b/i)?.[0];
+  if (safetyLimit) return safeCode(safetyLimit);
   const domainCode = error?.message?.match(/\b(?:OFFLINE|AI)_[A-Z0-9_]+\b/)?.[0];
   return safeCode(domainCode ?? error?.code ?? "OFFLINE_SERVER_ERROR");
 }
