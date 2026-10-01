@@ -504,26 +504,6 @@ export default function ChatIAScreen() {
   const cotaConsultas = useMemo(() => lerCotaConsultas(quota), [quota]);
   // Status no cabeçalho, como num contato: "digitando…" enquanto ele responde.
   const [contatoVisivel, setContatoVisivel] = useState(false);
-  // Ao abrir os dados do Finn (e ao tocar na foto), ele acena: balança para os
-  // lados algumas vezes, cada vez menos, e volta ao lugar.
-  const aceno = useRef(new Animated.Value(0)).current;
-  const acenar = useCallback(() => {
-    aceno.stopAnimation();
-    aceno.setValue(0);
-    const passo = (toValue: number, duration: number) =>
-      Animated.timing(aceno, { toValue, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true });
-    Animated.sequence([
-      Animated.delay(180),
-      passo(1, 170),
-      passo(-1, 230),
-      passo(0.85, 230),
-      passo(-0.6, 210),
-      passo(0, 190),
-    ]).start();
-  }, [aceno]);
-  useEffect(() => {
-    if (contatoVisivel) acenar();
-  }, [acenar, contatoVisivel]);
   const statusFinn = !hasAccess ? "indisponível no seu plano" : loading ? "digitando…" : "online";
   const corCota = cotaConsultas?.nivel === "critica"
     ? FinFlowColors.red
@@ -1225,29 +1205,18 @@ export default function ChatIAScreen() {
         <View style={[styles.clearModalOverlay, { backgroundColor: theme.overlay }]}>
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setContatoVisivel(false)} accessibilityLabel="Fechar informações do Finn" />
           <View style={[styles.clearModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]} accessibilityViewIsModal>
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={acenar}
-              style={[styles.contatoFoto, { borderColor: theme.border }]}
-              accessibilityRole="imagebutton"
-              accessibilityLabel="Finn acenando. Toque para ele acenar de novo"
-            >
-              {/* O giro tem o pivô na base da foto: a mão levantada é o que
-                  mais se mexe, como quem dá tchau. */}
-              <Animated.View style={{
-                transform: [
-                  { translateY: CONTATO_FOTO / 2 },
-                  { rotate: aceno.interpolate({ inputRange: [-1, 1], outputRange: ["-13deg", "13deg"] }) },
-                  { translateY: -CONTATO_FOTO / 2 },
-                ],
-              }}>
-                <Image
-                  source={require("../assets/images/finn-chat-header.png")}
-                  style={styles.contatoFotoImagem}
-                  contentFit="contain"
-                />
-              </Animated.View>
-            </TouchableOpacity>
+            {/* Foto de contato animada: o Finn acenando em loop (vídeo gerado a
+                partir da arte dele, convertido para WebP animado, que pesa 10×
+                menos que o GIF equivalente). */}
+            <View style={[styles.contatoFoto, { borderColor: theme.border }]}>
+              <Image
+                source={require("../assets/images/finn-acenando.webp")}
+                style={styles.contatoFotoImagem}
+                contentFit="cover"
+                autoplay
+                accessibilityLabel="Finn acenando"
+              />
+            </View>
             <Text style={[styles.contatoNome, { color: theme.text }]}>Finn</Text>
             <Text style={[styles.contatoStatus, { color: theme.textMuted }]}>Assistente do FinFlow · {statusFinn}</Text>
 

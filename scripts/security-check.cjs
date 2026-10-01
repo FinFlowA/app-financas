@@ -169,12 +169,17 @@ for (const [folder, active] of [["migrations", true], ["migrations_archive", fal
   }
 }
 
-// Defesa em profundidade do pipeline: assets versionados precisam ser PNG real
-// e não podem redirecionar o bundler para conteúdo externo por link simbólico.
+// Defesa em profundidade do pipeline: assets versionados precisam ser imagem
+// real (PNG, ou WebP para animações como o Finn acenando, com a assinatura do
+// formato conferida) e não podem redirecionar o bundler para conteúdo externo
+// por link simbólico.
 const assetRoot = path.join(root, "assets");
 if (fs.existsSync(assetRoot)) {
   const pending = [assetRoot];
   const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const webpValido = (header) => header.length >= 12
+    && header.subarray(0, 4).toString("latin1") === "RIFF"
+    && header.subarray(8, 12).toString("latin1") === "WEBP";
   while (pending.length > 0) {
     const directory = pending.pop();
     for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
@@ -188,16 +193,20 @@ if (fs.existsSync(assetRoot)) {
         continue;
       }
       const relative = path.relative(root, absolute);
-      if (path.extname(entry.name).toLowerCase() !== ".png") {
-        report("ERROR", relative, 1, "Formato de imagem não permitido nos assets; use PNG validado.");
+      const extension = path.extname(entry.name).toLowerCase();
+      if (extension !== ".png" && extension !== ".webp") {
+        report("ERROR", relative, 1, "Formato de imagem não permitido nos assets; use PNG ou WebP validado.");
         continue;
       }
-      const header = Buffer.alloc(8);
+      const header = Buffer.alloc(12);
       const descriptor = fs.openSync(absolute, "r");
       const bytesRead = fs.readSync(descriptor, header, 0, header.length, 0);
       fs.closeSync(descriptor);
-      if (bytesRead !== pngSignature.length || !header.equals(pngSignature)) {
+      if (extension === ".png" && (bytesRead < pngSignature.length || !header.subarray(0, 8).equals(pngSignature))) {
         report("ERROR", relative, 1, "Arquivo com extensão PNG não possui assinatura PNG válida.");
+      }
+      if (extension === ".webp" && (bytesRead < 12 || !webpValido(header))) {
+        report("ERROR", relative, 1, "Arquivo com extensão WebP não possui assinatura WebP válida.");
       }
     }
   }
