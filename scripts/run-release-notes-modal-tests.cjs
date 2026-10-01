@@ -81,4 +81,33 @@ assert.match(
   "O modal de atualizacao so pode mostrar as novidades da versao.",
 );
 
+// Na abertura, a versao nova entra na primeira vez: a tela de carregamento
+// espera a checagem (com limite de tempo) e o app recarrega antes de mostrar
+// qualquer tela. A digital so e pedida depois, para nao ser pedida duas vezes.
+assert.match(
+  layout,
+  /Promise\.race\(\[buscaInicial, esperar\(ESPERA_CHECAGEM_NA_ABERTURA_MS\)\]\)[\s\S]{0,1500}await Updates\.reloadAsync\(\);[\s\S]{0,400}setAberturaLiberada\(true\)/,
+  "A versao baixada na abertura deve ser aplicada antes de liberar a primeira tela.",
+);
+assert.match(
+  layout,
+  /CHAVE_RECARGA[\s\S]{0,300}10 \* 60 \* 1000/,
+  "A recarga da abertura precisa de limite para nao reiniciar o app sem parar.",
+);
+assert.match(
+  layout,
+  /if \(!isReady \|\| !isAuthReady \|\| !aberturaLiberada\)/,
+  "A tela de carregamento precisa esperar a checagem de atualizacao da abertura.",
+);
+assert.match(
+  layout,
+  /if \(!aberturaLiberada \|\| !biometriaPendente\) return;[\s\S]{0,80}verificarBiometria\(\)/,
+  "A digital so pode ser pedida depois da checagem de atualizacao da abertura.",
+);
+assert.match(
+  layout,
+  /abertoPorLinkDeAcesso[\s\S]{0,120}atualizacaoPronta && !abertoPorLinkDeAcesso/,
+  "Abrir o app por link de e-mail nao pode recarregar no meio da troca do codigo.",
+);
+
 console.log("Release notes modal tests passed.");

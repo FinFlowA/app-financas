@@ -5,8 +5,11 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-10-01-correcoes-v15",
+  id: "2.0.0-2026-10-01-correcoes-v16",
   items: [
+    "A tela de nova transação voltou a ocupar a tela inteira",
+    "Formulários mais leves: a tela de fundo não é mais redesenhada sem parar enquanto você preenche",
+    "Versões novas passam a valer já na primeira abertura do app",
     "Conta, destino e categoria da nova transação abrem uma lista completa, com busca que continua visível com o teclado aberto",
     "O teclado não cobre mais o número de parcelas, o campo de mensagem do Finn nem as senhas na área de Segurança",
     "O Finn mostra três pontinhos enquanto pensa, e um círculo ao lado do campo indica quantas consultas restam no dia",
