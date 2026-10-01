@@ -6,10 +6,8 @@ import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   AppState,
   DeviceEventEmitter,
-  Easing,
   Keyboard,
   KeyboardAvoidingView,
   Platform,
@@ -48,6 +46,7 @@ import {
 import { mensagemErroLimitePlano } from "../../lib/planos";
 import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 import SeletorLista from "../../components/SeletorLista";
+import OndasCabecalho from "../../components/OndasCabecalho";
 import { useCampoFocadoVisivel, useSobreposicaoTeclado } from "../../hooks/use-teclado";
 import {
   adicionarRecorrencia,
@@ -396,28 +395,6 @@ export default function Dashboard() {
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
   const [confirmarEdicaoSaldo, setConfirmarEdicaoSaldo] = useState(false);
   const [qtdVencidas, setQtdVencidas] = useState(0);
-  const movimentoOndasHero = useRef(new Animated.Value(0)).current;
-
-  React.useEffect(() => {
-    const animacao = Animated.loop(
-      Animated.sequence([
-        Animated.timing(movimentoOndasHero, {
-          toValue: 1,
-          duration: 9000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(movimentoOndasHero, {
-          toValue: 0,
-          duration: 9000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ]),
-    );
-    animacao.start();
-    return () => animacao.stop();
-  }, [movimentoOndasHero]);
 
   // --- Cálculos ---
   const contasAtivas = useMemo(() => contas.filter((conta) => !conta.arquivado), [contas]);
@@ -1902,29 +1879,7 @@ export default function Dashboard() {
         )}
       >
         <View style={[styles.homeHero, { backgroundColor: novoTema.header }]}>
-          <View pointerEvents="none" style={styles.homeHeroWaves}>
-            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveOne, {
-              transform: [
-                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-18, 22] }) },
-                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-5, 8] }) },
-                { rotate: "-10deg" },
-              ],
-            }]} />
-            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveTwo, {
-              transform: [
-                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [20, -15] }) },
-                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [7, -6] }) },
-                { rotate: "12deg" },
-              ],
-            }]} />
-            <Animated.View style={[styles.homeHeroWave, styles.homeHeroWaveThree, {
-              transform: [
-                { translateX: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [-10, 16] }) },
-                { translateY: movimentoOndasHero.interpolate({ inputRange: [0, 1], outputRange: [4, -5] }) },
-                { rotate: "-7deg" },
-              ],
-            }]} />
-          </View>
+          <OndasCabecalho />
           <View style={styles.homeHeroContent}>
           <View style={styles.homeHeroTop}>
             <View style={{ flex: 1 }}>
@@ -3529,11 +3484,6 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   container: { flex: 1, padding: 16 },
   homeHero: { borderRadius: 24, padding: 20, paddingBottom: 24, overflow: "hidden", minHeight: 190 },
-  homeHeroWaves: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
-  homeHeroWave: { position: "absolute", borderRadius: 999, backgroundColor: "rgba(255,255,255,0.08)" },
-  homeHeroWaveOne: { width: 420, height: 155, right: -175, top: 45 },
-  homeHeroWaveTwo: { width: 390, height: 135, left: -205, top: 92, backgroundColor: "rgba(255,255,255,0.06)" },
-  homeHeroWaveThree: { width: 330, height: 105, right: -105, bottom: -58, backgroundColor: "rgba(0,55,48,0.10)" },
   homeHeroContent: { zIndex: 2 },
   homeHeroTop: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
   homeHeroGreeting: { color: "#FFF", fontSize: 20, fontWeight: "800" },
