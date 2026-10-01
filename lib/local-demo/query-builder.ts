@@ -169,6 +169,7 @@ export class LocalDemoQueryBuilder implements PromiseLike<LocalDemoQueryResult<u
   private filters: Filter[] = [];
   private orders: { column: string; ascending: boolean; nullsFirst?: boolean }[] = [];
   private rowLimit: number | null = null;
+  private rowOffset = 0;
   private cardinality: Cardinality = "many";
   private values: LocalDemoRow[] = [];
   private returnRows = false;
@@ -245,6 +246,12 @@ export class LocalDemoQueryBuilder implements PromiseLike<LocalDemoQueryResult<u
   }
 
   limit(value: number): this { this.rowLimit = Math.max(0, Math.trunc(value)); return this; }
+  /** Paginação do PostgREST (índices inclusivos), usada por fetchAllRows na Home. */
+  range(from: number, to: number): this {
+    this.rowOffset = Math.max(0, Math.trunc(from));
+    this.rowLimit = Math.max(0, Math.trunc(to) - this.rowOffset + 1);
+    return this;
+  }
   single(): this { this.cardinality = "single"; this.returnRows = true; return this; }
   maybeSingle(): this { this.cardinality = "maybeSingle"; this.returnRows = true; return this; }
 
@@ -265,7 +272,8 @@ export class LocalDemoQueryBuilder implements PromiseLike<LocalDemoQueryResult<u
         return 0;
       });
     }
-    return this.rowLimit === null ? filtered : filtered.slice(0, this.rowLimit);
+    const start = this.rowOffset;
+    return this.rowLimit === null ? filtered.slice(start) : filtered.slice(start, start + this.rowLimit);
   }
 
   private async run(): Promise<LocalDemoQueryResult<unknown>> {
