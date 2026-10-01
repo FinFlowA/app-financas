@@ -1,24 +1,26 @@
 /**
- * Atualize este arquivo em toda publicação do app.
+ * Novidades mostradas UMA vez depois que uma atualização entra no app.
  *
- * O `id` controla se o usuário já viu as novidades desta versão. Por isso,
- * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
+ * Só troque o `id` (e as mensagens) quando houver mudança relevante para
+ * quem usa o app: recurso novo, mudança visível no jeito de usar ou correção
+ * de um problema que as pessoas percebiam. Correções pequenas e ajustes
+ * internos mantêm o `id`: a atualização entra em silêncio, sem nenhuma tela
+ * (decisão do responsável pelo produto em 01/10/2026).
+ *
+ * Ao trocar o `id`, as mensagens descrevem só o que mudou desde a última
+ * lista exibida.
  */
 export const RELEASE_NOTES = {
   id: "2.0.0-2026-10-01-correcoes-v17",
   items: [
-    "O cabeçalho dos Cartões ganhou as ondas animadas da tela inicial",
-    "As listas de conta e categoria da nova transação surgem com uma animação suave",
-    "A tela de nova transação voltou a ocupar a tela inteira",
-    "Formulários mais leves: a tela de fundo não é mais redesenhada sem parar enquanto você preenche",
-    "Versões novas passam a valer já na primeira abertura do app",
-    "Conta, destino e categoria da nova transação abrem uma lista completa, com busca que continua visível com o teclado aberto",
-    "O teclado não cobre mais o número de parcelas, o campo de mensagem do Finn nem as senhas na área de Segurança",
+    "Conta, destino e categoria da nova transação abrem uma lista completa com busca, que surge com uma animação suave",
+    "O teclado não cobre mais o número de parcelas, o campo do Finn nem as senhas em Segurança",
     "O Finn mostra três pontinhos enquanto pensa, e um círculo ao lado do campo indica quantas consultas restam no dia",
-    "Lembretes de vencimento dos próximos dias são agendados de uma vez e chegam mesmo sem abrir o app",
-    "O link de nova senha não aparece mais como expirado quando aberto logo depois de recebido",
+    "Lembretes de vencimento dos próximos dias chegam mesmo sem abrir o app",
+    "O link de nova senha não aparece mais como expirado logo depois de recebido",
     "Transferências entre contas voltam a ser criadas e conciliadas normalmente",
-    "O calendário dos objetivos segue o visual do app, e a barra de abas some ao abrir Cartões pela tela inicial",
-    "Atualizações do app são instaladas em segundo plano, sem pedir para reiniciar",
+    "O calendário dos objetivos segue o visual do app, e o cabeçalho dos Cartões ganhou as ondas animadas da tela inicial",
+    "Atualizações entram sozinhas, já na primeira abertura, sem pedir para reiniciar",
+    "Formulários mais leves e rápidos de preencher",
   ],
 } as const;
