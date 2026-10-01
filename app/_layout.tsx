@@ -1583,15 +1583,6 @@ export default function RootLayout() {
 
       <FinFlowAlertHost isDark={isDark} />
 
-      {IS_LOCAL_DEMO && (
-        <View pointerEvents="none" style={styles.localDemoBadge}>
-          <MaterialIcons name="science" size={15} color="#08352F" />
-          <Text style={styles.localDemoBadgeText}>
-            MODO LOCAL · dados fictícios · sem sincronização
-          </Text>
-        </View>
-      )}
-
       {/* Toast global */}
       <Animated.View
         pointerEvents="none"
@@ -2122,37 +2113,6 @@ export default function RootLayout() {
 }
 
 const styles = StyleSheet.create({
-  localDemoBadge: {
-    position: "absolute",
-    top: 10,
-    alignSelf: "center",
-    zIndex: 10000,
-    elevation: 30,
-    maxWidth: "92%",
-    minHeight: 30,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(8,53,47,0.25)",
-    backgroundColor: "#8CE4C9",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.18,
-    shadowRadius: 4,
-  },
-  localDemoBadgeText: {
-    flexShrink: 1,
-    color: "#08352F",
-    fontSize: 11,
-    lineHeight: 15,
-    fontWeight: "900",
-    textAlign: "center",
-  },
   lockScreen: { flex: 1, alignItems: "center", justifyContent: "center", overflow: "hidden" },
   lockGlowTop: {
     position: "absolute",

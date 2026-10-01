@@ -211,6 +211,8 @@ class FinanceAiRequestError extends Error {
 
 const WELCOME_MESSAGE = "Olá! Eu sou o Finn, seu assistente financeiro no FinFlow. Posso conversar, explicar seus números e preparar ações para você revisar. Nenhuma alteração é feita sem você tocar em Confirmar.";
 const INLINE_CHOICE_LIMIT = 4;
+// Tamanho da foto do Finn nos dados do contato (px).
+const CONTATO_FOTO = 104;
 
 function normalizeChoice(value: string): string {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
@@ -500,6 +502,29 @@ export default function ChatIAScreen() {
   // Consultas ao Finn restantes no dia, mostradas como um círculo que esvazia
   // ao lado do campo de digitação (o número aparece ao tocar nele).
   const cotaConsultas = useMemo(() => lerCotaConsultas(quota), [quota]);
+  // Status no cabeçalho, como num contato: "digitando…" enquanto ele responde.
+  const [contatoVisivel, setContatoVisivel] = useState(false);
+  // Ao abrir os dados do Finn (e ao tocar na foto), ele acena: balança para os
+  // lados algumas vezes, cada vez menos, e volta ao lugar.
+  const aceno = useRef(new Animated.Value(0)).current;
+  const acenar = useCallback(() => {
+    aceno.stopAnimation();
+    aceno.setValue(0);
+    const passo = (toValue: number, duration: number) =>
+      Animated.timing(aceno, { toValue, duration, easing: Easing.inOut(Easing.quad), useNativeDriver: true });
+    Animated.sequence([
+      Animated.delay(180),
+      passo(1, 170),
+      passo(-1, 230),
+      passo(0.85, 230),
+      passo(-0.6, 210),
+      passo(0, 190),
+    ]).start();
+  }, [aceno]);
+  useEffect(() => {
+    if (contatoVisivel) acenar();
+  }, [acenar, contatoVisivel]);
+  const statusFinn = !hasAccess ? "indisponível no seu plano" : loading ? "digitando…" : "online";
   const corCota = cotaConsultas?.nivel === "critica"
     ? FinFlowColors.red
     : cotaConsultas?.nivel === "atencao" ? "#E9A15B" : theme.primary;
@@ -868,7 +893,14 @@ export default function ChatIAScreen() {
             <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityLabel="Voltar">
               <MaterialIcons name="arrow-back" size={23} color="#FFF" />
             </TouchableOpacity>
-            <View style={styles.headerIdentity}>
+            {/* Como um contato do WhatsApp: foto, nome e status; tocar abre os
+                dados do Finn. */}
+            <TouchableOpacity
+              style={styles.headerIdentity}
+              onPress={() => setContatoVisivel(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Finn, ${statusFinn}. Ver informações do Finn`}
+            >
               <Animated.View style={[styles.headerFinnAvatar, {
                 transform: [
                   { translateY: entranceProgress.interpolate({ inputRange: [0, 0.72, 1], outputRange: [12, -3, 0] }) },
@@ -882,8 +914,13 @@ export default function ChatIAScreen() {
                   accessibilityLabel="Finn, mascote do FinFlow"
                 />
               </Animated.View>
-              <Text style={styles.headerTitle}>Finn</Text>
-            </View>
+              <View style={styles.headerIdentityText}>
+                <Text style={styles.headerTitle}>Finn</Text>
+                <Text style={[styles.headerStatus, loading && hasAccess && styles.headerStatusTyping]} numberOfLines={1}>
+                  {statusFinn}
+                </Text>
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity
               onPress={openClearModal}
               style={[styles.headerIcon, (loading || clearing) && styles.disabled]}
@@ -1176,6 +1213,73 @@ export default function ChatIAScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Dados do contato, como ao tocar num contato do WhatsApp. */}
+      <Modal
+        visible={contatoVisivel}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={() => setContatoVisivel(false)}
+      >
+        <View style={[styles.clearModalOverlay, { backgroundColor: theme.overlay }]}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} onPress={() => setContatoVisivel(false)} accessibilityLabel="Fechar informações do Finn" />
+          <View style={[styles.clearModalCard, { backgroundColor: theme.surface, borderColor: theme.border }]} accessibilityViewIsModal>
+            <TouchableOpacity
+              activeOpacity={0.9}
+              onPress={acenar}
+              style={[styles.contatoFoto, { borderColor: theme.border }]}
+              accessibilityRole="imagebutton"
+              accessibilityLabel="Finn acenando. Toque para ele acenar de novo"
+            >
+              {/* O giro tem o pivô na base da foto: a mão levantada é o que
+                  mais se mexe, como quem dá tchau. */}
+              <Animated.View style={{
+                transform: [
+                  { translateY: CONTATO_FOTO / 2 },
+                  { rotate: aceno.interpolate({ inputRange: [-1, 1], outputRange: ["-13deg", "13deg"] }) },
+                  { translateY: -CONTATO_FOTO / 2 },
+                ],
+              }}>
+                <Image
+                  source={require("../assets/images/finn-chat-header.png")}
+                  style={styles.contatoFotoImagem}
+                  contentFit="contain"
+                />
+              </Animated.View>
+            </TouchableOpacity>
+            <Text style={[styles.contatoNome, { color: theme.text }]}>Finn</Text>
+            <Text style={[styles.contatoStatus, { color: theme.textMuted }]}>Assistente do FinFlow · {statusFinn}</Text>
+
+            <View style={[styles.contatoSecao, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+              <Text style={[styles.contatoSecaoTitulo, { color: theme.textMuted }]}>Recado</Text>
+              <Text style={[styles.contatoSecaoTexto, { color: theme.text }]}>
+                Converso sobre o seu dinheiro, explico seus números e preparo lançamentos para você revisar. Nada muda sem você tocar em Confirmar.
+              </Text>
+            </View>
+
+            {cotaConsultas && (
+              <View style={[styles.contatoSecao, styles.contatoCota, { backgroundColor: theme.surfaceMuted, borderColor: theme.border }]}>
+                <AnelCota fracao={cotaConsultas.fracao} cor={corCota} corTrilho={theme.border} tamanho={34} />
+                <View style={styles.flex}>
+                  <Text style={[styles.contatoSecaoTitulo, { color: theme.textMuted }]}>Consultas hoje</Text>
+                  <Text style={[styles.contatoSecaoTexto, { color: theme.text }]}>
+                    {cotaConsultas.restantes} de {cotaConsultas.limite} disponíveis. A contagem recomeça todo dia.
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            <TouchableOpacity
+              style={[styles.contatoFechar, { backgroundColor: theme.primary }]}
+              onPress={() => setContatoVisivel(false)}
+              accessibilityRole="button"
+            >
+              <Text style={styles.contatoFecharTexto}>Voltar à conversa</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1183,21 +1287,34 @@ export default function ChatIAScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   safeArea: { flex: 1 },
+  // Barra compacta de contato (estilo WhatsApp): voltar, foto, nome/status e ações.
   header: {
-    minHeight: 126,
-    borderBottomLeftRadius: 25,
-    borderBottomRightRadius: 25,
-    paddingHorizontal: 16,
-    paddingTop: 8,
-    paddingBottom: 15,
+    borderBottomLeftRadius: 22,
+    borderBottomRightRadius: 22,
+    paddingHorizontal: 10,
+    paddingTop: 6,
+    paddingBottom: 10,
     ...FinFlowShadow,
   },
   headerTopRow: { minHeight: 52, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   headerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.12)" },
-  headerIdentity: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 9 },
-  headerFinnAvatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "rgba(255,255,255,0.13)", borderWidth: 1, borderColor: "rgba(255,255,255,0.20)" },
+  headerIdentity: { flex: 1, minHeight: 48, flexDirection: "row", alignItems: "center", gap: 10, marginHorizontal: 8 },
+  headerFinnAvatar: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "rgba(255,255,255,0.13)", borderWidth: 1, borderColor: "rgba(255,255,255,0.20)" },
   headerFinnImage: { width: 42, height: 42 },
-  headerTitle: { color: "#FFF", fontSize: 19, fontWeight: "900" },
+  headerIdentityText: { flex: 1, minWidth: 0 },
+  headerTitle: { color: "#FFF", fontSize: 17, fontWeight: "900" },
+  headerStatus: { color: "rgba(255,255,255,0.74)", fontSize: 12, fontWeight: "600", marginTop: 1 },
+  headerStatusTyping: { color: "#B8F4D7" },
+  contatoFoto: { width: CONTATO_FOTO, height: CONTATO_FOTO, borderRadius: CONTATO_FOTO / 2, borderWidth: 1, overflow: "hidden", alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  contatoFotoImagem: { width: CONTATO_FOTO, height: CONTATO_FOTO },
+  contatoNome: { fontSize: 22, fontWeight: "900" },
+  contatoStatus: { fontSize: 12.5, fontWeight: "600", marginTop: 3, marginBottom: 16, textAlign: "center" },
+  contatoSecao: { width: "100%", borderWidth: 1, borderRadius: 15, paddingHorizontal: 13, paddingVertical: 11, marginBottom: 10 },
+  contatoCota: { flexDirection: "row", alignItems: "center", gap: 12 },
+  contatoSecaoTitulo: { fontSize: 10.5, fontWeight: "900", letterSpacing: 0.4, textTransform: "uppercase", marginBottom: 3 },
+  contatoSecaoTexto: { fontSize: 13, lineHeight: 19, fontWeight: "600" },
+  contatoFechar: { width: "100%", minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 6 },
+  contatoFecharTexto: { color: "#FFF", fontSize: 14, fontWeight: "900" },
   messagesContent: { paddingHorizontal: 14, paddingTop: 20, paddingBottom: 20 },
   historyLoader: { marginVertical: 15 },
   accessNotice: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 },
