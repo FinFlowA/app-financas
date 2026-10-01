@@ -47,6 +47,8 @@ import {
 } from "../../lib/offline-sync";
 import { mensagemErroLimitePlano } from "../../lib/planos";
 import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
+import SeletorLista from "../../components/SeletorLista";
+import { useCampoFocadoVisivel, useSobreposicaoTeclado } from "../../hooks/use-teclado";
 import {
   adicionarRecorrencia,
   adicionarIdSerie,
@@ -253,6 +255,14 @@ export default function Dashboard() {
     pillFundo: novoTema.surfaceMuted,
     pillAtivo: novoTema.primarySoft,
   };
+  const coresSeletor = {
+    card: Cores.cardFundo,
+    campo: Cores.inputFundo,
+    borda: Cores.borda,
+    pill: Cores.pillFundo,
+    texto: Cores.textoPrincipal,
+    textoSecundario: Cores.textoSecundario,
+  };
 
   const [categorias, setCategorias] = useState<Categoria[]>([]);
   const [transacoes, setTransacoes] = useState<Transacao[]>([]);
@@ -317,17 +327,15 @@ export default function Dashboard() {
   const [loadingTrans, setLoadingTrans] = useState(false);
   const [transactionKeyboardVisivel, setTransactionKeyboardVisivel] = useState(false);
   const transactionFormRef = useRef<ScrollView>(null);
-  const transactionValueYRef = useRef(0);
-  const transactionValueFocusedRef = useRef(false);
-
-  const mostrarValorAcimaDoTeclado = useCallback((delay = 80) => {
-    setTimeout(() => {
-      transactionFormRef.current?.scrollTo({
-        y: Math.max(0, transactionValueYRef.current - 72),
-        animated: true,
-      });
-    }, delay);
-  }, []);
+  const transactionOverlayRef = useRef<View>(null);
+  // Android edge-to-edge: a folha sobe o quanto o teclado cobre e qualquer
+  // campo focado (Valor, Número de parcelas...) é rolado para cima do teclado.
+  const transactionTecladoAndroid = useSobreposicaoTeclado(
+    transactionOverlayRef,
+    modalTransVisivel && Platform.OS === "android",
+  );
+  const { onScroll: onScrollTransacao, garantirVisivel: mostrarCampoTransacaoAcimaDoTeclado } =
+    useCampoFocadoVisivel(transactionFormRef, { ativo: modalTransVisivel });
 
   React.useEffect(() => {
     if (!modalTransVisivel) return;
@@ -337,7 +345,6 @@ export default function Dashboard() {
     // rolagem volte ao topo independente de como ele foi fechado.
     const subShow = Keyboard.addListener("keyboardDidShow", () => {
       setTransactionKeyboardVisivel(true);
-      if (transactionValueFocusedRef.current) mostrarValorAcimaDoTeclado();
     });
     const subHide = Keyboard.addListener("keyboardDidHide", () => {
       setTransactionKeyboardVisivel(false);
@@ -347,7 +354,7 @@ export default function Dashboard() {
       subShow.remove();
       subHide.remove();
     };
-  }, [modalTransVisivel, mostrarValorAcimaDoTeclado]);
+  }, [modalTransVisivel]);
   const [descTransacao, setDescTransacao] = useState("");
   const [valorTransacao, setValorTransacao] = useState("");
   const [tipoTransacao, setTipoTransacao] = useState<"receita" | "despesa" | "transferencia">("despesa");
@@ -373,15 +380,12 @@ export default function Dashboard() {
 
   const [modalResumoVisivel, setModalResumoVisivel] = useState(false);
   const [modalBalancoAtualVisivel, setModalBalancoAtualVisivel] = useState(false);
-  const [modalNotificacoesHome, setModalNotificacoesHome] = useState(false);
   const [modalAgendaVisivel, setModalAgendaVisivel] = useState(false);
   const [dataAgenda, setDataAgenda] = useState(() => new Date());
   const [filtroAgenda, setFiltroAgenda] = useState<"todos" | "concluidos" | "pendentes">("todos");
   const [seletorPeriodoAgendaVisivel, setSeletorPeriodoAgendaVisivel] = useState(false);
   // Começa oculto para uma preferência salva como privada nunca piscar na tela.
   const [valoresVisiveis, setValoresVisiveis] = useState(false);
-  const [assinaturaAvisosVisualizada, setAssinaturaAvisosVisualizada] = useState("");
-  const [leituraAvisosCarregada, setLeituraAvisosCarregada] = useState(false);
   const [modalContasHomeVisivel, setModalContasHomeVisivel] = useState(false);
   const [contasSelecionadasHomeIds, setContasSelecionadasHomeIds] = useState<number[] | null>(null);
   const [contasHomeRascunhoIds, setContasHomeRascunhoIds] = useState<number[]>([]);
@@ -558,44 +562,7 @@ export default function Dashboard() {
     };
   }, [comprasCartao, contasEscopoHome, escopoHomeEhTodas, mesAtual, transacoesEscopoHome]);
 
-  const { transacoesVencidasHome, transacoesHojeHome, transacoesProximasHome } = useMemo(() => {
-    const hoje = new Date();
-    hoje.setHours(0, 0, 0, 0);
-    const limite = new Date(hoje);
-    limite.setDate(limite.getDate() + 7);
-    const vencidas: Transacao[] = [];
-    const hojePendentes: Transacao[] = [];
-    const proximas: Transacao[] = [];
-
-    transacoesEscopoHome.forEach((transacao) => {
-      if (transacao.status !== "pendente") return;
-      const [ano, mes, dia] = transacao.data_vencimento.split("-").map(Number);
-      const vencimento = new Date(ano, mes - 1, dia);
-      if (vencimento < hoje) vencidas.push(transacao);
-      else if (vencimento.getTime() === hoje.getTime()) hojePendentes.push(transacao);
-      else if (vencimento <= limite) proximas.push(transacao);
-    });
-
-    return {
-      transacoesVencidasHome: vencidas,
-      transacoesHojeHome: hojePendentes,
-      transacoesProximasHome: proximas,
-    };
-  }, [transacoesEscopoHome]);
-  const qtdVencidasHome = transacoesVencidasHome.length;
-  const qtdVencendoHoje = transacoesHojeHome.length;
-  const qtdProximosVencimentos = transacoesProximasHome.length;
   const temFaturaVencidaHome = escopoHomeEhTodas && temFaturaVencida;
-  const assinaturaAvisosAtual = useMemo(() => [
-    `atrasados:${transacoesVencidasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
-    `hoje:${transacoesHojeHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
-    `proximos:${transacoesProximasHome.map((transacao) => transacao.id).sort((a, b) => a - b).join(",")}`,
-    `fatura:${temFaturaVencidaHome ? "1" : "0"}`,
-  ].join("|"), [temFaturaVencidaHome, transacoesHojeHome, transacoesProximasHome, transacoesVencidasHome]);
-  const temAvisosFinanceiros = qtdVencidasHome > 0 || qtdVencendoHoje > 0 || qtdProximosVencimentos > 0 || temFaturaVencidaHome;
-  const mostrarBadgeAvisos = leituraAvisosCarregada
-    && temAvisosFinanceiros
-    && assinaturaAvisosVisualizada !== assinaturaAvisosAtual;
 
   const chaveDataAgenda = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dataAgenda.getDate()).padStart(2, "0")}`;
   const itensAgendaPorData = useMemo(() => {
@@ -668,31 +635,6 @@ export default function Dashboard() {
     ];
   }, [mesExibidoTransacao]);
 
-  React.useEffect(() => {
-    let efeitoAtivo = true;
-    const userId = session?.user?.id;
-    setLeituraAvisosCarregada(false);
-
-    if (!userId) {
-      setAssinaturaAvisosVisualizada("");
-      setLeituraAvisosCarregada(true);
-      return () => { efeitoAtivo = false; };
-    }
-
-    void AsyncStorage.getItem(`@finflow_avisos_home_visualizados:${userId}`)
-      .then((assinaturaSalva) => {
-        if (!efeitoAtivo) return;
-        setAssinaturaAvisosVisualizada(assinaturaSalva ?? "");
-      })
-      .catch(() => {
-        if (efeitoAtivo) setAssinaturaAvisosVisualizada("");
-      })
-      .finally(() => {
-        if (efeitoAtivo) setLeituraAvisosCarregada(true);
-      });
-
-    return () => { efeitoAtivo = false; };
-  }, [session?.user?.id]);
 
   React.useEffect(() => {
     let ativo = true;
@@ -881,7 +823,7 @@ export default function Dashboard() {
       });
       void AsyncStorage.multiRemove(CHAVES_CACHE_HOME_LEGADO).catch(() => {});
 
-      // Mantém a central do sino atualizada; o popup automático aparece apenas uma vez.
+      // Conta os vencidos para o aviso da Home, que aparece apenas uma vez.
       if (resTransacoes.data) {
         const hoje = new Date();
         hoje.setHours(0, 0, 0, 0);
@@ -1940,18 +1882,6 @@ export default function Dashboard() {
     });
   };
 
-  const abrirAvisosFinanceiros = () => {
-    setModalNotificacoesHome(true);
-    setAssinaturaAvisosVisualizada(assinaturaAvisosAtual);
-
-    const userId = session?.user?.id;
-    if (userId) {
-      void AsyncStorage.setItem(
-        `@finflow_avisos_home_visualizados:${userId}`,
-        assinaturaAvisosAtual,
-      ).catch((error) => console.warn("Não foi possível registrar a leitura dos avisos:", error));
-    }
-  };
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: Cores.fundo }]}>
@@ -2004,10 +1934,6 @@ export default function Dashboard() {
                 <MaterialIcons name="keyboard-arrow-down" size={16} color="rgba(255,255,255,0.8)" />
               </TouchableOpacity>
             </View>
-            <TouchableOpacity style={styles.homeBell} onPress={abrirAvisosFinanceiros} accessibilityLabel="Abrir avisos financeiros">
-              <MaterialIcons name={notificacoesAtivas ? "notifications-active" : "notifications-none"} size={22} color="#FFF" />
-              {mostrarBadgeAvisos && <View style={styles.homeBellBadge} />}
-            </TouchableOpacity>
           </View>
           <Text style={styles.homeBalanceLabel}>Saldo geral</Text>
           <View style={styles.homeBalanceRow}>
@@ -2452,84 +2378,6 @@ export default function Dashboard() {
             <TouchableOpacity style={[styles.balanceExplanationButton, { backgroundColor: novoTema.primary }]} onPress={() => setModalBalancoAtualVisivel(false)}>
               <Text style={styles.balanceExplanationButtonText}>Entendi</Text>
             </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
-      )}
-
-      {modalNotificacoesHome && (
-      <Modal animationType="fade" transparent visible onRequestClose={() => setModalNotificacoesHome(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.notificationPageShell}>
-          <View style={styles.notificationCenterStage}>
-          <View style={[styles.notificationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
-            <View style={styles.notificationHeader}>
-              <View style={[styles.notificationHeaderIcon, { backgroundColor: novoTema.primarySoft }]}>
-                <MaterialIcons name="notifications-none" size={24} color={novoTema.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.notificationTitle, { color: Cores.textoPrincipal }]}>Avisos financeiros</Text>
-                <Text style={[styles.notificationSubtitle, { color: Cores.textoSecundario }]}>
-                  {notificacoesAtivas ? "Notificações do dispositivo ativadas" : "Notificações do dispositivo desativadas"}
-                </Text>
-              </View>
-              <TouchableOpacity style={styles.notificationClose} onPress={() => setModalNotificacoesHome(false)}>
-                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.notificationList}>
-              {qtdVencidasHome > 0 && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "atrasados" } } as any);
-                }}>
-                  <View style={[styles.notificationItemIcon, { backgroundColor: "#E76F5122" }]}><MaterialIcons name="warning-amber" size={20} color="#E76F51" /></View>
-                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Lançamentos atrasados</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencidasHome} pendência{qtdVencidasHome === 1 ? "" : "s"} precisa{qtdVencidasHome === 1 ? "" : "m"} de atenção.</Text></View>
-                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
-                </TouchableOpacity>
-              )}
-              {qtdVencendoHoje > 0 && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "hoje" } } as any);
-                }}>
-                  <View style={[styles.notificationItemIcon, { backgroundColor: `${novoTema.primary}22` }]}><MaterialIcons name="today" size={20} color={novoTema.primary} /></View>
-                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Agendamentos vencendo hoje</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdVencendoHoje} lançamento{qtdVencendoHoje === 1 ? "" : "s"} precisa{qtdVencendoHoje === 1 ? "" : "m"} ser acompanhado{qtdVencendoHoje === 1 ? "" : "s"} hoje.</Text></View>
-                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
-                </TouchableOpacity>
-              )}
-              {qtdProximosVencimentos > 0 && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => {
-                  navigateFromFlow({ pathname: "/(tabs)/transacoes", params: { filtroPeriodo: "proximos-7-dias" } } as any);
-                }}>
-                  <View style={[styles.notificationItemIcon, { backgroundColor: "#E9C46A22" }]}><MaterialIcons name="event" size={20} color="#C99B25" /></View>
-                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Próximos 7 dias</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>{qtdProximosVencimentos} lançamento{qtdProximosVencimentos === 1 ? "" : "s"} pendente{qtdProximosVencimentos === 1 ? "" : "s"}.</Text></View>
-                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
-                </TouchableOpacity>
-              )}
-              {temFaturaVencidaHome && (
-                <TouchableOpacity style={[styles.notificationItem, { backgroundColor: Cores.pillFundo }]} onPress={() => navigateFromFlow("/(tabs)/cartoes" as any)}>
-                  <View style={[styles.notificationItemIcon, { backgroundColor: "#C0392E22" }]}><MaterialIcons name="credit-card" size={20} color="#C0392E" /></View>
-                  <View style={{ flex: 1 }}><Text style={[styles.notificationItemTitle, { color: Cores.textoPrincipal }]}>Fatura vencida</Text><Text style={[styles.notificationItemText, { color: Cores.textoSecundario }]}>Existe uma fatura em aberto após o vencimento.</Text></View>
-                  <MaterialIcons name="chevron-right" size={21} color={Cores.textoSecundario} />
-                </TouchableOpacity>
-              )}
-              {qtdVencidasHome === 0 && qtdVencendoHoje === 0 && qtdProximosVencimentos === 0 && !temFaturaVencidaHome && (
-                <View style={styles.notificationEmpty}>
-                  <MaterialIcons name="task-alt" size={38} color="#2A9D8F" />
-                  <Text style={[styles.notificationEmptyTitle, { color: Cores.textoPrincipal }]}>Tudo em dia</Text>
-                  <Text style={[styles.notificationEmptyText, { color: Cores.textoSecundario }]}>Nenhum aviso financeiro importante no momento.</Text>
-                </View>
-              )}
-            </View>
-
-            <TouchableOpacity style={[styles.notificationSettings, { borderColor: Cores.borda }]} onPress={() => {
-              navigateFromFlow({ pathname: "/(tabs)/configuracoes", params: { abrirNotificacoes: "1" } } as any);
-            }}>
-              <MaterialIcons name="tune" size={18} color={novoTema.primary} />
-              <Text style={[styles.notificationSettingsText, { color: novoTema.primary }]}>Configurar notificações</Text>
-            </TouchableOpacity>
-          </View>
-          </View>
           </View>
         </View>
       </Modal>
@@ -3305,7 +3153,8 @@ export default function Dashboard() {
       {/* MODAL NOVA TRANSAÇÃO */}
       {modalTransVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalTransVisivel(false)}>
-        <KeyboardAvoidingView style={styles.transactionOverlay} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+        <View ref={transactionOverlayRef} style={[styles.transactionOverlay, { paddingBottom: transactionTecladoAndroid }]}>
+        <KeyboardAvoidingView style={styles.transactionKeyboardArea} enabled={Platform.OS === "ios"} behavior="padding">
           <View style={[styles.transactionSheet, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={[styles.transactionHandle, { backgroundColor: Cores.borda }]} />
             <View style={styles.transactionHeader}>
@@ -3330,6 +3179,8 @@ export default function Dashboard() {
               showsVerticalScrollIndicator={false}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
+              onScroll={onScrollTransacao}
+              scrollEventThrottle={16}
             >
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Tipo de movimentação</Text>
               <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
@@ -3488,12 +3339,7 @@ export default function Dashboard() {
                 </View>
               </FinFlowPopup>
               )}
-              <View
-                style={styles.rowInputs}
-                onLayout={({ nativeEvent }) => {
-                  transactionValueYRef.current = nativeEvent.layout.y;
-                }}
-              >
+              <View style={styles.rowInputs}>
                 <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flex: 1 }]}>
                   <View style={[styles.transactionCurrency, { backgroundColor: `${corTipoTransacao}22` }]}><Text style={{ color: corTipoTransacao, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
                   <TextInput
@@ -3504,13 +3350,11 @@ export default function Dashboard() {
                     onChangeText={(texto) => setValorTransacao(formatarEntradaMoeda(texto))}
                     keyboardType="number-pad"
                     onFocus={() => {
-                      transactionValueFocusedRef.current = true;
                       // Segunda tentativa para aparelhos em que o evento do
                       // teclado chega antes de o modal terminar o novo layout.
-                      mostrarValorAcimaDoTeclado(320);
+                      mostrarCampoTransacaoAcimaDoTeclado(320);
                     }}
                     onBlur={() => {
-                      transactionValueFocusedRef.current = false;
                       // Sem isso, o formulário fica preso na posição rolada
                       // pro campo de Valor depois que o usuário termina de
                       // digitar, escondendo Tipo/Repetição/Status.
@@ -3538,6 +3382,8 @@ export default function Dashboard() {
                     value={numParcelas}
                     onChangeText={setNumParcelas}
                     keyboardType="numeric"
+                    // Ficava atrás do teclado: rola o formulário até o campo.
+                    onFocus={() => mostrarCampoTransacaoAcimaDoTeclado(320)}
                   />
                 </>
               )}
@@ -3550,77 +3396,97 @@ export default function Dashboard() {
               )}
 
               <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
-                {contasAtivas.length === 0 && (
-                  <TouchableOpacity
-                    style={[styles.transactionEmptyAction, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
-                    onPress={() => setModalContaVisivel(true)}
-                    accessibilityRole="button"
-                    accessibilityLabel="Criar minha primeira conta"
-                  >
-                    <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
-                      <MaterialIcons name="add" size={19} color={novoTema.primary} />
-                    </View>
-                    <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira conta</Text>
-                    <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
-                  </TouchableOpacity>
-                )}
-                {contasAtivas.map((conta) => (
-                  <TouchableOpacity key={conta.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: contaSelecionadaId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => setContaSelecionadaId(conta.id)}>
-                    <MaterialIcons name="account-balance-wallet" size={16} color={contaSelecionadaId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
-                    <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
+              {contasAtivas.length === 0 ? (
+                <TouchableOpacity
+                  style={[styles.transactionEmptyAction, styles.transactionEmptyActionBlock, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
+                  onPress={() => setModalContaVisivel(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Criar minha primeira conta"
+                >
+                  <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
+                    <MaterialIcons name="add" size={19} color={novoTema.primary} />
+                  </View>
+                  <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira conta</Text>
+                  <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
+                </TouchableOpacity>
+              ) : (
+                <SeletorLista
+                  rotulo={tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}
+                  placeholder="Escolha a conta"
+                  iconePadrao="account-balance-wallet"
+                  opcoes={contasAtivas.map((conta) => ({ id: conta.id, titulo: conta.nome, icone: "account-balance-wallet" }))}
+                  selecionadoId={contaSelecionadaId}
+                  onSelecionar={(opcao) => {
+                    const novaOrigem = Number(opcao.id);
+                    setContaSelecionadaId(novaOrigem);
+                    // Origem e destino não podem ser a mesma conta.
+                    if (contaDestinoId === novaOrigem) setContaDestinoId(null);
+                  }}
+                  corDestaque={corTipoTransacao}
+                  cores={coresSeletor}
+                />
+              )}
 
               {tipoTransacao === "transferencia" ? (
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Conta ou objetivo de destino</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
-                    {contasAtivas.map((conta) => (
-                      <TouchableOpacity key={`dest-${conta.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: !caixinhaDestinoId && contaDestinoId === conta.id ? corTipoTransacao : Cores.borda }]} onPress={() => { setContaDestinoId(conta.id); setCaixinhaDestinoId(null); }}>
-                        <MaterialIcons name="account-balance-wallet" size={16} color={!caixinhaDestinoId && contaDestinoId === conta.id ? corTipoTransacao : Cores.textoSecundario} style={{ marginRight: 6 }} />
-                        <Text style={{ color: Cores.textoPrincipal }}>{conta.nome}</Text>
-                      </TouchableOpacity>
-                    ))}
-                    {caixinhas.map((caixa) => (
-                      <TouchableOpacity key={`caixa-dest-${caixa.id}`} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: caixinhaDestinoId === caixa.id ? corTipoTransacao : Cores.borda }]} onPress={() => { setCaixinhaDestinoId(caixa.id); setContaDestinoId(null); }}>
-                        <View style={{ width: 18, height: 18, borderRadius: 9, backgroundColor: caixa.cor, alignItems: "center", justifyContent: "center", marginRight: 6 }}>
-                          <MaterialIcons name={caixa.icone as any} size={11} color="#FFF" />
-                        </View>
-                        <Text style={{ color: Cores.textoPrincipal }}>{caixa.nome}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                  <SeletorLista
+                    rotulo="Destino"
+                    placeholder="Escolha a conta ou o objetivo"
+                    iconePadrao="call-made"
+                    opcoes={[
+                      ...contasAtivas
+                        .filter((conta) => conta.id !== contaSelecionadaId)
+                        .map((conta) => ({ id: `conta-${conta.id}`, titulo: conta.nome, grupo: "Contas", icone: "account-balance-wallet" })),
+                      ...caixinhas.map((caixa) => ({ id: `objetivo-${caixa.id}`, titulo: caixa.nome, grupo: "Objetivos", cor: caixa.cor, icone: caixa.icone })),
+                    ]}
+                    selecionadoId={caixinhaDestinoId ? `objetivo-${caixinhaDestinoId}` : contaDestinoId ? `conta-${contaDestinoId}` : null}
+                    onSelecionar={(opcao) => {
+                      const [tipoDestino, idDestino] = String(opcao.id).split("-");
+                      if (tipoDestino === "objetivo") {
+                        setCaixinhaDestinoId(Number(idDestino));
+                        setContaDestinoId(null);
+                      } else {
+                        setContaDestinoId(Number(idDestino));
+                        setCaixinhaDestinoId(null);
+                      }
+                    }}
+                    corDestaque={corTipoTransacao}
+                    cores={coresSeletor}
+                  />
                 </>
               ) : (
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Categoria</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.catScroll} contentContainerStyle={styles.transactionChipRow}>
-                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).length === 0 && (
-                      <TouchableOpacity
-                        style={[styles.transactionEmptyAction, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
-                        onPress={() => {
-                          setTipoNovaCategoria(tipoTransacao);
-                          setModalCatVisivel(true);
-                        }}
-                        accessibilityRole="button"
-                        accessibilityLabel="Criar minha primeira categoria"
-                      >
-                        <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
-                          <MaterialIcons name="add" size={19} color={novoTema.primary} />
-                        </View>
-                        <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira categoria</Text>
-                        <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
-                      </TouchableOpacity>
-                    )}
-                    {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).map((cat) => (
-                      <TouchableOpacity key={cat.id} style={[styles.catPill, styles.transactionChip, { backgroundColor: Cores.pillFundo, borderColor: catSelecionadaId === cat.id ? corTipoTransacao : Cores.borda }]} onPress={() => setCatSelecionadaId(cat.id)}>
-                        <View style={[styles.colorDot, { backgroundColor: cat.cor }]} />
-                        <Text style={{ color: Cores.textoPrincipal }}>{cat.nome}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                  {categorias.filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao).length === 0 ? (
+                    <TouchableOpacity
+                      style={[styles.transactionEmptyAction, styles.transactionEmptyActionBlock, { backgroundColor: `${novoTema.primary}16`, borderColor: novoTema.primary }]}
+                      onPress={() => {
+                        setTipoNovaCategoria(tipoTransacao);
+                        setModalCatVisivel(true);
+                      }}
+                      accessibilityRole="button"
+                      accessibilityLabel="Criar minha primeira categoria"
+                    >
+                      <View style={[styles.transactionEmptyActionIcon, { backgroundColor: `${novoTema.primary}22` }]}>
+                        <MaterialIcons name="add" size={19} color={novoTema.primary} />
+                      </View>
+                      <Text style={[styles.transactionEmptyActionText, { color: novoTema.primaryDark }]}>Criar minha primeira categoria</Text>
+                      <MaterialIcons name="chevron-right" size={19} color={novoTema.primary} />
+                    </TouchableOpacity>
+                  ) : (
+                    <SeletorLista
+                      rotulo="Categoria"
+                      placeholder="Escolha a categoria"
+                      opcoes={categorias
+                        .filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao)
+                        .map((cat) => ({ id: cat.id, titulo: cat.nome, cor: cat.cor }))}
+                      selecionadoId={catSelecionadaId}
+                      onSelecionar={(opcao) => setCatSelecionadaId(Number(opcao.id))}
+                      corDestaque={corTipoTransacao}
+                      cores={coresSeletor}
+                    />
+                  )}
                 </>
               )}
 
@@ -3631,6 +3497,7 @@ export default function Dashboard() {
             </ScrollView>
           </View>
         </KeyboardAvoidingView>
+        </View>
       </Modal>
       )}
       {modalIaEmBreve && (
@@ -3672,8 +3539,6 @@ const styles = StyleSheet.create({
   homeHeroGreeting: { color: "#FFF", fontSize: 20, fontWeight: "800" },
   homeMonthButton: { flexDirection: "row", alignItems: "center", marginTop: 3, alignSelf: "flex-start" },
   homeMonthText: { color: "rgba(255,255,255,0.78)", fontSize: 12, textTransform: "capitalize" },
-  homeBell: { width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" },
-  homeBellBadge: { position: "absolute", right: 3, top: 3, width: 9, height: 9, borderRadius: 5, backgroundColor: "#FF6B5F", borderWidth: 1.5, borderColor: "#FFF" },
   homeBalanceLabel: { color: "rgba(255,255,255,0.72)", fontSize: 12, marginTop: 22 },
   homeBalanceRow: { flexDirection: "row", alignItems: "center", gap: 10, alignSelf: "flex-start" },
   homeBalanceValue: { color: "#FFF", fontSize: 36, fontWeight: "900", letterSpacing: -0.5, marginTop: 2 },
@@ -3793,7 +3658,10 @@ const styles = StyleSheet.create({
   balanceExplanationNoteText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
   balanceExplanationButton: { minHeight: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 8 },
   balanceExplanationButtonText: { color: "#FFF", fontSize: 15, fontWeight: "900" },
-  transactionOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "flex-end", alignItems: "center" },
+  transactionOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)" },
+  // Recebe o maxHeight percentual da folha; no Android o overlay acima ganha
+  // paddingBottom igual ao trecho coberto pelo teclado (edge-to-edge).
+  transactionKeyboardArea: { flex: 1, width: "100%", justifyContent: "flex-end", alignItems: "center" },
   transactionSheet: {
     width: "100%",
     maxWidth: 620,
@@ -3837,32 +3705,16 @@ const styles = StyleSheet.create({
   transactionTextInput: { flex: 1, minHeight: 52, fontSize: 15 },
   transactionCurrency: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   transactionPlainInput: { minHeight: 52, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 14, fontSize: 15, marginBottom: 14 },
-  transactionChipRow: { paddingRight: 12 },
-  transactionChip: { minHeight: 42, borderWidth: 1.5, paddingHorizontal: 13, marginRight: 9 },
   transactionEmptyAction: { minHeight: 50, minWidth: 245, borderWidth: 1.5, borderRadius: 15, paddingHorizontal: 11, flexDirection: "row", alignItems: "center", gap: 9, marginRight: 9 },
+  // Fora da antiga fileira horizontal, o atalho ocupa a largura do formulário.
+  transactionEmptyActionBlock: { marginRight: 0, marginBottom: 18 },
+  // Botão de fechar do modal de contas (era compartilhado com o antigo modal de avisos).
+  notificationClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   transactionEmptyActionIcon: { width: 32, height: 32, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   transactionEmptyActionText: { flex: 1, fontSize: 13, fontWeight: "900" },
   transactionActions: { flexDirection: "row", gap: 10, marginTop: "auto", paddingTop: 18 },
   transactionActionButton: { flex: 1, minWidth: 0, borderRadius: FinFlowRadius.medium },
   modalTitle: { fontSize: 20, fontWeight: "bold", marginBottom: 15, textAlign: "center" },
-  notificationPageShell: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingHorizontal: 16, paddingVertical: 24 },
-  notificationCenterStage: { width: "100%", maxWidth: 520, alignItems: "center", justifyContent: "center" },
-  notificationPanel: { width: "100%", borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
-  notificationHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
-  notificationHeaderIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  notificationTitle: { fontSize: 18, fontWeight: "900" },
-  notificationSubtitle: { fontSize: 11, marginTop: 2 },
-  notificationClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  notificationList: { gap: 10 },
-  notificationItem: { flexDirection: "row", alignItems: "center", gap: 11, borderRadius: 16, padding: 12 },
-  notificationItemIcon: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
-  notificationItemTitle: { fontSize: 13, fontWeight: "800" },
-  notificationItemText: { fontSize: 11, lineHeight: 16, marginTop: 2 },
-  notificationEmpty: { alignItems: "center", paddingVertical: 22, paddingHorizontal: 20 },
-  notificationEmptyTitle: { fontSize: 16, fontWeight: "800", marginTop: 8 },
-  notificationEmptyText: { fontSize: 12, textAlign: "center", marginTop: 4 },
-  notificationSettings: { minHeight: 46, borderRadius: 14, borderWidth: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, marginTop: 17 },
-  notificationSettingsText: { fontSize: 13, fontWeight: "800" },
   accountScopePanel: { width: "92%", maxWidth: 520, maxHeight: "90%", flexShrink: 1, borderRadius: 24, borderWidth: 1, padding: 20, elevation: 12 },
   accountScopePageShell: { flex: 1, width: "100%" },
   accountScopeCenterStage: { flex: 1, width: "100%", alignItems: "center", justifyContent: "center", paddingVertical: 68 },
@@ -3949,9 +3801,6 @@ const styles = StyleSheet.create({
   transferSelected: { backgroundColor: "#457B9D" },
   freqButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   freqButtonText: { fontSize: 12, fontWeight: "600", textAlign: "center" },
-  catScroll: { flexDirection: "row", marginBottom: 15 },
-  catPill: { flexDirection: "row", alignItems: "center", paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, marginRight: 10 },
-  colorDot: { width: 12, height: 12, borderRadius: 6, marginRight: 8 },
   catGerenciarRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: 10, marginBottom: 8 },
   iconeBotao: { padding: 6 },
   botaoApagar: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#E76F51", padding: 12, borderRadius: 8, gap: 6 },

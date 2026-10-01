@@ -18,6 +18,10 @@ import {
   View,
 } from "react-native";
 import Modal from "../components/FinFlowPopup";
+import AnelCota from "../components/AnelCota";
+import IndicadorDigitando from "../components/IndicadorDigitando";
+import { useSobreposicaoTeclado } from "../hooks/use-teclado";
+import { lerCotaConsultas } from "../lib/cota-ia";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
@@ -215,13 +219,6 @@ function makeId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function planLabel(plan?: string): string {
-  if (plan === "premium") return "Premium";
-  if (plan === "smart") return "Smart";
-  if (plan === "free") return "Free";
-  return "Beta";
-}
-
 function actionTitle(action: PendingAction): string {
   return action.preview?.title?.trim() || "Revise a ação financeira";
 }
@@ -416,6 +413,8 @@ export default function ChatIAScreen() {
   const entranceProgress = useRef(new Animated.Value(0)).current;
   const scrollRef = useRef<ScrollView>(null);
   const inputRef = useRef<TextInput>(null);
+  const areaChatRef = useRef<View>(null);
+  const tecladoAndroid = useSobreposicaoTeclado(areaChatRef, Platform.OS === "android");
   const sendingRef = useRef(false);
   const clearingRef = useRef(false);
   const previousUserIdRef = useRef<string | null>(session?.user?.id ?? null);
@@ -498,22 +497,12 @@ export default function ChatIAScreen() {
     setClearError(null);
   }, [sessionUserId]);
 
-  const quotaText = useMemo(() => {
-    if (!quota) return "Acesso seguro";
-    const limit = Number(quota.limit);
-    const remaining = Number(quota.remaining);
-    const modelLimit = Number(quota.model_limit);
-    const modelRemaining = Number(quota.model_remaining);
-    const consultationText = Number.isFinite(modelLimit) && modelLimit > 0 && Number.isFinite(modelRemaining)
-      ? `${Math.max(0, modelRemaining)}/${modelLimit} consultas`
-      : null;
-    if (limit === -1) return consultationText ? `${consultationText} hoje` : "Ações ilimitadas no beta";
-    if (Number.isFinite(limit) && limit > 0 && Number.isFinite(remaining)) {
-      const actionText = `${Math.max(0, remaining)}/${limit} ações`;
-      return consultationText ? `${actionText} • ${consultationText}` : `${actionText} hoje`;
-    }
-    return `Plano ${planLabel(quota.plan)}`;
-  }, [quota]);
+  // Consultas ao Finn restantes no dia, mostradas como um círculo que esvazia
+  // ao lado do campo de digitação (o número aparece ao tocar nele).
+  const cotaConsultas = useMemo(() => lerCotaConsultas(quota), [quota]);
+  const corCota = cotaConsultas?.nivel === "critica"
+    ? FinFlowColors.red
+    : cotaConsultas?.nivel === "atencao" ? "#E9A15B" : theme.primary;
 
   const suggestions = useMemo(() => [
     { icon: "account-balance-wallet" as const, text: "Qual é meu saldo atual?" },
@@ -867,9 +856,13 @@ export default function ChatIAScreen() {
       }]}>
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
+        enabled={Platform.OS === "ios"}
+        behavior="padding"
+        keyboardVerticalOffset={8}
       >
+        {/* Android edge-to-edge: o KeyboardAvoidingView não descontava a área
+            segura acima dele e o campo ficava cortado em alguns aparelhos. */}
+        <View ref={areaChatRef} style={[styles.flex, { paddingBottom: tecladoAndroid }]}>
         <View style={[styles.header, { backgroundColor: theme.header }]}>
           <View style={styles.headerTopRow}>
             <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityLabel="Voltar">
@@ -889,10 +882,7 @@ export default function ChatIAScreen() {
                   accessibilityLabel="Finn, mascote do FinFlow"
                 />
               </Animated.View>
-              <View>
-                <Text style={styles.headerTitle}>Finn</Text>
-                <Text style={styles.headerSubtitle}>Controle financeiro protegido</Text>
-              </View>
+              <Text style={styles.headerTitle}>Finn</Text>
             </View>
             <TouchableOpacity
               onPress={openClearModal}
@@ -902,16 +892,6 @@ export default function ChatIAScreen() {
             >
               <MaterialIcons name="delete-outline" size={22} color="#FFF" />
             </TouchableOpacity>
-          </View>
-          <View style={styles.statusRow}>
-            <View style={styles.statusPill}>
-              <View style={styles.onlineDot} />
-              <Text style={styles.statusText}>Assistente financeiro</Text>
-            </View>
-            <View style={styles.statusPill}>
-              <MaterialIcons name="verified-user" size={14} color="#D9FFF1" />
-              <Text style={styles.statusText}>{quotaText}</Text>
-            </View>
           </View>
         </View>
 
@@ -1066,8 +1046,7 @@ export default function ChatIAScreen() {
                 />
               </View>
               <View style={[styles.typingBubble, { backgroundColor: theme.surface, borderColor: theme.border }]}>
-                <ActivityIndicator size="small" color={theme.primary} />
-                <Text style={[styles.typingText, { color: theme.textMuted }]}>Analisando com segurança…</Text>
+                <IndicadorDigitando cor={theme.textMuted} />
               </View>
             </View>
           )}
@@ -1095,6 +1074,16 @@ export default function ChatIAScreen() {
             </View>
           )}
           <View style={[styles.composer, { backgroundColor: theme.surface, borderColor: pendingAction ? theme.border : theme.primary }]}>
+            {cotaConsultas && (
+              <TouchableOpacity
+                style={styles.quotaRing}
+                onPress={() => showToast(`${cotaConsultas.restantes} de ${cotaConsultas.limite} consultas ao Finn restantes hoje.`, "info")}
+                accessibilityRole="button"
+                accessibilityLabel={`${cotaConsultas.restantes} de ${cotaConsultas.limite} consultas restantes hoje`}
+              >
+                <AnelCota fracao={cotaConsultas.fracao} cor={corCota} corTrilho={theme.border} />
+              </TouchableOpacity>
+            )}
             <TextInput
               ref={inputRef}
               style={[styles.input, { color: theme.text }]}
@@ -1126,6 +1115,7 @@ export default function ChatIAScreen() {
             </TouchableOpacity>
           </View>
           <Text style={[styles.disclaimer, { color: theme.textMuted }]}>Revise valores e datas. A IA não substitui orientação profissional.</Text>
+        </View>
         </View>
       </KeyboardAvoidingView>
       </Animated.View>
@@ -1208,11 +1198,6 @@ const styles = StyleSheet.create({
   headerFinnAvatar: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center", overflow: "hidden", backgroundColor: "rgba(255,255,255,0.13)", borderWidth: 1, borderColor: "rgba(255,255,255,0.20)" },
   headerFinnImage: { width: 42, height: 42 },
   headerTitle: { color: "#FFF", fontSize: 19, fontWeight: "900" },
-  headerSubtitle: { color: "#D8FFF0", fontSize: 10.5, fontWeight: "600", marginTop: 1 },
-  statusRow: { flexDirection: "row", justifyContent: "center", flexWrap: "wrap", gap: 8, marginTop: 10 },
-  statusPill: { minHeight: 28, borderRadius: 14, flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 11, backgroundColor: "rgba(0,0,0,0.16)" },
-  onlineDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: "#78F2BC" },
-  statusText: { color: "#E8FFF7", fontSize: 10.5, fontWeight: "800" },
   messagesContent: { paddingHorizontal: 14, paddingTop: 20, paddingBottom: 20 },
   historyLoader: { marginVertical: 15 },
   accessNotice: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 },
@@ -1273,13 +1258,13 @@ const styles = StyleSheet.create({
   confirmButtonText: { color: "#FFF", fontSize: 13, fontWeight: "900" },
   typingRow: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 2, marginBottom: 12 },
   typingBubble: { minHeight: 42, borderWidth: 1, borderRadius: 17, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 13 },
-  typingText: { fontSize: 12, fontWeight: "600" },
   composerArea: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: 12, paddingTop: 9, paddingBottom: Platform.OS === "ios" ? 3 : 7 },
   pendingComposerText: { fontSize: 10.5, textAlign: "center", fontWeight: "700", marginBottom: 6 },
   autocompletePanel: { maxHeight: 280, borderWidth: 1, borderRadius: 16, marginBottom: 8, overflow: "hidden", ...FinFlowShadow },
   autocompleteOption: { minHeight: 48, borderBottomWidth: StyleSheet.hairlineWidth, flexDirection: "row", alignItems: "center", gap: 10, paddingHorizontal: 14, paddingVertical: 10 },
   autocompleteText: { flex: 1, fontSize: 14, lineHeight: 20, fontWeight: "700" },
-  composer: { minHeight: 54, maxHeight: 132, borderWidth: 1.2, borderRadius: 19, flexDirection: "row", alignItems: "flex-end", paddingLeft: 14, paddingRight: 6, paddingVertical: 6 },
+  composer: { minHeight: 54, maxHeight: 132, borderWidth: 1.2, borderRadius: 19, flexDirection: "row", alignItems: "flex-end", paddingLeft: 8, paddingRight: 6, paddingVertical: 6 },
+  quotaRing: { width: 36, height: 42, alignItems: "center", justifyContent: "center", marginRight: 4 },
   input: { flex: 1, minHeight: 40, maxHeight: 112, fontSize: 14, lineHeight: 20, paddingTop: 9, paddingBottom: 8, paddingRight: 8, textAlignVertical: "top" },
   sendButton: { width: 42, height: 42, borderRadius: 15, alignItems: "center", justifyContent: "center" },
   disabled: { opacity: 0.42 },

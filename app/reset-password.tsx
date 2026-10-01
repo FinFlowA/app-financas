@@ -5,6 +5,7 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  BackHandler,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,8 +19,17 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 import Button from "../components/FinFlowButton";
 import { FinFlowRadius, FinFlowShadow, finFlowTheme } from "../constants/finflow-design";
+import { useCampoFocadoVisivel, useSobreposicaoTeclado } from "../hooks/use-teclado";
 import { supabase } from "../lib/supabase";
-import { lerFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import {
+  fluxoRecuperacaoVigente,
+  lerEstadoLinkRecuperacao,
+  lerFluxoRecuperacaoSenha,
+  mensagemFalhaRecuperacao,
+  PASSWORD_RECOVERY_FLOW_KEY,
+  PASSWORD_RECOVERY_LINK_WAIT_MS,
+  type MotivoFalhaRecuperacao,
+} from "../lib/auth-flow";
 import { limparNotificacoesAoSair } from "../lib/notifications";
 import { PASSWORD_REQUIREMENTS_MESSAGE, validatePassword } from "../lib/password";
 import { checkPwnedPassword, PWNED_PASSWORD_MESSAGE } from "../lib/pwned-password";
@@ -35,7 +45,11 @@ type PasswordFieldProps = {
   onToggleVisibility: () => void;
   icon: "lock-outline" | "verified-user";
   hasError?: boolean;
+  onFocus?: () => void;
 };
+
+/** Sem link em andamento, quanto esperar o _layout começar a trocar o código. */
+const ESPERA_SEM_LINK_MS = 4000;
 
 function ResetPasswordField({
   theme,
@@ -47,6 +61,7 @@ function ResetPasswordField({
   onToggleVisibility,
   icon,
   hasError = false,
+  onFocus,
 }: PasswordFieldProps) {
   return (
     <View style={styles.fieldGroup}>
@@ -71,6 +86,7 @@ function ResetPasswordField({
           autoCorrect={false}
           autoComplete="new-password"
           textContentType="newPassword"
+          onFocus={onFocus}
         />
         <TouchableOpacity
           onPress={onToggleVisibility}
@@ -93,52 +109,76 @@ export default function ResetPasswordScreen() {
   const [mostrarConfirmar, setMostrarConfirmar] = useState(false);
   const [loading, setLoading] = useState(false);
   const [statusFluxo, setStatusFluxo] = useState<"verificando" | "valido" | "invalido">("verificando");
-  const concluiu = useRef(false);
+  const [motivoFalha, setMotivoFalha] = useState<MotivoFalhaRecuperacao | null>(null);
+  const areaRef = useRef<View>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const tecladoAndroid = useSobreposicaoTeclado(areaRef, Platform.OS === "android");
+  const { onScroll, garantirVisivel: mostrarCampoAcimaDoTeclado } = useCampoFocadoVisivel(scrollRef);
 
   const confirmacaoPreenchida = confirmarSenha.length > 0;
   const novaSenhaValida = validatePassword(novaSenha).valid;
   const senhasConferem = confirmacaoPreenchida && novaSenhaValida && novaSenha === confirmarSenha;
 
-  // Se o usuário sair da tela sem redefinir a senha, desconecta para evitar acesso indevido.
+  // A sessão do link não pode seguir aberta sem a senha nova: o Voltar do
+  // Android equivale a "Voltar ao login". Antes isso ficava na desmontagem da
+  // tela, que também acontece quando a navegação só a recria (e derrubava a
+  // sessão no meio da validação); a guarda de rotas do _layout cobre o resto.
   useEffect(() => {
-    return () => {
-      if (!concluiu.current) {
-        void limparNotificacoesAoSair().finally(() => supabase.auth.signOut());
-      }
-    };
+    const inscricao = BackHandler.addEventListener("hardwareBackPress", () => {
+      void voltarAoLogin();
+      return true;
+    });
+    return () => inscricao.remove();
   }, []);
 
   async function fluxoRecuperacaoValido(): Promise<boolean> {
-    const [raw, authResult] = await Promise.all([
-      AsyncStorage.getItem(PASSWORD_RECOVERY_FLOW_KEY),
-      supabase.auth.getUser(),
-    ]);
-    const fluxo = lerFluxoRecuperacaoSenha(raw);
-    const userId = authResult.data.user?.id;
-    const valido = !authResult.error
-      && Boolean(userId)
-      && fluxo !== null
-      && fluxo.userId === userId
-      && fluxo.expiresAt > Date.now();
-
-    if (!valido) await AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
-    return valido;
+    const fluxo = lerFluxoRecuperacaoSenha(await AsyncStorage.getItem(PASSWORD_RECOVERY_FLOW_KEY));
+    // Sem marcador ainda (troca do código em andamento): nada a conferir.
+    if (!fluxo) return false;
+    if (fluxo.expiresAt <= Date.now()) {
+      await AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
+      return false;
+    }
+    const { data, error } = await supabase.auth.getUser();
+    // Falha de rede não invalida o link; só a sessão de outro usuário invalida.
+    if (error) return false;
+    if (!fluxoRecuperacaoVigente(fluxo, data.user?.id)) {
+      await AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
+      return false;
+    }
+    return true;
   }
 
   useEffect(() => {
     let ativo = true;
     void (async () => {
-      // O deep link pode montar esta tela alguns instantes antes de o layout
-      // concluir exchangeCodeForSession. Aguarde a sessão/marker em vez de
-      // declarar um link PKCE válido como expirado por causa dessa corrida.
-      for (let tentativa = 0; tentativa < 15 && ativo; tentativa += 1) {
+      // O deep link monta esta tela antes de o _layout concluir a troca do
+      // código. Enquanto ela estiver em andamento, espere até 30 s (rede
+      // lenta, app aberto do zero); sem link em andamento, só alguns segundos.
+      const inicio = Date.now();
+      while (ativo) {
         if (await fluxoRecuperacaoValido()) {
           if (ativo) setStatusFluxo("valido");
           return;
         }
+        const link = lerEstadoLinkRecuperacao();
+        if (link?.etapa === "falhou") {
+          if (ativo) {
+            setMotivoFalha(link.motivo);
+            setStatusFluxo("invalido");
+          }
+          return;
+        }
+        const processando = link?.etapa === "processando";
+        if (Date.now() - inicio >= (processando ? PASSWORD_RECOVERY_LINK_WAIT_MS : ESPERA_SEM_LINK_MS)) {
+          if (ativo) {
+            setMotivoFalha(processando ? "sem_conexao" : null);
+            setStatusFluxo("invalido");
+          }
+          return;
+        }
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
-      if (ativo) setStatusFluxo("invalido");
     })();
     return () => { ativo = false; };
   }, []);
@@ -146,10 +186,7 @@ export default function ResetPasswordScreen() {
   async function redefinirSenha() {
     if (!(await fluxoRecuperacaoValido())) {
       setStatusFluxo("invalido");
-      return Alert.alert(
-        "Link inválido ou expirado",
-        "Solicite um novo link de recuperação para alterar sua senha.",
-      );
+      return Alert.alert("Link inválido ou expirado", mensagemFalhaRecuperacao(motivoFalha));
     }
     if (!novaSenha || !confirmarSenha) {
       return Alert.alert("Aviso", "Preencha os dois campos.");
@@ -166,7 +203,9 @@ export default function ResetPasswordScreen() {
       setLoading(false);
       return Alert.alert("Senha exposta em vazamentos", PWNED_PASSWORD_MESSAGE);
     }
-    const { error } = await supabase.auth.updateUser({ password: novaSenha });
+    // senha_definida: quem entrou com Google e nunca criou senha deixa de ser
+    // mandado à tela de definir senha depois de criar uma por aqui.
+    const { error } = await supabase.auth.updateUser({ password: novaSenha, data: { senha_definida: true } });
     setLoading(false);
 
     if (error) {
@@ -174,7 +213,8 @@ export default function ResetPasswordScreen() {
       return;
     }
 
-    concluiu.current = true;
+    // Remove o marcador antes de navegar: a guarda de rotas do _layout deixa
+    // de devolver o usuário para esta tela.
     await AsyncStorage.removeItem(PASSWORD_RECOVERY_FLOW_KEY);
     Alert.alert(
       "Senha redefinida!",
@@ -191,8 +231,16 @@ export default function ResetPasswordScreen() {
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
-        <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView style={styles.container} enabled={Platform.OS === "ios"} behavior="padding">
+        <View ref={areaRef} style={[styles.container, { paddingBottom: tecladoAndroid }]}>
+        <ScrollView
+          ref={scrollRef}
+          onScroll={onScroll}
+          scrollEventThrottle={16}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           <View style={[styles.hero, { backgroundColor: theme.header }]}>
             <View style={styles.heroDecorationLarge} />
             <View style={styles.heroDecorationSmall} />
@@ -216,8 +264,14 @@ export default function ResetPasswordScreen() {
                 <View style={styles.invalidFlowIcon}>
                   <MaterialIcons name="link-off" size={34} color="#C0392E" />
                 </View>
-                <Text style={[styles.flowStateTitle, { color: theme.text }]}>Link inválido ou expirado</Text>
-                <Text style={[styles.flowStateText, { color: theme.textMuted }]}>Abra um novo link enviado pelo FinFlow para redefinir sua senha.</Text>
+                <Text style={[styles.flowStateTitle, { color: theme.text }]}>
+                  {motivoFalha === "sem_conexao"
+                    ? "Sem conexão para validar o link"
+                    : motivoFalha === "outro_aparelho"
+                      ? "Abra o link no mesmo celular"
+                      : "Link inválido ou expirado"}
+                </Text>
+                <Text style={[styles.flowStateText, { color: theme.textMuted }]}>{mensagemFalhaRecuperacao(motivoFalha)}</Text>
                 <Button title="Voltar ao login" color={theme.primary} onPress={voltarAoLogin} style={styles.primaryButton} />
               </View>
             ) : (
@@ -242,6 +296,7 @@ export default function ResetPasswordScreen() {
               onToggleVisibility={() => setMostrarNova((value) => !value)}
               icon="lock-outline"
               hasError={novaSenha.length > 0 && !novaSenhaValida}
+              onFocus={() => mostrarCampoAcimaDoTeclado()}
             />
 
             <ResetPasswordField
@@ -254,6 +309,7 @@ export default function ResetPasswordScreen() {
               onToggleVisibility={() => setMostrarConfirmar((value) => !value)}
               icon="verified-user"
               hasError={confirmacaoPreenchida && !senhasConferem}
+              onFocus={() => mostrarCampoAcimaDoTeclado()}
             />
 
             {confirmacaoPreenchida && (
@@ -290,6 +346,7 @@ export default function ResetPasswordScreen() {
             )}
           </View>
         </ScrollView>
+        </View>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );

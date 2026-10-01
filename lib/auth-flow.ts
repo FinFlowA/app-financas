@@ -28,6 +28,82 @@ export function lerFluxoRecuperacaoSenha(raw: string | null): PasswordRecoveryFl
   }
 }
 
+/** O marcador vale para este usuário e ainda não venceu. */
+export function fluxoRecuperacaoVigente(
+  fluxo: PasswordRecoveryFlow | null,
+  userId: string | null | undefined,
+  agora = Date.now(),
+): boolean {
+  return Boolean(fluxo && userId && fluxo.userId === userId && fluxo.expiresAt > agora);
+}
+
+/** Quanto a tela de nova senha espera por um link ainda em processamento. */
+export const PASSWORD_RECOVERY_LINK_WAIT_MS = 30_000;
+
+export type MotivoFalhaRecuperacao = "expirado" | "outro_aparelho" | "sem_conexao" | "desconhecido";
+
+export type EstadoLinkRecuperacao =
+  | { etapa: "processando"; desde: number }
+  | { etapa: "falhou"; motivo: MotivoFalhaRecuperacao };
+
+/**
+ * Estado do link de recuperação enquanto o _layout troca o código por uma
+ * sessão. Fica só em memória: a tela de nova senha consulta este estado para
+ * esperar a troca terminar (rede lenta, app aberto do zero pelo link) e, se
+ * ela falhar, explicar o motivo em vez de só dizer "inválido ou expirado".
+ */
+let estadoLinkRecuperacao: EstadoLinkRecuperacao | null = null;
+
+export function registrarEstadoLinkRecuperacao(estado: EstadoLinkRecuperacao | null): void {
+  estadoLinkRecuperacao = estado;
+}
+
+export function lerEstadoLinkRecuperacao(): EstadoLinkRecuperacao | null {
+  return estadoLinkRecuperacao;
+}
+
+/**
+ * Erro que o Supabase devolve no próprio link quando o token do e-mail já foi
+ * usado ou expirou (ex.: error_code=otp_expired). No fluxo PKCE ele vem na
+ * query e no fragmento; no implícito, só no fragmento.
+ */
+export function erroNoLinkDeAutenticacao(url: string): string | null {
+  const [semFragmento, fragmento = ""] = url.split("#");
+  const query = semFragmento.includes("?") ? semFragmento.slice(semFragmento.indexOf("?") + 1) : "";
+  for (const parte of [query, fragmento]) {
+    const params = new URLSearchParams(parte);
+    const codigo = params.get("error_code") ?? params.get("error");
+    if (codigo) return [codigo, params.get("error_description")].filter(Boolean).join(" ");
+  }
+  return null;
+}
+
+/** Traduz o erro do Supabase (troca do código ou link devolvido com erro). */
+export function motivoFalhaRecuperacao(
+  erro: { message?: string | null; code?: string | null; name?: string | null } | string | null | undefined,
+): MotivoFalhaRecuperacao {
+  const texto = typeof erro === "string" ? erro : `${erro?.name ?? ""} ${erro?.code ?? ""} ${erro?.message ?? ""}`;
+  // A troca nem chegou ao servidor: o código continua valendo.
+  if (/network|fetch|timed?.?out|RetryableFetch/i.test(texto)) return "sem_conexao";
+  // PKCE: o código só troca no app que pediu a recuperação.
+  if (/code.?verifier|flow.?state/i.test(texto)) return "outro_aparelho";
+  if (/expired|already used|been used|invalid.?(grant|code|token)|access_denied/i.test(texto)) return "expirado";
+  return "desconhecido";
+}
+
+export function mensagemFalhaRecuperacao(motivo: MotivoFalhaRecuperacao | null): string {
+  if (motivo === "sem_conexao") {
+    return "Sem conexão para validar o link. Confira a internet e toque de novo no link do e-mail.";
+  }
+  if (motivo === "outro_aparelho") {
+    return "Abra o link no mesmo celular em que você pediu a nova senha, com o FinFlow instalado. Se preferir, peça um novo link na tela de login, em \"Esqueci minha senha\".";
+  }
+  if (motivo === "expirado") {
+    return "Este link já foi usado ou expirou. Ele funciona uma única vez, e alguns aplicativos de e-mail abrem links sozinhos para checar segurança. Peça um novo link na tela de login, em \"Esqueci minha senha\".";
+  }
+  return "Não foi possível validar o link. Peça um novo link na tela de login, em \"Esqueci minha senha\".";
+}
+
 export type ResultadoLoginOAuth =
   | { status: "sucesso" }
   | { status: "senha_pendente" }

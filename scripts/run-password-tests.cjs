@@ -31,6 +31,60 @@ expect(
   "O deep link PKCE precisa gravar o fluxo de recuperação antes de abrir a tela de nova senha.",
 );
 
+// Link de recuperação "expirado" na hora: o link já abre /reset-password, e
+// um router.replace para a mesma tela a recriava; a limpeza da instância
+// antiga fazia signOut e derrubava a sessão recém-criada.
+const resetSource = fs.readFileSync(path.join(root, "app", "reset-password.tsx"), "utf8");
+const inicioFluxo = appLayoutSource.slice(
+  appLayoutSource.indexOf("const iniciarFluxoRecuperacaoSenha"),
+  appLayoutSource.indexOf("useEffect(", appLayoutSource.indexOf("const iniciarFluxoRecuperacaoSenha")),
+).replace(/\/\/.*$/gm, "");
+expect(!/router\.(replace|push|navigate)/.test(inicioFluxo), "Gravar o fluxo de recuperação não pode recriar a tela de nova senha.");
+expect(
+  !/return \(\) => \{[\s\S]{0,200}signOut/.test(resetSource),
+  "A tela de nova senha não pode desconectar ao ser desmontada (a navegação também a recria).",
+);
+expect(/hardwareBackPress[\s\S]{0,120}voltarAoLogin/.test(resetSource), "O Voltar do Android precisa encerrar a sessão do link.");
+expect(
+  /segments\[0\] === "reset-password"\) return;[\s\S]{0,300}fluxoRecuperacaoVigente\(lerFluxoRecuperacaoSenha\(raw\), userId\)[\s\S]{0,120}router\.replace\("\/reset-password"/.test(appLayoutSource),
+  "Com o fluxo de recuperação vigente, outras telas precisam devolver o usuário para a nova senha.",
+);
+
+const authFlowOutput = ts.transpileModule(fs.readFileSync(path.join(root, "lib", "auth-flow.ts"), "utf8"), {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const authFlowPath = path.join(tempDir, "auth-flow.cjs");
+fs.writeFileSync(authFlowPath, authFlowOutput);
+const authFlow = require(authFlowPath);
+
+expect(
+  authFlow.erroNoLinkDeAutenticacao("meuappfinancas://reset-password?error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired#error=access_denied&error_code=otp_expired")
+    === "otp_expired Email link is invalid or has expired",
+  "O erro devolvido pelo Supabase na query precisa ser lido.",
+);
+expect(
+  authFlow.erroNoLinkDeAutenticacao("meuappfinancas://reset-password#error=access_denied&error_code=otp_expired&error_description=x") === "otp_expired x",
+  "O erro devolvido no fragmento precisa ser lido.",
+);
+expect(authFlow.erroNoLinkDeAutenticacao("meuappfinancas://reset-password?code=abc") === null, "Link com código não é erro.");
+expect(authFlow.erroNoLinkDeAutenticacao("meuappfinancas://reset-password#access_token=a&refresh_token=b&type=recovery") === null, "Link legado com tokens não é erro.");
+expect(authFlow.motivoFalhaRecuperacao("otp_expired Email link is invalid or has expired") === "expirado", "otp_expired é link vencido/usado.");
+expect(authFlow.motivoFalhaRecuperacao({ code: "flow_state_not_found", message: "invalid flow state, no valid flow state found" }) === "outro_aparelho", "Sem flow state o link foi aberto fora do app que o pediu.");
+expect(authFlow.motivoFalhaRecuperacao({ message: "PKCE code verifier not found in storage." }) === "outro_aparelho", "Sem code_verifier o link foi aberto fora do app que o pediu.");
+expect(authFlow.motivoFalhaRecuperacao({ name: "AuthRetryableFetchError", message: "Network request failed" }) === "sem_conexao", "Falha de rede não é link vencido.");
+expect(authFlow.motivoFalhaRecuperacao({ message: "algo inesperado" }) === "desconhecido", "Erro desconhecido precisa de mensagem genérica.");
+for (const motivo of ["expirado", "outro_aparelho", "sem_conexao", "desconhecido", null]) {
+  expect(authFlow.mensagemFalhaRecuperacao(motivo).length > 20, `Mensagem ausente para ${motivo}.`);
+}
+const agora = Date.now();
+expect(authFlow.fluxoRecuperacaoVigente({ userId: "u1", expiresAt: agora + 1000 }, "u1", agora), "Marcador do mesmo usuário e no prazo vale.");
+expect(!authFlow.fluxoRecuperacaoVigente({ userId: "u1", expiresAt: agora + 1000 }, "u2", agora), "Marcador de outro usuário não vale.");
+expect(!authFlow.fluxoRecuperacaoVigente({ userId: "u1", expiresAt: agora - 1 }, "u1", agora), "Marcador vencido não vale.");
+expect(!authFlow.fluxoRecuperacaoVigente(null, "u1", agora), "Sem marcador não há fluxo.");
+authFlow.registrarEstadoLinkRecuperacao({ etapa: "processando", desde: agora });
+expect(authFlow.lerEstadoLinkRecuperacao()?.etapa === "processando", "Estado do link precisa ficar disponível para a tela.");
+authFlow.registrarEstadoLinkRecuperacao(null);
+
 // Senha vazada (HaveIBeenPwned): o SHA-1 em JS puro precisa bater com o do
 // Node para qualquer texto, e a checagem só pode enviar o prefixo do hash.
 const crypto = require("node:crypto");

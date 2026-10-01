@@ -61,8 +61,13 @@ if (flowScreen.includes('pathname: "/flow-screen", params: { id }')) {
 if (/setModalNotificacoesHome\(false\);\s*router\.(?:push|replace)/s.test(home)) {
   throw new Error("Avisos nao podem fechar e navegar no mesmo evento; isso disputa a pilha de rotas.");
 }
-if (!home.includes("navigateFromFlow({ pathname: \"/(tabs)/transacoes\", params: { filtroPeriodo: \"hoje\" }")) {
-  throw new Error("O aviso de agendamentos de hoje deve fechar o fluxo antes de trocar de aba.");
+if (!home.includes("navigateFromFlow({ pathname: \"/(tabs)/transacoes\", params: { filtroPeriodo: \"atrasados\" }")) {
+  throw new Error("O aviso de vencidos deve fechar o fluxo antes de trocar de aba.");
+}
+// O sino e a central "Avisos financeiros" saíram da Home (os avisos chegam
+// pelas notificações do aparelho).
+if (home.includes("Avisos financeiros") || home.includes("setModalNotificacoesHome")) {
+  throw new Error("A Home nao deve voltar a ter o botao de notificacoes.");
 }
 if (!home.includes('transactionForm: { flexGrow: 1') || !home.includes('marginTop: "auto"')) {
   throw new Error("A acao da tela de transacao precisa permanecer alinhada ao rodape.");
@@ -80,8 +85,14 @@ if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includ
 if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("FLOATING_BAR_HEIGHT + bottomInset + FLOATING_BAR_GAP")) {
   throw new Error("A barra de abas precisa reservar a area de navegacao do aparelho.");
 }
-if (!home.includes("transactionFormRef.current?.scrollTo") || !home.includes("transactionValueYRef.current")) {
-  throw new Error("O campo de valor da transacao precisa subir quando o teclado abrir.");
+// Campos da transação (valor e número de parcelas) sobem acima do teclado:
+// a área mede a sobreposição real do teclado e o campo focado é rolado até
+// ficar visível (hooks/use-teclado.ts).
+if (!home.includes("useCampoFocadoVisivel(transactionFormRef")
+  || !home.includes("onScroll={onScrollTransacao}")
+  || (home.match(/mostrarCampoTransacaoAcimaDoTeclado\(320\)/g) ?? []).length < 2
+  || !home.includes("useSobreposicaoTeclado(")) {
+  throw new Error("Os campos de valor e de parcelas da transacao precisam subir quando o teclado abrir.");
 }
 
 for (const tabFile of [home, settings,

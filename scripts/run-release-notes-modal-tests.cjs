@@ -59,9 +59,26 @@ assert.match(
   "O botao Voltar do Android tambem precisa dispensar a lista de novidades.",
 );
 
-assert.ok(
-  modal.includes("Aplicar agora") && modal.indexOf("Aplicar agora") < scrollStart,
-  "A acao Aplicar agora deve continuar acessivel no estado de atualizacao pronta.",
+// Atualizacao OTA silenciosa: nenhum aviso de "baixando" ou "reinicie para
+// aplicar"; a versao baixada entra sozinha na proxima abertura ou na volta ao
+// app depois de alguns minutos fora.
+for (const texto of ["Aplicar agora", "Preparando atualização", "Atualização pronta", "Reinicie o FinFlow"]) {
+  assert.ok(!layout.includes(texto), `O app nao deve mais exibir "${texto}".`);
+}
+assert.match(
+  layout,
+  /const resultado = await Updates\.fetchUpdateAsync\(\);\s*atualizacaoPronta = resultado\.isNew;/,
+  "A atualizacao precisa ser baixada em segundo plano, sem abrir modal.",
+);
+assert.match(
+  layout,
+  /ficouFora[\s\S]{0,200}if \(atualizacaoPronta\) void Updates\.reloadAsync\(\);/,
+  "A versao baixada deve ser aplicada sozinha ao voltar ao app depois de um tempo fora.",
+);
+assert.match(
+  layout,
+  /useState<"novidades" \| null>/,
+  "O modal de atualizacao so pode mostrar as novidades da versao.",
 );
 
 console.log("Release notes modal tests passed.");

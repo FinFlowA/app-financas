@@ -25,6 +25,7 @@
     "test:offline-queue": "node scripts/run-offline-queue-tests.cjs",
     "test:native-compat": "node scripts/run-native-compat-tests.cjs",
     "test:release-notes-modal": "node scripts/run-release-notes-modal-tests.cjs",
+    "test:app-helpers": "node scripts/run-app-helpers-tests.cjs",
     "test:finn-product-guidance": "node scripts/run-finn-product-guidance-tests.cjs",
     "test:flow-screens": "node scripts/run-flow-screen-tests.cjs",
     "test:edge-security": "node scripts/run-edge-security-tests.cjs",
