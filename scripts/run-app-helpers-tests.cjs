@@ -88,6 +88,18 @@ assert.ok(
 );
 assert.deepEqual(lembretes.montarLembretesVencimento([], agora), []);
 
+// Modo demonstração local: a Home pagina as transações com range() (como o
+// PostgREST, índices inclusivos). Sem isso a Home do demo não carregava.
+const testeDemo = (async () => {
+  const { createLocalDemoQueryBuilder } = carregar("lib/local-demo/query-builder.ts");
+  const banco = { transacoes: Array.from({ length: 7 }, (_, i) => ({ id: i + 1 })) };
+  const pagina = (de, ate) => createLocalDemoQueryBuilder(banco, "transacoes", () => null)
+    .select("id").order("id", { ascending: true }).range(de, ate);
+  assert.deepEqual((await pagina(0, 2)).data.map((t) => t.id), [1, 2, 3], "Primeira página do range.");
+  assert.deepEqual((await pagina(3, 5)).data.map((t) => t.id), [4, 5, 6], "Página do meio do range.");
+  assert.deepEqual((await pagina(6, 8)).data.map((t) => t.id), [7], "Última página incompleta encerra a paginação.");
+})();
+
 const notificacoes = fs.readFileSync(path.join(root, "lib", "notifications.ts"), "utf8");
 assert.match(
   notificacoes,
@@ -95,4 +107,10 @@ assert.match(
   "A agenda completa precisa agendar os próximos dias, não só o dia em que o app foi aberto.",
 );
 
-console.log("App helper tests passed.");
+testeDemo.then(
+  () => console.log("App helper tests passed."),
+  (erro) => {
+    console.error(erro);
+    process.exit(1);
+  },
+);
