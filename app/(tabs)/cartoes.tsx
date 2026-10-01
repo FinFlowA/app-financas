@@ -65,6 +65,7 @@ import {
 } from "react-native";
 import Modal from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
+import OndasCabecalho from "../../components/OndasCabecalho";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
@@ -949,8 +950,7 @@ export default function CartoesScreen() {
       <ScrollView contentContainerStyle={estilos.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={[estilos.header, { backgroundColor: novoTema.header }]}>
-          <View style={estilos.headerDecoracaoUm} />
-          <View style={estilos.headerDecoracaoDois} />
+          <OndasCabecalho />
           <View style={estilos.headerTopRow}>
             <TouchableOpacity onPress={() => router.back()} style={estilos.voltarBtn} accessibilityLabel="Voltar">
               <MaterialIcons name="arrow-back" size={22} color="#FFF" />
@@ -2027,26 +2027,6 @@ const estilos = StyleSheet.create({
     paddingBottom: 17,
     borderRadius: 26,
     ...FinFlowShadow,
-  },
-  headerDecoracaoUm: {
-    position: "absolute",
-    width: 300,
-    height: 125,
-    right: -138,
-    top: 48,
-    borderRadius: 160,
-    backgroundColor: "rgba(255,255,255,0.09)",
-    transform: [{ rotate: "-10deg" }],
-  },
-  headerDecoracaoDois: {
-    position: "absolute",
-    width: 240,
-    height: 92,
-    left: -125,
-    bottom: -18,
-    borderRadius: 130,
-    backgroundColor: "rgba(2,60,51,0.14)",
-    transform: [{ rotate: "11deg" }],
   },
   headerTopRow: { flexDirection: "row", alignItems: "center", zIndex: 2 },
   voltarBtn: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(255,255,255,0.15)" },

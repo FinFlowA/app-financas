@@ -108,6 +108,18 @@ if (!home.includes("useCampoFocadoVisivel(transactionFormRef")
   throw new Error("Os campos de valor e de parcelas da transacao precisam subir quando o teclado abrir.");
 }
 
+// Cabeçalhos coloridos do Início e dos Cartões usam as mesmas ondas animadas.
+const cardsScreen = fs.readFileSync(path.join(root, "app", "(tabs)", "cartoes.tsx"), "utf8");
+if (!home.includes("<OndasCabecalho />") || !cardsScreen.includes("<OndasCabecalho />")) {
+  throw new Error("Os cabecalhos do Inicio e dos Cartoes precisam das ondas animadas.");
+}
+// A lista de conta/categoria surge (fundo escurece e a folha sobe) em vez de
+// aparecer de uma vez, e some com o movimento inverso.
+const selector = fs.readFileSync(path.join(root, "components", "SeletorLista.tsx"), "utf8");
+if (!selector.includes("Animated.timing(entrada") || !selector.includes('animationType="none"') || !/opacity: entrada/.test(selector)) {
+  throw new Error("A lista de selecao precisa animar a entrada e a saida.");
+}
+
 for (const tabFile of [home, settings,
   fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8"),
   fs.readFileSync(path.join(root, "app", "(tabs)", "caixinhas.tsx"), "utf8"),

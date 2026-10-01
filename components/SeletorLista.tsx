@@ -1,6 +1,8 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -62,9 +64,37 @@ export default function SeletorLista({
   const selecionado = opcoes.find((opcao) => opcao.id === selecionadoId) ?? null;
   const filtradas = useMemo(() => filtrarOpcoesSeletor(opcoes, busca), [opcoes, busca]);
 
+  // Surgimento: o fundo escurece e a folha sobe de baixo enquanto aparece; ao
+  // fechar (inclusive depois de escolher), faz o caminho inverso.
+  const entrada = useRef(new Animated.Value(0)).current;
+  const fechandoRef = useRef(false);
+
+  useEffect(() => {
+    if (!aberto) return;
+    entrada.setValue(0);
+    const animacao = Animated.timing(entrada, {
+      toValue: 1,
+      duration: 260,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    });
+    animacao.start();
+    return () => animacao.stop();
+  }, [aberto, entrada]);
+
   const fechar = () => {
-    setAberto(false);
-    setBusca("");
+    if (fechandoRef.current) return;
+    fechandoRef.current = true;
+    Animated.timing(entrada, {
+      toValue: 0,
+      duration: 180,
+      easing: Easing.in(Easing.cubic),
+      useNativeDriver: true,
+    }).start(() => {
+      fechandoRef.current = false;
+      setAberto(false);
+      setBusca("");
+    });
   };
 
   const renderMarcador = (opcao: OpcaoSeletor, ativo: boolean) => {
@@ -103,8 +133,9 @@ export default function SeletorLista({
         <MaterialIcons name="keyboard-arrow-down" size={22} color={cores.textoSecundario} />
       </TouchableOpacity>
 
-      <FinFlowPopup visible={aberto} onRequestClose={fechar}>
+      <FinFlowPopup visible={aberto} onRequestClose={fechar} animationType="none">
         <View ref={areaRef} style={[styles.overlay, { paddingBottom: sobreposicao }]}>
+          <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.fundoEscuro, { opacity: entrada }]} />
           <TouchableOpacity style={StyleSheet.absoluteFill} onPress={fechar} accessibilityLabel="Fechar lista" />
           <KeyboardAvoidingView
             enabled={Platform.OS === "ios"}
@@ -112,7 +143,17 @@ export default function SeletorLista({
             style={styles.area}
             pointerEvents="box-none"
           >
-            <View style={[styles.folha, FinFlowShadow, { backgroundColor: cores.card, borderColor: cores.borda }]}>
+            <Animated.View
+              style={[
+                styles.folha,
+                FinFlowShadow,
+                { backgroundColor: cores.card, borderColor: cores.borda },
+                {
+                  opacity: entrada,
+                  transform: [{ translateY: entrada.interpolate({ inputRange: [0, 1], outputRange: [64, 0] }) }],
+                },
+              ]}
+            >
               <View style={styles.cabecalho}>
                 <Text style={[styles.titulo, { color: cores.texto }]}>{rotulo}</Text>
                 <TouchableOpacity
@@ -179,7 +220,7 @@ export default function SeletorLista({
                   );
                 }}
               />
-            </View>
+            </Animated.View>
           </KeyboardAvoidingView>
         </View>
       </FinFlowPopup>
@@ -201,7 +242,8 @@ const styles = StyleSheet.create({
   gatilhoTexto: { flex: 1, fontSize: 15, fontWeight: "600" },
   bolinha: { width: 12, height: 12, borderRadius: 6 },
   iconeRedondo: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  overlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.72)" },
+  overlay: { flex: 1 },
+  fundoEscuro: { backgroundColor: "rgba(2,12,15,0.72)" },
   area: { flex: 1, justifyContent: "flex-end", alignItems: "center" },
   folha: {
     width: "100%",

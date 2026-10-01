@@ -5,8 +5,10 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-10-01-correcoes-v16",
+  id: "2.0.0-2026-10-01-correcoes-v17",
   items: [
+    "O cabeçalho dos Cartões ganhou as ondas animadas da tela inicial",
+    "As listas de conta e categoria da nova transação surgem com uma animação suave",
     "A tela de nova transação voltou a ocupar a tela inteira",
     "Formulários mais leves: a tela de fundo não é mais redesenhada sem parar enquanto você preenche",
     "Versões novas passam a valer já na primeira abertura do app",
