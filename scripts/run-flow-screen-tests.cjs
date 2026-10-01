@@ -121,11 +121,13 @@ if (!selector.includes("Animated.timing(entrada") || !selector.includes('animati
 }
 
 // Finn como contato: nome, status ("digitando…" enquanto responde) e dados ao
-// tocar, com a foto acenando ao abrir (e de novo ao tocar nela).
+// tocar, com a animação dele acenando (só a mão se mexe; não é a imagem
+// inteira balançando).
 const chat = fs.readFileSync(path.join(root, "app", "chat-ia.tsx"), "utf8");
 if (!chat.includes('loading ? "digitando…" : "online"') || !chat.includes("visible={contatoVisivel}") || /minHeight: 126/.test(chat)
-  || !chat.includes("onPress={acenar}") || !chat.includes("if (contatoVisivel) acenar();")) {
-  throw new Error("O cabecalho do Finn precisa ser uma barra compacta de contato, com status, dados e aceno.");
+  || !chat.includes('require("../assets/images/finn-acenando.webp")') || /acenar\(/.test(chat)
+  || !fs.existsSync(path.join(root, "assets", "images", "finn-acenando.webp"))) {
+  throw new Error("O cabecalho do Finn precisa ser uma barra compacta de contato, com status, dados e o Finn acenando.");
 }
 
 for (const tabFile of [home, settings,
