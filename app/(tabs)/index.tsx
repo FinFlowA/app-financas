@@ -3154,9 +3154,9 @@ export default function Dashboard() {
       {modalTransVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalTransVisivel(false)}>
         <View ref={transactionOverlayRef} style={[styles.transactionOverlay, { paddingBottom: transactionTecladoAndroid }]}>
-        <KeyboardAvoidingView style={styles.transactionKeyboardArea} enabled={Platform.OS === "ios"} behavior="padding">
           <View style={[styles.transactionSheet, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
             <View style={[styles.transactionHandle, { backgroundColor: Cores.borda }]} />
+            <KeyboardAvoidingView style={styles.transactionKeyboardArea} enabled={Platform.OS === "ios"} behavior="padding">
             <View style={styles.transactionHeader}>
               <View style={[styles.transactionHeaderIcon, { backgroundColor: `${corTipoTransacao}22` }]}>
                 <MaterialIcons name="swap-horiz" size={24} color={corTipoTransacao} />
@@ -3495,8 +3495,8 @@ export default function Dashboard() {
                 <Button title={loadingTrans ? "Aguarde..." : (!foiPago || frequencia !== "unica" ? "Agendar" : "Registrar")} color={corTipoTransacao} onPress={salvarTransacao} disabled={loadingTrans} style={styles.transactionActionButton} />
               </View>
             </ScrollView>
+            </KeyboardAvoidingView>
           </View>
-        </KeyboardAvoidingView>
         </View>
       </Modal>
       )}
@@ -3658,10 +3658,13 @@ const styles = StyleSheet.create({
   balanceExplanationNoteText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
   balanceExplanationButton: { minHeight: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 8 },
   balanceExplanationButtonText: { color: "#FFF", fontSize: 15, fontWeight: "900" },
-  transactionOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)" },
-  // Recebe o maxHeight percentual da folha; no Android o overlay acima ganha
-  // paddingBottom igual ao trecho coberto pelo teclado (edge-to-edge).
-  transactionKeyboardArea: { flex: 1, width: "100%", justifyContent: "flex-end", alignItems: "center" },
+  // A tela da transação abre pelo FinFlowScreen, que transforma a raiz em
+  // página e o PRIMEIRO filho (a folha) em painel de tela cheia. Por isso a
+  // folha precisa ser filha direta da raiz; o ajuste do teclado do iOS fica
+  // dentro dela. No Android a raiz ganha paddingBottom igual ao trecho
+  // coberto pelo teclado (edge-to-edge), e o painel encolhe junto.
+  transactionOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "flex-end", alignItems: "center" },
+  transactionKeyboardArea: { flex: 1 },
   transactionSheet: {
     width: "100%",
     maxWidth: 620,

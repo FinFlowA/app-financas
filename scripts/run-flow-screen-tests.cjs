@@ -85,6 +85,12 @@ if (!settings.includes('notificationOptionsList: { flex: 1') || !settings.includ
 if (!tabsLayout.includes("useSafeAreaInsets") || !tabsLayout.includes("FLOATING_BAR_HEIGHT + bottomInset + FLOATING_BAR_GAP")) {
   throw new Error("A barra de abas precisa reservar a area de navegacao do aparelho.");
 }
+// O FinFlowScreen estica a raiz e o primeiro filho dela até a tela cheia. Se
+// outra camada (como o ajuste do teclado) ficar entre a raiz e a folha, a
+// folha fica com a altura natural no fim de uma página escura e cortada.
+if (!/<View ref=\{transactionOverlayRef\}[^>]*>\s*<View style=\{\[styles\.transactionSheet/.test(home)) {
+  throw new Error("A folha da nova transacao precisa ser o primeiro filho da raiz do fluxo.");
+}
 // Campos da transação (valor e número de parcelas) sobem acima do teclado:
 // a área mede a sobreposição real do teclado e o campo focado é rolado até
 // ficar visível (hooks/use-teclado.ts).
