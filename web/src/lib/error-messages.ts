@@ -83,6 +83,9 @@ export function mensagemTetoSeguranca(erro: string | { message?: string | null }
   return `Você atingiu o limite de segurança de ${quantidade} ${recurso}. Esse limite inclui os itens arquivados. Exclua o que não usa mais ou fale com o suporte: ${EMAIL_SUPORTE}`;
 }
 
+/** Mensagem de erro sem tradução própria. */
+export const MENSAGEM_ERRO_GENERICA = "Não foi possível concluir a operação. Nenhuma alteração financeira foi feita.";
+
 export function traduzirErro(codigo: string): string {
   if (MENSAGENS[codigo]) return MENSAGENS[codigo];
   const teto = mensagemTetoSeguranca(codigo);
@@ -92,5 +95,5 @@ export function traduzirErro(codigo: string): string {
   if (codigo.startsWith("AI_INVALID_") || codigo.startsWith("AI_MISSING_") || codigo.includes("REQUIRED")) {
     return "Os dados informados não atendem às regras desta operação. Revise os valores e tente novamente.";
   }
-  return "Não foi possível concluir a operação. Nenhuma alteração financeira foi feita.";
+  return MENSAGEM_ERRO_GENERICA;
 }

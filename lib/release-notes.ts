@@ -5,17 +5,15 @@
  * cada nova OTA/build deve receber um id novo e suas próprias mensagens.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-09-01-android-completion-flow-v14",
+  id: "2.0.0-2026-10-01-correcoes-v15",
   items: [
-    "Formulários de criação e edição agora abrem em telas próprias, com navegação mais estável",
-    "Objetivos com apenas saldo inicial podem ser excluídos; objetivos movimentados preservam o histórico",
-    "O histórico dos objetivos mostra apenas movimentações realizadas e fica junto ao respectivo card no site",
-    "O fluxo de caixa detalha valores guardados e resgatados dos objetivos com cores próprias",
-    "Recorrências fixas mantêm automaticamente uma janela móvel de cinco anos, sem pedir quantidade de ocorrências",
-    "Seletores de conta, paletas de cores, barra inferior e criação de contas receberam correções visuais e de navegação",
-    "Telas de criação e configuração agora respeitam as barras do aparelho e mantêm suas ações no rodapé",
-    "A navegação inferior respeita os botões do aparelho, as abas atualizam ao puxar e o teclado não cobre mais o valor da transação",
-    "Transferências entre contas agora podem ser concluídas e reabertas com segurança",
-    "A confirmação de valor e data dos agendamentos agora abre de forma estável no Android",
+    "Conta, destino e categoria da nova transação abrem uma lista completa, com busca que continua visível com o teclado aberto",
+    "O teclado não cobre mais o número de parcelas, o campo de mensagem do Finn nem as senhas na área de Segurança",
+    "O Finn mostra três pontinhos enquanto pensa, e um círculo ao lado do campo indica quantas consultas restam no dia",
+    "Lembretes de vencimento dos próximos dias são agendados de uma vez e chegam mesmo sem abrir o app",
+    "O link de nova senha não aparece mais como expirado quando aberto logo depois de recebido",
+    "Transferências entre contas voltam a ser criadas e conciliadas normalmente",
+    "O calendário dos objetivos segue o visual do app, e a barra de abas some ao abrir Cartões pela tela inicial",
+    "Atualizações do app são instaladas em segundo plano, sem pedir para reiniciar",
   ],
 } as const;

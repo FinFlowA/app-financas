@@ -1,12 +1,11 @@
 import { MaterialIcons } from "@expo/vector-icons";
-import DateTimePicker from "@react-native-community/datetimepicker";
+import CalendarioPopup from "../../components/CalendarioPopup";
 import { useFocusEffect } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Animated,
   DeviceEventEmitter,
-  Platform,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -194,6 +193,13 @@ export default function CaixinhasScreen() {
     inputFundo: novoTema.surfaceMuted,
     barraFundo: novoTema.border,
     pillFundo: novoTema.surfaceMuted,
+  };
+  const coresCalendario = {
+    card: Cores.cardFundo,
+    pill: Cores.pillFundo,
+    borda: Cores.borda,
+    texto: Cores.textoPrincipal,
+    textoSecundario: Cores.textoSecundario,
   };
 
   const [caixinhas, setCaixinhas] = useState<Caixinha[]>([]);
@@ -1073,17 +1079,16 @@ export default function CaixinhasScreen() {
                   <MaterialIcons name="event" size={18} color="#2A9D8F" />
                 </View>
               </TouchableOpacity>
-              {mostrarPickerEdit && (
-                <DateTimePicker
-                  value={dataPrazoEdit ?? new Date()}
-                  mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
-                  onChange={(_e: any, date?: Date) => {
-                    setMostrarPickerEdit(false);
-                    if (date) setDataPrazoEdit(date);
-                  }}
-                />
-              )}
+              <CalendarioPopup
+                visivel={mostrarPickerEdit}
+                valor={dataPrazoEdit}
+                aoSelecionar={setDataPrazoEdit}
+                aoFechar={() => setMostrarPickerEdit(false)}
+                corDestaque="#2A9D8F"
+                cores={coresCalendario}
+                titulo="Prazo do objetivo"
+                subtitulo="Até quando você quer atingir a meta."
+              />
 
               {temParceiro && (
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: 12, backgroundColor: Cores.pillFundo, borderRadius: 10 }}>
@@ -1203,18 +1208,17 @@ export default function CaixinhasScreen() {
                   <MaterialIcons name="event" size={18} color="#2A9D8F" />
                 </View>
               </TouchableOpacity>
-              {mostrarPickerCriacao && (
-                <DateTimePicker
-                  value={dataPrazoCriacao ?? new Date()}
-                  mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
-                  minimumDate={new Date()}
-                  onChange={(_e: any, date?: Date) => {
-                    setMostrarPickerCriacao(false);
-                    if (date) setDataPrazoCriacao(date);
-                  }}
-                />
-              )}
+              <CalendarioPopup
+                visivel={mostrarPickerCriacao}
+                valor={dataPrazoCriacao}
+                aoSelecionar={setDataPrazoCriacao}
+                aoFechar={() => setMostrarPickerCriacao(false)}
+                corDestaque="#2A9D8F"
+                cores={coresCalendario}
+                titulo="Prazo do objetivo"
+                subtitulo="Até quando você quer atingir a meta."
+                dataMinima={new Date()}
+              />
 
               <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
               <View style={styles.colorPalette}>

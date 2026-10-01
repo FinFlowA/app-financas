@@ -60,6 +60,11 @@ function FloatingTabBar({ state, navigation }: BottomTabBarProps) {
   const itemWidth = innerBarWidth > 0 ? innerBarWidth / VISIBLE_TABS.length : 0;
   const indicatorTranslate = Animated.multiply(indicatorPosition, itemWidth);
 
+  // Telas ocultas da barra (Cartões, aberta pelo atalho da tela inicial) são
+  // telas de detalhe com botão de voltar: ficam sem a barra, que ainda
+  // destacaria o Início como se fosse a aba atual.
+  if (foundIndex < 0) return null;
+
   return (
     <View
       onLayout={(event) => setBarWidth(event.nativeEvent.layout.width)}

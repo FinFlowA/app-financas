@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { montarLembretesVencimento } from "./lembretes-vencimento";
 import { supabase } from "./supabase";
 import {
   digestForLocalDeduplication,
@@ -471,6 +472,8 @@ async function executarAgendamentoNotificacoesDoApp(
       const chaveAgendado = `@notif_agendado_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
       chaveAgendaCompleta = chaveAgendado;
       const assinaturaBruta = JSON.stringify({
+        // Muda quando a regra de agendamento muda, para refazer a agenda do dia.
+        regra: "vencimentos-30-dias",
         transacoes: transacoes.map((t) => [t.status, t.data_vencimento, t.tipo]).sort(),
         caixinhas: (caixinhas ?? []).map((c) => [c.nome, c.meta_valor, c.saldo_atual, c.data_prazo]).sort(),
         cartoes: (cartoes ?? []).map((c) => [c.id, c.nome, c.dia_vencimento, c.dia_fechamento, c.limite, c.limite_usado, ...(c.faturas_pendentes ?? []).sort()]).sort(),
@@ -555,39 +558,15 @@ async function executarAgendamentoNotificacoesDoApp(
     // Telas com dados parciais não devem alterar a agenda completa.
     if (!dadosCompletos) return;
 
-    // Vencendo hoje (8h e 19h)
-    const vencendoHoje = preferencias.transacoesDoDia ? transacoes.filter((t) => {
-      if (t.status !== "pendente") return false;
-      const p = (t.data_vencimento || "").split("-");
-      if (p.length < 3) return false;
-      const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
-      return d.getTime() === hoje.getTime();
-    }) : [];
-    if (vencendoHoje.length > 0) {
-      const despesas = vencendoHoje.filter((t) => t.tipo === "despesa").length;
-      const receitas = vencendoHoje.filter((t) => t.tipo === "receita").length;
-      const partes: string[] = [];
-      if (despesas > 0) partes.push(`${despesas} despesa${despesas > 1 ? "s" : ""}`);
-      if (receitas > 0) partes.push(`${receitas} receita${receitas > 1 ? "s" : ""}`);
-      const corpo = `Você tem ${partes.join(" e ")} vencendo hoje. Não esqueça!`;
-
-      const hora8 = new Date(agora);
-      hora8.setHours(8, 0, 0, 0);
-      if (hora8 > agora) {
-        const seg8 = Math.floor((hora8.getTime() - agora.getTime()) / 1000);
+    // Vencimentos de hoje e dos próximos dias (8h e, na primeira semana, 19h),
+    // agendados de uma vez para chegarem sem depender de abrir o app no dia.
+    if (preferencias.transacoesDoDia) {
+      for (const lembrete of montarLembretesVencimento(transacoes, agora)) {
+        const segundos = Math.floor((lembrete.quando.getTime() - agora.getTime()) / 1000);
+        if (segundos <= 0) continue;
         await agendarSeSessaoAtiva({
-          content: { ...notifBase("hoje"), title: "📅 FinFlow — Vencimento Hoje", body: corpo },
-          trigger: gatilhoIntervalo(seg8),
-        });
-      }
-
-      const hora19 = new Date(agora);
-      hora19.setHours(19, 0, 0, 0);
-      if (hora19 > agora) {
-        const seg19 = Math.floor((hora19.getTime() - agora.getTime()) / 1000);
-        await agendarSeSessaoAtiva({
-          content: { ...notifBase("hoje"), title: "⏰ FinFlow — Lembrete de Hoje", body: corpo },
-          trigger: gatilhoIntervalo(seg19),
+          content: { ...notifBase("hoje"), title: lembrete.titulo, body: lembrete.corpo },
+          trigger: gatilhoIntervalo(segundos),
         });
       }
     }

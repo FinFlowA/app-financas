@@ -60,7 +60,15 @@ import { RELEASE_NOTES } from "../lib/release-notes";
 import {
   garantirCategoriaOutros,
 } from "../lib/default-categories";
-import { criarFluxoRecuperacaoSenha, PASSWORD_RECOVERY_FLOW_KEY } from "../lib/auth-flow";
+import {
+  criarFluxoRecuperacaoSenha,
+  erroNoLinkDeAutenticacao,
+  fluxoRecuperacaoVigente,
+  lerFluxoRecuperacaoSenha,
+  motivoFalhaRecuperacao,
+  PASSWORD_RECOVERY_FLOW_KEY,
+  registrarEstadoLinkRecuperacao,
+} from "../lib/auth-flow";
 import { reautenticacaoAtiva, registrarReavaliacaoMfa, sessaoAguardandoMfa } from "../lib/mfa";
 import {
   conexaoPermiteSincronizacao,
@@ -224,7 +232,8 @@ export default function RootLayout() {
   const [sessaoMfaPendente, setSessaoMfaPendente] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [notificacoesAtivas, setNotificacoesAtivas] = useState(false);
-  const [modalAtualizacao, setModalAtualizacao] = useState<"baixando" | "pronta" | "novidades" | null>(null);
+  // Só as novidades da versão aparecem; a atualização em si é silenciosa.
+  const [modalAtualizacao, setModalAtualizacao] = useState<"novidades" | null>(null);
 
   const dispensarNovidades = useCallback(async () => {
     try {
@@ -392,14 +401,25 @@ export default function RootLayout() {
   // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
   const authLinkProcessadoRef = useRef<string | null>(null);
+  // Muda a cada link de recuperação aceito, para a guarda de rotas abaixo
+  // reavaliar se precisa levar o usuário à tela de nova senha.
+  const [fluxoRecuperacaoVersao, setFluxoRecuperacaoVersao] = useState(0);
   const iniciarFluxoRecuperacaoSenha = useCallback(async (userId?: string) => {
-    if (!userId) return;
+    if (!userId) {
+      registrarEstadoLinkRecuperacao({ etapa: "falhou", motivo: "desconhecido" });
+      return;
+    }
     await AsyncStorage.setItem(
       PASSWORD_RECOVERY_FLOW_KEY,
       JSON.stringify(criarFluxoRecuperacaoSenha(userId)),
     );
-    router.replace("/reset-password" as any);
-  }, [router]);
+    registrarEstadoLinkRecuperacao(null);
+    // Sem router.replace aqui: o próprio link já abre /reset-password, e
+    // substituir a tela por ela mesma a desmontava no meio da validação,
+    // derrubando a sessão recém-criada (o link parecia "expirado"). A guarda
+    // de rotas só navega quando o usuário estiver em outra tela.
+    setFluxoRecuperacaoVersao((versao) => versao + 1);
+  }, []);
 
   useEffect(() => {
     if (!url) return;
@@ -411,21 +431,36 @@ export default function RootLayout() {
     if (url.includes("auth/callback")) return;
     if (authLinkProcessadoRef.current === url) return;
     authLinkProcessadoRef.current = url;
+    const linkRecuperacao = url.includes("reset-password");
+
+    // Token do e-mail já usado ou vencido: o Supabase devolve o erro no link,
+    // sem código. A tela de nova senha mostra o motivo.
+    const erroDoLink = erroNoLinkDeAutenticacao(url);
+    if (erroDoLink) {
+      if (linkRecuperacao) {
+        registrarEstadoLinkRecuperacao({ etapa: "falhou", motivo: motivoFalhaRecuperacao(erroDoLink) });
+      }
+      return;
+    }
 
     // Fluxo PKCE (Supabase moderno): code= nos query params
     try {
       const parsed = new URL(url);
       const code = parsed.searchParams.get("code");
       if (code) {
+        if (linkRecuperacao) registrarEstadoLinkRecuperacao({ etapa: "processando", desde: Date.now() });
         supabase.auth.exchangeCodeForSession(code)
           .then(async ({ data, error }) => {
             if (error) {
+              if (linkRecuperacao) {
+                registrarEstadoLinkRecuperacao({ etapa: "falhou", motivo: motivoFalhaRecuperacao(error) });
+              }
               if (__DEV__) console.error("Erro ao trocar código de autenticação", error);
               return;
             }
-            // O link já pode ter levado o Expo Router à tela antes da troca
-            // PKCE terminar. Grave primeiro o marcador vinculado ao usuário e
-            // só então navegue, evitando que a tela considere o link inválido.
+            // O link já levou o Expo Router à tela antes da troca PKCE
+            // terminar. Grave o marcador vinculado ao usuário; a tela espera
+            // por ele enquanto a troca está em andamento.
             if (url.includes("reset-password")) {
               await iniciarFluxoRecuperacaoSenha(data.user?.id);
             } else if (url.includes("email-confirmed") && data.user?.email_confirmed_at) {
@@ -433,6 +468,9 @@ export default function RootLayout() {
             }
           })
           .catch((error) => {
+            if (linkRecuperacao) {
+              registrarEstadoLinkRecuperacao({ etapa: "falhou", motivo: motivoFalhaRecuperacao(error) });
+            }
             if (__DEV__) console.error("Erro ao concluir autenticação por link", error);
           });
         return;
@@ -467,21 +505,48 @@ export default function RootLayout() {
     }
   }, [iniciarFluxoRecuperacaoSenha, router, url]);
 
-  // Verifica atualizações OTA ao abrir o app
+  // Atualizações OTA silenciosas: cada envio para a main publica uma versão
+  // nova pelo EAS Update, e pedir "reinicie o app" a cada commit incomodava.
+  // A versão é baixada em segundo plano e entra sozinha na próxima abertura,
+  // ou ao voltar ao app depois de pelo menos 5 minutos fora (tempo suficiente
+  // para ninguém estar no meio de um formulário). Sem nenhum aviso na tela.
   useEffect(() => {
-    async function verificarAtualizacao() {
+    if (__DEV__) return;
+    const AUSENCIA_PARA_APLICAR_MS = 5 * 60 * 1000;
+    let atualizacaoPronta = false;
+    let buscando = false;
+    let saiuEm: number | null = null;
+
+    const buscarAtualizacao = async () => {
+      if (buscando || atualizacaoPronta) return;
+      buscando = true;
       try {
         const update = await Updates.checkForUpdateAsync();
         if (update.isAvailable) {
-          setModalAtualizacao("baixando");
-          await Updates.fetchUpdateAsync();
-          setModalAtualizacao("pronta");
+          const resultado = await Updates.fetchUpdateAsync();
+          atualizacaoPronta = resultado.isNew;
         }
       } catch (error) {
         console.log("Erro ao buscar atualizações:", error);
+      } finally {
+        buscando = false;
       }
-    }
-    if (!__DEV__) verificarAtualizacao();
+    };
+
+    void buscarAtualizacao();
+    const eventoApp = AppState.addEventListener("change", (estado) => {
+      if (estado === "background") {
+        saiuEm = Date.now();
+        return;
+      }
+      if (estado !== "active") return;
+      const ficouFora = saiuEm !== null && Date.now() - saiuEm >= AUSENCIA_PARA_APLICAR_MS;
+      saiuEm = null;
+      if (!ficouFora) return;
+      if (atualizacaoPronta) void Updates.reloadAsync();
+      else void buscarAtualizacao();
+    });
+    return () => eventoApp.remove();
   }, []);
 
   useEffect(() => {
@@ -1122,7 +1187,9 @@ export default function RootLayout() {
     const needsGooglePassword = session?.user?.app_metadata?.provider === "google"
       && session?.user?.user_metadata?.senha_definida !== true;
 
-    if (session && needsGooglePassword && seg !== "define-password") {
+    // Fora dos fluxos especiais: a tela de nova senha também cria a senha e,
+    // com a guarda de recuperação abaixo, as duas ficariam se alternando.
+    if (session && needsGooglePassword && seg !== "define-password" && !inSpecialFlow) {
       router.replace("/define-password" as any);
       return;
     }
@@ -1133,6 +1200,24 @@ export default function RootLayout() {
       router.replace("/(tabs)");
     }
   }, [session, sessaoMfaPendente, isReady, isAuthReady, router, segments]);
+
+  // A sessão aberta por um link de recuperação serve só para trocar a senha.
+  // Enquanto o marcador valer, qualquer outra tela devolve o usuário para
+  // /reset-password: cobre o link que abriu o app em outra rota e a navegação
+  // remontada depois do código da verificação em duas etapas. A tela de nova
+  // senha remove o marcador ao salvar; sair dela pelo botão encerra a sessão.
+  useEffect(() => {
+    if (!isReady || !isAuthReady || sessaoMfaPendente) return;
+    const userId = session?.user?.id;
+    if (!userId || segments[0] === "reset-password") return;
+    let ativo = true;
+    void AsyncStorage.getItem(PASSWORD_RECOVERY_FLOW_KEY).then((raw) => {
+      if (ativo && fluxoRecuperacaoVigente(lerFluxoRecuperacaoSenha(raw), userId)) {
+        router.replace("/reset-password" as any);
+      }
+    });
+    return () => { ativo = false; };
+  }, [fluxoRecuperacaoVersao, isAuthReady, isReady, router, segments, sessaoMfaPendente, session?.user?.id]);
 
   const setPlano = useCallback(async (novoPlano: TipoPlano) => {
     // Compatibilidade temporária com telas antigas. O plano só pode mudar por
@@ -1426,7 +1511,7 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerShown: false }}>
               <Stack.Screen name="login" />
               <Stack.Screen name="(tabs)" />
-              <Stack.Screen name="reset-password" />
+              <Stack.Screen name="reset-password" options={{ gestureEnabled: false }} />
               <Stack.Screen name="email-confirmed" />
               <Stack.Screen name="auth/callback" />
               <Stack.Screen name="seguranca" />
@@ -1773,28 +1858,12 @@ export default function RootLayout() {
               </TouchableOpacity>
             )}
             <View style={[styles.modalLimiteTopo, { backgroundColor: "rgba(42,157,143,0.14)" }]}>
-              {modalAtualizacao === "baixando"
-                ? <ActivityIndicator size="large" color="#2A9D8F" />
-                : <MaterialIcons name="auto-awesome" size={34} color="#2A9D8F" />}
+              <MaterialIcons name="auto-awesome" size={34} color="#2A9D8F" />
             </View>
             <Text style={[styles.modalLimiteTitulo, { color: isDark ? "#FFF" : "#17212B" }]}>
-              {modalAtualizacao === "baixando" ? "Preparando atualização" : modalAtualizacao === "pronta" ? "Atualização pronta" : "Novidades no FinFlow"}
+              Novidades no FinFlow
             </Text>
-            {modalAtualizacao === "baixando" ? (
-              <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
-                Estamos baixando melhorias para deixar sua experiência ainda melhor.
-              </Text>
-            ) : modalAtualizacao === "pronta" ? (
-              <>
-                <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D" }]}>
-                  O download terminou. Reinicie o FinFlow para aplicar a nova versão.
-                </Text>
-                <TouchableOpacity style={[styles.modalLimiteBtnUpgrade, { backgroundColor: "#2A9D8F" }]} onPress={() => Updates.reloadAsync()}>
-                  <MaterialIcons name="refresh" size={18} color="#FFF" />
-                  <Text style={styles.modalLimiteBtnText}>Aplicar agora</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
+            {modalAtualizacao === "novidades" && (
               <>
                 <Text style={[styles.modalLimiteMensagem, { color: isDark ? "#AAA" : "#66717D", marginBottom: 14 }]}>
                   Veja o que mudou nesta versão:

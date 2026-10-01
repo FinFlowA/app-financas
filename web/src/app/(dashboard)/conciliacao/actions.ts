@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { traduzirErro } from "@/lib/error-messages";
+import { MENSAGEM_ERRO_GENERICA, traduzirErro } from "@/lib/error-messages";
 
 export type NewReconciliationEntry = { categoryId: number | null; description: string; value: number };
 
@@ -33,7 +33,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const HASH = /^[0-9a-f]{64}$/;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-function reconciliationError(message: string): string {
+function reconciliationError(message: string, sqlState?: string): string {
   const code = message.match(/(?:RECONCILIATION|TRANSACTION)_[A-Z0-9_]+/)?.[0];
   const messages: Record<string, string> = {
     RECONCILIATION_AUTH_REQUIRED: "Sua sessão expirou. Entre novamente.",
@@ -61,7 +61,12 @@ function reconciliationError(message: string): string {
     RECONCILIATION_PARTIAL_RECEIPT_UNAVAILABLE: "Esta conciliação mudou. Reimporte o extrato antes de continuar.",
     RECONCILIATION_PARTIAL_AMOUNT_CHANGED: "O valor restante desta conciliação mudou. Reimporte o extrato.",
   };
-  return code ? messages[code] ?? traduzirErro(code) : traduzirErro(message);
+  const traduzida = code ? messages[code] ?? traduzirErro(code) : traduzirErro(message);
+  if (traduzida !== MENSAGEM_ERRO_GENERICA) return traduzida;
+  // Sem tradução própria: mostra o código para o suporte achar a causa (só
+  // códigos em maiúsculas ou o SQLSTATE, nunca o texto livre do erro).
+  const referencia = code ?? message.match(/\b[A-Z][A-Z0-9_]*_[A-Z0-9]+\b/)?.[0] ?? sqlState;
+  return referencia ? `${traduzida} (código ${referencia})` : traduzida;
 }
 
 export async function reconcileStatementEntry(input: ReconcileEntryInput): Promise<ReconcileEntryResult> {
@@ -113,7 +118,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
       p_expected_user_id: user.id,
       p_client_created_at: new Date().toISOString(),
     });
-    if (error) return { erro: reconciliationError(error.message) };
+    if (error) return { erro: reconciliationError(error.message, error.code) };
     if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
       return { erro: "O servidor não confirmou a reconciliação da parte reaberta." };
     }
@@ -140,7 +145,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
       console.error("[bank-invoice-reconciliation] RPC failed", { code: error.code, message: error.message, details: error.details });
       return { erro: error.code === "PGRST202"
         ? "A atualização do banco para conciliar faturas ainda não foi aplicada. Nenhuma alteração financeira foi feita."
-        : reconciliationError(error.message) };
+        : reconciliationError(error.message, error.code) };
     }
     if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
       return { erro: "O servidor não confirmou o pagamento e a conciliação da fatura." };
@@ -160,7 +165,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
       p_expected_user_id: user.id,
       p_client_created_at: new Date().toISOString(),
     });
-    if (error) return { erro: reconciliationError(error.message) };
+    if (error) return { erro: reconciliationError(error.message, error.code) };
     if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
       return { erro: "O servidor não confirmou a conciliação. Nenhuma alteração foi considerada concluída." };
     }
@@ -182,7 +187,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
     if (error) {
       return { erro: error.code === "PGRST202"
         ? "A atualização do banco para dividir um lançamento novo em vários ainda não foi aplicada. Nenhuma alteração financeira foi feita."
-        : reconciliationError(error.message) };
+        : reconciliationError(error.message, error.code) };
     }
     if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
       return { erro: "O servidor não confirmou a criação dos novos lançamentos. Nenhuma alteração foi considerada concluída." };
@@ -222,7 +227,7 @@ export async function reconcileStatementEntry(input: ReconcileEntryInput): Promi
     p_excess_as_interest: input.excessAsInterest === true,
   };
   const { data, error } = await supabase.rpc(rpcName, rpcInput);
-  if (error) return { erro: reconciliationError(error.message) };
+  if (error) return { erro: reconciliationError(error.message, error.code) };
   if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
     return { erro: "O servidor não confirmou a conciliação. Nenhuma alteração foi considerada concluída." };
   }
@@ -251,7 +256,7 @@ export async function ignoreStatementEntry(input: IgnoreEntryInput): Promise<Rec
     p_idempotency_key: input.requestId,
     p_expected_user_id: user.id,
   });
-  if (error) return { erro: reconciliationError(error.message) };
+  if (error) return { erro: reconciliationError(error.message, error.code) };
   if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) {
     return { erro: "O servidor não confirmou a exclusão desta linha do extrato." };
   }
@@ -275,7 +280,7 @@ export async function ignoreStatementEntries(inputs: IgnoreEntryInput[]): Promis
     p_entries: inputs.map((input) => ({ fingerprint: input.fingerprint, entry_date: input.date, entry_type: input.type, entry_amount: input.amount, idempotency_key: input.requestId })),
     p_expected_user_id: user.id,
   });
-  if (error) return { erro: reconciliationError(error.message) };
+  if (error) return { erro: reconciliationError(error.message, error.code) };
   if (!data || typeof data !== "object" || (data as Record<string, unknown>).ok !== true) return { erro: "O servidor não confirmou a exclusão das movimentações." };
   revalidatePath("/conciliacao");
   return { erro: null, sucesso: "Movimentações excluídas dos próximos extratos." };

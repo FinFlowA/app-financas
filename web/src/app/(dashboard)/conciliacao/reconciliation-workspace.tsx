@@ -321,6 +321,16 @@ export default function ReconciliationWorkspace({
         return;
       }
     }
+    // Transferências e movimentos de objetivo só fecham pelo valor exato
+    // agendado: para eles não há juros nem baixa parcial. Avisa antes de abrir
+    // esses diálogos, que terminariam num erro do servidor.
+    if (draft.mode === "existing" && selectedIds.length === 1 && selected && selected.status !== "paga"
+      && (selected.kind === "transfer" || selected.kind === "goal")
+      && Math.round(selected.remainingValue * 100) !== Math.round(entry.amount * 100)) {
+      const tipo = selected.kind === "goal" ? "Movimentos de objetivo" : "Transferências entre contas";
+      setDrafts((current) => ({ ...current, [entry.id]: { ...draft, error: `${tipo} só podem ser conciliados pelo valor exato agendado (${formatarReais(selected.remainingValue)}). Ajuste o valor do agendamento ou concilie como um novo lançamento.` } }));
+      return;
+    }
     const excess = draft.mode === "existing" && selectedIds.length === 1 && selected && selected.status !== "paga" ? Math.round((entry.amount - selected.remainingValue) * 100) / 100 : 0;
     const remainingAfterPartial = selectedIds.length === 1 && selected?.status !== "paga" ? Math.round(((selected?.remainingValue ?? 0) - entry.amount) * 100) / 100 : 0;
     if (excess > 0 && confirmation !== "interest") {

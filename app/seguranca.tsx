@@ -41,6 +41,7 @@ import {
   verifyTotpCode,
 } from "../lib/mfa";
 import { useAppTheme } from "./_layout";
+import { useCampoFocadoVisivel, useSobreposicaoTeclado } from "../hooks/use-teclado";
 
 const SECURITY_WINDOW_MS = 5 * 60 * 1000;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -56,6 +57,7 @@ type PasswordFieldProps = {
   autoComplete: "current-password" | "new-password";
   textContentType: "password" | "newPassword";
   onSubmitEditing?: () => void;
+  onFocus?: () => void;
 };
 
 function emailErrorMessage(code?: string): { title: string; message: string } {
@@ -94,6 +96,7 @@ function SecurityPasswordField({
   autoComplete,
   textContentType,
   onSubmitEditing,
+  onFocus,
 }: PasswordFieldProps) {
   return (
     <View style={styles.fieldGroup}>
@@ -115,6 +118,7 @@ function SecurityPasswordField({
           textContentType={textContentType}
           returnKeyType={onSubmitEditing ? "done" : "next"}
           onSubmitEditing={onSubmitEditing}
+          onFocus={onFocus}
         />
         <TouchableOpacity
           style={styles.eyeButton}
@@ -134,6 +138,11 @@ export default function SegurancaScreen() {
   const { isDark, session, showToast } = useAppTheme();
   const theme = finFlowTheme(isDark);
   const entranceProgress = useRef(new Animated.Value(0)).current;
+  // Android edge-to-edge: o campo de senha ficava coberto pelo teclado.
+  const areaSegurancaRef = useRef<View>(null);
+  const scrollSegurancaRef = useRef<ScrollView>(null);
+  const tecladoAndroid = useSobreposicaoTeclado(areaSegurancaRef, Platform.OS === "android");
+  const { onScroll: onScrollSeguranca, garantirVisivel: mostrarCampoAcimaDoTeclado } = useCampoFocadoVisivel(scrollSegurancaRef);
 
   const currentEmail = session?.user?.email?.trim() ?? "";
   const metadataPhone = typeof session?.user?.user_metadata?.telefone === "string"
@@ -585,7 +594,8 @@ export default function SegurancaScreen() {
         opacity: entranceProgress,
         transform: [{ translateY: entranceProgress.interpolate({ inputRange: [0, 1], outputRange: [14, 0] }) }],
       }]}>
-      <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <KeyboardAvoidingView style={styles.container} enabled={Platform.OS === "ios"} behavior="padding">
+        <View ref={areaSegurancaRef} style={[styles.container, { paddingBottom: tecladoAndroid }]}>
         <View style={[styles.header, { borderBottomColor: theme.border }]}>
           <TouchableOpacity
             style={[styles.backButton, { backgroundColor: theme.surface }]}
@@ -605,6 +615,9 @@ export default function SegurancaScreen() {
         </View>
 
         <ScrollView
+          ref={scrollSegurancaRef}
+          onScroll={onScrollSeguranca}
+          scrollEventThrottle={16}
           contentContainerStyle={styles.content}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
@@ -636,6 +649,7 @@ export default function SegurancaScreen() {
                       Senha confirmada. Sua conta usa verificação em duas etapas: digite o código de 6 dígitos do app autenticador.
                     </Text>
                     <TextInput
+                      onFocus={() => mostrarCampoAcimaDoTeclado()}
                       style={[styles.codeInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surfaceMuted }]}
                       placeholder="000000"
                       placeholderTextColor={theme.textMuted}
@@ -663,6 +677,7 @@ export default function SegurancaScreen() {
                 ) : (
                   <>
                     <SecurityPasswordField
+                      onFocus={() => mostrarCampoAcimaDoTeclado()}
                       theme={theme}
                       label="Senha atual"
                       placeholder="Digite sua senha atual"
@@ -755,6 +770,7 @@ export default function SegurancaScreen() {
                     </TouchableOpacity>
                     <Text style={[styles.enrollStep, { color: theme.text }]}>2. Digite o código que o app mostra agora</Text>
                     <TextInput
+                      onFocus={() => mostrarCampoAcimaDoTeclado()}
                       style={[styles.codeInput, { color: theme.text, borderColor: theme.border, backgroundColor: theme.surface }]}
                       placeholder="000000"
                       placeholderTextColor={theme.textMuted}
@@ -851,6 +867,7 @@ export default function SegurancaScreen() {
                     <MaterialIcons name="alternate-email" size={19} color={theme.primary} />
                   </View>
                   <TextInput
+                    onFocus={() => mostrarCampoAcimaDoTeclado()}
                     style={[styles.input, { color: theme.text }]}
                     placeholder="novoemail@exemplo.com"
                     placeholderTextColor={theme.textMuted}
@@ -886,6 +903,7 @@ export default function SegurancaScreen() {
                     <MaterialIcons name="phone-android" size={19} color={theme.primary} />
                   </View>
                   <TextInput
+                    onFocus={() => mostrarCampoAcimaDoTeclado()}
                     style={[styles.input, { color: theme.text }]}
                     placeholder="(11) 99999-9999"
                     placeholderTextColor={theme.textMuted}
@@ -920,6 +938,7 @@ export default function SegurancaScreen() {
                 <Text style={[styles.cardDescription, { color: theme.textMuted }]}>{PASSWORD_REQUIREMENTS_MESSAGE} Evite reutilizar senhas de outros serviços.</Text>
 
                 <SecurityPasswordField
+                  onFocus={() => mostrarCampoAcimaDoTeclado()}
                   theme={theme}
                   label="Nova senha"
                   placeholder="Digite a nova senha"
@@ -931,6 +950,7 @@ export default function SegurancaScreen() {
                   textContentType="newPassword"
                 />
                 <SecurityPasswordField
+                  onFocus={() => mostrarCampoAcimaDoTeclado()}
                   theme={theme}
                   label="Confirme a nova senha"
                   placeholder="Digite novamente"
@@ -967,6 +987,7 @@ export default function SegurancaScreen() {
             </>
           )}
         </ScrollView>
+        </View>
       </KeyboardAvoidingView>
       </Animated.View>
     </SafeAreaView>
