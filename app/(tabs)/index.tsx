@@ -475,6 +475,8 @@ export default function Dashboard() {
     receitasDoMes,
     despesasDoMes,
     balancoMensal,
+    entradasRealizadasDoMes,
+    saidasRealizadasDoMes,
     saldoPrevistoFimDoMes,
   } = useMemo(() => {
     const mesSelecionado = mesAtual.getMonth();
@@ -535,6 +537,8 @@ export default function Dashboard() {
       receitasDoMes: entradasMes,
       despesasDoMes: saidasMes,
       balancoMensal: entradasRealizadasMes - saidasRealizadasMes,
+      entradasRealizadasDoMes: entradasRealizadasMes,
+      saidasRealizadasDoMes: saidasRealizadasMes,
       saldoPrevistoFimDoMes: saldoPrevisto,
     };
   }, [comprasCartao, contasEscopoHome, escopoHomeEhTodas, mesAtual, transacoesEscopoHome]);
@@ -2101,7 +2105,7 @@ export default function Dashboard() {
         </>}
 
         {/* GRÁFICOS DE PIZZA */}
-        <View style={styles.section}>
+        <View style={[styles.section, styles.distribuicaoSecao]}>
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 }}>
             <Text style={[styles.sectionTitle, { color: Cores.textoPrincipal }]}>
               Distribuição do Mês
@@ -2315,20 +2319,65 @@ export default function Dashboard() {
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalBalancoAtualVisivel(false)}>
         <View style={styles.modalOverlay}>
           <View style={[styles.balanceExplanationPanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <ScrollView style={styles.balanceExplanationScroll} showsVerticalScrollIndicator={false}>
             <View style={[styles.balanceExplanationIcon, { backgroundColor: novoTema.primarySoft }]}>
               <MaterialIcons name="insights" size={28} color={novoTema.primary} />
             </View>
-            <Text style={[styles.balanceExplanationTitle, { color: Cores.textoPrincipal }]}>Como funciona o Balanço atual?</Text>
-            <Text style={[styles.balanceExplanationText, { color: Cores.textoSecundario }]}>Ele mostra a diferença entre as receitas e as despesas já realizadas no mês e nas contas selecionadas.</Text>
+            <Text style={[styles.balanceExplanationTitle, { color: Cores.textoPrincipal }]}>O que é o Balanço atual?</Text>
+            <Text style={[styles.balanceExplanationText, { color: Cores.textoSecundario }]}>
+              É quanto sobrou (ou faltou) no mês até agora: tudo o que você já recebeu menos tudo o que você já pagou.
+            </Text>
+            <Text style={[styles.balanceExplanationScope, { color: Cores.textoSecundario }]}>
+              {mesesEmPortugues[mesAtual.getMonth()]} {mesAtual.getFullYear()} · {resumoContasHome}
+            </Text>
 
+            {/* A conta feita com os números do mês, para o valor não parecer mágico. */}
+            <View style={[styles.balanceExplanationMath, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <View style={styles.balanceExplanationMathRow}>
+                <Text style={[styles.balanceExplanationMathLabel, { color: Cores.textoPrincipal }]}>Já recebido</Text>
+                <Text style={[styles.balanceExplanationMathValue, { color: "#24A873" }]}>+ {formatarValorPrivado(entradasRealizadasDoMes)}</Text>
+              </View>
+              <View style={styles.balanceExplanationMathRow}>
+                <Text style={[styles.balanceExplanationMathLabel, { color: Cores.textoPrincipal }]}>Já pago</Text>
+                <Text style={[styles.balanceExplanationMathValue, { color: "#C0392E" }]}>− {formatarValorPrivado(saidasRealizadasDoMes)}</Text>
+              </View>
+              <View style={[styles.balanceExplanationMathDivider, { backgroundColor: Cores.borda }]} />
+              <View style={styles.balanceExplanationMathRow}>
+                <Text style={[styles.balanceExplanationMathTotalLabel, { color: Cores.textoPrincipal }]}>Balanço atual</Text>
+                <Text style={[styles.balanceExplanationMathTotal, { color: balancoMensal < 0 ? "#C0392E" : Cores.textoPrincipal }]}>{formatarValorPrivado(balancoMensal)}</Text>
+              </View>
+            </View>
+
+            <Text style={[styles.balanceExplanationSection, { color: Cores.textoPrincipal }]}>Por que é diferente de Entradas e Saídas?</Text>
+            <Text style={[styles.balanceExplanationSectionText, { color: Cores.textoSecundario }]}>
+              Entradas e Saídas somam tudo o que é deste mês, inclusive o que ainda vai vencer. O Balanço só conta o que já aconteceu.
+              {receitasDoMes - entradasRealizadasDoMes > 0.004 || despesasDoMes - saidasRealizadasDoMes > 0.004
+                ? ` Ainda falta receber ${formatarValorPrivado(Math.max(0, receitasDoMes - entradasRealizadasDoMes))} e pagar ${formatarValorPrivado(Math.max(0, despesasDoMes - saidasRealizadasDoMes))} neste mês.`
+                : ""}
+            </Text>
+
+            <Text style={[styles.balanceExplanationSection, { color: Cores.textoPrincipal }]}>O que não entra no balanço</Text>
             <View style={[styles.balanceExplanationNote, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
               <MaterialIcons name="savings" size={21} color={novoTema.primary} />
-              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>Guardar dinheiro em um objetivo não é uma saída: é uma transferência entre sua conta e sua caixinha.</Text>
+              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>Guardar ou resgatar dinheiro de um objetivo: o dinheiro continua seu, só muda de lugar.</Text>
             </View>
             <View style={[styles.balanceExplanationNote, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
-              <MaterialIcons name="receipt-long" size={21} color="#E76F51" />
-              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>Resgatar da caixinha também não é receita. Porém, quando esse valor é usado em uma despesa registrada e paga, a despesa entra no balanço normalmente.</Text>
+              <MaterialIcons name="swap-horiz" size={21} color={novoTema.primary} />
+              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>Transferências entre as contas selecionadas.</Text>
             </View>
+            <View style={[styles.balanceExplanationNote, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              <MaterialIcons name="credit-card" size={21} color="#E76F51" />
+              <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>
+                {escopoHomeEhTodas
+                  ? "Cartão de crédito: as compras aparecem na distribuição por categoria do mês, mas nem elas nem o pagamento da fatura entram no balanço."
+                  : "Compras no cartão de crédito: entram quando a fatura é paga por uma das contas selecionadas."}
+              </Text>
+            </View>
+
+            <Text style={[styles.balanceExplanationFootnote, { color: Cores.textoSecundario }]}>
+              Saldo previsto no fim do mês: {formatarValorPrivado(saldoPrevistoFimDoMes)}. É quanto as contas selecionadas devem ter no último dia do mês, se tudo o que está agendado acontecer.
+            </Text>
+            </ScrollView>
 
             <TouchableOpacity style={[styles.balanceExplanationButton, { backgroundColor: novoTema.primary }]} onPress={() => setModalBalancoAtualVisivel(false)}>
               <Text style={styles.balanceExplanationButtonText}>Entendi</Text>
@@ -3583,6 +3632,8 @@ const styles = StyleSheet.create({
   balanceTitle: { color: "#999", fontSize: 14, fontWeight: "600", textTransform: "uppercase", letterSpacing: 1 },
   balanceAmount: { color: "#FFF", fontSize: 36, fontWeight: "bold", marginTop: 5 },
   section: { marginBottom: 25 },
+  // Folga leve entre o card Visão do mês e o título/alternador da distribuição.
+  distribuicaoSecao: { marginTop: 12 },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 15 },
   sectionTitle: { fontSize: 18, fontWeight: "bold" },
   hintText: { fontSize: 12, fontStyle: "italic" },
@@ -3603,10 +3654,23 @@ const styles = StyleSheet.create({
   balanceExplanationPanel: { width: "92%", maxWidth: 460, borderRadius: 24, borderWidth: 1, padding: 22, elevation: 12 },
   balanceExplanationIcon: { width: 56, height: 56, borderRadius: 18, alignItems: "center", justifyContent: "center", alignSelf: "center", marginBottom: 14 },
   balanceExplanationTitle: { fontSize: 20, lineHeight: 25, fontWeight: "900", textAlign: "center" },
-  balanceExplanationText: { fontSize: 13, lineHeight: 20, textAlign: "center", marginTop: 8, marginBottom: 16 },
+  balanceExplanationText: { fontSize: 13, lineHeight: 20, textAlign: "center", marginTop: 8 },
+  // Encolhe dentro da tela e rola; o botão "Entendi" fica sempre visível embaixo.
+  balanceExplanationScroll: { flexGrow: 0, flexShrink: 1, marginBottom: 12 },
+  balanceExplanationScope: { fontSize: 11, fontWeight: "800", textAlign: "center", marginTop: 6, marginBottom: 14 },
+  balanceExplanationMath: { borderWidth: 1, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 18 },
+  balanceExplanationMathRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 4 },
+  balanceExplanationMathLabel: { fontSize: 13, fontWeight: "600" },
+  balanceExplanationMathValue: { fontSize: 14, fontWeight: "800" },
+  balanceExplanationMathDivider: { height: 1, marginVertical: 6 },
+  balanceExplanationMathTotalLabel: { fontSize: 14, fontWeight: "900" },
+  balanceExplanationMathTotal: { fontSize: 17, fontWeight: "900" },
+  balanceExplanationSection: { fontSize: 14, fontWeight: "900", marginBottom: 6 },
+  balanceExplanationSectionText: { fontSize: 12.5, lineHeight: 19, marginBottom: 16 },
   balanceExplanationNote: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderWidth: 1, borderRadius: 15, padding: 13, marginBottom: 10 },
   balanceExplanationNoteText: { flex: 1, fontSize: 12, lineHeight: 18, fontWeight: "600" },
-  balanceExplanationButton: { minHeight: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 8 },
+  balanceExplanationFootnote: { fontSize: 11.5, lineHeight: 17, marginTop: 6, marginBottom: 6 },
+  balanceExplanationButton: { minHeight: 50, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: "auto" },
   balanceExplanationButtonText: { color: "#FFF", fontSize: 15, fontWeight: "900" },
   // A tela da transação abre pelo FinFlowScreen, que transforma a raiz em
   // página e o PRIMEIRO filho (a folha) em painel de tela cheia. Por isso a

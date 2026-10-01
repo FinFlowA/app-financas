@@ -120,6 +120,14 @@ if (!selector.includes("Animated.timing(entrada") || !selector.includes('animati
   throw new Error("A lista de selecao precisa animar a entrada e a saida.");
 }
 
+// Finn como contato: nome, status ("digitando…" enquanto responde) e dados ao
+// tocar, com a foto acenando ao abrir (e de novo ao tocar nela).
+const chat = fs.readFileSync(path.join(root, "app", "chat-ia.tsx"), "utf8");
+if (!chat.includes('loading ? "digitando…" : "online"') || !chat.includes("visible={contatoVisivel}") || /minHeight: 126/.test(chat)
+  || !chat.includes("onPress={acenar}") || !chat.includes("if (contatoVisivel) acenar();")) {
+  throw new Error("O cabecalho do Finn precisa ser uma barra compacta de contato, com status, dados e aceno.");
+}
+
 for (const tabFile of [home, settings,
   fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8"),
   fs.readFileSync(path.join(root, "app", "(tabs)", "caixinhas.tsx"), "utf8"),
