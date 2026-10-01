@@ -375,6 +375,12 @@ export default function RootLayout() {
     }
   }, [autenticar]);
 
+  // Na abertura, a tela de carregamento espera a checagem de atualização (ver
+  // o efeito das atualizações OTA abaixo). A digital só é pedida depois dela:
+  // se o app recarregar para a versão nova, ninguém precisa digitar duas vezes.
+  const [aberturaLiberada, setAberturaLiberada] = useState(() => __DEV__ || !Updates.isEnabled);
+  const [biometriaPendente, setBiometriaPendente] = useState(false);
+
   const carregarConfiguracoes = useCallback(async () => {
     try {
       const temaSalvo = await AsyncStorage.getItem("@dark_mode");
@@ -387,7 +393,7 @@ export default function RootLayout() {
       setIsBiometricEnabled(biometriaAtiva);
 
       if (biometriaAtiva) {
-        verificarBiometria();
+        setBiometriaPendente(true);
       } else {
         setIsUnlocked(true);
       }
@@ -396,7 +402,13 @@ export default function RootLayout() {
     } finally {
       setIsReady(true);
     }
-  }, [verificarBiometria]);
+  }, []);
+
+  useEffect(() => {
+    if (!aberturaLiberada || !biometriaPendente) return;
+    setBiometriaPendente(false);
+    void verificarBiometria();
+  }, [aberturaLiberada, biometriaPendente, verificarBiometria]);
 
   // Intercepta deep links do email (recuperação de senha e confirmação de conta)
   const url = Linking.useURL();
@@ -506,34 +518,74 @@ export default function RootLayout() {
   }, [iniciarFluxoRecuperacaoSenha, router, url]);
 
   // Atualizações OTA silenciosas: cada envio para a main publica uma versão
-  // nova pelo EAS Update, e pedir "reinicie o app" a cada commit incomodava.
-  // A versão é baixada em segundo plano e entra sozinha na próxima abertura,
-  // ou ao voltar ao app depois de pelo menos 5 minutos fora (tempo suficiente
-  // para ninguém estar no meio de um formulário). Sem nenhum aviso na tela.
+  // nova pelo EAS Update, sem pedir "reinicie o app" e sem nenhum aviso.
+  // - Na abertura, a tela de carregamento espera a checagem por até 2,5 s e,
+  //   havendo versão nova, o download por mais até 6 s. Se ela chegar a
+  //   tempo, o app recarrega antes de mostrar qualquer tela: basta abrir uma
+  //   vez para já usar a versão nova.
+  // - Se a rede demorar, a abertura segue normal e a versão baixada entra na
+  //   próxima abertura, ou ao voltar ao app depois de pelo menos 5 minutos
+  //   fora (tempo suficiente para ninguém estar no meio de um formulário).
   useEffect(() => {
-    if (__DEV__) return;
+    if (__DEV__ || !Updates.isEnabled) return;
     const AUSENCIA_PARA_APLICAR_MS = 5 * 60 * 1000;
+    const ESPERA_CHECAGEM_NA_ABERTURA_MS = 2500;
+    const ESPERA_DOWNLOAD_NA_ABERTURA_MS = 6000;
     let atualizacaoPronta = false;
-    let buscando = false;
+    let baixando = false;
+    let busca: Promise<void> | null = null;
     let saiuEm: number | null = null;
+    let ativo = true;
 
-    const buscarAtualizacao = async () => {
-      if (buscando || atualizacaoPronta) return;
-      buscando = true;
-      try {
-        const update = await Updates.checkForUpdateAsync();
-        if (update.isAvailable) {
-          const resultado = await Updates.fetchUpdateAsync();
-          atualizacaoPronta = resultado.isNew;
+    const buscarAtualizacao = (): Promise<void> => {
+      if (atualizacaoPronta) return Promise.resolve();
+      if (busca) return busca;
+      busca = (async () => {
+        try {
+          const update = await Updates.checkForUpdateAsync();
+          if (update.isAvailable) {
+            baixando = true;
+            const resultado = await Updates.fetchUpdateAsync();
+            atualizacaoPronta = resultado.isNew;
+          }
+        } catch (error) {
+          console.log("Erro ao buscar atualizações:", error);
+        } finally {
+          baixando = false;
+          busca = null;
         }
-      } catch (error) {
-        console.log("Erro ao buscar atualizações:", error);
-      } finally {
-        buscando = false;
-      }
+      })();
+      return busca;
     };
 
-    void buscarAtualizacao();
+    const esperar = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+    void (async () => {
+      const buscaInicial = buscarAtualizacao();
+      await Promise.race([buscaInicial, esperar(ESPERA_CHECAGEM_NA_ABERTURA_MS)]);
+      if (baixando) await Promise.race([buscaInicial, esperar(ESPERA_DOWNLOAD_NA_ABERTURA_MS)]);
+      // Aberto por um link de e-mail (nova senha, confirmação de conta):
+      // recarregar no meio da troca do código consumiria o link. Nesse caso
+      // a versão nova fica para a próxima abertura.
+      const urlInicial = await Linking.getInitialURL().catch(() => null);
+      const abertoPorLinkDeAcesso = Boolean(urlInicial && /[?#&](code|access_token|error_code)=/.test(urlInicial));
+      if (ativo && atualizacaoPronta && !abertoPorLinkDeAcesso) {
+        // No máximo uma recarga na abertura a cada 10 minutos: se uma versão
+        // nova não conseguir abrir, o app não fica reiniciando sem parar.
+        const CHAVE_RECARGA = "@finflow_recarga_atualizacao_na_abertura";
+        const ultimaRecarga = Number(await AsyncStorage.getItem(CHAVE_RECARGA).catch(() => null));
+        if (!(ultimaRecarga > 0 && Date.now() - ultimaRecarga < 10 * 60 * 1000)) {
+          try {
+            await AsyncStorage.setItem(CHAVE_RECARGA, String(Date.now()));
+            await Updates.reloadAsync();
+            return;
+          } catch (error) {
+            console.log("Erro ao aplicar atualização:", error);
+          }
+        }
+      }
+      if (ativo) setAberturaLiberada(true);
+    })();
+
     const eventoApp = AppState.addEventListener("change", (estado) => {
       if (estado === "background") {
         saiuEm = Date.now();
@@ -546,7 +598,10 @@ export default function RootLayout() {
       if (atualizacaoPronta) void Updates.reloadAsync();
       else void buscarAtualizacao();
     });
-    return () => eventoApp.remove();
+    return () => {
+      ativo = false;
+      eventoApp.remove();
+    };
   }, []);
 
   useEffect(() => {
@@ -1415,7 +1470,7 @@ export default function RootLayout() {
 
   const temaFinFlow = finFlowTheme(isDark);
 
-  if (!isReady || !isAuthReady) {
+  if (!isReady || !isAuthReady || !aberturaLiberada) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: isDark ? "#121212" : "#FFF" }}>
         <ActivityIndicator size="large" color="#2A9D8F" />

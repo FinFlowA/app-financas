@@ -15,10 +15,11 @@ function shiftMonth(month: string, delta: number) {
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+/** "Outubro 2026": mês e ano, sem o "de", como no app. */
 function monthLabel(month: string) {
   const [year, number] = month.split("-").map(Number);
-  const value = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(Date.UTC(year, number - 1, 10)));
-  return value.charAt(0).toUpperCase() + value.slice(1);
+  const name = new Intl.DateTimeFormat("pt-BR", { month: "long", timeZone: "UTC" }).format(new Date(Date.UTC(year, number - 1, 10)));
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${year}`;
 }
 
 function transactionPresentation(transaction: Transacao) {

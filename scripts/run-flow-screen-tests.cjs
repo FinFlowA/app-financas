@@ -55,6 +55,13 @@ if (!flowScreen.includes("routeOpenRef") || !flowScreen.includes('router.push("/
 if (!flowScreen.includes("closeAndNavigate") || !flowScreen.includes("pendingDestinationRef")) {
   throw new Error("A navegacao iniciada em um fluxo deve aguardar a rota fechar por completo.");
 }
+// Telas que abrem fluxos só podem depender das funções de navegação: se o
+// contexto delas mudar a cada registro de conteúdo, a tela se redesenha,
+// registra um conteúdo novo e entra em laço enquanto o fluxo está aberto.
+const registryMemo = flowScreen.match(/useMemo<FlowRegistry>\([\s\S]*?\), \[([^\]]*)\]\)/)?.[1] ?? "";
+if (!flowScreen.includes("FlowEntriesContext") || !registryMemo || /\bentries\b/.test(registryMemo)) {
+  throw new Error("As funcoes dos fluxos precisam ficar num contexto estavel, separado dos fluxos abertos.");
+}
 if (flowScreen.includes('pathname: "/flow-screen", params: { id }')) {
   throw new Error("Cada modal nao pode criar sua propria rota /flow-screen.");
 }

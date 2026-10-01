@@ -27,14 +27,19 @@ type FlowEntry = {
 type FlowDestination = Parameters<ReturnType<typeof useRouter>["replace"]>[0];
 
 type FlowRegistry = {
-  entries: ReadonlyMap<string, FlowEntry>;
   register: (id: string, entry: FlowEntry) => void;
   unregister: (id: string) => void;
   closeRoute: () => void;
   closeAndNavigate: (destination: FlowDestination) => void;
 };
 
+// Dois contextos: as funções (estáveis) e os fluxos abertos. As telas que
+// abrem fluxos (Início, Histórico) só usam as funções. Quando também recebiam
+// os fluxos, cada registro de conteúdo redesenhava a tela, que criava um
+// conteúdo novo e registrava de novo: dezenas de redesenhos por segundo
+// enquanto um formulário ficava aberto. Só a página do fluxo lê os fluxos.
 const FlowScreenContext = createContext<FlowRegistry | null>(null);
+const FlowEntriesContext = createContext<ReadonlyMap<string, FlowEntry>>(new Map());
 let nextFlowId = 0;
 
 export function FinFlowScreenProvider({ children }: { children: ReactNode }) {
@@ -88,14 +93,17 @@ export function FinFlowScreenProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const value = useMemo<FlowRegistry>(() => ({
-    entries,
     register,
     unregister,
     closeRoute,
     closeAndNavigate,
-  }), [closeAndNavigate, closeRoute, entries, register, unregister]);
+  }), [closeAndNavigate, closeRoute, register, unregister]);
 
-  return <FlowScreenContext.Provider value={value}>{children}</FlowScreenContext.Provider>;
+  return (
+    <FlowScreenContext.Provider value={value}>
+      <FlowEntriesContext.Provider value={entries}>{children}</FlowEntriesContext.Provider>
+    </FlowScreenContext.Provider>
+  );
 }
 
 export function useFinFlowNavigation() {
@@ -152,12 +160,13 @@ export default function FinFlowScreen({
 
 export function FinFlowScreenPage() {
   const registry = useContext(FlowScreenContext);
+  const entries = useContext(FlowEntriesContext);
   const closeRoute = registry?.closeRoute;
   const router = useRouter();
   const isFocused = useIsFocused();
   const { dark: isDark } = useTheme();
   const theme = finFlowTheme(isDark);
-  const entry = registry ? [...registry.entries.values()].at(-1) : undefined;
+  const entry = registry ? [...entries.values()].at(-1) : undefined;
   const lastEntryRef = useRef<FlowEntry | undefined>(entry);
   if (entry) lastEntryRef.current = entry;
 
