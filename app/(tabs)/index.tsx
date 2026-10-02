@@ -31,6 +31,7 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
+import { limiteUsadoDoCartao } from "../../lib/lembretes-vencimento";
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
 import { randomUuidCompat } from "../../lib/optional-native-modules";
@@ -472,6 +473,7 @@ export default function Dashboard() {
     saldoAtualGlobal,
     transacoesFinanceirasDoMes,
     comprasCartaoDoMes,
+    cartaoDoMes,
     receitasDoMes,
     despesasDoMes,
     balancoMensal,
@@ -529,14 +531,22 @@ export default function Dashboard() {
     const comprasDoMes = escopoHomeEhTodas
       ? comprasCartao.filter((item) => item.mes_fatura === prefixoMes && !isInvoicePaymentAdjustment(item.descricao))
       : [];
+    // Cada compra (ou parcela) do cartão conta no mês da fatura em que cai,
+    // em Saídas e no Balanço. O pagamento da fatura já ficou de fora acima,
+    // então o mesmo gasto não é contado duas vezes.
+    const cartaoMes = comprasDoMes.reduce((total, item) => {
+      const valor = Number(item.valor);
+      return Number.isFinite(valor) ? total + valor : total;
+    }, 0);
 
     return {
       saldoAtualGlobal: saldoInicialTotal + receitasRealizadas - despesasRealizadas,
       transacoesFinanceirasDoMes: financeirasDoMes,
       comprasCartaoDoMes: comprasDoMes,
+      cartaoDoMes: cartaoMes,
       receitasDoMes: entradasMes,
-      despesasDoMes: saidasMes,
-      balancoMensal: entradasRealizadasMes - saidasRealizadasMes,
+      despesasDoMes: saidasMes + cartaoMes,
+      balancoMensal: entradasRealizadasMes - saidasRealizadasMes - cartaoMes,
       entradasRealizadasDoMes: entradasRealizadasMes,
       saidasRealizadasDoMes: saidasRealizadasMes,
       saldoPrevistoFimDoMes: saldoPrevisto,
@@ -755,7 +765,7 @@ export default function Dashboard() {
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),
         supabase.from("caixinhas").select("id, nome, saldo_atual, meta_valor, data_prazo, cor, icone"),
-        supabase.from("cartoes").select("id, nome, dia_vencimento, dia_fechamento").eq("user_id", session.user.id).eq("ativo", true),
+        supabase.from("cartoes").select("id, nome, dia_vencimento, dia_fechamento, limite").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, data_compra, mes_fatura, categoria_id, pago").eq("user_id", session.user.id),
       ]);
 
@@ -833,9 +843,16 @@ export default function Dashboard() {
             data_prazo: c.data_prazo,
           })) ?? [],
           resCartoes.data?.map((c: any) => ({
+            id: c.id,
             nome: c.nome,
             dia_vencimento: c.dia_vencimento,
             dia_fechamento: c.dia_fechamento,
+            // Para o aviso de limite (agendado para a manhã, nunca na abertura).
+            limite: Number(c.limite) || 0,
+            limite_usado: limiteUsadoDoCartao(resFaturas.data ?? [], c.id, (() => {
+              const hoje = new Date();
+              return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+            })()),
             faturas_pendentes: [...new Set((resFaturas.data ?? [])
               .filter((item: any) => item.cartao_id === c.id && !item.pago)
               .map((item: any) => item.mes_fatura))] as string[],
@@ -2325,7 +2342,9 @@ export default function Dashboard() {
             </View>
             <Text style={[styles.balanceExplanationTitle, { color: Cores.textoPrincipal }]}>O que é o Balanço atual?</Text>
             <Text style={[styles.balanceExplanationText, { color: Cores.textoSecundario }]}>
-              É quanto sobrou (ou faltou) no mês até agora: tudo o que você já recebeu menos tudo o que você já pagou.
+              {escopoHomeEhTodas
+                ? "É quanto sobrou (ou faltou) no mês até agora: tudo o que você já recebeu, menos o que já pagou e as compras do cartão que caem na fatura deste mês."
+                : "É quanto sobrou (ou faltou) no mês até agora: tudo o que você já recebeu menos tudo o que você já pagou."}
             </Text>
             <Text style={[styles.balanceExplanationScope, { color: Cores.textoSecundario }]}>
               {mesesEmPortugues[mesAtual.getMonth()]} {mesAtual.getFullYear()} · {resumoContasHome}
@@ -2341,6 +2360,12 @@ export default function Dashboard() {
                 <Text style={[styles.balanceExplanationMathLabel, { color: Cores.textoPrincipal }]}>Já pago</Text>
                 <Text style={[styles.balanceExplanationMathValue, { color: "#C0392E" }]}>− {formatarValorPrivado(saidasRealizadasDoMes)}</Text>
               </View>
+              {cartaoDoMes > 0.004 && (
+                <View style={styles.balanceExplanationMathRow}>
+                  <Text style={[styles.balanceExplanationMathLabel, { color: Cores.textoPrincipal }]}>Cartão (fatura de {mesesEmPortugues[mesAtual.getMonth()].toLowerCase()})</Text>
+                  <Text style={[styles.balanceExplanationMathValue, { color: "#C0392E" }]}>− {formatarValorPrivado(cartaoDoMes)}</Text>
+                </View>
+              )}
               <View style={[styles.balanceExplanationMathDivider, { backgroundColor: Cores.borda }]} />
               <View style={styles.balanceExplanationMathRow}>
                 <Text style={[styles.balanceExplanationMathTotalLabel, { color: Cores.textoPrincipal }]}>Balanço atual</Text>
@@ -2351,8 +2376,8 @@ export default function Dashboard() {
             <Text style={[styles.balanceExplanationSection, { color: Cores.textoPrincipal }]}>Por que é diferente de Entradas e Saídas?</Text>
             <Text style={[styles.balanceExplanationSectionText, { color: Cores.textoSecundario }]}>
               Entradas e Saídas somam tudo o que é deste mês, inclusive o que ainda vai vencer. O Balanço só conta o que já aconteceu.
-              {receitasDoMes - entradasRealizadasDoMes > 0.004 || despesasDoMes - saidasRealizadasDoMes > 0.004
-                ? ` Ainda falta receber ${formatarValorPrivado(Math.max(0, receitasDoMes - entradasRealizadasDoMes))} e pagar ${formatarValorPrivado(Math.max(0, despesasDoMes - saidasRealizadasDoMes))} neste mês.`
+              {receitasDoMes - entradasRealizadasDoMes > 0.004 || despesasDoMes - saidasRealizadasDoMes - cartaoDoMes > 0.004
+                ? ` Ainda falta receber ${formatarValorPrivado(Math.max(0, receitasDoMes - entradasRealizadasDoMes))} e pagar ${formatarValorPrivado(Math.max(0, despesasDoMes - saidasRealizadasDoMes - cartaoDoMes))} neste mês.`
                 : ""}
             </Text>
 
@@ -2369,7 +2394,7 @@ export default function Dashboard() {
               <MaterialIcons name="credit-card" size={21} color="#E76F51" />
               <Text style={[styles.balanceExplanationNoteText, { color: Cores.textoPrincipal }]}>
                 {escopoHomeEhTodas
-                  ? "Cartão de crédito: as compras aparecem na distribuição por categoria do mês, mas nem elas nem o pagamento da fatura entram no balanço."
+                  ? "Pagamento da fatura: as compras do cartão já contam no mês da fatura, cada parcela no seu mês. Por isso o pagamento não é somado de novo."
                   : "Compras no cartão de crédito: entram quando a fatura é paga por uma das contas selecionadas."}
               </Text>
             </View>

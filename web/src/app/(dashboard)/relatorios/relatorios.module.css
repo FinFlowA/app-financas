@@ -343,6 +343,86 @@
   color: var(--ff-primary-dark);
 }
 
+.overdueToggle {
+  --overdue: var(--ff-orange);
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  margin: -6px 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 17px;
+  background: color-mix(in srgb, var(--surface) 91%, transparent);
+  padding: 12px 14px;
+  color: var(--foreground-muted);
+  text-align: left;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.overdueToggle[data-active="true"] {
+  border-color: color-mix(in srgb, var(--overdue) 55%, var(--border));
+  background: color-mix(in srgb, var(--overdue) 12%, transparent);
+}
+
+.overdueIcon {
+  width: 19px;
+  height: 19px;
+  flex: 0 0 19px;
+}
+
+.overdueToggle[data-active="true"] .overdueIcon {
+  color: var(--overdue);
+}
+
+.overdueText {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.overdueText strong {
+  color: var(--foreground);
+  font-size: 0.78rem;
+  font-weight: 820;
+}
+
+.overdueText small {
+  font-size: 0.68rem;
+  font-weight: 620;
+}
+
+.overdueSwitch {
+  position: relative;
+  width: 36px;
+  height: 21px;
+  flex: 0 0 36px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background-color 0.18s ease;
+}
+
+.overdueSwitch::after {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.25);
+  content: "";
+  transition: transform 0.18s ease;
+}
+
+.overdueToggle[data-active="true"] .overdueSwitch {
+  background: var(--overdue);
+}
+
+.overdueToggle[data-active="true"] .overdueSwitch::after {
+  transform: translateX(15px);
+}
+
 .accountDot {
   width: 9px;
   height: 9px;
@@ -880,6 +960,12 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .overdueToggle,
+  .overdueSwitch,
+  .overdueSwitch::after {
+    transition: none;
+  }
+
   .rankingFill {
     transition: none;
   }

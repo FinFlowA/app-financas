@@ -11,16 +11,14 @@
  * lista exibida.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-10-01-correcoes-v17",
+  id: "2.0.0-2026-10-02-novidades-v18",
   items: [
-    "Conta, destino e categoria da nova transação abrem uma lista completa com busca, que surge com uma animação suave",
-    "O teclado não cobre mais o número de parcelas, o campo do Finn nem as senhas em Segurança",
-    "O Finn mostra três pontinhos enquanto pensa, e um círculo ao lado do campo indica quantas consultas restam no dia",
-    "Lembretes de vencimento dos próximos dias chegam mesmo sem abrir o app",
-    "O link de nova senha não aparece mais como expirado logo depois de recebido",
-    "Transferências entre contas voltam a ser criadas e conciliadas normalmente",
-    "O calendário dos objetivos segue o visual do app, e o cabeçalho dos Cartões ganhou as ondas animadas da tela inicial",
-    "Atualizações entram sozinhas, já na primeira abertura, sem pedir para reiniciar",
-    "Formulários mais leves e rápidos de preencher",
+    "Novo filtro \"Considerar atrasados\" no Fluxo de caixa: desligado, os lançamentos vencidos e ainda não concluídos saem do saldo previsto e do gráfico",
+    "As compras no cartão entram nas Saídas e no Balanço do mês da fatura, cada parcela no seu mês, sem contar o pagamento da fatura duas vezes",
+    "Toque em Balanço atual, na tela inicial, para ver como o valor é calculado",
+    "Notificações com textos mais claros e sem emojis, e nenhum aviso chega só por abrir o app",
+    "Os lembretes de vencimento da fatura param assim que ela é paga",
+    "O aviso de prazo dos objetivos mostra quanto falta da meta, em porcentagem, e a data final",
+    "No chat, o Finn aparece como um contato: toque no topo da conversa para ver as informações dele, com o Finn acenando",
   ],
 } as const;

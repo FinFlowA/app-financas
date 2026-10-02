@@ -21,6 +21,8 @@ Atualizado em 30/09/2026.
 5. ~~Corrigir o workflow de backup e testar restauração.~~ Feito em 29/09/2026: backup diário criptografado com restauração testada a cada execução no repositório privado `FinFlowA/finflow-backups` (ver `DEPLOY_E_OPERACAO.md`).
 6. Antes da Play Store, implementar Google Play Billing com validação server-side.
 7. ~~Criar uma baseline reproduzível do schema para novos ambientes.~~ Feito em 30/09/2026 (linha de base + comparação semanal).
+8. Medir a capacidade com o teste de carga (`scripts/carga/teste-carga.cjs`, ver `TESTES.md`). Falta criar um projeto Supabase só para o teste, aplicar a linha de base nele e rodar as ondas. Depois, com os números, melhorar o carregamento de Início, Histórico e Fluxo e aplicar as recomendações do advisor do Supabase.
+9. A política de privacidade (`docs/privacy-policy.md`) ainda diz que o FinFlow não registra token de push no servidor, mas os avisos de parceria já usam push (`send-system-push`). Revisar o texto com o responsável.
 
 ## Áreas que exigem coordenação
 

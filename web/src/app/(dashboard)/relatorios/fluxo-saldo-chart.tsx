@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { formatarReais } from "@/lib/format";
 import styles from "./relatorios.module.css";
 
@@ -24,9 +24,80 @@ function numeroLimpo(valor: number): number {
   return Math.ceil(absoluto / magnitude) * magnitude;
 }
 
+function eixoDoGrafico(meses: MesFluxo[], saldos: PontoSaldo[], period: "month" | "day") {
+  const maiorBarra = Math.max(1, ...meses.map((m) => Math.max(
+    m.receitas + (m.receitasPrevistas ?? 0),
+    m.despesas + (m.despesasPrevistas ?? 0),
+    period === "day" ? (m.guardadoObjetivos ?? 0) + (m.guardarObjetivosPrevisto ?? 0) : 0,
+    period === "day" ? (m.resgatadoObjetivos ?? 0) + (m.resgatarObjetivosPrevisto ?? 0) : 0,
+  )));
+  const saldoValores = saldos.map((p) => p.saldo);
+  const maxValor = Math.max(maiorBarra, ...saldoValores, 0);
+  const minValor = Math.min(...saldoValores, 0);
+  return { teto: numeroLimpo(maxValor), piso: minValor < 0 ? -numeroLimpo(Math.abs(minValor)) : 0 };
+}
+
+const CAMPOS_DO_MES = [
+  "receitas",
+  "despesas",
+  "receitasPrevistas",
+  "despesasPrevistas",
+  "guardadoObjetivos",
+  "resgatadoObjetivos",
+  "guardarObjetivosPrevisto",
+  "resgatarObjetivosPrevisto",
+] as const;
+const DURACAO_ANIMACAO_MS = 450;
+
+type QuadroDoGrafico = { meses: MesFluxo[]; saldos: PontoSaldo[]; teto: number; piso: number };
+
+function misturarQuadros(origem: QuadroDoGrafico, destino: QuadroDoGrafico, t: number): QuadroDoGrafico {
+  const mistura = (de: number, para: number) => de + (para - de) * t;
+  return {
+    meses: destino.meses.map((mes, indice) => {
+      const anterior = origem.meses[indice];
+      const atual: MesFluxo = { ...mes };
+      for (const campo of CAMPOS_DO_MES) atual[campo] = mistura(anterior?.[campo] ?? 0, mes[campo] ?? 0);
+      return atual;
+    }),
+    saldos: destino.saldos.map((ponto, indice) => ({ ...ponto, saldo: mistura(origem.saldos[indice]?.saldo ?? ponto.saldo, ponto.saldo) })),
+    teto: mistura(origem.teto, destino.teto),
+    piso: mistura(origem.piso, destino.piso),
+  };
+}
+
+/** Quando os números mudam (filtro de atrasados, contas, ano), o gráfico passa
+ * do desenho anterior para o novo em vez de trocar de uma vez. A escala do
+ * eixo acompanha, para as barras e a linha não darem saltos. */
+function useQuadroAnimado(meses: MesFluxo[], saldos: PontoSaldo[], period: "month" | "day"): QuadroDoGrafico {
+  const destino = useMemo(() => ({ meses, saldos, ...eixoDoGrafico(meses, saldos, period) }), [meses, saldos, period]);
+  const [quadro, setQuadro] = useState(destino);
+  const exibido = useRef(destino);
+
+  useEffect(() => {
+    const origem = exibido.current;
+    if (origem === destino) return;
+    const mesmoFormato = origem.meses.length === destino.meses.length && origem.saldos.length === destino.saldos.length;
+    const semMovimento = !mesmoFormato || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const inicio = performance.now();
+    let frame = window.requestAnimationFrame(function passo(agora) {
+      const progresso = semMovimento ? 1 : Math.min(1, Math.max(0, (agora - inicio) / DURACAO_ANIMACAO_MS));
+      const suavizado = 1 - (1 - progresso) ** 3;
+      const proximo = progresso >= 1 ? destino : misturarQuadros(origem, destino, suavizado);
+      exibido.current = proximo;
+      setQuadro(proximo);
+      if (progresso < 1) frame = window.requestAnimationFrame(passo);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [destino]);
+
+  // Troca de formato (mensal ↔ diário) desenha direto o novo gráfico.
+  return quadro.meses.length === meses.length && quadro.saldos.length === saldos.length ? quadro : destino;
+}
+
 export default function FluxoSaldoChart({
-  meses,
-  saldos,
+  meses: mesesDestino,
+  saldos: saldosDestino,
   selectedIndex,
   onSelect,
   period = "month",
@@ -40,17 +111,7 @@ export default function FluxoSaldoChart({
   const [ativo, setAtivo] = useState<number | null>(null);
   const [tooltipPosition, setTooltipPosition] = useState<{ left: number; top: number } | null>(null);
 
-  const maiorBarra = Math.max(1, ...meses.map((m) => Math.max(
-    m.receitas + (m.receitasPrevistas ?? 0),
-    m.despesas + (m.despesasPrevistas ?? 0),
-    period === "day" ? (m.guardadoObjetivos ?? 0) + (m.guardarObjetivosPrevisto ?? 0) : 0,
-    period === "day" ? (m.resgatadoObjetivos ?? 0) + (m.resgatarObjetivosPrevisto ?? 0) : 0,
-  )));
-  const saldoValores = saldos.map((p) => p.saldo);
-  const maxValor = Math.max(maiorBarra, ...saldoValores, 0);
-  const minValor = Math.min(...saldoValores, 0);
-  const tetoEixo = numeroLimpo(maxValor);
-  const pisoEixo = minValor < 0 ? -numeroLimpo(Math.abs(minValor)) : 0;
+  const { meses, saldos, teto: tetoEixo, piso: pisoEixo } = useQuadroAnimado(mesesDestino, saldosDestino, period);
   const range = tetoEixo - pisoEixo || 1;
 
   // Gráfico mais largo: mais respiro por mês para as duas barras + a linha.

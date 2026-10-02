@@ -40,7 +40,6 @@ import { MaterialIcons } from "@expo/vector-icons";
 import { IS_LOCAL_DEMO, supabase } from "../lib/supabase";
 import {
   cancelarNotificacoesOpcionais,
-  exibirEventoObrigatorioLocal,
   limparNotificacoesAoSair,
   pedirPermissaoNotificacoes,
   registrarDispositivoPush,
@@ -1100,13 +1099,10 @@ export default function RootLayout() {
       }
 
       const eventos = (data ?? []) as NotificacaoParceria[];
-      if (!substituirNotificacoesParceria(eventos)) return;
-      eventos.forEach((evento) => {
-        // Quando o servidor já entregou o push remoto, repetir o aviso como
-        // notificação local só duplicaria o alerta no aparelho.
-        if (evento.push_enviado_em) return;
-        void exibirEventoObrigatorioLocal(uid, evento.id, evento.titulo, evento.mensagem);
-      });
+      // Os avisos aparecem na janela de parceria dentro do app. Não viram
+      // notificação do aparelho aqui: abrir o app nunca dispara notificação
+      // (o push do servidor chega na hora do evento).
+      substituirNotificacoesParceria(eventos);
     } finally {
       buscandoNotificacoesParceria.current = false;
     }

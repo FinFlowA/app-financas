@@ -218,10 +218,15 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       byCategory.set(transaction.categoria_id, aggregate);
     }
 
+    // Cada compra (ou parcela) do cartão conta no mês da fatura em que cai, em
+    // Saídas e no Balanço. O pagamento da fatura fica de fora acima, então o
+    // mesmo gasto não é contado duas vezes.
+    let cardMonth = 0;
     if (allActiveSelected) {
       for (const item of invoicePurchasesInMonth(invoiceItems, month)) {
         const value = Number(item.valor);
         if (!Number.isFinite(value)) continue;
+        cardMonth += value;
         const aggregate = byCategory.get(item.categoria_id) ?? { realized: 0, expected: 0 };
         aggregate.realized += value;
         aggregate.expected += value;
@@ -232,11 +237,11 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     return {
       currentBalance,
       income: monthSummary.receitas,
-      expense: monthSummary.despesas,
-      monthBalance: monthSummary.balancoRealizado,
+      expense: monthSummary.despesas + cardMonth,
+      monthBalance: monthSummary.balancoRealizado - cardMonth,
       predictedBalance,
       realizedIncome,
-      realizedExpense,
+      realizedExpense: realizedExpense + cardMonth,
       byCategory,
       balances,
     };

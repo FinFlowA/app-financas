@@ -15,6 +15,14 @@ type Metric = {
   tone: "positive" | "negative" | "neutral";
 };
 
+export type SeriesDoFluxo = {
+  months: MesFluxo[];
+  balances: PontoSaldo[];
+  dailyFlow: MesFluxo[];
+  dailyBalances: PontoSaldo[];
+  metrics: Metric[];
+};
+
 export default function ReportOverview({
   year,
   currentYear,
@@ -22,15 +30,12 @@ export default function ReportOverview({
   selectedMonthIndex,
   currentBalance,
   initialBalance,
-  months,
-  balances,
-  metrics,
+  series,
   selectedAccountIds,
   accounts,
-  dailyFlow,
-  dailyBalances,
   view,
   dailyEnabled = true,
+  considerarAtrasados: considerarAtrasadosDaUrl = true,
 }: {
   year: number;
   currentYear: number;
@@ -38,18 +43,21 @@ export default function ReportOverview({
   selectedMonthIndex: number;
   currentBalance: number;
   initialBalance: number;
-  months: MesFluxo[];
-  balances: PontoSaldo[];
-  metrics: Metric[];
+  /** As duas versões do fluxo, com e sem os lançamentos em atraso. */
+  series: { comAtrasados: SeriesDoFluxo; semAtrasados: SeriesDoFluxo };
   selectedAccountIds: number[];
   accounts: AccountOption[];
-  dailyFlow: MesFluxo[];
-  dailyBalances: PontoSaldo[];
   view: "monthly" | "daily";
   dailyEnabled?: boolean;
+  considerarAtrasados?: boolean;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
+  // O filtro de atrasados troca a versão já calculada na hora, sem esperar o
+  // servidor. A escolha vale até a página receber outro valor pela URL.
+  const [atrasados, setAtrasados] = useState({ origem: considerarAtrasadosDaUrl, valor: considerarAtrasadosDaUrl });
+  const considerarAtrasados = atrasados.origem === considerarAtrasadosDaUrl ? atrasados.valor : considerarAtrasadosDaUrl;
+  const { months, balances, metrics, dailyFlow, dailyBalances } = considerarAtrasados ? series.comAtrasados : series.semAtrasados;
   const [selection, setSelection] = useState({
     sourceYear: year,
     sourceMonthIndex: selectedMonthIndex,
@@ -99,7 +107,19 @@ export default function ReportOverview({
       month: String(index + 1),
       accounts: selectedAccountIds.join(","),
     });
+    if (!considerarAtrasados) params.set("atrasados", "0");
     startTransition(() => router.replace(`/relatorios?${params.toString()}`, { scroll: false }));
+  }
+
+  function alternarAtrasados() {
+    const proximo = !considerarAtrasados;
+    setAtrasados({ origem: considerarAtrasadosDaUrl, valor: proximo });
+    // Só atualiza o endereço (para recarregar ou compartilhar a página com o
+    // mesmo filtro); os números já estão na tela.
+    const params = new URLSearchParams(window.location.search);
+    if (proximo) params.delete("atrasados");
+    else params.set("atrasados", "0");
+    window.history.replaceState(null, "", `/relatorios?${params.toString()}`);
   }
 
   function changeView(nextView: "monthly" | "daily") {
@@ -114,6 +134,7 @@ export default function ReportOverview({
       accounts: selectedAccountIds.join(","),
     });
     if (nextView === "daily") params.set("view", "daily");
+    if (!considerarAtrasados) params.set("atrasados", "0");
     startTransition(() => router.replace(`/relatorios?${params.toString()}`, { scroll: false }));
   }
 
@@ -132,7 +153,7 @@ export default function ReportOverview({
           >
             {formatarReais(displayedBalance)}
           </p>
-          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Transferências para objetivos não são tratadas como despesas.</p>
+          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Transferências para objetivos não são tratadas como despesas.{!considerarAtrasados ? " Lançamentos em atraso estão fora deste cálculo." : ""}</p>
         </div>
         <div className={styles.heroMetrics} aria-label="Resumo do mês atual">
           {metrics.map((metric) => (
@@ -156,6 +177,8 @@ export default function ReportOverview({
         selected={selectedAccountIds}
         accounts={accounts}
         view={view}
+        considerarAtrasados={considerarAtrasados}
+        onAlternarAtrasados={alternarAtrasados}
       />
       {view === "monthly" ? (
         <FluxoSaldoChart meses={months} saldos={balances} selectedIndex={activeMonthIndex} onSelect={selectMonth} />
