@@ -117,6 +117,15 @@ Se um secret for encontrado:
 
 `npm audit` é informativo no CI; severidade precisa ser analisada pelo caminho de exploração real. Atualizações principais de Expo/Next devem ser feitas em entrega própria com testes, não aplicadas automaticamente em correção funcional.
 
+O Dependabot (`.github/dependabot.yml`) abre pedidos de atualização toda semana:
+
+- **App (Expo):** pedidos de versão desligados (limite 0). Pacotes nativos (Expo, Reanimated, Gesture Handler, Screens, AsyncStorage, NetInfo e afins) só mudam junto com um build novo. O CI publica cada merge na `main` por EAS Update, e um pacote nativo novo chegaria aos aparelhos sem o código nativo correspondente, quebrando o app. Atualize com `npx expo install --fix` na troca de SDK, com build novo e teste em aparelho. Bibliotecas só JavaScript do app (Supabase, React Navigation) entram na mesma rodada, para serem testadas no aparelho.
+- **Site:** versões menores e correções vêm num único pedido semanal (`site-menores`). Entre se a CI e o preview da Vercel passarem. `react` e `react-dom` precisam ter sempre a mesma versão.
+- **Versões principais ignoradas no site:** `eslint` (o `eslint-plugin-react` de `eslint-config-next` ainda quebra no eslint 10), `vitest` (o 5 exige `@types/node` mais novo) e `@types/node` (deve acompanhar o Node usado em produção). Atualize à mão quando o resto suportar.
+- **GitHub Actions:** pedidos normais. Ações que rodam no Node 20 (como `supabase/setup-cli@v1`) param quando o GitHub desligar esse ambiente.
+
+Em 02/10/2026, os 19 pedidos acumulados foram revisados: os do site e da ação do Supabase CLI entraram num único PR, e os do app foram fechados até a próxima troca de SDK.
+
 ## Revisões relacionadas
 
 Auditorias antigas em `docs/security/` são evidências históricas, não garantia do estado atual. Revalide recomendações contra a `main`.
