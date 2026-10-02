@@ -24,6 +24,7 @@ import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
+import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
 import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
@@ -321,14 +322,20 @@ export default function TransacoesScreen() {
     if (!session?.user?.id) return;
     const requisicaoAtual = ++ultimaRequisicaoDadosRef.current;
     try {
+      // Uma promessa só para as contas (todas as visíveis), usada também no
+      // filtro das transações, para a consulta não rodar em dobro.
+      const promessaContas = Promise.resolve(supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"));
       const [resCategorias, resContas, resTransacoes, resCartoes, resFaturas, resConciliadas, resOrigensIa] = await Promise.all([
         supabase.from("categorias").select("id, nome, cor, icone, tipo, ativa").eq("user_id", session.user.id),
-        supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
-        fetchAllRows<Transacao>((from, to) => supabase
+        promessaContas,
+        // Filtro explícito pelas contas visíveis: o banco usa os índices em vez
+        // de ler a tabela inteira (ver web/src/lib/transacoes-visiveis.ts).
+        promessaContas.then((contasVisiveis) => fetchAllRows<Transacao>((from, to) => supabase
           .from("transacoes")
           .select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id")
+          .or(filtroTransacoesVisiveis(session.user.id, (contasVisiveis.data ?? []).map((conta: { id: number }) => conta.id)))
           .order("id", { ascending: true })
-          .range(from, to)),
+          .range(from, to))),
         supabase.from("cartoes").select("id, nome, cor, dia_vencimento").eq("user_id", session.user.id).eq("ativo", true),
         supabase.from("fatura_itens").select("id, cartao_id, descricao, valor, mes_fatura, pago, categoria_id").eq("user_id", session.user.id),
         supabase.rpc("list_bank_reconciled_transaction_ids"),

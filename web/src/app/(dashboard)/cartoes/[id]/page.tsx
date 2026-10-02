@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { mesAtualEmSaoPaulo } from "@/lib/date";
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import type { Cartao, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import CartaoDetalheManager, { type PagamentoDaFatura } from "../cartao-detalhe-manager";
@@ -27,6 +28,12 @@ export default async function CartaoDetalhePage({ params, searchParams }: Cartao
   const faturaInformada = Array.isArray(query.fatura) ? query.fatura[0] : query.fatura;
   const mesSelecionado = mesValido(faturaInformada) ? faturaInformada : mesAtual;
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
 
   const [
     { data: cartaoData, error: cartaoErro },
@@ -58,13 +65,14 @@ export default async function CartaoDetalhePage({ params, searchParams }: Cartao
       .select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version")
       .eq("arquivado", false)
       .order("nome"),
-    fetchAllRows((from, to) => supabase
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase
       .from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+      .or(filtro)
       .like("descricao", `%[PagFatura:${cartaoId}:%`)
       .order("data_realizacao", { ascending: false })
       .order("id", { ascending: false })
-      .range(from, to)),
+      .range(from, to))),
   ]);
 
   if (cartaoErro) throw new Error("Não foi possível carregar este cartão agora.");

@@ -320,8 +320,14 @@ com layouts bancários não padronizados.
   [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md).
 - **Teste de carga:** `scripts/carga/teste-carga.cjs` simula pessoas usando o
   Início e lançando despesas, em ondas, contra um projeto Supabase de teste
-  (recusa o de produção). Ainda não foi executado; uso em
-  [Testes](./docs/TESTES.md).
+  (recusa o de produção). Uso e resultados em [Testes](./docs/TESTES.md).
+- **Desempenho do banco:** a renovação das contas fixas e as regras de acesso
+  deixaram de ler a tabela de todos os usuários a cada abertura do app ou
+  página do site. Com 50 pessoas simultâneas no teste, o Início passou de
+  14,7 s para 1 s (95% das aberturas). Regras em
+  [Banco de dados](./docs/BANCO_DE_DADOS.md).
+- **Política de privacidade:** descreve o token de push usado nos avisos de
+  parceria (site, app e documento).
 
 ## Deploy do site
 

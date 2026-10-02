@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { anoAtualEmSaoPaulo } from "@/lib/date";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import type { Caixinha, Conta, Transacao } from "@/lib/types";
@@ -17,6 +18,12 @@ function ehResgate(descricao: string): boolean {
 
 export default async function ObjetivosPage() {
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
   const { data: { user }, error: userErro } = await supabase.auth.getUser();
   if (userErro || !user) throw new Error("Sua sessão expirou. Entre novamente.");
   const [
@@ -31,10 +38,11 @@ export default async function ObjetivosPage() {
     supabase.from("contas")
       .select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version")
       .eq("arquivado", false).order("nome"),
-    fetchAllRows((from, to) => supabase.from("transacoes")
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase.from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+      .or(filtro)
       .order("id")
-      .range(from, to)),
+      .range(from, to))),
     supabase.from("parcerias")
       .select("id, solicitante_id, convidado_id")
       .eq("status", "aceito")

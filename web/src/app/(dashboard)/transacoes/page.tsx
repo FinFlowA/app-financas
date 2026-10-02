@@ -1,6 +1,7 @@
 import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { collectPaymentSummaryRows } from "@/lib/payment-summaries";
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { shouldReturnHomeAfterCreation } from "@/lib/transaction-entry";
 import type { Caixinha, Cartao, Categoria, Conta, FaturaItem } from "@/lib/types";
@@ -43,6 +44,12 @@ export default async function TransactionsPage({
   const initialFocusId = positiveId(first(parameters.focus));
   const returnHomeAfterCreate = shouldReturnHomeAfterCreation(first(parameters.source));
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
 
   const [{ data: authData, error: authError }, accountsResult, goalsResult, categoriesResult, cardsResult] = await Promise.all([
     supabase.auth.getUser(),
@@ -71,10 +78,12 @@ export default async function TransactionsPage({
   // páginas para não perder itens no limite padrão de linhas do PostgREST.
   const transactions: TransactionRow[] = [];
   const pageSize = 1_000;
+  const filtro = await filtroVisiveis;
   for (let start = 0; ; start += pageSize) {
     const result = await supabase
       .from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+      .or(filtro)
       .order("id", { ascending: false })
       .range(start, start + pageSize - 1);
     if (result.error) throw new Error("Não foi possível carregar o Histórico agora.");

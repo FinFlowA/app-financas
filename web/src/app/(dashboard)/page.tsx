@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { mesAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import type { Caixinha, Cartao, Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import HomeDashboard from "./home-dashboard";
@@ -11,15 +12,22 @@ export default async function DashboardPage({ searchParams }: { searchParams: Pr
   const parameters = await searchParams;
   const month = parameters.month && MONTH_PATTERN.test(parameters.month) ? parameters.month : mesAtualEmSaoPaulo();
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
   const [{ data: authData }, accountsResult, goalsResult, transactionsResult, categoriesResult, invoiceItemsResult, cardsResult] = await Promise.all([
     supabase.auth.getUser(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").order("id"),
     supabase.from("caixinhas").select("id,user_id,nome,meta_valor,saldo_atual,cor,icone,compartilhado,data_prazo,arquivado,version").order("nome"),
-    fetchAllRows((from, to) => supabase
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase
       .from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
+      .or(filtro)
       .order("id")
-      .range(from, to)),
+      .range(from, to))),
     fetchAllRows((from, to) => supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").range(from, to)),
     fetchAllRows((from, to) => supabase
       .from("fatura_itens")

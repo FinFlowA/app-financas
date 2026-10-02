@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { dataEfetivaTransacao, descricaoVisivel, getContaDestinoTransferencia, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import type { Categoria, Conta, Transacao } from "@/lib/types";
@@ -16,11 +17,17 @@ const PAYMENT_SUMMARY_BATCH_SIZE = 500;
 
 export default async function ReconciliationPage() {
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
   const [{ data: auth }, accountsResult, categoriesResult, transactionsResult, cardsResult, invoiceItemsResult, fingerprintsResult, counterpartsResult, reconciledTransactionsResult, entitlementResult] = await Promise.all([
     supabase.auth.getClaims(),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     fetchAllRows((from, to) => supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").order("nome").range(from, to)),
-    fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to)),
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase.from("transacoes").select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version").or(filtro).in("status", ["pendente", "paga"]).is("transacao_pai_id", null).order("data_vencimento", { ascending: false }).range(from, to))),
     supabase.from("cartoes").select("id,user_id,nome,cor,limite,dia_vencimento,dia_fechamento,ativo,version").eq("ativo", true),
     fetchAllRows((from, to) => supabase.from("fatura_itens").select("id,cartao_id,user_id,descricao,valor,data_compra,mes_fatura,parcela_atual,total_parcelas,categoria_id,pago,grupo_parcela_id").eq("pago", false).range(from, to)),
     supabase.rpc("list_bank_reconciliation_progress"),

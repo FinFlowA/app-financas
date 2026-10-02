@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { hojeEmSaoPaulo } from "@/lib/date";
 import { createClient } from "@/lib/supabase/client";
 import { fetchAllRows } from "@/lib/supabase/pagination";
+import { filtroTransacoesVisiveis } from "@/lib/transacoes-visiveis";
 import {
   evaluateFinancialNotificationEvents,
   markNotificationAsShown,
@@ -96,13 +97,18 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
       const needsCards = preferences.invoiceClosing || preferences.invoiceDue || preferences.cardLimit;
       const emptyResult = { data: [] as unknown[], error: null };
       const [transactionsResult, cardsResult, goalsResult] = await Promise.all([
-        needsTransactions ? fetchAllRows((from, to) => supabase
-          .from("transacoes")
-          .select("id, status, tipo, data_vencimento")
-          .eq("status", "pendente")
-          .lte("data_vencimento", today)
-          .order("id")
-          .range(from, to)) : Promise.resolve(emptyResult),
+        // Filtro explícito das transações visíveis: o banco usa os índices em
+        // vez de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+        needsTransactions ? supabase.from("contas").select("id").then((contas) => contas.error
+          ? { data: null, error: contas.error }
+          : fetchAllRows((from, to) => supabase
+            .from("transacoes")
+            .select("id, status, tipo, data_vencimento")
+            .or(filtroTransacoesVisiveis(userId, (contas.data ?? []).map((conta) => conta.id)))
+            .eq("status", "pendente")
+            .lte("data_vencimento", today)
+            .order("id")
+            .range(from, to))) : Promise.resolve(emptyResult),
         needsCards ? supabase
           .from("cartoes")
           .select("id, nome, limite, dia_vencimento, dia_fechamento, ativo")
