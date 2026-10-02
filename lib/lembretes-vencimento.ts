@@ -211,6 +211,26 @@ export function mensagemPrazoObjetivo(
 }
 
 /**
+ * Aviso de limite do cartão sem valores em reais: quanto já foi usado e
+ * quanto ainda resta, em porcentagem do limite.
+ */
+export function mensagemLimiteCartao(
+  cartao: { nome: string; limite: number; limite_usado: number },
+): { titulo: string; corpo: string } {
+  const limite = Number(cartao.limite);
+  const usado = Math.max(0, Number(cartao.limite_usado));
+  const pct = limite > 0 ? Math.round((usado / limite) * 100) : 100;
+  // O que resta é arredondado para baixo, para nunca prometer limite que não existe.
+  const resta = limite > 0 ? Math.max(0, Math.floor(((limite - usado) / limite) * 100)) : 0;
+  return {
+    titulo: `Cartão ${cartao.nome} com ${pct}% do limite usado`,
+    corpo: resta > 0
+      ? `Ainda ${resta === 1 ? "resta" : "restam"} ${resta}% do limite disponível.`
+      : "Não há mais limite disponível neste cartão.",
+  };
+}
+
+/**
  * Limite usado do cartão, como a tela de Cartões calcula: compras não pagas da
  * fatura atual em diante; compras fixas só contam na fatura atual.
  */

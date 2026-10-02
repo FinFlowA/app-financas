@@ -1,13 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
 import {
+  mensagemLimiteCartao,
   mensagemPrazoObjetivo,
   montarLembretesAtraso,
   montarLembretesVencimento,
   proximoHorario,
 } from "./lembretes-vencimento";
 import { supabase } from "./supabase";
-import { fmtReais } from "./utils";
 import {
   digestForLocalDeduplication,
   getOptionalExpoCrypto,
@@ -534,12 +534,13 @@ async function executarAgendamentoNotificacoesDoApp(
       const segundosAteAviso = Math.floor((proximoHorario(agora, 9).getTime() - agora.getTime()) / 1000);
       for (const cartao of cartoes) {
         if (!cartao.limite || !cartao.limite_usado || cartao.limite_usado / cartao.limite <= 0.8) continue;
-        const pct = Math.round((cartao.limite_usado / cartao.limite) * 100);
+        // Sem valores em reais: só a % usada e a % que ainda resta.
+        const { titulo, corpo } = mensagemLimiteCartao({ nome: cartao.nome, limite: cartao.limite, limite_usado: cartao.limite_usado });
         await agendarSeSessaoAtiva({
           content: {
             ...notifBase("cartoes"),
-            title: `Cartão ${cartao.nome} com ${pct}% do limite usado`,
-            body: `Restam ${fmtReais(Math.max(0, cartao.limite - cartao.limite_usado))} de um limite de ${fmtReais(cartao.limite)}.`,
+            title: titulo,
+            body: corpo,
           },
           trigger: gatilhoIntervalo(segundosAteAviso),
         });
