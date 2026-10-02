@@ -17,6 +17,7 @@ Esta pasta é a referência operacional do projeto. Os documentos descrevem o es
 | [Deploy e operação](./DEPLOY_E_OPERACAO.md) | Publicação, migrations, rollback e rotinas operacionais |
 | [Segurança](./SEGURANCA.md) | Fronteiras de confiança, segredos, RLS e resposta a incidentes |
 | [Testes](./TESTES.md) | Suítes automáticas e checklists manuais |
+| [Teste de carga mais recente (02/10/2026)](./TESTE_DE_CARGA_2026-10-02.md) | Capacidade do sistema: resultados, limites por plano e como repetir |
 | [Continuidade](./CONTINUIDADE.md) | Estado atual, pendências e procedimento de retomada |
 
 ## Hierarquia das fontes
