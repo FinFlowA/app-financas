@@ -1,4 +1,5 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
+import { lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
@@ -8,7 +9,7 @@ import { calcularSaldosPorConta, dataEfetivaTransacao, descricaoVisivel, getOper
 import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
 import CategoryDistributionChart, { type CategoryDistributionItem } from "./category-distribution-chart";
 import type { MesFluxo, PontoSaldo } from "./fluxo-saldo-chart";
-import ReportOverview from "./report-overview";
+import ReportOverview, { type SeriesDoFluxo } from "./report-overview";
 import styles from "./relatorios.module.css";
 import { normalizePlan, planHasFeature } from "@/lib/plan-entitlements";
 
@@ -25,7 +26,73 @@ function validMonth(value: string | undefined, fallbackIndex: number) {
   return Number.isInteger(parsed) && parsed >= 1 && parsed <= 12 ? parsed - 1 : fallbackIndex;
 }
 
-export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ year?: string; month?: string; accounts?: string | string[]; view?: string }> }) {
+function fluxoVazio(label: string): MesFluxo {
+  return {
+    label,
+    receitas: 0,
+    despesas: 0,
+    receitasPrevistas: 0,
+    despesasPrevistas: 0,
+    guardadoObjetivos: 0,
+    resgatadoObjetivos: 0,
+    guardarObjetivosPrevisto: 0,
+    resgatarObjetivosPrevisto: 0,
+  };
+}
+
+/** Meses, dias e saldos do gráfico a partir de uma lista de lançamentos. */
+function montarSeriesDoFluxo(
+  lancamentos: Transacao[],
+  { year, detailMonthIndex, initialBalance, referenceDate }: { year: number; detailMonthIndex: number; initialBalance: number; referenceDate: Date },
+) {
+  const months = MONTHS.map((name) => fluxoVazio(`${name} ${year}`));
+  const daysInDetailMonth = new Date(year, detailMonthIndex + 1, 0).getDate();
+  const dailyFlow = Array.from({ length: daysInDetailMonth }, (_, index) => fluxoVazio(`${String(index + 1).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`));
+  for (const transaction of lancamentos) {
+    const value = Number(transaction.valor);
+    if (!Number.isFinite(value)) continue;
+    const date = dataEfetivaTransacao(transaction);
+    if (!date.startsWith(`${year}-`)) continue;
+    const monthIndex = Number(date.slice(5, 7)) - 1;
+    const month = months[monthIndex];
+    if (!month) continue;
+    const daily = monthIndex === detailMonthIndex ? dailyFlow[Number(date.slice(8, 10)) - 1] : undefined;
+    if (isMovimentoObjetivo(transaction.descricao)) {
+      const operation = getOperacaoObjetivo(transaction.descricao);
+      if (operation === "guardar") {
+        if (transaction.status === "paga") month.guardadoObjetivos = (month.guardadoObjetivos ?? 0) + value;
+        else month.guardarObjetivosPrevisto = (month.guardarObjetivosPrevisto ?? 0) + value;
+        if (daily) {
+          if (transaction.status === "paga") daily.guardadoObjetivos = (daily.guardadoObjetivos ?? 0) + value;
+          else daily.guardarObjetivosPrevisto = (daily.guardarObjetivosPrevisto ?? 0) + value;
+        }
+      } else if (operation === "resgatar") {
+        if (transaction.status === "paga") month.resgatadoObjetivos = (month.resgatadoObjetivos ?? 0) + value;
+        else month.resgatarObjetivosPrevisto = (month.resgatarObjetivosPrevisto ?? 0) + value;
+        if (daily) {
+          if (transaction.status === "paga") daily.resgatadoObjetivos = (daily.resgatadoObjetivos ?? 0) + value;
+          else daily.resgatarObjetivosPrevisto = (daily.resgatarObjetivosPrevisto ?? 0) + value;
+        }
+      }
+      continue;
+    }
+    const key = transaction.tipo === "receita" ? "receitas" : "despesas";
+    const pendingKey = transaction.tipo === "receita" ? "receitasPrevistas" : "despesasPrevistas";
+    if (transaction.status === "paga") month[key] += value;
+    else month[pendingKey] = (month[pendingKey] ?? 0) + value;
+    if (daily) {
+      if (transaction.status === "paga") daily[key] += value;
+      else daily[pendingKey] = (daily[pendingKey] ?? 0) + value;
+    }
+  }
+  const balances: PontoSaldo[] = calcularSaldoProjetadoPorMes(initialBalance, lancamentos, year, referenceDate)
+    .map((point) => ({ label: `${MONTHS[point.mesIdx]} ${year}`, saldo: point.saldo, projetado: point.projetado }));
+  const dailyBalances: PontoSaldo[] = calcularSaldoProjetadoPorDia(initialBalance, lancamentos, year, detailMonthIndex, referenceDate)
+    .map((point) => ({ label: `${String(point.dia).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`, saldo: point.saldo, projetado: point.projetado }));
+  return { months, dailyFlow, balances, dailyBalances };
+}
+
+export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ year?: string; month?: string; accounts?: string | string[]; view?: string; atrasados?: string }> }) {
   const params = await searchParams;
   const year = validYear(params.year);
   const today = hojeEmSaoPaulo();
@@ -64,6 +131,10 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const selectedAccounts = accounts.filter((account) => selectedSet.has(account.id));
   const allAccountsSelected = selectedAccounts.length === accounts.length
     && accounts.every((account) => selectedSet.has(account.id));
+  // Filtro "Considerar atrasados": ligado por padrão; com atrasados=0, os
+  // lançamentos pendentes já vencidos saem do cálculo do fluxo. O servidor
+  // monta as duas versões para a troca na tela ser instantânea.
+  const considerarAtrasados = params.atrasados !== "0";
   const scoped = transacoesNoEscopo(transactions, selectedSet, selectedAccounts.length);
   const initialBalance = selectedAccounts.reduce((sum, account) => sum + Number(account.saldo_inicial), 0);
   const balancesByAccount = calcularSaldosPorConta(selectedAccounts, transactions);
@@ -72,31 +143,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     0,
   );
   const referenceDate = new Date(`${today}T12:00:00-03:00`);
-  const projection = calcularSaldoProjetadoPorMes(initialBalance, scoped, year, referenceDate);
-  const balances: PontoSaldo[] = projection.map((point) => ({ label: `${MONTHS[point.mesIdx]} ${year}`, saldo: point.saldo, projetado: point.projetado }));
-  const months: MesFluxo[] = MONTHS.map((name) => ({
-    label: `${name} ${year}`,
-    receitas: 0,
-    despesas: 0,
-    receitasPrevistas: 0,
-    despesasPrevistas: 0,
-    guardadoObjetivos: 0,
-    resgatadoObjetivos: 0,
-    guardarObjetivosPrevisto: 0,
-    resgatarObjetivosPrevisto: 0,
-  }));
-  const daysInDetailMonth = new Date(year, detailMonthIndex + 1, 0).getDate();
-  const dailyFlow: MesFluxo[] = Array.from({ length: daysInDetailMonth }, (_, index) => ({
-    label: `${String(index + 1).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`,
-    receitas: 0,
-    despesas: 0,
-    receitasPrevistas: 0,
-    despesasPrevistas: 0,
-    guardadoObjetivos: 0,
-    resgatadoObjetivos: 0,
-    guardarObjetivosPrevisto: 0,
-    resgatarObjetivosPrevisto: 0,
-  }));
+  const opcoesDasSeries = { year, detailMonthIndex, initialBalance, referenceDate };
+  const seriesComAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, true, today), opcoesDasSeries);
+  const seriesSemAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, false, today), opcoesDasSeries);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const expenseCategoryTotals = new Map<number | null, number>();
   const revenueCategoryTotals = new Map<number | null, number>();
@@ -105,52 +154,21 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   let detailExpense = 0;
   let detailRevenue = 0;
 
+  // Distribuição por categoria: só o que já foi concluído no mês detalhado.
+  // Atrasados são pendentes, então o filtro não muda esta parte.
   for (const transaction of scoped) {
     const value = Number(transaction.valor);
-    if (!Number.isFinite(value)) continue;
+    if (!Number.isFinite(value) || transaction.status !== "paga" || isMovimentoObjetivo(transaction.descricao)) continue;
     const date = dataEfetivaTransacao(transaction);
-    if (!date.startsWith(`${year}-`)) continue;
-    const monthIndex = Number(date.slice(5, 7)) - 1;
-    const month = months[monthIndex];
-    if (!month) continue;
-    const daily = monthIndex === detailMonthIndex ? dailyFlow[Number(date.slice(8, 10)) - 1] : undefined;
-    if (isMovimentoObjetivo(transaction.descricao)) {
-      const operation = getOperacaoObjetivo(transaction.descricao);
-      if (operation === "guardar") {
-        if (transaction.status === "paga") month.guardadoObjetivos = (month.guardadoObjetivos ?? 0) + value;
-        else month.guardarObjetivosPrevisto = (month.guardarObjetivosPrevisto ?? 0) + value;
-        if (daily) {
-          if (transaction.status === "paga") daily.guardadoObjetivos = (daily.guardadoObjetivos ?? 0) + value;
-          else daily.guardarObjetivosPrevisto = (daily.guardarObjetivosPrevisto ?? 0) + value;
-        }
-      } else if (operation === "resgatar") {
-        if (transaction.status === "paga") month.resgatadoObjetivos = (month.resgatadoObjetivos ?? 0) + value;
-        else month.resgatarObjetivosPrevisto = (month.resgatarObjetivosPrevisto ?? 0) + value;
-        if (daily) {
-          if (transaction.status === "paga") daily.resgatadoObjetivos = (daily.resgatadoObjetivos ?? 0) + value;
-          else daily.resgatarObjetivosPrevisto = (daily.resgatarObjetivosPrevisto ?? 0) + value;
-        }
-      }
-      continue;
-    }
-    const key = transaction.tipo === "receita" ? "receitas" : "despesas";
-    const pendingKey = transaction.tipo === "receita" ? "receitasPrevistas" : "despesasPrevistas";
-    if (transaction.status === "paga") month[key] += value;
-    else month[pendingKey] = (month[pendingKey] ?? 0) + value;
-    if (daily) {
-      if (transaction.status === "paga") daily[key] += value;
-      else daily[pendingKey] = (daily[pendingKey] ?? 0) + value;
-    }
-    if (monthIndex === detailMonthIndex && transaction.status === "paga") {
-      if (transaction.tipo === "receita") {
-        detailRevenue += value;
-        revenueCategoryTotals.set(transaction.categoria_id, (revenueCategoryTotals.get(transaction.categoria_id) ?? 0) + value);
-        revenueCategoryDetails.set(transaction.categoria_id, [...(revenueCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
-      } else if (!(allAccountsSelected && isPagamentoFatura(transaction.descricao))) {
-        detailExpense += value;
-        expenseCategoryTotals.set(transaction.categoria_id, (expenseCategoryTotals.get(transaction.categoria_id) ?? 0) + value);
-        expenseCategoryDetails.set(transaction.categoria_id, [...(expenseCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
-      }
+    if (!date.startsWith(detailMonth)) continue;
+    if (transaction.tipo === "receita") {
+      detailRevenue += value;
+      revenueCategoryTotals.set(transaction.categoria_id, (revenueCategoryTotals.get(transaction.categoria_id) ?? 0) + value);
+      revenueCategoryDetails.set(transaction.categoria_id, [...(revenueCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
+    } else if (!(allAccountsSelected && isPagamentoFatura(transaction.descricao))) {
+      detailExpense += value;
+      expenseCategoryTotals.set(transaction.categoria_id, (expenseCategoryTotals.get(transaction.categoria_id) ?? 0) + value);
+      expenseCategoryDetails.set(transaction.categoria_id, [...(expenseCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
     }
   }
   if (allAccountsSelected) {
@@ -178,15 +196,24 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       .sort((a, b) => b.value - a.value)
   );
   const overviewMonthIndex = year === currentYear ? currentMonthIndex : detailMonthIndex;
-  const overviewMonth = months[overviewMonthIndex];
-  const totalReceitas = overviewMonth?.receitas ?? 0;
-  const totalDespesas = overviewMonth?.despesas ?? 0;
-  const resultadoRealizado = totalReceitas - totalDespesas;
-  const saldoFimMes = balances[overviewMonthIndex]?.saldo ?? initialBalance;
   const revenueDistribution = distributionItems(revenueCategoryTotals, revenueCategoryDetails, detailRevenue, "receita");
   const expenseDistribution = distributionItems(expenseCategoryTotals, expenseCategoryDetails, detailExpense, "despesa");
-  const dailyBalances: PontoSaldo[] = calcularSaldoProjetadoPorDia(initialBalance, scoped, year, detailMonthIndex, referenceDate)
-    .map((point) => ({ label: `${String(point.dia).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`, saldo: point.saldo, projetado: point.projetado }));
+  const comMetricas = (series: ReturnType<typeof montarSeriesDoFluxo>): SeriesDoFluxo => {
+    const overviewMonth = series.months[overviewMonthIndex];
+    const totalReceitas = overviewMonth?.receitas ?? 0;
+    const totalDespesas = overviewMonth?.despesas ?? 0;
+    const resultadoRealizado = totalReceitas - totalDespesas;
+    const saldoFimMes = series.balances[overviewMonthIndex]?.saldo ?? initialBalance;
+    return {
+      ...series,
+      metrics: [
+        { label: "Receitas realizadas no mês", value: totalReceitas, tone: "positive" },
+        { label: "Despesas realizadas no mês", value: totalDespesas, tone: "negative" },
+        { label: "Balanço realizado do mês", value: resultadoRealizado, tone: resultadoRealizado < 0 ? "negative" : "positive" },
+        { label: "Saldo previsto no fim do mês", value: saldoFimMes, tone: saldoFimMes < 0 ? "negative" : "positive" },
+      ],
+    };
+  };
 
   return (
     <div className={styles.page}>
@@ -197,20 +224,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
         selectedMonthIndex={detailMonthIndex}
         currentBalance={currentBalance}
         initialBalance={initialBalance}
-        months={months}
-        balances={balances}
-        metrics={[
-          { label: "Receitas realizadas no mês", value: totalReceitas, tone: "positive" },
-          { label: "Despesas realizadas no mês", value: totalDespesas, tone: "negative" },
-          { label: "Balanço realizado do mês", value: resultadoRealizado, tone: resultadoRealizado < 0 ? "negative" : "positive" },
-          { label: "Saldo previsto no fim do mês", value: saldoFimMes, tone: saldoFimMes < 0 ? "negative" : "positive" },
-        ]}
+        series={{ comAtrasados: comMetricas(seriesComAtrasados), semAtrasados: comMetricas(seriesSemAtrasados) }}
         selectedAccountIds={selectedIds}
         accounts={accounts.map((account) => ({ id: account.id, name: account.nome, color: account.cor }))}
-        dailyFlow={dailyFlow}
-        dailyBalances={dailyBalances}
         view={view}
         dailyEnabled={dailyEnabled}
+        considerarAtrasados={considerarAtrasados}
       />
 
       <div className={styles.analysisGrid}>

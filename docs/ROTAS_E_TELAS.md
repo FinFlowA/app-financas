@@ -9,11 +9,11 @@
 | `/define-password` | Definição inicial de senha |
 | `/reset-password` | Recuperação de senha |
 | `/email-confirmed` | Confirmação de e-mail |
-| `/(tabs)` | Página inicial e atalhos financeiros |
+| `/(tabs)` | Página inicial, visão do mês (com a explicação do Balanço atual) e atalhos financeiros |
 | `/(tabs)/transacoes` | Histórico, criação, edição e conclusão |
 | `/(tabs)/caixinhas` | Objetivos financeiros |
 | `/(tabs)/cartoes` | Cartões, compras e faturas |
-| `/(tabs)/relatorios` | Fluxo e relatórios do aplicativo |
+| `/(tabs)/relatorios` | Fluxo e relatórios do aplicativo, com o filtro "Considerar atrasados" |
 | `/(tabs)/configuracoes` | Perfil, preferências, parceria, plano e conta |
 | `/chat-ia` | Assistente Finn |
 | `/planos` | Apresentação de planos; cobrança mobile real ainda não integrada |
@@ -49,7 +49,7 @@
 | `/cartoes` | Lista de cartões |
 | `/cartoes/[id]` | Fatura, compras, pagamento e estorno |
 | `/categorias` | Categorias e arquivamento |
-| `/relatorios` | Fluxo mensal/diário e seleção de contas |
+| `/relatorios` | Fluxo mensal/diário, seleção de contas e filtro "Considerar atrasados" (`atrasados=0`) |
 | `/calendario` | Agenda financeira |
 | `/conciliacao` | Importação CSV/OFX e conciliação |
 | `/assistente` | Finn no site |

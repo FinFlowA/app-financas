@@ -1,7 +1,13 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
-import { montarLembretesVencimento } from "./lembretes-vencimento";
+import {
+  mensagemPrazoObjetivo,
+  montarLembretesAtraso,
+  montarLembretesVencimento,
+  proximoHorario,
+} from "./lembretes-vencimento";
 import { supabase } from "./supabase";
+import { fmtReais } from "./utils";
 import {
   digestForLocalDeduplication,
   getOptionalExpoCrypto,
@@ -374,6 +380,26 @@ async function cancelarAgendamentosOpcionaisNativos(): Promise<void> {
  * Cancela somente lembretes configuráveis. Eventos obrigatórios do servidor
  * permanecem visíveis, mesmo quando o usuário desativa os lembretes pessoais.
  */
+/**
+ * Pagou a fatura pelo app: cancela na hora os lembretes de vencimento dela,
+ * sem esperar a agenda ser refeita na tela inicial.
+ */
+export async function cancelarLembretesDaFatura(cartaoId: number, mes: string): Promise<void> {
+  if (LOCAL_DEMO || !Notif || Platform.OS === "web") return;
+  try {
+    const agendadas = await Notif.getAllScheduledNotificationsAsync();
+    const identificadores: string[] = (agendadas ?? [])
+      .filter((item: any) => item?.content?.data?.tipo === "vencimento_fatura"
+        && item.content.data.cartaoId === cartaoId
+        && item.content.data.mes === mes)
+      .map((item: any) => item.identifier)
+      .filter((id: unknown): id is string => typeof id === "string");
+    await Promise.allSettled(identificadores.map((id) => Notif.cancelScheduledNotificationAsync(id)));
+  } catch {
+    // A agenda é refeita sem esses lembretes na próxima vez que o Início carregar.
+  }
+}
+
 export async function cancelarNotificacoesOpcionais(userId?: string | null): Promise<void> {
   geracaoAgendaNotificacoes += 1;
   try {
@@ -450,7 +476,6 @@ async function executarAgendamentoNotificacoesDoApp(
 
     const agora = new Date();
     const hojeStr = `${agora.getFullYear()}-${String(agora.getMonth() + 1).padStart(2, "0")}-${String(agora.getDate()).padStart(2, "0")}`;
-    const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
 
     const channelId = Platform.OS === "android" ? ANDROID_NOTIFICATION_CHANNEL_ID : undefined;
     const notifBase = (rota: RotaNotificacao) => ({
@@ -466,14 +491,13 @@ async function executarAgendamentoNotificacoesDoApp(
 
     try { await Notif.setBadgeCountAsync(0); } catch {}
 
-    // O dashboard envia o conjunto completo de dados e pode reorganizar a agenda.
-    // O cancelamento precisa acontecer antes dos alertas imediatos para não apagá-los.
+    // Só a tela inicial envia o conjunto completo de dados e reorganiza a agenda.
     if (dadosCompletos) {
       const chaveAgendado = `@notif_agendado_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
       chaveAgendaCompleta = chaveAgendado;
       const assinaturaBruta = JSON.stringify({
         // Muda quando a regra de agendamento muda, para refazer a agenda do dia.
-        regra: "vencimentos-30-dias",
+        regra: "agenda-v3-sem-aviso-na-abertura",
         transacoes: transacoes.map((t) => [t.status, t.data_vencimento, t.tipo]).sort(),
         caixinhas: (caixinhas ?? []).map((c) => [c.nome, c.meta_valor, c.saldo_atual, c.data_prazo]).sort(),
         cartoes: (cartoes ?? []).map((c) => [c.id, c.nome, c.dia_vencimento, c.dia_fechamento, c.limite, c.limite_usado, ...(c.faturas_pendentes ?? []).sort()]).sort(),
@@ -488,75 +512,39 @@ async function executarAgendamentoNotificacoesDoApp(
       await cancelarAgendamentosOpcionaisNativos();
     }
 
-    // Alertas imediatos de limite de cartão próximo do máximo (dedup por cartão/dia)
-    if (preferencias.limiteCartao && cartoes && cartoes.length > 0) {
-      for (const [indiceCartao, cartao] of cartoes.entries()) {
-        if (cartao.limite && cartao.limite_usado && cartao.limite_usado / cartao.limite > 0.8) {
-          const escopoCartao = Number.isSafeInteger(cartao.id) ? String(cartao.id) : String(indiceCartao);
-          const chaveLimite = `@notif_limite_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${escopoCartao}_${hojeStr}`;
-          const jaNotificouLimite = await AsyncStorage.getItem(chaveLimite);
-          if (!jaNotificouLimite) {
-            const pct = Math.round((cartao.limite_usado / cartao.limite) * 100);
-            const identificador = await agendarSeSessaoAtiva({
-              content: {
-                ...notifBase("cartoes"),
-                title: `⚠️ Cartão ${cartao.nome} — ${pct}% do limite usado`,
-                body: `Disponível: R$ ${(cartao.limite - cartao.limite_usado).toFixed(2)} de R$ ${cartao.limite.toFixed(2)}`,
-              },
-              trigger: gatilhoIntervalo(3),
-            });
-            if (identificador && !await gravarMarcadorSeSessaoAtiva(chaveLimite, "1", userId, geracaoDestaAgenda)) {
-              await Promise.allSettled([
-                Notif.cancelScheduledNotificationAsync(identificador),
-                Notif.dismissNotificationAsync(identificador),
-              ]);
-            }
-          }
-        }
-      }
-    }
-
-    // Vencidas — executa sempre mas com dedup diário (evita duplicata por re-foco)
-    const vencidas = preferencias.transacoesVencidas ? transacoes.filter((t) => {
-      if (t.status !== "pendente") return false;
-      const p = (t.data_vencimento || "").split("-");
-      if (p.length < 3) return false;
-      const d = new Date(parseInt(p[0]), parseInt(p[1]) - 1, parseInt(p[2]));
-      return d < hoje;
-    }) : [];
-    const chaveVencidos = `@notif_vencidos_${NOTIFICATION_SCHEDULE_VERSION}_${userId}_${hojeStr}`;
-    const jaNotificouVencidos = await AsyncStorage.getItem(chaveVencidos);
-    if (vencidas.length > 0 && !jaNotificouVencidos) {
-      const identificadoresVencidos: string[] = [];
-      const despesasVencidas = vencidas.filter((t) => t.tipo === "despesa").length;
-      const receitasVencidas = vencidas.filter((t) => t.tipo === "receita").length;
-      if (despesasVencidas > 0) {
-        const identificador = await agendarSeSessaoAtiva({
-          content: { ...notifBase("atrasados"), title: "🔴 FinFlow — Despesas Vencidas", body: `${despesasVencidas} despesa${despesasVencidas > 1 ? "s" : ""} vencida${despesasVencidas > 1 ? "s" : ""} sem pagar. Regularize agora!` },
-          trigger: gatilhoIntervalo(4),
-        });
-        if (identificador) identificadoresVencidos.push(identificador);
-      }
-      if (receitasVencidas > 0) {
-        const identificador = await agendarSeSessaoAtiva({
-          content: { ...notifBase("atrasados"), title: "🟡 FinFlow — Receitas Vencidas", body: `${receitasVencidas} receita${receitasVencidas > 1 ? "s" : ""} a receber vencida${receitasVencidas > 1 ? "s" : ""}. Verifique seus lançamentos!` },
-          trigger: gatilhoIntervalo(5),
-        });
-        if (identificador) identificadoresVencidos.push(identificador);
-      }
-      if (
-        identificadoresVencidos.length > 0
-        && !await gravarMarcadorSeSessaoAtiva(chaveVencidos, "1", userId, geracaoDestaAgenda)
-      ) {
-        await Promise.allSettled(identificadoresVencidos.flatMap((identificador) => [
-          Notif.cancelScheduledNotificationAsync(identificador),
-          Notif.dismissNotificationAsync(identificador),
-        ]));
-      }
-    }
-
-    // Telas com dados parciais não devem alterar a agenda completa.
+    // Telas com dados parciais não alteram a agenda. Nenhum aviso é disparado
+    // na abertura do app: tudo abaixo é agendado para horários fixos.
     if (!dadosCompletos) return;
+
+    // Lançamentos vencidos: na próxima manhã (9h) e, a cada vencimento dos
+    // próximos 30 dias, um "venceu ontem" às 9h do dia seguinte.
+    if (preferencias.transacoesVencidas) {
+      for (const lembrete of montarLembretesAtraso(transacoes, agora)) {
+        const segundos = Math.floor((lembrete.quando.getTime() - agora.getTime()) / 1000);
+        if (segundos <= 0) continue;
+        await agendarSeSessaoAtiva({
+          content: { ...notifBase("atrasados"), title: lembrete.titulo, body: lembrete.corpo },
+          trigger: gatilhoIntervalo(segundos),
+        });
+      }
+    }
+
+    // Limite do cartão acima de 80%: aviso na próxima manhã (9h).
+    if (preferencias.limiteCartao && cartoes && cartoes.length > 0) {
+      const segundosAteAviso = Math.floor((proximoHorario(agora, 9).getTime() - agora.getTime()) / 1000);
+      for (const cartao of cartoes) {
+        if (!cartao.limite || !cartao.limite_usado || cartao.limite_usado / cartao.limite <= 0.8) continue;
+        const pct = Math.round((cartao.limite_usado / cartao.limite) * 100);
+        await agendarSeSessaoAtiva({
+          content: {
+            ...notifBase("cartoes"),
+            title: `Cartão ${cartao.nome} com ${pct}% do limite usado`,
+            body: `Restam ${fmtReais(Math.max(0, cartao.limite - cartao.limite_usado))} de um limite de ${fmtReais(cartao.limite)}.`,
+          },
+          trigger: gatilhoIntervalo(segundosAteAviso),
+        });
+      }
+    }
 
     // Vencimentos de hoje e dos próximos dias (8h e, na primeira semana, 19h),
     // agendados de uma vez para chegarem sem depender de abrir o app no dia.
@@ -586,14 +574,10 @@ async function executarAgendamentoNotificacoesDoApp(
           alvo.setDate(alvo.getDate() - marcosDias);
           if (alvo <= agora) continue;
           const segundos = Math.floor((alvo.getTime() - agora.getTime()) / 1000);
-          const titulo = marcosDias === 0 ? "⏰ Prazo de objetivo hoje!" : `📌 Objetivo vence em ${marcosDias} dia${marcosDias > 1 ? "s" : ""}`;
-          const falta = Number(caixa.meta_valor) - Number(caixa.saldo_atual);
+          // Sem valores em reais: quanto falta, em % da meta, e a data do prazo.
+          const { titulo, corpo } = mensagemPrazoObjetivo({ ...caixa, data_prazo: caixa.data_prazo }, marcosDias);
           await agendarSeSessaoAtiva({
-            content: {
-              ...notifBase("objetivos"),
-              title: titulo,
-              body: `"${caixa.nome}" — faltam R$ ${falta.toFixed(2)} para atingir a meta.`,
-            },
+            content: { ...notifBase("objetivos"), title: titulo, body: corpo },
             trigger: gatilhoIntervalo(segundos),
           });
         }
@@ -620,17 +604,24 @@ async function executarAgendamentoNotificacoesDoApp(
         if (preferencias.vencimentoFatura) {
           // Vencimento: 3 dias antes, 1 dia antes, no dia
           const eventosVenc = [
-            { diasAntes: 3, titulo: `💳 ${cartao.nome} — Fatura vence em 3 dias`, corpo: "Separe o valor para pagar sua fatura." },
-            { diasAntes: 1, titulo: `💳 ${cartao.nome} — Fatura vence amanhã`, corpo: "Não esqueça de pagar a fatura do seu cartão." },
-            { diasAntes: 0, titulo: `🔔 ${cartao.nome} — Fatura vence hoje!`, corpo: "Efetue o pagamento para evitar juros." },
+            { diasAntes: 3, titulo: `Fatura do cartão ${cartao.nome} vence em 3 dias`, corpo: "Separe o valor do pagamento para evitar juros." },
+            { diasAntes: 1, titulo: `Fatura do cartão ${cartao.nome} vence amanhã`, corpo: "Lembre-se de fazer o pagamento para evitar juros." },
+            { diasAntes: 0, titulo: `Fatura do cartão ${cartao.nome} vence hoje`, corpo: "Faça o pagamento ainda hoje para evitar juros e encargos." },
           ];
           for (const ev of eventosVenc) {
             const evento = dataNotifCartao(cartao.dia_vencimento, ev.diasAntes, 9);
+            // Só para fatura ainda em aberto; pagar pelo app cancela os lembretes
+            // dela na hora (cancelarLembretesDaFatura).
             if (evento && (cartao.faturas_pendentes ?? []).includes(evento.mes)) {
               const segundos = Math.floor((evento.data.getTime() - agora.getTime()) / 1000);
               if (segundos > 0) {
                 await agendarSeSessaoAtiva({
-                  content: { ...notifBase("cartoes"), title: ev.titulo, body: ev.corpo },
+                  content: {
+                    ...notifBase("cartoes"),
+                    data: { ...notifBase("cartoes").data, tipo: "vencimento_fatura", cartaoId: cartao.id ?? null, mes: evento.mes },
+                    title: ev.titulo,
+                    body: ev.corpo,
+                  },
                   trigger: gatilhoIntervalo(segundos),
                 });
               }
@@ -643,13 +634,13 @@ async function executarAgendamentoNotificacoesDoApp(
           const eventosFechamento = [
             {
               diasAntes: 2,
-              titulo: `📋 ${cartao.nome} — Fatura fecha em 2 dias`,
-              corpo: "Últimos dias para incluir compras nesta fatura.",
+              titulo: `Fatura do cartão ${cartao.nome} fecha em 2 dias`,
+              corpo: "As compras feitas até o fechamento entram nesta fatura.",
             },
             {
               diasAntes: 0,
-              titulo: `🔒 ${cartao.nome} — Fatura fechou hoje`,
-              corpo: "As próximas compras serão lançadas na fatura seguinte.",
+              titulo: `Fatura do cartão ${cartao.nome} fechou hoje`,
+              corpo: "As próximas compras entram na fatura seguinte.",
             },
           ];
           for (const ev of eventosFechamento) {

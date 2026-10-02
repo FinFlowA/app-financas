@@ -18,6 +18,7 @@ import { supabase } from "../../lib/supabase";
 import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
+import { lancamentosDoFluxo } from "../../web/src/lib/fluxo-atrasados";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
   dataEfetivaTransacao,
@@ -116,6 +117,10 @@ export default function RelatoriosScreen() {
   const [contasSelecionadasIds, setContasSelecionadasIds] = useState<number[] | null>(null);
 
   const hoje = new Date();
+  const hojeIso = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+  // Filtro "Considerar atrasados" (igual ao do site): ligado por padrão;
+  // desligado, os pendentes já vencidos saem do cálculo do fluxo.
+  const [considerarAtrasados, setConsiderarAtrasados] = useState(true);
   const anoAtualNum = hoje.getFullYear();
   const mesAtualIdx = hoje.getMonth();
 
@@ -236,6 +241,11 @@ export default function RelatoriosScreen() {
     return idsEscopoFluxo.has(t.conta_id) ? [t] : [];
   }), [contasFiltradas.length, idsEscopoFluxo, transacoes]);
 
+  const transacoesDoCalculo = useMemo(
+    () => lancamentosDoFluxo(transacoesFiltradas, considerarAtrasados, hojeIso),
+    [considerarAtrasados, hojeIso, transacoesFiltradas],
+  );
+
   const isAnoAtual = anoSelecionado === anoAtualNum;
 
   const {
@@ -266,7 +276,7 @@ export default function RelatoriosScreen() {
       aResgatar: 0,
     }));
 
-    for (const transacao of transacoesFiltradas) {
+    for (const transacao of transacoesDoCalculo) {
       const valor = Number(transacao.valor);
       const realizada = transacao.status === "paga";
       const dataEfetiva = dataEfetivaTransacao(transacao);
@@ -348,7 +358,7 @@ export default function RelatoriosScreen() {
       todosOsMeses: meses,
       projecaoSaldo: projecoes,
     };
-  }, [anoAtualNum, anoSelecionado, contasFiltradas, isAnoAtual, mesAtualIdx, transacoesFiltradas]);
+  }, [anoAtualNum, anoSelecionado, contasFiltradas, isAnoAtual, mesAtualIdx, transacoesDoCalculo]);
 
   // Chart Y scale (bars + balance line share same axis)
   const barMaxes = todosOsMeses.map(m => Math.max(m.recPagas, m.despPagas));
@@ -509,6 +519,32 @@ export default function RelatoriosScreen() {
           />
         )}
       >
+        {/* Filtro de atrasados: separado das contas e em outra cor (âmbar),
+            para não parecer mais uma conta. */}
+        <TouchableOpacity
+          onPress={() => setConsiderarAtrasados((atual) => !atual)}
+          style={[
+            styles.atrasadosToggle,
+            considerarAtrasados
+              ? { backgroundColor: isDark ? "rgba(233,161,91,0.16)" : "#FDF1E4", borderColor: COR_ATRASADOS }
+              : { backgroundColor: Cores.cardFundo, borderColor: Cores.borda },
+          ]}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: considerarAtrasados }}
+          accessibilityLabel="Considerar lançamentos atrasados no cálculo"
+        >
+          <MaterialIcons name="schedule" size={17} color={considerarAtrasados ? COR_ATRASADOS : Cores.textoSecundario} />
+          <View style={styles.atrasadosTextos}>
+            <Text style={[styles.atrasadosTitulo, { color: Cores.textoPrincipal }]}>Considerar atrasados</Text>
+            <Text style={[styles.atrasadosDescricao, { color: Cores.textoSecundario }]}>
+              {considerarAtrasados ? "Pendentes vencidos entram no saldo previsto." : "Pendentes vencidos estão fora do cálculo."}
+            </Text>
+          </View>
+          <View style={[styles.atrasadosTrilho, { backgroundColor: considerarAtrasados ? COR_ATRASADOS : Cores.borda }]}>
+            <View style={[styles.atrasadosBolinha, considerarAtrasados && styles.atrasadosBolinhaLigada]} />
+          </View>
+        </TouchableOpacity>
+
         {/* COMBINED BAR + LINE CHART */}
         <View
           style={[styles.chartCard, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}
@@ -868,6 +904,9 @@ function DetalheRow({ label, valor, cor, dotCor, isIcon, iconName, bold, cores }
   );
 }
 
+// Âmbar: a mesma cor de "atenção" usada no app, diferente das contas.
+const COR_ATRASADOS = "#E9A15B";
+
 const styles = StyleSheet.create({
   safe: { flex: 1 },
   header: {
@@ -910,6 +949,13 @@ const styles = StyleSheet.create({
   contaChipHeaderSelected: { backgroundColor: "rgba(255,255,255,0.20)", borderColor: "rgba(255,255,255,0.52)" },
   contaChipHeaderIdle: { backgroundColor: "rgba(0,0,0,0.10)", borderColor: "rgba(255,255,255,0.16)" },
   contaChipDot: { width: 8, height: 8, borderRadius: 4 },
+  atrasadosToggle: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 16, paddingHorizontal: 13, paddingVertical: 10, marginBottom: 12 },
+  atrasadosTextos: { flex: 1, minWidth: 0 },
+  atrasadosTitulo: { fontSize: 13, fontWeight: "800" },
+  atrasadosDescricao: { fontSize: 11, marginTop: 1 },
+  atrasadosTrilho: { width: 38, height: 22, borderRadius: 11, padding: 2, justifyContent: "center" },
+  atrasadosBolinha: { width: 18, height: 18, borderRadius: 9, backgroundColor: "#FFF" },
+  atrasadosBolinhaLigada: { alignSelf: "flex-end" },
   contaChipText: { fontSize: 11, fontWeight: "700" },
 
   contentScroll: { flex: 1 },

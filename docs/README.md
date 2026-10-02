@@ -9,7 +9,8 @@ Esta pasta é a referência operacional do projeto. Os documentos descrevem o es
 | [Arquitetura](./ARQUITETURA.md) | Componentes, responsabilidades e fluxo dos dados |
 | [Ambientes e variáveis](./AMBIENTES_E_VARIAVEIS.md) | Configuração local, preview e produção sem expor segredos |
 | [Banco de dados](./BANCO_DE_DADOS.md) | Modelo, RLS, migrations e RPCs críticas |
-| [Operações financeiras](./OPERACOES_FINANCEIRAS.md) | Regras de saldo, transações, cartões, objetivos e conciliação |
+| [Operações financeiras](./OPERACOES_FINANCEIRAS.md) | Regras de saldo, Balanço do mês, fluxo de caixa, cartões, objetivos e conciliação |
+| [Notificações](./NOTIFICACOES.md) | Lembretes do app: quando chegam, textos e regras de cada tipo |
 | [Pagamentos e planos](./PAGAMENTOS_E_PLANOS.md) | Paddle no site, direitos de acesso e futuro Google Play Billing |
 | [Assistente Finn](./ASSISTENTE_FINN.md) | Arquitetura da IA, confirmação, cotas e retenção |
 | [Rotas e telas](./ROTAS_E_TELAS.md) | Mapa funcional do aplicativo e do site |

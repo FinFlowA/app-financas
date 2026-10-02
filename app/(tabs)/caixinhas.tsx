@@ -19,7 +19,6 @@ import Modal from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
-import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import {
   getMovimentoObjetivo,
   type OperacaoObjetivo,
@@ -294,15 +293,8 @@ export default function CaixinhasScreen() {
           if (nomeData) setParceiraNome(nomeData);
         }
       }
-      // Agenda notificações de prazo dos objetivos
-      if (resCaixinhas.data) {
-        agendarNotificacoesDoApp([], session.user.id, resCaixinhas.data.map((c: any) => ({
-          nome: c.nome,
-          meta_valor: Number(c.meta_valor),
-          saldo_atual: Number(c.saldo_atual),
-          data_prazo: c.data_prazo ?? undefined,
-        })));
-      }
+      // Os lembretes de prazo dos objetivos são agendados pela tela inicial,
+      // que tem todos os dados; esta tela não dispara notificação.
     } catch (error) {
       // Detalhe completo só em desenvolvimento: em produção, logs locais/ADB
       // não devem receber nomes de tabela, colunas ou identificadores.

@@ -70,7 +70,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { useAppTheme } from "../_layout";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
-import { agendarNotificacoesDoApp } from "../../lib/notifications";
+import { cancelarLembretesDaFatura } from "../../lib/notifications";
 import {
   createInvoiceOperationRequestId,
   isInvoicePaymentAdjustment,
@@ -322,28 +322,8 @@ export default function CartoesScreen() {
     if (resContas.data) setContas(resContas.data as ContaSimples[]);
     if (resArquivados.data) setCartoesArquivados(resArquivados.data.map((c: Cartao) => ({ ...c, cor: CORES_CARTAO.includes(c.cor) ? c.cor : CORES_CARTAO[0] })));
 
-    // Alerta de limite próximo do máximo para cada cartão
-    if (resCartoes.data && resItens.data && session?.user?.id) {
-      const mesAtual = mesAtualStr();
-      const cartoesComLimite = resCartoes.data.map((c: any) => {
-        const limiteUsado = resItens.data!
-          .filter((i: any) =>
-            i.cartao_id === c.id
-            && i.mes_fatura >= mesAtual
-            && !i.pago
-            && (!(i.descricao ?? "").endsWith("(Fixa)") || i.mes_fatura === mesAtual)
-          )
-          .reduce((acc: number, i: any) => acc + Number(i.valor), 0);
-        return {
-          nome: c.nome,
-          dia_vencimento: c.dia_vencimento,
-          dia_fechamento: c.dia_fechamento,
-          limite: Number(c.limite),
-          limite_usado: limiteUsado,
-        };
-      });
-      agendarNotificacoesDoApp([], session.user.id, undefined, cartoesComLimite);
-    }
+    // O aviso de limite acima de 80% é agendado pela tela inicial para a
+    // manhã seguinte; abrir esta tela não dispara notificação.
   }, [session?.user?.id]);
 
   useFocusEffect(useCallback(() => { carregarDados(); }, [carregarDados]));
@@ -698,6 +678,7 @@ export default function CartoesScreen() {
       });
       pagamentoRequestIdRef.current = null;
       setModalPagamento(false);
+      void cancelarLembretesDaFatura(cartaoAberto.id, mesPagamento);
       showToast("Fatura paga ✓", "success");
       await carregarDados();
     } catch (error) {
@@ -742,6 +723,8 @@ export default function CartoesScreen() {
       setModalJuros(false);
       setModalPagamentoParcial(false);
       setModalPagamento(false);
+      // Levar o saldo fecha esta fatura; no pagamento parcial ela segue em aberto.
+      if (levarSaldo) void cancelarLembretesDaFatura(cartaoAberto.id, mesPagamento);
       showToast(levarSaldo ? "Saldo levado para a próxima fatura ✓" : "Pagamento parcial registrado ✓", "success");
       await carregarDados();
     } catch (error) {

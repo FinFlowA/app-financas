@@ -74,8 +74,9 @@ assert.deepEqual(
   ["1/10 19h", "2/10 8h", "2/10 19h", "20/10 8h"],
   "Hoje só o que ainda vai acontecer; 19h só na primeira semana; dias seguintes agendados já.",
 );
-assert.match(agenda[1].corpo, /1 despesa e 1 receita vencendo hoje/);
-assert.match(agenda[0].corpo, /Se já pagou/);
+assert.equal(agenda[1].corpo, "Hoje vencem 1 despesa e 1 receita. Confira os detalhes no FinFlow.");
+assert.equal(agenda[1].titulo, "Vencimentos de hoje");
+assert.equal(agenda[0].corpo, "Ainda há 1 despesa com vencimento hoje. Caso já tenha sido resolvida, marque-a como concluída no FinFlow.");
 const muitas = Array.from({ length: 40 }, (_, i) => {
   const dia = new Date(2026, 9, 2 + (i % 29));
   return { status: "pendente", tipo: "despesa", data_vencimento: `${dia.getFullYear()}-${String(dia.getMonth() + 1).padStart(2, "0")}-${String(dia.getDate()).padStart(2, "0")}` };
@@ -100,7 +101,66 @@ const testeDemo = (async () => {
   assert.deepEqual((await pagina(6, 8)).data.map((t) => t.id), [7], "Última página incompleta encerra a paginação.");
 })();
 
+// Avisos de atraso: sempre agendados (9h), nunca disparados na abertura.
+const pendentes = [
+  { status: "pendente", tipo: "despesa", data_vencimento: "2026-09-28" },
+  { status: "pendente", tipo: "receita", data_vencimento: "2026-09-30" },
+  { status: "pendente", tipo: "despesa", data_vencimento: "2026-10-01" },
+  { status: "pendente", tipo: "despesa", data_vencimento: "2026-10-05" },
+  { status: "paga", tipo: "despesa", data_vencimento: "2026-09-29" },
+];
+const quando = (l) => `${l.quando.getDate()}/${l.quando.getMonth() + 1} ${l.quando.getHours()}h`;
+const depoisDas9 = lembretes.montarLembretesAtraso(pendentes, new Date(2026, 9, 1, 10, 30));
+assert.deepEqual(depoisDas9.map(quando), ["2/10 9h", "6/10 9h"], "Depois das 9h: aviso na manhã seguinte e 'venceu ontem' no dia seguinte a cada vencimento.");
+assert.equal(depoisDas9[0].corpo, "Você tem 2 despesas e 1 receita vencidas que ainda não foram concluídas. Confira no FinFlow.");
+assert.equal(depoisDas9[1].corpo, "Ontem venceu 1 despesa, que ainda está pendente. Caso já tenha sido resolvida, marque-a como concluída no FinFlow.");
+const antesDas9 = lembretes.montarLembretesAtraso(pendentes, new Date(2026, 9, 1, 7, 0));
+assert.deepEqual(antesDas9.map(quando), ["1/10 9h", "2/10 9h", "6/10 9h"], "Antes das 9h: o primeiro aviso sai no mesmo dia.");
+assert.match(antesDas9[0].corpo, /^Você tem 1 despesa e 1 receita vencidas que ainda não foram concluídas/);
+assert.deepEqual(lembretes.montarLembretesAtraso([], new Date(2026, 9, 1, 10, 30)), []);
+
+// Prazo do objetivo: sem valores em reais, só a % que falta e a data.
+const objetivo = { nome: "Viagem", meta_valor: 1000, saldo_atual: 250, data_prazo: "2026-12-20" };
+assert.deepEqual(lembretes.mensagemPrazoObjetivo(objetivo, 7), { titulo: "O prazo do seu objetivo termina em 7 dias", corpo: 'Ainda faltam 75% da meta de "Viagem", com prazo até 20/12/2026.' });
+assert.equal(lembretes.mensagemPrazoObjetivo(objetivo, 1).titulo, "O prazo do seu objetivo termina amanhã");
+assert.equal(lembretes.mensagemPrazoObjetivo(objetivo, 0).titulo, "O prazo do seu objetivo termina hoje");
+assert.match(lembretes.mensagemPrazoObjetivo({ ...objetivo, saldo_atual: 996 }, 3).corpo, /Ainda falta 1% da meta/, "Com qualquer valor faltando, nunca 'faltam 0%'.");
+assert.ok(!/R\$/.test(lembretes.mensagemPrazoObjetivo(objetivo, 7).corpo), "O aviso do objetivo não mostra valores.");
+
+// Limite do cartão, como a tela de Cartões calcula.
+const itensCartao = [
+  { cartao_id: 1, mes_fatura: "2026-10", pago: false, descricao: "Mercado", valor: 100 },
+  { cartao_id: 1, mes_fatura: "2026-11", pago: false, descricao: "Parcela 2/3", valor: "50" },
+  { cartao_id: 1, mes_fatura: "2026-11", pago: false, descricao: "Streaming (Fixa)", valor: 30 },
+  { cartao_id: 1, mes_fatura: "2026-10", pago: false, descricao: "Streaming (Fixa)", valor: 30 },
+  { cartao_id: 1, mes_fatura: "2026-09", pago: false, descricao: "Antiga", valor: 999 },
+  { cartao_id: 1, mes_fatura: "2026-10", pago: true, descricao: "Paga", valor: 999 },
+  { cartao_id: 2, mes_fatura: "2026-10", pago: false, descricao: "Outro cartão", valor: 999 },
+];
+assert.equal(lembretes.limiteUsadoDoCartao(itensCartao, 1, "2026-10"), 180);
+
+const semEmoji = /\p{Extended_Pictographic}/u;
+for (const arquivo of ["lib/notifications.ts", "lib/lembretes-vencimento.ts"]) {
+  assert.ok(!semEmoji.test(fs.readFileSync(path.join(root, arquivo), "utf8")), `As notificações não podem ter emojis (${arquivo}).`);
+}
+
 const notificacoes = fs.readFileSync(path.join(root, "lib", "notifications.ts"), "utf8");
+// Textos naturais, sem travessão ("—") em títulos e mensagens.
+const linhasDosTextos = [
+  ...notificacoes.split(/\r?\n/),
+  ...fs.readFileSync(path.join(root, "lib", "lembretes-vencimento.ts"), "utf8").split(/\r?\n/),
+];
+for (const linha of linhasDosTextos) {
+  if (/\b(title|body|titulo|corpo)\b\s*[:?]/.test(linha)) assert.ok(!linha.includes("—"), `Notificação com travessão: ${linha.trim()}`);
+}
+for (const l of [...agenda, ...depoisDas9, ...antesDas9]) assert.ok(!`${l.titulo} ${l.corpo}`.includes("—"), "Notificação com travessão.");
+// Nada dispara segundos depois de abrir o app: tudo vai para horários fixos.
+assert.ok(!/gatilhoIntervalo\(\d\)/.test(notificacoes), "Nenhuma notificação pode disparar logo após abrir o app.");
+assert.ok(!fs.readFileSync(path.join(root, "app", "_layout.tsx"), "utf8").includes("exibirEventoObrigatorioLocal("),
+  "Abrir o app não pode transformar avisos de parceria em notificação (eles aparecem dentro do app).");
+assert.match(fs.readFileSync(path.join(root, "app", "(tabs)", "cartoes.tsx"), "utf8"), /cancelarLembretesDaFatura\(cartaoAberto\.id, mesPagamento\)/,
+  "Pagar a fatura pelo app precisa cancelar os lembretes de vencimento dela.");
+assert.match(notificacoes, /montarLembretesAtraso\(transacoes, agora\)/, "Os avisos de atraso precisam ser agendados.");
 assert.match(
   notificacoes,
   /montarLembretesVencimento\(transacoes, agora\)/,

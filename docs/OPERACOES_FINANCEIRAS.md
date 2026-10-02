@@ -46,6 +46,26 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - Pagamento da fatura cria a movimentação bancária e marca os itens vinculados.
 - O relatório por categoria usa as compras; o pagamento bancário da fatura é excluído para não duplicar a despesa.
 - Pagamento parcial preserva saldo remanescente; estorno restaura somente itens ligados ao pagamento selecionado.
+- Pagar a fatura pelo app cancela na hora os lembretes de vencimento daquela fatura (`cancelarLembretesDaFatura`). Os lembretes só são agendados para meses com itens ainda não pagos.
+
+## Balanço do mês (Início do app e do site)
+
+- **Entradas e Saídas** somam tudo o que é do mês, inclusive o que ainda vai vencer.
+- **Balanço atual** conta só o que já aconteceu: o que já foi recebido menos o que já foi pago.
+- Na visão com **todas as contas**, cada compra ou parcela do cartão entra em Saídas e no Balanço no mês da fatura em que cai (`mes_fatura`). Uma compra em 10 parcelas conta uma parcela em cada mês. O pagamento bancário da fatura (`[PagFatura:...]`) fica de fora, então o mesmo gasto não é contado duas vezes. Os ajustes técnicos de pagamento parcial ("Pagamento parcial da fatura" e "Saldo da fatura anterior") também ficam de fora.
+- Com **uma conta ou parte das contas** selecionadas, as compras não entram (não têm conta vinculada) e o pagamento da fatura conta como despesa da conta que pagou.
+- Guardar ou resgatar dinheiro de objetivos e transferências entre as contas selecionadas não entram no Balanço.
+- O saldo das contas e o "Saldo previsto no fim do mês" seguem o dinheiro das contas: a compra no cartão só os afeta quando a fatura é paga.
+- No app, tocar em "Balanço atual" abre a explicação com a conta feita (já recebido, já pago e, quando houver, a linha do cartão).
+
+## Fluxo de caixa: considerar atrasados
+
+- Um lançamento está **em atraso** quando ainda não foi concluído e o vencimento é anterior a hoje (data de São Paulo). Lançamentos concluídos nunca são afetados.
+- O filtro "Considerar atrasados" vem ligado. Desligado, os atrasados saem do cálculo do fluxo: saldo previsto, linha do gráfico e valores previstos de cada mês e dia.
+- O filtro não muda o saldo atual das contas, os valores realizados nem a distribuição por categoria (que usa só lançamentos concluídos).
+- A regra fica em `web/src/lib/fluxo-atrasados.ts` (`estaEmAtraso` e `lancamentosDoFluxo`), usada pelo site e pelo app.
+- **Site:** a página monta as duas versões do fluxo (com e sem atrasados) e a troca acontece na tela, sem nova busca ao servidor; a URL guarda a escolha com `atrasados=0`, que segue ao trocar mês, visão e contas. O gráfico anima a mudança e respeita a preferência do sistema por menos movimento.
+- **App:** a escolha vale enquanto a tela estiver aberta.
 
 ## Conciliação bancária
 

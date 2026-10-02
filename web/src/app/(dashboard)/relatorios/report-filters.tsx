@@ -13,12 +13,16 @@ export default function ReportFilters({
   selected,
   accounts,
   view = "monthly",
+  considerarAtrasados = true,
+  onAlternarAtrasados,
 }: {
   year: number;
   month: number;
   selected: number[];
   accounts: AccountOption[];
   view?: "monthly" | "daily";
+  considerarAtrasados?: boolean;
+  onAlternarAtrasados?: () => void;
 }) {
   const router = useRouter();
   const [draftAccounts, setDraftAccounts] = useState(selected);
@@ -36,6 +40,7 @@ export default function ReportFilters({
       accounts: accountIds.join(","),
     });
     if (view === "daily") params.set("view", "daily");
+    if (!considerarAtrasados) params.set("atrasados", "0");
     return `/relatorios?${params.toString()}`;
   }
 
@@ -74,11 +79,13 @@ export default function ReportFilters({
   }
 
   return (
+    <>
     <form action="/relatorios" method="get" className={styles.filters} aria-label="Filtros do fluxo de caixa">
       <input type="hidden" name="year" value={year} />
       <input type="hidden" name="month" value={month + 1} />
       <input type="hidden" name="accounts" value={draftAccounts.join(",")} />
       {view === "daily" && <input type="hidden" name="view" value="daily" />}
+      {!considerarAtrasados && <input type="hidden" name="atrasados" value="0" />}
       <div className={styles.filtersRow}>
         <div className={styles.yearFilter} ref={periodPickerRef}>
           <span className={styles.filterLabel}>{view === "daily" ? "Mês" : "Ano"}</span>
@@ -156,5 +163,27 @@ export default function ReportFilters({
       </div>
       {!draftAccounts.length && <p className={styles.filterError}>Selecione ao menos uma conta para calcular o fluxo.</p>}
     </form>
+    {/* Filtro de atrasados: cartão próprio fora da caixa de filtros e em
+        laranja, como no app, para não parecer mais uma conta. Ligado por
+        padrão; desligado, os pendentes já vencidos saem do cálculo. */}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={considerarAtrasados}
+      data-active={considerarAtrasados}
+      className={styles.overdueToggle}
+      onClick={onAlternarAtrasados}
+    >
+      <svg aria-hidden viewBox="0 0 24 24" className={styles.overdueIcon}>
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M12 7.5V12l3 2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+      <span className={styles.overdueText}>
+        <strong>Considerar atrasados</strong>
+        <small aria-live="polite">{considerarAtrasados ? "Pendentes vencidos entram no saldo previsto." : "Pendentes vencidos estão fora do cálculo."}</small>
+      </span>
+      <span aria-hidden className={styles.overdueSwitch} />
+    </button>
+    </>
   );
 }

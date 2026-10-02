@@ -104,6 +104,7 @@ A referência atual está no [índice de documentação](./docs/README.md):
 - [Ambientes e variáveis](./docs/AMBIENTES_E_VARIAVEIS.md)
 - [Banco de dados](./docs/BANCO_DE_DADOS.md)
 - [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md)
+- [Notificações](./docs/NOTIFICACOES.md)
 - [Pagamentos e planos](./docs/PAGAMENTOS_E_PLANOS.md)
 - [Assistente Finn](./docs/ASSISTENTE_FINN.md)
 - [Rotas e telas](./docs/ROTAS_E_TELAS.md)
@@ -302,6 +303,25 @@ binário, e não deve ser misturada com as correções funcionais sem teste nati
 O leitor não extrai dados de PDF nesta versão. Converta o extrato para CSV ou
 OFX antes da importação; essa limitação evita interpretar incorretamente PDFs
 com layouts bancários não padronizados.
+
+### Atualização de notificações, fluxo de caixa e Balanço — 02/10/2026
+
+- **Notificações do app:** nenhum aviso chega ao abrir o app; todos têm
+  horário fixo. Os textos ficaram mais naturais e formais, sem emojis e sem
+  travessão. Os lembretes de vencimento de uma fatura param quando ela é paga,
+  e o aviso de prazo dos objetivos mostra a porcentagem que falta e a data
+  final, sem valores. Detalhes em [Notificações](./docs/NOTIFICACOES.md).
+- **Filtro "Considerar atrasados"** no fluxo de caixa do site e do app.
+  Desligado, os lançamentos vencidos e não concluídos saem do saldo previsto e
+  do gráfico. No site, a troca é instantânea e o gráfico anima a mudança.
+- **Cartão no Balanço do mês:** com todas as contas, cada compra ou parcela
+  entra em Saídas e no Balanço no mês da fatura; o pagamento da fatura fica de
+  fora para não contar duas vezes. Regras em
+  [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md).
+- **Teste de carga:** `scripts/carga/teste-carga.cjs` simula pessoas usando o
+  Início e lançando despesas, em ondas, contra um projeto Supabase de teste
+  (recusa o de produção). Ainda não foi executado; uso em
+  [Testes](./docs/TESTES.md).
 
 ## Deploy do site
 
