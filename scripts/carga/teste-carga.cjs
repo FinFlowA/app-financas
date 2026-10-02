@@ -173,18 +173,27 @@ async function abrirInicio(publica, sessao, registrar) {
   const inicio = performance.now();
   const rpc = await http("POST", "/rest/v1/rpc/refresh_my_recurring_schedules", { ...opcoes, corpo: {} });
   registrar("rpc_recorrencias", rpc);
+  // As contas vêm antes porque o filtro das transações usa os ids delas
+  // (como o app faz desde 02/10/2026, ver web/src/lib/transacoes-visiveis.ts).
+  const contas = (async () => {
+    const r = await http("GET", "/rest/v1/contas?select=*", opcoes);
+    registrar("contas", r);
+    return r;
+  })();
   const consultas = [
     ["categorias", `/rest/v1/categorias?select=*&user_id=eq.${sessao.userId}`],
-    ["contas", "/rest/v1/contas?select=*"],
     ["parcerias", `/rest/v1/parcerias?select=id,solicitante_id,convidado_id&status=eq.aceito&or=(solicitante_id.eq.${sessao.userId},convidado_id.eq.${sessao.userId})`],
     ["caixinhas", "/rest/v1/caixinhas?select=id,nome,saldo_atual,meta_valor,data_prazo,cor,icone"],
     ["cartoes", `/rest/v1/cartoes?select=id,nome,dia_vencimento,dia_fechamento&user_id=eq.${sessao.userId}&ativo=eq.true`],
     ["fatura_itens", `/rest/v1/fatura_itens?select=id,cartao_id,descricao,valor,data_compra,mes_fatura,categoria_id,pago&user_id=eq.${sessao.userId}`],
   ];
   const todasTransacoes = (async () => {
+    const rContas = await contas;
+    const ids = Array.isArray(rContas.json) ? rContas.json.map((conta) => conta.id).join(",") : "";
+    const filtro = encodeURIComponent(ids ? `(user_id.eq.${sessao.userId},conta_id.in.(${ids}))` : `(user_id.eq.${sessao.userId})`);
     for (let pagina = 0; pagina < 50; pagina += 1) {
       const de = pagina * 1000;
-      const r = await http("GET", `/rest/v1/transacoes?select=id,tipo,valor,data_vencimento,data_realizacao,descricao,categoria_id,conta_id,status,transacao_pai_id&order=id.asc&offset=${de}&limit=1000`, opcoes);
+      const r = await http("GET", `/rest/v1/transacoes?select=id,tipo,valor,data_vencimento,data_realizacao,descricao,categoria_id,conta_id,status,transacao_pai_id&or=${filtro}&order=id.asc&offset=${de}&limit=1000`, opcoes);
       registrar("transacoes_pagina", r);
       if (r.status !== 200 || !Array.isArray(r.json) || r.json.length < 1000) return;
     }
@@ -195,7 +204,8 @@ async function abrirInicio(publica, sessao, registrar) {
     return r;
   }));
   await todasTransacoes;
-  const falhou = rpc.status >= 300 || rpc.status === 0 || resultados.some((r) => r.status !== 200);
+  const rContas = await contas;
+  const falhou = rpc.status >= 300 || rpc.status === 0 || rContas.status !== 200 || resultados.some((r) => r.status !== 200);
   registrar("abrir_inicio", { status: falhou ? 500 : 200, ms: performance.now() - inicio });
 }
 

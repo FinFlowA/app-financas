@@ -4,6 +4,7 @@ import { invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { calcularSaldosPorConta, dataEfetivaTransacao, descricaoVisivel, getOperacaoObjetivo, isMovimentoObjetivo, isPagamentoFatura, transacoesNoEscopo } from "@/lib/transacoes";
 import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
@@ -101,12 +102,19 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const detailMonthIndex = validMonth(params.month, year === currentYear ? currentMonthIndex : 11);
   const detailMonth = `${year}-${String(detailMonthIndex + 1).padStart(2, "0")}`;
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
   const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult, entitlementResult] = await Promise.all([
-    fetchAllRows((from, to) => supabase
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase
       .from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
+      .or(filtro)
       .order("id")
-      .range(from, to)),
+      .range(from, to))),
     fetchAllRows((from, to) => supabase.from("categorias").select("id, user_id, nome, cor, icone, tipo, ativa, bloqueado_plano, version").range(from, to)),
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").eq("arquivado", false).order("nome"),
     fetchAllRows((from, to) => supabase

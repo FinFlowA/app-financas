@@ -11,7 +11,7 @@ export default function PrivacyPage() {
     <LegalShell
       eyebrow="Documento legal"
       title="Política de Privacidade"
-      updatedAt="8 de agosto de 2026"
+      updatedAt="2 de outubro de 2026"
       description="Entenda quais dados são tratados, para quais finalidades e como exercer seus direitos sob a LGPD."
     >
       <LegalSection title="1. Responsáveis pelo tratamento">
@@ -26,7 +26,7 @@ export default function PrivacyPage() {
             ["Dados financeiros", "Contas, saldos, receitas, despesas, categorias, objetivos, cartões, compras e faturas inseridos pelo usuário."],
             ["Compartilhamento", "Convites, vínculo com parceiro, escolhas de compartilhamento e registros da separação."],
             ["Suporte", "Feedback, sugestões, reclamações e mensagens enviadas à equipe."],
-            ["Dispositivo", "Permissão de notificação, preferências locais, fila temporária de operações e dados técnicos necessários."],
+            ["Dispositivo", "Permissão de notificação, token de notificação push do aparelho, preferências locais, fila temporária de operações e dados técnicos necessários."],
             ["Interações com IA", "Perguntas, respostas, contexto financeiro mínimo e métricas técnicas quando o assistente é acionado."],
             ["Assinatura", "Plano, periodicidade, status, identificadores técnicos e datas da cobrança; dados do cartão ficam com o provedor."],
           ].map(([title, text]) => (
@@ -37,6 +37,8 @@ export default function PrivacyPage() {
           ))}
         </div>
         <p>As preferências financeiras e a permissão do navegador ficam localmente no dispositivo. Avisos obrigatórios de parceria são persistidos para que possam ser consultados no FinFlow.</p>
+        <p>No aplicativo, os lembretes financeiros, como vencimentos, faturas, limite do cartão e prazos de objetivos, são programados localmente no aparelho e não passam pelo servidor.</p>
+        <p>Os avisos de parceria, como convites e respostas, são enviados por notificação push, para chegarem mesmo com o aplicativo fechado. Para isso, quando a permissão de notificação é concedida no aplicativo instalado, o FinFlow registra no servidor o token de push do aparelho, a plataforma (Android ou iOS), as datas de registro e um código derivado da instalação, que impede que outra conta assuma esse token. O envio passa pelo serviço de push da Expo, que o entrega pelos serviços do Google ou da Apple, e leva apenas o título e o texto do aviso, além de identificadores técnicos para abrir a tela certa. Nenhum dado financeiro é enviado por push.</p>
       </LegalSection>
 
       <LegalSection title="3. Bases legais e usos">
@@ -49,7 +51,7 @@ export default function PrivacyPage() {
         <LegalList>
           <li><strong className="text-foreground">Supabase:</strong> autenticação e banco de dados;</li>
           <li><strong className="text-foreground">Brevo:</strong> entrega de e-mails transacionais;</li>
-          <li><strong className="text-foreground">Expo:</strong> distribuição técnica e atualizações do aplicativo;</li>
+          <li><strong className="text-foreground">Expo:</strong> distribuição técnica, atualizações do aplicativo e envio das notificações push dos avisos de parceria;</li>
           <li><strong className="text-foreground">Mercado Pago:</strong> checkout, cobrança recorrente e confirmação da assinatura;</li>
           <li><strong className="text-foreground">OpenAI ou Groq:</strong> processamento do assistente, somente quando o recurso for acionado.</li>
         </LegalList>
@@ -70,6 +72,7 @@ export default function PrivacyPage() {
 
       <LegalSection title="6. Retenção e segurança">
         <p>Os dados são mantidos enquanto a conta estiver ativa e pelo tempo necessário às finalidades informadas, ao cumprimento de obrigações legais, à prevenção de fraude e ao exercício de direitos. Após pedido de exclusão, os dados são excluídos ou anonimizados, ressalvadas hipóteses legais de retenção e cópias temporárias de segurança.</p>
+        <p>O token de push do aparelho é removido ao sair da conta nesse aparelho, quando o serviço de push informa que ele não recebe mais notificações (por exemplo, depois de desinstalar o aplicativo) e na exclusão da conta.</p>
         <p>Conversas, propostas e auditoria operacional do assistente são eliminadas por rotina global diária quando ultrapassam 30 dias, salvo necessidade legal. Métricas técnicas sem conteúdo de conversa ou dados financeiros são eliminadas quando ultrapassam 90 dias. Propostas não confirmadas expiram rapidamente e não podem ser reutilizadas.</p>
         <p>São adotadas medidas razoáveis de segurança, incluindo autenticação, conexões protegidas, controle de acesso por usuário, operações financeiras atômicas e confirmação do status de cobrança com o provedor. Nenhum sistema é totalmente imune; incidentes relevantes serão tratados conforme exige a Lei Geral de Proteção de Dados (LGPD), inclusive quanto à comunicação à Autoridade Nacional de Proteção de Dados e aos titulares quando aplicável.</p>
       </LegalSection>

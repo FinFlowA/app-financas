@@ -19,6 +19,7 @@ import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { lancamentosDoFluxo } from "../../web/src/lib/fluxo-atrasados";
+import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
   dataEfetivaTransacao,
@@ -161,13 +162,18 @@ export default function RelatoriosScreen() {
   const carregarDados = useCallback(async () => {
     if (!session?.user?.id) return;
     try {
+      // Uma promessa só para as contas (todas as visíveis), usada também no
+      // filtro explícito das transações: o banco usa os índices em vez de ler
+      // a tabela inteira (ver web/src/lib/transacoes-visiveis.ts).
+      const promessaContas = Promise.resolve(supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"));
       const [resT, resC] = await Promise.all([
-        fetchAllRows<Transacao>((from, to) => supabase
+        promessaContas.then((contasVisiveis) => fetchAllRows<Transacao>((from, to) => supabase
           .from("transacoes")
           .select("valor, tipo, status, data_vencimento, data_realizacao, conta_id, descricao")
+          .or(filtroTransacoesVisiveis(session.user.id, (contasVisiveis.data ?? []).map((conta: { id: number }) => conta.id)))
           .order("id", { ascending: true })
-          .range(from, to)),
-        supabase.from("contas").select("id, nome, cor, saldo_inicial, arquivado"),
+          .range(from, to))),
+        promessaContas,
       ]);
       if (resT.error || resC.error) throw new Error(resT.error?.message ?? resC.error?.message ?? "Falha ao carregar o fluxo de caixa.");
       setTransacoes(resT.data ?? []);

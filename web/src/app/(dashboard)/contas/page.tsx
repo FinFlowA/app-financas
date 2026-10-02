@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { calcularSaldosPorConta } from "@/lib/transacoes";
 import { formatarReais } from "@/lib/format";
@@ -7,14 +8,21 @@ import AccountManager from "./account-manager";
 
 export default async function ContasPage() {
   const supabase = await createClient();
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
+  // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
+  filtroVisiveis.catch(() => undefined);
   const { data: authData } = await supabase.auth.getUser();
   if (!authData.user) throw new Error("Sessão inválida.");
   const [contasResult, transacoesResult, partnershipResult] = await Promise.all([
     supabase.from("contas").select("id, user_id, nome, cor, saldo_inicial, arquivado, compartilhado, version").order("arquivado").order("nome"),
-    fetchAllRows((from, to) => supabase.from("transacoes")
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase.from("transacoes")
       .select("id, conta_id, tipo, valor, descricao, status, data_vencimento, data_realizacao")
+      .or(filtro)
       .order("id")
-      .range(from, to)),
+      .range(from, to))),
     supabase.from("parcerias")
       .select("id, solicitante_id, convidado_id")
       .eq("status", "aceito")

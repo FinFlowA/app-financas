@@ -27,6 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { fetchAllRows } from "../../lib/supabase-pagination";
 import { isInvoicePaymentAdjustment } from "../../lib/invoice-operations";
+import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
 import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
@@ -753,14 +754,20 @@ export default function Dashboard() {
 
     try {
       if (!IS_LOCAL_DEMO) await supabase.rpc("refresh_my_recurring_schedules");
+      // RLS retorna as contas próprias + as compartilhadas do parceiro. Uma
+      // promessa só, usada duas vezes, para a consulta não rodar em dobro.
+      const promessaContas = Promise.resolve(supabase.from("contas").select("*"));
       const [resCategorias, resContas, resTransacoes, resParceria, resCaixinhas, resCartoes, resFaturas] = await Promise.all([
         supabase.from("categorias").select("*").eq("user_id", session.user.id),
-        supabase.from("contas").select("*"),        // RLS retorna próprias + compartilhadas do parceiro
-        fetchAllRows<Transacao>((from, to) => supabase
+        promessaContas,
+        // Filtro explícito pelas contas visíveis: o banco usa os índices em vez
+        // de ler a tabela inteira (ver web/src/lib/transacoes-visiveis.ts).
+        promessaContas.then((contasVisiveis) => fetchAllRows<Transacao>((from, to) => supabase
           .from("transacoes")
           .select("id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, transacao_pai_id")
+          .or(filtroTransacoesVisiveis(session.user.id, (contasVisiveis.data ?? []).map((conta: { id: number }) => conta.id)))
           .order("id", { ascending: true })
-          .range(from, to)), // RLS retorna próprias + compartilhadas
+          .range(from, to))),
         supabase.from("parcerias").select("id, solicitante_id, convidado_id").eq("status", "aceito").or(
           `solicitante_id.eq.${session.user.id},convidado_id.eq.${session.user.id}`
         ),

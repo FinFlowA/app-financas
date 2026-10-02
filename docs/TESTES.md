@@ -64,11 +64,27 @@ node scripts/carga/teste-carga.cjs limpar <ref-do-projeto-de-teste>
 - `limpar` apaga as contas de teste e o arquivo temporário.
 - As chaves do projeto vêm da Supabase CLI (é preciso estar logado) e ficam só na memória.
 
-O plano gratuito do Supabase tem limites de conexões e de processamento; use os resultados para comparar mudanças, não como capacidade final da produção.
+O plano gratuito do Supabase tem limites de conexões e de processamento; use os resultados para comparar mudanças, não como capacidade final da produção. Rodadas pesadas seguidas esgotam o crédito de CPU do plano gratuito. Nesse caso, até consultas triviais passam de 1 s; espere alguns minutos antes de medir de novo.
+
+### Resultados de 02/10/2026
+
+Projeto de teste `ejqurfswcmhwfjpgpzdz` (us-east-1, plano gratuito): 200 contas com ~600 lançamentos cada (~120 mil no total) e 5 contas fixas de 60 meses por pessoa. Cada "pessoa" é um robô que abre o Início a cada 1 a 3 segundos sem parar, muito mais do que alguém de verdade faz.
+
+| Pessoas simultâneas | Antes: aberturas do Início/s · 95% em até | Depois: aberturas/s · 95% em até |
+|---|---|---|
+| 20 | 5,5/s · 2,6 s | 7,6/s · 0,8 s |
+| 50 | 4,6/s · 14,7 s | 18,8/s · 1,0 s, sem erros |
+| 100 | 5,0/s · 31,6 s (limite) | 6,3/s · 32,6 s (limite da CPU do plano gratuito) |
+
+Tempo de banco de cada abertura do Início, sem concorrência:
+- `refresh_my_recurring_schedules`: de ~220 ms para ~13 ms;
+- lista de lançamentos: de ~200 ms para ~2 ms.
+
+Antes, o limite era o código: com 20 robôs o banco já não passava de ~5 aberturas por segundo. Depois da migration `20261002160000_desempenho_regras_de_acesso.sql` e do filtro de transações, o limite passou a ser a CPU do plano gratuito, em torno de 19 aberturas por segundo. A partir daí, crescer depende de subir o plano de computação do Supabase.
 
 ## Banco (pgTAP)
 
-`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net` e registro de push) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
+`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso e renovação das séries fixas) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
 
 ```bash
 supabase db start

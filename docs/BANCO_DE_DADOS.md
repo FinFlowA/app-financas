@@ -83,6 +83,16 @@ auth.users
 - Recursos arquivados preservam o histórico.
 - `service_role` existe apenas no servidor e não substitui a verificação do evento externo.
 
+### Desempenho das regras de acesso
+
+O teste de carga de 02/10/2026 (`scripts/carga/teste-carga.cjs`, ver `TESTES.md`) mostrou que regras escritas como "dono = eu OU função(linha)" impedem o uso de índice: o banco lia a tabela de **todos** os usuários a cada consulta, e o custo crescia com o número de pessoas. Desde a migration `20261002160000_desempenho_regras_de_acesso.sql`:
+
+- **Parceiros:** use `user_id = any ((select public.ids_parceiros_do_usuario())::uuid[])`, que calcula a lista uma vez por consulta. Não use `public.is_parceiro(user_id, auth.uid())` dentro de um `OR` em regras de leitura. O `::uuid[]` é obrigatório: sem ele, `any((select ...))` é lido como subconsulta.
+- **Transações:** a regra de leitura compara `conta_id = any (array(<contas visíveis>))` em vez de um `EXISTS` por linha.
+- **Consultas paginadas de `transacoes`** (`order by id` com `range`) no app e no site enviam também o filtro explícito de `web/src/lib/transacoes-visiveis.ts` (próprias **ou** das contas visíveis). Com valores escritos na consulta, o banco usa os índices de `user_id` e `conta_id`. A regra de acesso continua valendo por cima. Telas novas devem fazer o mesmo; `transacoes-visiveis.test.ts` confere as atuais.
+- **`refresh_my_recurring_schedules`** roda a cada abertura do Início no app e a cada página do site. Ela precisa continuar barata quando não há nada a criar: nada de comparar cada lançamento com todos os outros.
+- `supabase/tests/desempenho_rls.test.sql` e `desempenho_recorrencias.test.sql` garantem que essas reescritas mostram e criam exatamente o mesmo que as versões anteriores.
+
 ## RPCs públicas importantes
 
 | RPC | Uso |

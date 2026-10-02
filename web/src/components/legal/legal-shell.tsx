@@ -39,16 +39,11 @@ export default function LegalShell({
           <Link href="/" className="ff-focus rounded-full border border-border bg-surface/80 px-4 py-2 text-sm font-bold text-foreground-muted hover:border-primary hover:text-foreground">Abrir FinFlow</Link>
         </div>
         <header className={`ff-page-hero p-6 sm:p-9 ${styles.hero}`}>
-          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-start">
-            <div>
-              <p className="text-xs font-extrabold uppercase tracking-[.14em] text-white/70">{eyebrow}</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{title}</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/80">{description}</p>
-              <p className="mt-3 text-xs font-bold text-white/70">Última atualização: {updatedAt}</p>
-            </div>
-            <Link href="/configuracoes" className="ff-focus self-start rounded-full border border-white/25 bg-white/15 px-4 py-2 text-sm font-bold text-white hover:bg-white/20">
-              Configurações
-            </Link>
+          <div>
+            <p className="text-xs font-extrabold uppercase tracking-[.14em] text-white/70">{eyebrow}</p>
+            <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">{title}</h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-white/80">{description}</p>
+            <p className="mt-3 text-xs font-bold text-white/70">Última atualização: {updatedAt}</p>
           </div>
         </header>
 
