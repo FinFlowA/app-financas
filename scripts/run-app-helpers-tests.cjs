@@ -139,6 +139,13 @@ const itensCartao = [
 ];
 assert.equal(lembretes.limiteUsadoDoCartao(itensCartao, 1, "2026-10"), 180);
 
+// Aviso de limite do cartão: só porcentagens, sem valores em reais.
+assert.deepEqual(lembretes.mensagemLimiteCartao({ nome: "Nubank", limite: 2000, limite_usado: 1700 }), { titulo: "Cartão Nubank com 85% do limite usado", corpo: "Ainda restam 15% do limite disponível." });
+assert.equal(lembretes.mensagemLimiteCartao({ nome: "Nubank", limite: 2000, limite_usado: 1975 }).corpo, "Ainda resta 1% do limite disponível.");
+assert.equal(lembretes.mensagemLimiteCartao({ nome: "Nubank", limite: 2000, limite_usado: 1995 }).corpo, "Não há mais limite disponível neste cartão.", "Nunca promete limite que não existe.");
+assert.equal(lembretes.mensagemLimiteCartao({ nome: "Nubank", limite: 2000, limite_usado: 2300 }).titulo, "Cartão Nubank com 115% do limite usado");
+assert.ok(!/R$/.test(JSON.stringify(lembretes.mensagemLimiteCartao({ nome: "Nubank", limite: 2000, limite_usado: 1700 }))), "O aviso do limite não mostra valores.");
+
 const semEmoji = /\p{Extended_Pictographic}/u;
 for (const arquivo of ["lib/notifications.ts", "lib/lembretes-vencimento.ts"]) {
   assert.ok(!semEmoji.test(fs.readFileSync(path.join(root, arquivo), "utf8")), `As notificações não podem ter emojis (${arquivo}).`);
