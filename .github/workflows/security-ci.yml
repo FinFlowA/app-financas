@@ -120,7 +120,7 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@v4
-      - uses: supabase/setup-cli@v1
+      - uses: supabase/setup-cli@v3
         with:
           version: 2.118.0
       # Projeto Supabase descartável dentro do runner, só com as migrations e

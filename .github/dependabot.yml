@@ -1,22 +1,39 @@
 version: 2
 updates:
+  # App (Expo). As versões dos pacotes nativos são definidas pelo Expo SDK e
+  # só podem mudar junto com um build novo do app: o CI publica cada merge na
+  # main por EAS Update, e um pacote nativo novo chegaria aos aparelhos sem o
+  # código nativo correspondente, quebrando o app. Por isso as atualizações de
+  # versão do app ficam desligadas aqui (limite 0) e são feitas à mão, com
+  # `npx expo install --fix`, junto com a troca de SDK e um build novo
+  # (ver docs/SEGURANCA.md#dependências).
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
-    groups:
-      expo-metro:
-        patterns:
-          - "expo*"
-          - "@expo/*"
-          - "metro*"
+    open-pull-requests-limit: 0
 
+  # Site (Next.js). Correções e versões menores vêm num único pedido por
+  # semana. Versões principais de ferramentas que dependem de outras peças
+  # (eslint, vitest e @types/node, que deve acompanhar o Node usado em
+  # produção) são atualizadas à mão quando o resto suportar.
   - package-ecosystem: "npm"
     directory: "/web"
     schedule:
       interval: "weekly"
-    open-pull-requests-limit: 10
+    open-pull-requests-limit: 5
+    groups:
+      site-menores:
+        update-types:
+          - "minor"
+          - "patch"
+    ignore:
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "vitest"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: "github-actions"
     directory: "/"
