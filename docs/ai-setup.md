@@ -175,7 +175,8 @@ Compatibilidade segura com dados antigos:
 
 - recorrências antigas sem `[Serie:...]` aceitam somente operação individual, pois duas agendas idênticas não podem ser separadas com segurança; parcelamentos antigos numerados ainda aceitam operação em massa quando o servidor comprova mesmo criador, conta, tipo, categoria, valor, total, mês-base e índices sem duplicidade;
 - movimentações sem `[Objetivo:...]` só são associadas pelo nome quando existe exatamente um objetivo acessível correspondente;
-- em parcelamentos, `value` representa o total e `installment_value` uma parcela. Exemplo: `3x R$ 100` resulta em `value=300`, `installments=3` e `installment_value=100`.
+- em parcelamentos, `value` representa o total e `installment_value` uma parcela. Exemplo: `3x R$ 100` resulta em `value=300`, `installments=3` e `installment_value=100`;
+- desde a migration `20261005120000_periodicidade_das_parcelas.sql`, `create_transaction` e `transfer_between_accounts` aceitam `installment_frequency` (`semanal`, `mensal` ou `anual`; sem ele, as parcelas são mensais), só junto com `frequency=parcelada`. Não existe frequência diária. O app e o site já enviam esse campo; o Finn ainda não (ver `CONTINUIDADE.md`).
 7. Conferir a telemetria de quantidade de tokens e configurar um limite de gastos no painel do provedor. A telemetria não guarda prompt, contexto nem resposta.
 8. Só então publicar o bundle do aplicativo.
 

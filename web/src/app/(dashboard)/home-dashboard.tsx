@@ -40,7 +40,7 @@ type Props = {
   invoiceItems: FaturaItem[];
 };
 
-type IconName = "arrow-left-right" | "bell" | "calendar" | "category" | "chevron" | "income" | "plus" | "receipt" | "sparkles" | "wallet";
+type IconName = "arrow-left-right" | "bell" | "calendar" | "card" | "category" | "chevron" | "income" | "info" | "plus" | "receipt" | "sparkles" | "target" | "wallet";
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   const common = { width: size, height: size, viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, "aria-hidden": true };
@@ -54,6 +54,9 @@ function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
   if (name === "sparkles") return <svg {...common}><path d="m12 3 1.2 3.8L17 8l-3.8 1.2L12 13l-1.2-3.8L7 8l3.8-1.2L12 3ZM18.5 14l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3ZM5 13l.8 2.5 2.5.8-2.5.8L5 19.5l-.8-2.4-2.5-.8 2.5-.8L5 13Z"/></svg>;
   if (name === "wallet") return <svg {...common}><path d="M4 6.5h14a2 2 0 0 1 2 2V19H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h12"/><path d="M15 11h6v5h-6a2.5 2.5 0 0 1 0-5Z"/></svg>;
   if (name === "chevron") return <svg {...common}><path d="m9 18 6-6-6-6"/></svg>;
+  if (name === "info") return <svg {...common}><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></svg>;
+  if (name === "card") return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M3 10h18M7 15h4"/></svg>;
+  if (name === "target") return <svg {...common}><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>;
   return <svg {...common}><path d="M12 5v14M5 12h14"/></svg>;
 }
 
@@ -86,11 +89,17 @@ function safeColor(value?: string | null) {
   return value && /^(#[0-9a-f]{3,8}|rgb\([\d\s,.%]+\)|hsl\([\d\s,.%]+\))$/i.test(value) ? value : "#34a164";
 }
 
-function SummaryValue({ label, value, tone = "neutral" }: { label: string; value: number; tone?: "income" | "expense" | "neutral" }) {
-  return <div className={styles.summaryValue}>
-    <p className={`${styles.summaryLabel} ${tone === "income" ? styles.incomeText : tone === "expense" ? styles.expenseText : ""}`}>{label}</p>
+function SummaryValue({ label, value, tone = "neutral", onExplain }: { label: string; value: number; tone?: "income" | "expense" | "neutral"; onExplain?: () => void }) {
+  const content = <>
+    <p className={`${styles.summaryLabel} ${tone === "income" ? styles.incomeText : tone === "expense" ? styles.expenseText : ""}`}>
+      {label}{onExplain && <span className={styles.summaryInfo}><Icon name="info" size={13} /></span>}
+    </p>
     <p data-private-value="true" className={`${styles.summaryAmount} ${tone === "expense" ? styles.expenseText : ""}`}>{formatarReais(value)}</p>
-  </div>;
+  </>;
+  // Com explicação, o valor inteiro vira botão (mesmo comportamento do app).
+  return onExplain
+    ? <button type="button" onClick={onExplain} className={`${styles.summaryValue} ${styles.summaryButton}`} aria-label={`Entender o ${label}`} aria-haspopup="dialog">{content}</button>
+    : <div className={styles.summaryValue}>{content}</div>;
 }
 
 export default function HomeDashboard({ userId, displayName, greeting, month, today, accounts, cards, goals, transactions, categories, invoiceItems }: Props) {
@@ -98,6 +107,7 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   const [monthPending, startMonthTransition] = useTransition();
   const [newTransactionKind, setNewTransactionKind] = useState<HomeTransactionKind | null>(null);
   const [payChoiceOpen, setPayChoiceOpen] = useState(false);
+  const [balanceInfoOpen, setBalanceInfoOpen] = useState(false);
   const activeAccounts = useMemo(() => accounts.filter((account) => !account.arquivado), [accounts]);
   const activeIds = useMemo(() => new Set(activeAccounts.map((account) => account.id)), [activeAccounts]);
   const [selectedIds, setSelectedIds] = useState<number[]>(() => activeAccounts.map((account) => account.id));
@@ -242,6 +252,8 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
       predictedBalance,
       realizedIncome,
       realizedExpense: realizedExpense + cardMonth,
+      paidExpense: realizedExpense,
+      cardMonth,
       byCategory,
       balances,
     };
@@ -340,8 +352,9 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
   const upcoming = useMemo(() => listUpcomingTransactions(scoped, today, nextDate), [nextDate, scoped, today]);
 
   const expectedExpenseProgress = calculations.expense > 0 ? Math.min(100, Math.max(0, (calculations.realizedExpense / calculations.expense) * 100)) : 0;
-  const flowTotal = calculations.income + calculations.expense;
-  const incomeShare = flowTotal > 0 ? Math.max(0, Math.min(100, (calculations.income / flowTotal) * 100)) : 0;
+  // A Visão do mês mostra o que já aconteceu: Entradas − Saídas = Balanço atual.
+  const flowTotal = calculations.realizedIncome + calculations.realizedExpense;
+  const incomeShare = flowTotal > 0 ? Math.max(0, Math.min(100, (calculations.realizedIncome / flowTotal) * 100)) : 0;
   const topCategory = categoryRows[0];
 
   function applySelection() {
@@ -355,6 +368,19 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     setMonthMenuOpen(false);
     startMonthTransition(() => router.push(`/?month=${nextMonth}`));
   }
+
+  useEffect(() => {
+    if (!balanceInfoOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setBalanceInfoOpen(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [balanceInfoOpen]);
+
+  const scopeLabel = allActiveSelected
+    ? "Todas as contas"
+    : selectedAccounts.length === 1 ? selectedAccounts[0].nome : `${selectedAccounts.length} contas`;
+  const pendingIncome = Math.max(0, calculations.income - calculations.realizedIncome);
+  const pendingExpense = Math.max(0, calculations.expense - calculations.realizedExpense);
 
   function closeOverduePopup() {
     sessionStorage.setItem(`finflow:web:overdue-popup:${userId}:${overdueSignature}`, "seen");
@@ -410,12 +436,22 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     </header>
 
     <section className={styles.hero}>
-      <svg className={styles.heroWaves} viewBox="0 0 1200 280" preserveAspectRatio="none" aria-hidden="true">
-        <defs><linearGradient id="home-wave-a" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#6fcb84" stopOpacity=".58"/><stop offset="1" stopColor="#2a8552" stopOpacity=".08"/></linearGradient><linearGradient id="home-wave-b" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#34a164" stopOpacity=".42"/><stop offset="1" stopColor="#123a24" stopOpacity="0"/></linearGradient></defs>
-        <path className={styles.heroWavePrimary} d="M-70 55C130 12 283-38 409 39c107 65 91 151 237 142 136-9 227-135 406-126 88 4 152 38 220 91v161H-70Z" fill="url(#home-wave-a)"/>
-        <path className={styles.heroWaveSecondary} d="M-30 125C165 85 258 15 405 96c113 62 177 147 333 104 137-38 227-124 484-71v178H-30Z" fill="url(#home-wave-b)"/>
-        <path className={styles.heroWaveLine} d="M34 44c207-38 339 6 425 81 93 82 202 109 341 45 114-53 211-96 383-51" fill="none" stroke="#96dea4" strokeOpacity=".22"/>
-      </svg>
+      {/* Uma onda por <svg>: a animação move o <svg> inteiro e roda na placa de
+          vídeo. Animar o <path> obrigava o navegador a recalcular e repintar o
+          cartão a cada quadro, mesmo com a tela parada. */}
+      <div className={styles.heroWaves} aria-hidden="true">
+        <svg className={styles.heroWavePrimary} viewBox="0 0 1200 280" preserveAspectRatio="none">
+          <defs><linearGradient id="home-wave-a" x1="0" y1="0" x2="1" y2="1"><stop stopColor="#6fcb84" stopOpacity=".58"/><stop offset="1" stopColor="#2a8552" stopOpacity=".08"/></linearGradient></defs>
+          <path d="M-70 55C130 12 283-38 409 39c107 65 91 151 237 142 136-9 227-135 406-126 88 4 152 38 220 91v161H-70Z" fill="url(#home-wave-a)"/>
+        </svg>
+        <svg className={styles.heroWaveSecondary} viewBox="0 0 1200 280" preserveAspectRatio="none">
+          <defs><linearGradient id="home-wave-b" x1="0" y1="0" x2="1" y2="0"><stop stopColor="#34a164" stopOpacity=".42"/><stop offset="1" stopColor="#123a24" stopOpacity="0"/></linearGradient></defs>
+          <path d="M-30 125C165 85 258 15 405 96c113 62 177 147 333 104 137-38 227-124 484-71v178H-30Z" fill="url(#home-wave-b)"/>
+        </svg>
+        <svg className={styles.heroWaveLine} viewBox="0 0 1200 280" preserveAspectRatio="none">
+          <path d="M34 44c207-38 339 6 425 81 93 82 202 109 341 45 114-53 211-96 383-51" fill="none" stroke="#96dea4" strokeOpacity=".22"/>
+        </svg>
+      </div>
       <div className={styles.heroBalance}>
         <div className={styles.balanceLabelRow}>
           <span>Saldo geral</span>
@@ -464,15 +500,15 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
             <span>{monthTitle(month)}</span>
           </div>
           <div className={styles.summaryGrid}>
-            <SummaryValue label="Entradas" value={calculations.income} tone="income" />
-            <SummaryValue label="Balanço atual" value={calculations.monthBalance} />
-            <SummaryValue label="Saídas" value={calculations.expense} tone="expense" />
+            <SummaryValue label="Entradas" value={calculations.realizedIncome} tone="income" />
+            <SummaryValue label="Balanço atual" value={calculations.monthBalance} onExplain={() => setBalanceInfoOpen(true)} />
+            <SummaryValue label="Saídas" value={calculations.realizedExpense} tone="expense" />
           </div>
           <div className={styles.flowBar} aria-label={flowTotal > 0 ? `${incomeShare.toFixed(0)}% do fluxo é entrada` : "Ainda não há movimentações no mês"}>
             {flowTotal > 0 ? <><span className={styles.flowIncome} style={{ width: `${incomeShare}%` }} /><span className={styles.flowExpense} style={{ width: `${100 - incomeShare}%` }} /></> : <span className={styles.flowEmpty} />}
           </div>
           <div className={styles.progressLegend}>
-            <span><i className={styles.realizedLegend}/><span data-private-value="true">Realizado: {formatarReais(calculations.monthBalance)}</span></span>
+            <span><i className={styles.expectedLegend}/><span data-private-value="true">A vencer no mês: +{formatarReais(pendingIncome)} · −{formatarReais(pendingExpense)}</span></span>
             <span><i className={styles.expectedLegend}/><span data-private-value="true">Saldo previsto no fim do mês: {formatarReais(calculations.predictedBalance)}</span></span>
             <strong>{expectedExpenseProgress.toFixed(0)}% das saídas previstas realizado</strong>
           </div>
@@ -565,6 +601,53 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
           {selectedFlowExpenses.length > 0 && selectedFlowIncome.length === 0 && <footer className="mt-5 border-t border-border pt-4"><div className="w-full rounded-xl border border-red/20 bg-red/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-red">Total de despesas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-red">−{formatarReais(selectedFlowExpenseTotal)}</strong></div></footer>}
           {selectedFlowIncome.length > 0 && selectedFlowExpenses.length === 0 && <footer className="mt-5 border-t border-border pt-4"><div className="w-full rounded-xl border border-primary/20 bg-primary/10 p-3"><p className="text-[10px] font-extrabold uppercase tracking-[.1em] text-primary">Total de receitas</p><strong data-private-value="true" className="mt-1 block text-lg font-black text-primary">+{formatarReais(selectedFlowIncomeTotal)}</strong></div></footer>}
         </div>
+      </section>
+    </div>, document.body)}
+    {balanceInfoOpen && createPortal(<div className="fixed inset-0 z-[9999] grid h-[100dvh] w-screen place-items-center overflow-hidden bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => setBalanceInfoOpen(false)}>
+      <section role="dialog" aria-modal="true" aria-labelledby="balance-info-title" onMouseDown={(event) => event.stopPropagation()} className="flex max-h-[calc(100dvh-2rem)] w-full max-w-lg flex-col overflow-hidden rounded-[24px] border border-primary/20 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <p className="text-[10px] font-extrabold uppercase tracking-[.15em] text-primary">Resumo financeiro</p>
+            <h2 id="balance-info-title" className="mt-1 text-xl font-black text-foreground">O que é o Balanço atual?</h2>
+            <p className="mt-1 text-xs font-bold text-foreground-muted">{monthTitle(month)} · {scopeLabel}</p>
+          </div>
+          <button type="button" autoFocus onClick={() => setBalanceInfoOpen(false)} aria-label="Fechar" className="ff-focus grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button>
+        </div>
+        <div className="mt-4 min-h-0 space-y-4 overflow-y-auto overscroll-contain pr-1 text-sm leading-6 text-foreground-muted">
+          <p>{allActiveSelected
+            ? "É quanto sobrou (ou faltou) no mês até agora: tudo o que você já recebeu, menos o que já pagou e as compras do cartão que caem na fatura deste mês."
+            : "É quanto sobrou (ou faltou) no mês até agora: tudo o que você já recebeu menos tudo o que você já pagou."}</p>
+
+          {/* A conta feita com os números do mês, para o valor não parecer mágico. */}
+          <div className="rounded-2xl border border-border bg-surface-muted p-4">
+            <div className="flex items-center justify-between gap-3"><span className="text-foreground">Já recebido</span><strong data-private-value="true" className="text-primary">+ {formatarReais(calculations.realizedIncome)}</strong></div>
+            <div className="mt-2 flex items-center justify-between gap-3"><span className="text-foreground">Já pago</span><strong data-private-value="true" className="text-red">− {formatarReais(calculations.paidExpense)}</strong></div>
+            {calculations.cardMonth > 0.004 && <div className="mt-2 flex items-center justify-between gap-3"><span className="text-foreground">Cartão (fatura de {monthTitle(month, false, false).toLowerCase()})</span><strong data-private-value="true" className="text-red">− {formatarReais(calculations.cardMonth)}</strong></div>}
+            <div className="my-3 h-px bg-border" />
+            <div className="flex items-center justify-between gap-3"><span className="font-black text-foreground">Balanço atual</span><strong data-private-value="true" className={`text-lg font-black ${calculations.monthBalance < 0 ? "text-red" : "text-foreground"}`}>{formatarReais(calculations.monthBalance)}</strong></div>
+          </div>
+
+          <div>
+            <h3 className="font-black text-foreground">Entradas, Saídas e o que ainda vai vencer</h3>
+            <p className="mt-1">Entradas e Saídas mostram só o que já aconteceu no mês, e o Balanço é a diferença entre elas. O que ainda está agendado entra quando for concluído.{pendingIncome > 0.004 || pendingExpense > 0.004
+              ? <> Ainda falta receber <span data-private-value="true">{formatarReais(pendingIncome)}</span> e pagar <span data-private-value="true">{formatarReais(pendingExpense)}</span> neste mês.</>
+              : null}</p>
+          </div>
+
+          <div>
+            <h3 className="font-black text-foreground">O que não entra no balanço</h3>
+            <ul className="mt-2 space-y-2">
+              <li className="flex items-start gap-3 rounded-xl border border-border bg-surface-muted p-3 text-foreground"><span className="mt-0.5 shrink-0 text-primary"><Icon name="target" size={18} /></span>Guardar ou resgatar dinheiro de um objetivo: o dinheiro continua seu, só muda de lugar.</li>
+              <li className="flex items-start gap-3 rounded-xl border border-border bg-surface-muted p-3 text-foreground"><span className="mt-0.5 shrink-0 text-primary"><Icon name="arrow-left-right" size={18} /></span>Transferências entre as contas selecionadas.</li>
+              <li className="flex items-start gap-3 rounded-xl border border-border bg-surface-muted p-3 text-foreground"><span className="mt-0.5 shrink-0 text-orange"><Icon name="card" size={18} /></span>{allActiveSelected
+                ? "Pagamento da fatura: as compras do cartão já contam no mês da fatura, cada parcela no seu mês. Por isso o pagamento não é somado de novo."
+                : "Compras no cartão de crédito: entram quando a fatura é paga por uma das contas selecionadas."}</li>
+            </ul>
+          </div>
+
+          <p className="text-xs">Saldo previsto no fim do mês: <span data-private-value="true">{formatarReais(calculations.predictedBalance)}</span>. É quanto as contas selecionadas devem ter no último dia do mês, se tudo o que está agendado acontecer.</p>
+        </div>
+        <button type="button" onClick={() => setBalanceInfoOpen(false)} className="ff-focus mt-4 min-h-11 rounded-full bg-primary px-5 text-sm font-black text-white">Entendi</button>
       </section>
     </div>, document.body)}
     {payChoiceOpen && createPortal(<div className="fixed inset-0 z-[9999] grid h-[100dvh] w-screen place-items-center bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={() => setPayChoiceOpen(false)}>

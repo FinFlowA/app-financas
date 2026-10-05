@@ -186,7 +186,12 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
   onChanged: (message: string) => void;
 }) {
   const [kind, setKind] = useState<TransactionKind>(initialKind);
-  const [frequency, setFrequency] = useState("unica");
+  // Mesmo formato do app: Repetição (única, parcelada ou fixa) e, nas duas
+  // últimas, a Periodicidade. O servidor recebe a frequência da fixa e a
+  // periodicidade das parcelas em campos separados.
+  const [repetition, setRepetition] = useState<"unica" | "parcelada" | "fixa">("unica");
+  const [period, setPeriod] = useState<"semanal" | "mensal" | "anual">("mensal");
+  const frequency = repetition === "fixa" ? period : repetition;
   const [valueMode, setValueMode] = useState("total");
   const [status, setStatus] = useState<"" | "paga" | "pendente">("");
   const [accountId, setAccountId] = useState("");
@@ -202,7 +207,9 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
   const activeAccounts = accounts.filter((account) => !account.arquivado);
   const compatibleCategories = categories.filter((category) => isActiveCategory(category)
     && (category.tipo === kind || category.tipo === "ambos"));
-  const recurring = frequency !== "unica";
+  const recurring = repetition !== "unica";
+  // Seleção na cor do tipo, como no app.
+  const selectedChoice = kind === "receita" ? "border-primary bg-primary text-white shadow-sm" : kind === "despesa" ? "border-red bg-red text-white shadow-sm" : "border-blue bg-blue text-white shadow-sm";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -229,14 +236,21 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
         <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} placeholder={kind === "transferencia" ? "Ex.: Reserva para outra conta" : "Ex.: Mercado"} className={INPUT} /></Field>
         <Field label={frequency === "parcelada" && valueMode === "parcela" ? "Valor de cada parcela" : frequency === "parcelada" ? "Valor total" : "Valor"}><CurrencyInput name="value" required /></Field>
         <Field label="Data"><FinFlowDatePicker name="scheduled_date" required defaultValue={initialDate ?? today} /></Field>
-        <Field label="Frequência"><FinFlowSelect name="frequency" value={frequency} onChange={setFrequency} options={[{ value: "unica", label: "Única" }, { value: "parcelada", label: "Parcelada" }, { value: "semanal", label: "Fixa semanal" }, { value: "mensal", label: "Fixa mensal" }, { value: "anual", label: "Fixa anual" }]} /></Field>
+        <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Repetição</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
+          {(["unica", "parcelada", "fixa"] as const).map((value) => <button key={value} type="button" aria-pressed={repetition === value} onClick={() => setRepetition(value)} className={`ff-focus rounded-xl border px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${repetition === value ? selectedChoice : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "unica" ? "Única" : value === "parcelada" ? "Parcelada" : "Fixa"}</button>)}
+        </div></fieldset>
+        {recurring && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Periodicidade</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
+          {(["semanal", "mensal", "anual"] as const).map((value) => <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)} className={`ff-focus rounded-xl border px-1 py-2.5 text-xs font-extrabold transition sm:text-sm ${period === value ? selectedChoice : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "semanal" ? "Semanal" : value === "mensal" ? "Mensal" : "Anual"}</button>)}
+        </div></fieldset>}
+        <input type="hidden" name="frequency" value={frequency} />
+        <input type="hidden" name="installment_frequency" value={repetition === "parcelada" ? period : "mensal"} />
         {frequency === "parcelada" ? <Field label="Parcelas"><input name="installments" type="number" min={2} max={120} defaultValue={2} required className={INPUT} /></Field> : <input type="hidden" name="installments" value="2" />}
         {frequency === "parcelada" && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">O valor informado é</legend><div className="grid grid-cols-2 gap-2">
           {[["total", "Total da série"], ["parcela", "De cada parcela"]].map(([value, label]) => <button key={value} type="button" onClick={() => setValueMode(value)} className={`rounded-ff-sm border px-3 py-2 text-sm font-bold ${valueMode === value ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted"}`}>{label}</button>)}
           <input type="hidden" name="value_mode" value={valueMode} />
         </div></fieldset>}
         {frequency !== "parcelada" && <input type="hidden" name="value_mode" value="total" />}
-        {recurring && frequency !== "parcelada" && <p className="sm:col-span-2 text-xs text-foreground-muted">O FinFlow mantém automaticamente os próximos cinco anos desta recorrência.</p>}
+        {repetition === "fixa" && <p className="sm:col-span-2 text-xs text-foreground-muted">O FinFlow mantém automaticamente os próximos cinco anos desta recorrência.</p>}
         <Field label="Conta de origem"><FinFlowSelect name="account_id" required value={accountId} onChange={setAccountId} options={activeAccounts.map((account) => ({ value: String(account.id), label: account.nome }))} /></Field>
         {kind === "transferencia" ? <Field label="Destino"><FinFlowSelect required value={destination} onChange={setDestination} placeholder="Selecione uma conta ou objetivo" options={[...activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => ({ value: `account:${account.id}`, label: account.nome, group: "Contas" })), ...goals.filter((goal) => !goal.arquivado).map((goal) => ({ value: `goal:${goal.id}`, label: goal.nome, group: "Objetivos" }))]} /><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><FinFlowSelect key={kind} name="category_id" required value={categoryId} onChange={setCategoryId} options={compatibleCategories.map((category) => ({ value: String(category.id), label: category.nome }))} /></Field>}
         {kind === "transferencia" && <input type="hidden" name="category_id" value="0" />}

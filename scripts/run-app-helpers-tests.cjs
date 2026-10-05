@@ -174,6 +174,37 @@ assert.match(
   "A agenda completa precisa agendar os próximos dias, não só o dia em que o app foi aberto.",
 );
 
+// Periodicidade e edição de datas de séries (mesma regra do banco).
+const recorrencia = carregar("lib/transacoes.ts");
+const dataIso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+assert.equal(dataIso(recorrencia.adicionarRecorrencia(new Date(2031, 0, 1), 2, "semanal")), "2031-01-15");
+assert.equal(dataIso(recorrencia.adicionarRecorrencia(new Date(2031, 0, 31), 1, "mensal")), "2031-02-28");
+assert.equal(recorrencia.sufixoRecorrencia("mensal"), "(Fixa)");
+assert.equal(recorrencia.sufixoRecorrencia("semanal"), "(Fixa semanal)");
+assert.ok(recorrencia.isRecorrenciaFixa("Café (Fixa semanal) [Serie:abc123]"), "A fixa semanal é reconhecida como série fixa.");
+assert.equal(recorrencia.descricaoBaseRecorrencia("Café (Fixa semanal) [Serie:abc123]"), "Café");
+assert.equal(
+  recorrencia.substituirDescricaoBase("Café (Fixa semanal) [Serie:abc123]", "Cafezinho"),
+  "Cafezinho (Fixa semanal) [Serie:abc123]",
+  "Trocar a descrição mantém o rótulo da série.",
+);
+// Parcelas semanais: o intervalo não está na descrição, vem da distância entre os itens.
+assert.equal(recorrencia.serieTemIntervaloCurto("Aula (2/4) [Serie:x]", ["2031-01-01", "2031-01-08", "2031-01-15"], "2031-01-08"), true);
+assert.equal(recorrencia.serieTemIntervaloCurto("Café (Fixa semanal) [Serie:x]", [], "2031-04-01"), true);
+assert.equal(recorrencia.serieTemIntervaloCurto("Geladeira (2/3) [Serie:x]", ["2031-01-31", "2031-02-28", "2031-03-31"], "2031-02-28"), false,
+  "Parcelas mensais (mesmo em fevereiro) não são série curta.");
+assert.equal(recorrencia.novaDataItemSerie("2031-03-30", "2031-04-01", "2031-04-03", true), "2031-04-01", "Na série curta todos andam os mesmos dias.");
+assert.equal(recorrencia.novaDataItemSerie("2031-03-31", "2031-02-28", "2031-02-10", false), "2031-03-10", "Na mensal, cada item fica no seu mês, no novo dia.");
+assert.equal(recorrencia.novaDataItemSerie("2031-02-15", "2031-01-31", "2031-01-31", false), "2031-02-15", "Sem mudar a data, nenhum item muda.");
+assert.equal(recorrencia.novaDataItemSerie("2031-02-15", "2031-01-10", "2031-01-31", false), "2031-02-28", "O novo dia respeita o fim do mês.");
+// A edição de série no Histórico usa a regra (antes, a semanal ia toda para o mesmo dia do mês).
+assert.match(fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8"), /novaDataItemSerie\(item\.data_vencimento \|\| dataFormatada, transacaoEditando\.data_vencimento, dataFormatada, intervaloCurto\)/);
+// O formulário do app oferece semanal, mensal e anual (sem diária) e envia a periodicidade das parcelas.
+const telaInicio = fs.readFileSync(path.join(root, "app", "(tabs)", "index.tsx"), "utf8");
+assert.match(telaInicio, /\(\["semanal", "mensal", "anual"\] as const\)/);
+assert.match(telaInicio, /payload\.installment_frequency = frequenciaParcelada/);
+assert.doesNotMatch(telaInicio, /"diaria"/, "Não existe repetição diária.");
+
 testeDemo.then(
   () => console.log("App helper tests passed."),
   (erro) => {
