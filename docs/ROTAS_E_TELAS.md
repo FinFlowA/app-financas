@@ -42,8 +42,8 @@
 
 | Rota | Função |
 |---|---|
-| `/` | Dashboard, saldos, gráficos, alertas e atalhos |
-| `/transacoes` | Lançamentos, filtros, baixa e reabertura |
+| `/` | Dashboard, saldos, visão do mês (com a explicação do Balanço atual), gráficos, alertas e atalhos |
+| `/transacoes` | Lançamentos (Repetição e Periodicidade, como no app), filtros, baixa e reabertura |
 | `/contas` | Contas e compartilhamento |
 | `/objetivos` | Objetivos |
 | `/cartoes` | Lista de cartões |

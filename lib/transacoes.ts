@@ -211,3 +211,46 @@ export function adicionarRecorrencia(
     Math.min(dataBase.getDate(), ultimoDia),
   );
 }
+
+function dataIsoParaUtc(data: string): number {
+  const [ano, mes, dia] = data.slice(0, 10).split("-").map(Number);
+  return Date.UTC(ano, mes - 1, dia);
+}
+
+function utcParaDataIso(instante: number): string {
+  return new Date(instante).toISOString().slice(0, 10);
+}
+
+/** Dias de `de` até `ate` (datas "AAAA-MM-DD"). */
+export function diasEntreDatas(de: string, ate: string): number {
+  return Math.round((dataIsoParaUtc(ate) - dataIsoParaUtc(de)) / 86_400_000);
+}
+
+/**
+ * A série é de intervalo curto (semanal, fixa ou parcelada) quando o
+ * rótulo diz isso ou quando outro item está a menos de 28 dias da referência.
+ * As parcelas não dizem o intervalo na descrição. Mesma regra do banco
+ * (ai_execute_transaction_action).
+ */
+export function serieTemIntervaloCurto(descricao: string, datasDaSerie: readonly string[], dataReferencia: string): boolean {
+  if (/\(Fixa semanal\)/.test(descricaoVisivel(descricao))) return true;
+  return datasDaSerie.some((data) => {
+    const distancia = Math.abs(diasEntreDatas(dataReferencia, data));
+    return distancia >= 1 && distancia <= 27;
+  });
+}
+
+/**
+ * Nova data de um item quando a data da série é editada ("esta e as
+ * próximas"). Séries de intervalo curto andam todas o mesmo número de dias;
+ * as mensais e anuais mantêm cada item no seu mês, no novo dia (limitado ao
+ * último dia do mês).
+ */
+export function novaDataItemSerie(dataItem: string, dataAntiga: string, dataNova: string, intervaloCurto: boolean): string {
+  if (dataAntiga === dataNova) return dataItem;
+  if (intervaloCurto) return utcParaDataIso(dataIsoParaUtc(dataItem) + diasEntreDatas(dataAntiga, dataNova) * 86_400_000);
+  const [ano, mes] = dataItem.slice(0, 10).split("-").map(Number);
+  const novoDia = Number(dataNova.slice(8, 10));
+  const ultimoDia = new Date(Date.UTC(ano, mes, 0)).getUTCDate();
+  return `${ano}-${String(mes).padStart(2, "0")}-${String(Math.min(novoDia, ultimoDia)).padStart(2, "0")}`;
+}

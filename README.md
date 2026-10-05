@@ -331,6 +331,26 @@ com layouts bancários não padronizados.
 - **Política de privacidade:** descreve o token de push usado nos avisos de
   parceria (site, app e documento).
 
+### Atualização da periodicidade das parcelas e Visão do mês — 05/10/2026
+
+- **Periodicidade das parcelas:** parcelas podem ser semanais, mensais ou
+  anuais, como as fixas, no app e no site. Não há repetição diária. Migration
+  `20261005120000_periodicidade_das_parcelas.sql`, com testes em
+  `supabase/tests/periodicidade_das_parcelas.test.sql`.
+- **Datas de séries:** mudar a data de uma série semanal (fixa ou parcelada)
+  desloca todos os itens juntos. Antes, no app, uma semanal ia toda para o mesmo dia de
+  cada mês.
+- **Formulário do site:** "Repetição" e "Periodicidade" em botões separados,
+  como no app, em vez de uma lista única.
+- **Visão do mês:** Entradas e Saídas mostram só o que já aconteceu, e o
+  Balanço é a diferença entre elas, no app e no site. No site, clicar em
+  "Balanço atual" abre a explicação, como no app.
+- **Cor das contas:** ao lançar no app, cada conta aparece com a cor escolhida.
+  Regras em [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md).
+- **Ondas do Início (site):** cada onda do cartão de saldo virou um `<svg>`
+  próprio, animado inteiro. O navegador não refaz mais o layout a cada quadro
+  enquanto o usuário mexe o mouse ou seleciona texto; a aparência é a mesma.
+
 ## Deploy do site
 
 O painel precisa de um runtime Next.js completo: usa cookies no servidor, Proxy/Middleware, Server Components, Server Actions e rotas dinâmicas. Portanto, não é compatível com hospedagem puramente estática como GitHub Pages.

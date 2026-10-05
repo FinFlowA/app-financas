@@ -1,6 +1,6 @@
 # Continuidade do projeto
 
-Atualizado em 30/09/2026.
+Atualizado em 05/10/2026.
 
 ## Estado confirmado
 
@@ -23,6 +23,7 @@ Atualizado em 30/09/2026.
 7. ~~Criar uma baseline reproduzível do schema para novos ambientes.~~ Feito em 30/09/2026 (linha de base + comparação semanal).
 8. ~~Medir a capacidade com o teste de carga e melhorar o carregamento.~~ Feito em 02/10/2026 no projeto Supabase de teste `ejqurfswcmhwfjpgpzdz` (relatório em `TESTE_DE_CARGA_2026-10-02.md`). O limite era o banco: `refresh_my_recurring_schedules` tinha custo quadrático, e as regras de acesso liam a tabela de transações de todos os usuários. As duas coisas foram corrigidas na migration `20261002160000_desempenho_regras_de_acesso.sql` e no filtro explícito de transações do app e do site (ver `BANCO_DE_DADOS.md`). O próximo limite é a CPU do plano gratuito do Supabase: para crescer, o caminho é subir o plano de computação.
 9. ~~Corrigir a política de privacidade sobre push.~~ Feito em 02/10/2026: `docs/privacy-policy.md`, a página `/privacidade` do site e a página externa `FinFlowA/finflow-legal` (aberta pelo app) descrevem o token de push dos avisos de parceria, o envio pela Expo e quando o token é apagado. A versão dos documentos (`LEGAL_DOCUMENT_VERSION`) não mudou, porque o banco exige essa versão e trocá-la pediria novo aceite de todos.
+10. Ensinar ao Finn a periodicidade das parcelas. O banco já aceita (`installment_frequency`, migration `20261005120000_periodicidade_das_parcelas.sql`) e o app e o site já usam, mas o Finn (Edge Function `finance-ai`) ainda cria parcelas só mensais. Exige publicar a Edge Function (ver `DEPLOY_E_OPERACAO.md`); antes, compare o código publicado (`supabase functions download finance-ai --use-api`) com a `main`, porque há funções cujo código da `main` nunca foi publicado.
 
 ## Áreas que exigem coordenação
 

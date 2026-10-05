@@ -365,6 +365,8 @@ export default function Dashboard() {
   const [caixinhaDestinoId, setCaixinhaDestinoId] = useState<number | null>(null);
   const [frequencia, setFrequencia] = useState<"unica" | "parcelada" | "fixa">("unica");
   const [frequenciaFixa, setFrequenciaFixa] = useState<FrequenciaRecorrencia>("mensal");
+  // Intervalo entre as parcelas (mensal é o padrão de sempre).
+  const [frequenciaParcelada, setFrequenciaParcelada] = useState<FrequenciaRecorrencia>("mensal");
   const [numParcelas, setNumParcelas] = useState("");
   const [modoValorParcelado, setModoValorParcelado] = useState<"total" | "parcela">("parcela");
   const [dataSelecionada, setDataSelecionada] = useState(new Date());
@@ -1550,6 +1552,7 @@ export default function Dashboard() {
       if (foiPago) payload.realization_date = dataBaseSql;
       if (frequencia === "parcelada") {
         payload.installments = totalRepeticoes;
+        if (frequenciaParcelada !== "mensal") payload.installment_frequency = frequenciaParcelada;
       } else if (frequencia === "fixa") {
         payload.recurrence_count = totalRepeticoes;
       }
@@ -1568,7 +1571,7 @@ export default function Dashboard() {
         }
         setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
         setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
-        setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+        setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setFrequenciaParcelada("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
         setModalTransVisivel(false);
         if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
         else void carregarDados();
@@ -1598,6 +1601,7 @@ export default function Dashboard() {
       if (foiPago) payload.realization_date = dataBaseSql;
       if (frequencia === "parcelada") {
         payload.installments = totalRepeticoes;
+        if (frequenciaParcelada !== "mensal") payload.installment_frequency = frequenciaParcelada;
       } else if (frequencia === "fixa") {
         payload.recurrence_count = totalRepeticoes;
       }
@@ -1614,7 +1618,7 @@ export default function Dashboard() {
         }
         setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
         setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
-        setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+        setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setFrequenciaParcelada("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
         setModalTransVisivel(false);
         if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
         else void carregarDados();
@@ -1663,7 +1667,7 @@ export default function Dashboard() {
           }
           setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
           setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
-          setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+          setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setFrequenciaParcelada("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
           setModalTransVisivel(false);
           if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
           else void carregarDados();
@@ -1695,7 +1699,7 @@ export default function Dashboard() {
     for (let i = 0; i < totalRepeticoes; i++) {
       const dataIteracao = frequencia === "fixa"
         ? adicionarRecorrencia(dataSelecionada, i, frequenciaFixa)
-        : adicionarRecorrencia(dataSelecionada, i, "mensal");
+        : adicionarRecorrencia(dataSelecionada, i, frequencia === "parcelada" ? frequenciaParcelada : "mensal");
       const dataFormatadaSql = `${dataIteracao.getFullYear()}-${String(dataIteracao.getMonth() + 1).padStart(2, "0")}-${String(dataIteracao.getDate()).padStart(2, "0")}`;
       let descFinal = descTransacao;
       if (frequencia === "parcelada") descFinal = `${descTransacao} (${i + 1}/${totalRepeticoes})`;
@@ -1834,7 +1838,7 @@ export default function Dashboard() {
 
     setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
     setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
-    setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+    setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setFrequenciaParcelada("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
     setModalTransVisivel(false);
     carregarDados();
     if (avisoConclusaoObjetivo) {
@@ -1991,8 +1995,11 @@ export default function Dashboard() {
               <MaterialIcons name="calendar-month" size={19} color={novoTema.primary} />
             </TouchableOpacity>
           </View>
+          {/* Entradas e Saídas mostram só o que já aconteceu no mês (como o
+              Balanço, que é a diferença entre elas). O que ainda vai vencer
+              aparece na explicação do Balanço e no saldo previsto. */}
           <View style={styles.homeMonthMetrics}>
-            <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(receitasDoMes)}</Text></View>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-start" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Entradas</Text><Text style={[styles.homeMetricValue, { color: "#24A873" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(entradasRealizadasDoMes)}</Text></View>
             <TouchableOpacity
               style={[styles.homeMetricColumn, styles.homeMetricInfoButton, { alignItems: "center" }]}
               onPress={() => setModalBalancoAtualVisivel(true)}
@@ -2005,11 +2012,11 @@ export default function Dashboard() {
               </View>
               <Text style={[styles.homeMetricValue, { color: balancoMensal < 0 ? "#C0392E" : novoTema.text }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(balancoMensal)}</Text>
             </TouchableOpacity>
-            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#C0392E" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(despesasDoMes)}</Text></View>
+            <View style={[styles.homeMetricColumn, { alignItems: "flex-end" }]}><Text style={[styles.homeMetricLabel, { color: novoTema.textMuted }]}>Saídas</Text><Text style={[styles.homeMetricValue, { color: "#C0392E" }]} numberOfLines={1} adjustsFontSizeToFit>{formatarValorPrivado(saidasRealizadasDoMes + cartaoDoMes)}</Text></View>
           </View>
           <View style={[styles.homeMonthTrack, { backgroundColor: novoTema.surfaceMuted }]}>
-            <View style={{ flex: Math.max(receitasDoMes, 1), backgroundColor: "#42C78B" }} />
-            <View style={{ flex: Math.max(despesasDoMes, 1), backgroundColor: "#C0392E" }} />
+            <View style={{ flex: Math.max(entradasRealizadasDoMes, 1), backgroundColor: "#42C78B" }} />
+            <View style={{ flex: Math.max(saidasRealizadasDoMes + cartaoDoMes, 1), backgroundColor: "#C0392E" }} />
           </View>
           <Text style={{ color: saldoPrevistoFimDoMes < 0 ? (isDark ? "#F28B82" : "#C96A6A") : novoTema.textMuted, fontSize: 11, marginTop: 9 }}>
             Saldo previsto no fim do mês: {formatarValorPrivado(saldoPrevistoFimDoMes)}
@@ -2380,9 +2387,9 @@ export default function Dashboard() {
               </View>
             </View>
 
-            <Text style={[styles.balanceExplanationSection, { color: Cores.textoPrincipal }]}>Por que é diferente de Entradas e Saídas?</Text>
+            <Text style={[styles.balanceExplanationSection, { color: Cores.textoPrincipal }]}>Entradas, Saídas e o que ainda vai vencer</Text>
             <Text style={[styles.balanceExplanationSectionText, { color: Cores.textoSecundario }]}>
-              Entradas e Saídas somam tudo o que é deste mês, inclusive o que ainda vai vencer. O Balanço só conta o que já aconteceu.
+              Entradas e Saídas mostram só o que já aconteceu no mês, e o Balanço é a diferença entre elas. O que ainda está agendado entra quando for concluído.
               {receitasDoMes - entradasRealizadasDoMes > 0.004 || despesasDoMes - saidasRealizadasDoMes - cartaoDoMes > 0.004
                 ? ` Ainda falta receber ${formatarValorPrivado(Math.max(0, receitasDoMes - entradasRealizadasDoMes))} e pagar ${formatarValorPrivado(Math.max(0, despesasDoMes - saidasRealizadasDoMes - cartaoDoMes))} neste mês.`
                 : ""}
@@ -3243,21 +3250,26 @@ export default function Dashboard() {
                   </TouchableOpacity>
                 ))}
               </View>
-              {frequencia === "fixa" && (
+              {(frequencia === "fixa" || frequencia === "parcelada") && (
                 <>
                   <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Periodicidade</Text>
                   <View style={[styles.typeSelector, styles.transactionSelector, { borderColor: Cores.borda, backgroundColor: Cores.pillFundo }]}>
-                    {(["semanal", "mensal", "anual"] as const).map((periodo) => (
-                      <TouchableOpacity
-                        key={periodo}
-                        style={[styles.freqButton, styles.transactionChoice, frequenciaFixa === periodo && { backgroundColor: corTipoTransacao }]}
-                        onPress={() => setFrequenciaFixa(periodo)}
-                      >
-                        <Text style={[styles.freqButtonText, { color: frequenciaFixa === periodo ? "#FFF" : Cores.textoSecundario }]}>
-                          {periodo === "semanal" ? "Semanal" : periodo === "mensal" ? "Mensal" : "Anual"}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
+                    {(["semanal", "mensal", "anual"] as const).map((periodo) => {
+                      const selecionado = (frequencia === "fixa" ? frequenciaFixa : frequenciaParcelada) === periodo;
+                      return (
+                        <TouchableOpacity
+                          key={periodo}
+                          style={[styles.freqButton, styles.transactionChoice, selecionado && { backgroundColor: corTipoTransacao }]}
+                          onPress={() => (frequencia === "fixa" ? setFrequenciaFixa(periodo) : setFrequenciaParcelada(periodo))}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: selecionado }}
+                        >
+                          <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, { color: selecionado ? "#FFF" : Cores.textoSecundario }]}>
+                            {periodo === "semanal" ? "Semanal" : periodo === "mensal" ? "Mensal" : "Anual"}
+                          </Text>
+                        </TouchableOpacity>
+                      );
+                    })}
                   </View>
                 </>
               )}
@@ -3450,7 +3462,8 @@ export default function Dashboard() {
                   rotulo={tipoTransacao === "transferencia" ? "Conta de origem" : "Conta"}
                   placeholder="Escolha a conta"
                   iconePadrao="account-balance-wallet"
-                  opcoes={contasAtivas.map((conta) => ({ id: conta.id, titulo: conta.nome, icone: "account-balance-wallet" }))}
+                  // Cada conta aparece com a cor escolhida para ela, como nas outras telas.
+                  opcoes={contasAtivas.map((conta) => ({ id: conta.id, titulo: conta.nome, cor: conta.cor ?? undefined, icone: "account-balance-wallet" }))}
                   selecionadoId={contaSelecionadaId}
                   onSelecionar={(opcao) => {
                     const novaOrigem = Number(opcao.id);
@@ -3473,7 +3486,7 @@ export default function Dashboard() {
                     opcoes={[
                       ...contasAtivas
                         .filter((conta) => conta.id !== contaSelecionadaId)
-                        .map((conta) => ({ id: `conta-${conta.id}`, titulo: conta.nome, grupo: "Contas", icone: "account-balance-wallet" })),
+                        .map((conta) => ({ id: `conta-${conta.id}`, titulo: conta.nome, grupo: "Contas", cor: conta.cor ?? undefined, icone: "account-balance-wallet" })),
                       ...caixinhas.map((caixa) => ({ id: `objetivo-${caixa.id}`, titulo: caixa.nome, grupo: "Objetivos", cor: caixa.cor, icone: caixa.icone })),
                     ]}
                     selecionadoId={caixinhaDestinoId ? `objetivo-${caixinhaDestinoId}` : contaDestinoId ? `conta-${contaDestinoId}` : null}

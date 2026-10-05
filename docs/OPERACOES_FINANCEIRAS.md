@@ -10,9 +10,10 @@
 ## Receitas e despesas
 
 - Exigem conta, valor positivo, tipo e categoria compatível.
-- Podem ser únicas, parceladas ou recorrentes.
-- Parcelamento distribui centavos sem perder ou criar valor.
-- Recorrências possuem horizonte renovável e identificador de série.
+- Podem ser únicas, parceladas ou fixas. Parceladas e fixas têm periodicidade **semanal, mensal ou anual**, escolhida em "Periodicidade" no app e no site. Não há repetição diária.
+- Parcelamento distribui centavos sem perder ou criar valor. As parcelas vão de 2 a 120; a periodicidade chega ao banco no campo `installment_frequency`, e sem ele as parcelas são mensais.
+- Fixas mantêm um horizonte renovado por `refresh_my_recurring_schedules` a cada abertura do Início. Todas mantêm 5 anos à frente.
+- Mudar a data de uma série com "esta e as próximas" desloca todos os itens pelo mesmo número de dias quando a série é semanal, fixa ou parcelada. Nas mensais e anuais, cada item fica no seu mês, no novo dia, limitado ao fim do mês. Como as parcelas não dizem o intervalo na descrição, a série é tratada como semanal quando dois itens estão a menos de 28 dias um do outro. O banco (`ai_execute_transaction_action`) e o Histórico do app (`novaDataItemSerie`) usam a mesma regra.
 - Ocorrências já concluídas não devem ser alteradas ao editar/excluir o restante da série.
 
 ## Conclusão parcial
@@ -50,13 +51,14 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 
 ## Balanço do mês (Início do app e do site)
 
-- **Entradas e Saídas** somam tudo o que é do mês, inclusive o que ainda vai vencer.
-- **Balanço atual** conta só o que já aconteceu: o que já foi recebido menos o que já foi pago.
+- **Entradas e Saídas** mostram só o que já aconteceu no mês: o que foi recebido e o que foi pago, mais as compras do cartão da fatura do mês (com todas as contas).
+- **Balanço atual** é a diferença entre as duas: Entradas − Saídas.
+- O que ainda vai vencer no mês aparece na explicação do Balanço ("Ainda falta receber X e pagar Y"), no "Saldo previsto no fim do mês" e, no site, na linha "A vencer no mês" do cartão.
 - Na visão com **todas as contas**, cada compra ou parcela do cartão entra em Saídas e no Balanço no mês da fatura em que cai (`mes_fatura`). Uma compra em 10 parcelas conta uma parcela em cada mês. O pagamento bancário da fatura (`[PagFatura:...]`) fica de fora, então o mesmo gasto não é contado duas vezes. Os ajustes técnicos de pagamento parcial ("Pagamento parcial da fatura" e "Saldo da fatura anterior") também ficam de fora.
 - Com **uma conta ou parte das contas** selecionadas, as compras não entram (não têm conta vinculada) e o pagamento da fatura conta como despesa da conta que pagou.
 - Guardar ou resgatar dinheiro de objetivos e transferências entre as contas selecionadas não entram no Balanço.
 - O saldo das contas e o "Saldo previsto no fim do mês" seguem o dinheiro das contas: a compra no cartão só os afeta quando a fatura é paga.
-- No app, tocar em "Balanço atual" abre a explicação com a conta feita (já recebido, já pago e, quando houver, a linha do cartão).
+- No app e no site, tocar ou clicar em "Balanço atual" abre a explicação com a conta feita (já recebido, já pago e, quando houver, a linha do cartão), o que falta receber e pagar no mês e o que não entra no Balanço.
 
 ## Fluxo de caixa: considerar atrasados
 

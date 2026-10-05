@@ -63,6 +63,8 @@ import {
   isMovimentoObjetivo,
   isRecorrenciaFixa,
   isTransferencia,
+  novaDataItemSerie,
+  serieTemIntervaloCurto,
   substituirDescricaoBase,
 } from "../../lib/transacoes";
 
@@ -981,26 +983,31 @@ export default function TransacoesScreen() {
       const base = descricaoBase(transacaoEditando.descricao);
       const serieId = getIdSerie(transacaoEditando.descricao);
       const novoBase = descricaoBase(editDescricao);
-      const novoDia = editData.getDate();
       const { data: serie } = await supabase.from("transacoes")
         .select("id, descricao, data_vencimento, status, transacao_pai_id")
         .eq("user_id", session.user.id)
         .eq("conta_id", transacaoEditando.conta_id)
         .eq("tipo", transacaoEditando.tipo);
-      const itens = (serie ?? []).filter((t) =>
+      const daMesmaSerie = (serie ?? []).filter((t) =>
+        serieId !== null ? getIdSerie(t.descricao) === serieId : descricaoBase(t.descricao) === base
+      );
+      const itens = daMesmaSerie.filter((t) =>
         t.status !== "paga"
         && t.transacao_pai_id == null
         && !temPagamentosRegistrados(t.id)
-        && (serieId !== null ? getIdSerie(t.descricao) === serieId : descricaoBase(t.descricao) === base)
+      );
+      // Mesma regra do banco: séries semanais andam todas os
+      // mesmos dias; mensais e anuais ficam no seu mês, no novo dia. Sem mudança
+      // de data, cada item mantém a sua (antes, uma série semanal ia toda para
+      // o mesmo dia de cada mês).
+      const intervaloCurto = serieTemIntervaloCurto(
+        transacaoEditando.descricao,
+        daMesmaSerie.map((t) => t.data_vencimento),
+        transacaoEditando.data_vencimento,
       );
       const resultados = await Promise.all(
         itens.map((item) => {
-          const partes = (item.data_vencimento || dataFormatada).split("-");
-          const ano = parseInt(partes[0]);
-          const mes = parseInt(partes[1]) - 1;
-          const diasNoMes = new Date(ano, mes + 1, 0).getDate();
-          const diaFinal = Math.min(novoDia, diasNoMes);
-          const novaData = `${ano}-${String(mes + 1).padStart(2, "0")}-${String(diaFinal).padStart(2, "0")}`;
+          const novaData = novaDataItemSerie(item.data_vencimento || dataFormatada, transacaoEditando.data_vencimento, dataFormatada, intervaloCurto);
           const novaDescricao = substituirDescricaoBase(item.descricao, novoBase);
           return supabase.from("transacoes").update({
             ...campos, status: editStatus, descricao: novaDescricao, data_vencimento: novaData,

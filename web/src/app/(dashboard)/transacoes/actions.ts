@@ -38,6 +38,9 @@ type TransactionSnapshot = {
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const FREQUENCIES = ["unica", "parcelada", "semanal", "mensal", "anual"] as const;
+/** Intervalo entre as parcelas; mensal é o padrão (e não precisa ir ao banco). */
+const INSTALLMENT_FREQUENCIES = ["semanal", "mensal", "anual"] as const;
+const PERIOD_LABEL_PLURAL = { semanal: "semanais", mensal: "mensais", anual: "anuais" } as const;
 const SERIES_SCOPES = ["one", "current_and_future", "open_series"] as const;
 
 function refreshTransactions() {
@@ -144,6 +147,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
   const destinationGoalId = formInteger(formData, "destination_goal_id");
   const categoryId = formInteger(formData, "category_id");
   const installments = formInteger(formData, "installments");
+  const installmentFrequency = (formString(formData, "installment_frequency") || "mensal") as typeof INSTALLMENT_FREQUENCIES[number];
   const valueMode = formString(formData, "value_mode");
   const requestedStatus = formString(formData, "status");
 
@@ -157,6 +161,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
     return { erro: "Use entre 2 e 120 parcelas." };
   }
   if (frequency === "parcelada" && !["total", "parcela"].includes(valueMode)) return { erro: "Escolha se o valor é total ou por parcela." };
+  if (frequency === "parcelada" && !INSTALLMENT_FREQUENCIES.includes(installmentFrequency)) return { erro: "Escolha a periodicidade das parcelas." };
   if (frequency === "unica" && !["paga", "pendente"].includes(requestedStatus)) return { erro: "Escolha se o lançamento foi concluído ou está pendente." };
 
   const status = frequency === "unica" && requestedStatus === "paga" ? "paga" : "pendente";
@@ -177,6 +182,7 @@ export async function createTransaction(formData: FormData): Promise<Transaction
   if (status === "paga") payload.realization_date = scheduledDate;
   if (frequency === "parcelada") {
     payload.installments = installments;
+    if (installmentFrequency !== "mensal") payload.installment_frequency = installmentFrequency;
     if (valueMode === "parcela") payload.installment_value = informedValue;
   }
 
@@ -244,7 +250,11 @@ export async function createTransaction(formData: FormData): Promise<Transaction
   }
 
   refreshTransactions();
-  const suffix = frequency === "unica" ? "" : frequency === "parcelada" ? ` em ${installments} parcelas` : ` como fixa ${frequency}`;
+  const suffix = frequency === "unica"
+    ? ""
+    : frequency === "parcelada"
+      ? ` em ${installments} parcelas${installmentFrequency === "mensal" ? "" : ` ${PERIOD_LABEL_PLURAL[installmentFrequency]}`}`
+      : ` como fixa ${frequency}`;
   return { erro: null, sucesso: `Lançamento criado${suffix}.` };
 }
 
