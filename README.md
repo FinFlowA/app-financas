@@ -361,6 +361,11 @@ com layouts bancários não padronizados.
   O cálculo é o mesmo nos dois (`web/src/lib/metas-categorias.ts`). Migration
   `20261006120000_metas_e_limites_das_categorias.sql`, com testes em
   `supabase/tests/metas_categorias.test.sql`.
+- **Metas e limites de qualquer mês:** nas Categorias do site e em "Gerenciar
+  Categorias" no app, setas e escolha de mês e ano mostram meses encerrados
+  (meta batida ou limite ultrapassado) e a previsão dos meses futuros (com o
+  agendado). No site, o mês vai no endereço (`/categorias?mes=AAAA-MM`). No
+  app, "Gerenciar Categorias" ganhou um X para fechar.
 - **Histórico:** no site, clicar no mês abre a escolha de mês e ano; no app, a
   janela do período, que só trocava o ano, agora escolhe mês e ano.
 - **Novo lançamento (site):** em tela grande a janela usa duas colunas e cabe

@@ -5,6 +5,7 @@ import { mesAtualEmSaoPaulo } from "@/lib/date";
 import { progressoDasCategorias, type ItemCartaoParaAlvo, type TransacaoParaAlvo } from "@/lib/metas-categorias";
 import type { Categoria } from "@/lib/types";
 import CategoryManager, { type CategoryProgress } from "./category-manager";
+import CategoryMonthNav from "./month-nav";
 
 /** Primeiro e último dia do mês "AAAA-MM". */
 function diasDoMes(mes: string): { inicio: string; fim: string } {
@@ -13,9 +14,13 @@ function diasDoMes(mes: string): { inicio: string; fim: string } {
   return { inicio: `${mes}-01`, fim: `${mes}-${String(ultimo).padStart(2, "0")}` };
 }
 
-export default async function CategoriasPage() {
+export default async function CategoriasPage({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
   const supabase = await createClient();
-  const mes = mesAtualEmSaoPaulo();
+  const mesAtual = mesAtualEmSaoPaulo();
+  // ?mes=AAAA-MM mostra metas batidas e limites passados de meses anteriores,
+  // ou como estão os meses futuros (só com o agendado).
+  const pedido = (await searchParams).mes;
+  const mes = pedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(pedido) ? pedido : mesAtual;
   const { inicio, fim } = diasDoMes(mes);
   // Filtro explícito das transações visíveis: o banco usa os índices em vez
   // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
@@ -87,6 +92,10 @@ export default async function CategoriasPage() {
           {progressUnavailable && <p className="font-semibold text-red">Não foi possível calcular o progresso do mês agora. Atualize a página em instantes.</p>}
         </div>
       </aside>
+      <section className="ff-page-hero mb-5 flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+        <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-foreground-muted">Metas e limites de</p><p className="font-black capitalize text-foreground">{monthLabel}{mes < mesAtual ? " · mês encerrado" : mes > mesAtual ? " · previsão" : " · mês atual"}</p></div>
+        <div><CategoryMonthNav month={mes} currentMonth={mesAtual} /></div>
+      </section>
       <CategoryManager categories={categories} progress={progress} />
     </div>
   );
