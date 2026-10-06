@@ -9,8 +9,8 @@
 | `/define-password` | Definição inicial de senha |
 | `/reset-password` | Recuperação de senha |
 | `/email-confirmed` | Confirmação de e-mail |
-| `/(tabs)` | Página inicial, visão do mês (com a explicação do Balanço atual) e atalhos financeiros |
-| `/(tabs)/transacoes` | Histórico, criação, edição e conclusão |
+| `/(tabs)` | Página inicial, visão do mês (com a explicação do Balanço atual), atalhos financeiros e Gerenciar Categorias (com metas e limites mensais) |
+| `/(tabs)/transacoes` | Histórico (toque no mês para escolher mês e ano), criação, edição e conclusão |
 | `/(tabs)/caixinhas` | Objetivos financeiros |
 | `/(tabs)/cartoes` | Cartões, compras e faturas |
 | `/(tabs)/relatorios` | Fluxo e relatórios do aplicativo, com o filtro "Considerar atrasados" |
@@ -43,12 +43,12 @@
 | Rota | Função |
 |---|---|
 | `/` | Dashboard, saldos, visão do mês (com a explicação do Balanço atual), gráficos, alertas e atalhos |
-| `/transacoes` | Lançamentos (Repetição e Periodicidade, como no app), filtros, baixa e reabertura |
+| `/transacoes` | Lançamentos (Repetição e Periodicidade, como no app), filtros, baixa e reabertura; clicar no mês abre a escolha de mês e ano |
 | `/contas` | Contas e compartilhamento |
 | `/objetivos` | Objetivos |
 | `/cartoes` | Lista de cartões |
 | `/cartoes/[id]` | Fatura, compras, pagamento e estorno |
-| `/categorias` | Categorias e arquivamento |
+| `/categorias` | Categorias, metas e limites mensais (com o progresso do mês) e arquivamento |
 | `/relatorios` | Fluxo mensal/diário, seleção de contas e filtro "Considerar atrasados" (`atrasados=0`) |
 | `/calendario` | Agenda financeira |
 | `/conciliacao` | Importação CSV/OFX e conciliação |

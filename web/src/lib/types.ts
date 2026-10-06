@@ -19,6 +19,10 @@ export interface Categoria {
   ativa: number | boolean;
   bloqueado_plano?: boolean;
   version: number;
+  /** Meta mensal (categorias de receita), opcional. */
+  meta_mensal?: number | null;
+  /** Limite mensal (categorias de despesa), opcional. */
+  limite_mensal?: number | null;
 }
 
 export interface Caixinha {

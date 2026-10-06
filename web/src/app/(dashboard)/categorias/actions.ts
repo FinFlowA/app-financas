@@ -7,8 +7,9 @@ import {
   formInteger,
   formString,
 } from "@/lib/finance-action";
+import { moneyIsPositive, parseMoney } from "@/lib/money";
 import { createClient } from "@/lib/supabase/server";
-import { buildCategoryChanges } from "./category-edit";
+import { buildCategoryChanges, buildTargetChange, type CategoryTargetField } from "./category-edit";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "./category-options";
 
 export type CategoriaActionState = { erro: string | null; sucesso?: string };
@@ -28,6 +29,26 @@ function refreshCategories() {
   revalidatePath("/conciliacao");
 }
 
+/** Meta/limite do formulário: null quando o campo está vazio; "invalid" quando não é um valor positivo. */
+function readTarget(formData: FormData, name: string): number | null | "invalid" {
+  const raw = formString(formData, name);
+  if (!raw) return null;
+  const value = parseMoney(raw);
+  return moneyIsPositive(value) ? value : "invalid";
+}
+
+/** Valor gravado (campo oculto com o número original ou vazio). */
+function readStoredTarget(value: unknown): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.round(number * 100) / 100 : null;
+}
+
+const TARGET_ERROR: Record<CategoryTargetField, string> = {
+  monthly_goal: "Informe uma meta maior que zero ou deixe o campo em branco.",
+  monthly_limit: "Informe um limite maior que zero ou deixe o campo em branco.",
+};
+
 export async function criarCategoria(_: CategoriaActionState, formData: FormData): Promise<CategoriaActionState> {
   const name = formString(formData, "name");
   const type = formString(formData, "type") as (typeof CATEGORY_TYPES)[number];
@@ -37,8 +58,14 @@ export async function criarCategoria(_: CategoriaActionState, formData: FormData
   if (!CATEGORY_TYPES.includes(type)) return { erro: "Escolha receita ou despesa." };
   if (!CATEGORY_COLORS.includes(color as (typeof CATEGORY_COLORS)[number])) return { erro: "Escolha uma cor disponível." };
   if (!CATEGORY_ICONS.includes(icon as (typeof CATEGORY_ICONS)[number])) return { erro: "Escolha um ícone disponível." };
+  // Receita tem meta mensal; despesa, limite mensal. Os dois são opcionais.
+  const targetField: CategoryTargetField = type === "receita" ? "monthly_goal" : "monthly_limit";
+  const target = readTarget(formData, "monthly_target");
+  if (target === "invalid") return { erro: TARGET_ERROR[targetField] };
 
-  const result = await executeManualFinancialAction("create_category", { name, type, color, icon }, formString(formData, "request_id"));
+  const payload: Record<string, unknown> = { name, type, color, icon };
+  if (target !== null) payload[targetField] = target;
+  const result = await executeManualFinancialAction("create_category", payload, formString(formData, "request_id"));
   if (result.erro) return result;
   refreshCategories();
   return { erro: null, sucesso: "Categoria criada." };
@@ -58,7 +85,7 @@ export async function editarCategoria(_: CategoriaActionState, formData: FormDat
   const supabase = await createClient();
   const { data: current, error: currentError } = await supabase
     .from("categorias")
-    .select("nome, cor, icone, version")
+    .select("nome, cor, icone, version, meta_mensal, limite_mensal")
     .eq("id", categoryId)
     .maybeSingle();
   if (currentError || !current) {
@@ -87,12 +114,29 @@ export async function editarCategoria(_: CategoriaActionState, formData: FormDat
   if (changes.icon && !CATEGORY_ICONS.includes(changes.icon as (typeof CATEGORY_ICONS)[number])) {
     return { erro: "Escolha um ícone disponível." };
   }
-  if (Object.keys(changes).length === 0) return { erro: null, sucesso: "Nenhuma alteração para salvar." };
+
+  // Meta (receita) e limite (despesa) mensais: o formulário só envia os campos
+  // do tipo da categoria. Campo vazio tira o valor.
+  const allChanges: Record<string, unknown> = { ...changes };
+  const currentTargets: Record<CategoryTargetField, unknown> = { monthly_goal: current.meta_mensal, monthly_limit: current.limite_mensal };
+  for (const field of ["monthly_goal", "monthly_limit"] as const) {
+    if (!formData.has(field)) continue;
+    const desired = readTarget(formData, field);
+    if (desired === "invalid") return { erro: TARGET_ERROR[field] };
+    const { changed, conflict } = buildTargetChange(
+      readStoredTarget(currentTargets[field]),
+      readStoredTarget(formData.get(`original_${field}`)),
+      desired,
+    );
+    if (conflict) return { erro: "Esta categoria mudou em outro dispositivo. Atualize a página antes de editar novamente." };
+    if (changed) allChanges[field] = desired;
+  }
+  if (Object.keys(allChanges).length === 0) return { erro: null, sucesso: "Nenhuma alteração para salvar." };
 
   const result = await executeOptimisticUpdate("update_category", {
     category_id: categoryId,
     expected_version: expectedVersion,
-    changes,
+    changes: allChanges,
   }, formString(formData, "request_id"));
   if (result.erro) return result;
   refreshCategories();

@@ -46,9 +46,10 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
 
 - `fluxo-atrasados.test.ts`: o que conta como atraso, o saldo previsto sem os atrasados e a ligação do filtro na página, na visão, no gráfico e no app;
 - `balanco-cartao.test.ts`: as parcelas do cartão no mês da fatura e o pagamento da fatura fora de Saídas e do Balanço, no site e no app;
-- `repeticao-e-visao-do-mes.test.ts`: a periodicidade das parcelas (sem repetição diária) no formulário e na ação do site, e Entradas e Saídas com o que já aconteceu na Visão do mês do site e do app.
+- `repeticao-e-visao-do-mes.test.ts`: a periodicidade das parcelas (sem repetição diária) no formulário e na ação do site, e Entradas e Saídas com o que já aconteceu na Visão do mês do site e do app;
+- `metas-categorias.test.ts`: o progresso das metas e limites das categorias (realizado, agendado, cartão no mês da fatura e o que fica de fora), as situações da barra, e as telas do site de Categorias, Novo lançamento, Histórico (mês e ano) e atrasados em colunas.
 
-`npm run test:app-helpers` cobre os lembretes do app: horários, singular e plural, ausência de emoji e de travessão, e o cancelamento dos lembretes ao pagar a fatura. Cobre também a periodicidade (datas, rótulos e descrição base) e a nova data dos itens ao editar uma série (`serieTemIntervaloCurto` e `novaDataItemSerie`).
+`npm run test:app-helpers` cobre os lembretes do app: horários, singular e plural, ausência de emoji e de travessão, e o cancelamento dos lembretes ao pagar a fatura. Cobre também a periodicidade (datas, rótulos e descrição base), a nova data dos itens ao editar uma série (`serieTemIntervaloCurto` e `novaDataItemSerie`), a meta e o limite das categorias na fila offline e na tela, e a escolha de mês e ano no Histórico.
 
 ## Teste de carga
 
@@ -75,7 +76,7 @@ Em resumo, com 50 pessoas simultâneas, 95% das aberturas do Início passaram de
 
 ## Banco (pgTAP)
 
-`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas e periodicidade das parcelas) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
+`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas e metas e limites das categorias) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
 
 ```bash
 supabase db start
@@ -98,6 +99,7 @@ Cada arquivo roda numa transação desfeita no fim (`rollback`), então não dei
 
 - Criar receita e despesa única, parcelada e fixa, nas periodicidades semanal, mensal e anual.
 - Mudar a data de uma série com "esta e as próximas" (semanal desloca todos os itens; mensal e anual mudam o dia em cada mês).
+- Definir meta e limite em categorias e conferir a barra do mês (realizado, agendado e compra do cartão no mês da fatura); tirar o valor deixando o campo em branco.
 - Verificar divisão exata de centavos.
 - Concluir integral/parcial com data, juros e desconto.
 - Reabrir e conferir recibos.

@@ -151,7 +151,7 @@ function withTableDefaults(table: string, row: LocalDemoRow, userId: string | nu
   const now = new Date().toISOString();
   const defaults: LocalDemoRow = { criado_em: now };
   if (userId && row.user_id === undefined) defaults.user_id = userId;
-  if (table === "categorias") Object.assign(defaults, { ativa: 1, cor: "#6C7D77", icone: "more-horiz", bloqueado_plano: false });
+  if (table === "categorias") Object.assign(defaults, { ativa: 1, cor: "#6C7D77", icone: "more-horiz", bloqueado_plano: false, meta_mensal: null, limite_mensal: null });
   if (table === "contas") Object.assign(defaults, { saldo_inicial: 0, cor: "#2A9D8F", compartilhado: false, arquivado: false, bloqueado_plano: false });
   if (table === "caixinhas") Object.assign(defaults, { saldo_atual: 0, meta_valor: 0, cor: "#2A9D8F", icone: "savings", compartilhado: false, arquivado: false, bloqueado_plano: false });
   if (table === "cartoes") Object.assign(defaults, { limite: 0, cor: "#457B9D", ativo: true, bloqueado_plano: false });

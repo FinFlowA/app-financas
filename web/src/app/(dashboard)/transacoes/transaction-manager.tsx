@@ -47,6 +47,7 @@ import {
   type TransactionKind,
   type TransactionRow,
 } from "./transaction-model";
+import MonthPicker from "./month-picker";
 
 type Props = {
   userId: string;
@@ -91,7 +92,8 @@ function Modal({ title, subtitle, onClose, children, wide = false }: {
   subtitle?: string;
   onClose: () => void;
   children: ReactNode;
-  wide?: boolean;
+  /** "extra": até 1024 px em telas grandes (formulários em duas colunas). */
+  wide?: boolean | "extra";
 }) {
   const canUseDOM = useSyncExternalStore(subscribeToNothing, getClientSnapshot, getServerSnapshot);
   const panelRef = useRef<HTMLElement>(null);
@@ -150,7 +152,7 @@ function Modal({ title, subtitle, onClose, children, wide = false }: {
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`max-h-[calc(100dvh-1.5rem)] w-full overscroll-contain overflow-y-auto rounded-[26px] border border-primary/15 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,0.48)] sm:max-h-[calc(100dvh-2.5rem)] sm:p-6 ${wide ? "sm:max-w-3xl" : "sm:max-w-xl"}`}
+        className={`max-h-[calc(100dvh-1.5rem)] w-full overscroll-contain overflow-y-auto rounded-[26px] border border-primary/15 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,0.48)] sm:max-h-[calc(100dvh-2.5rem)] sm:p-6 ${wide === "extra" ? "sm:max-w-3xl lg:max-w-5xl" : wide ? "sm:max-w-3xl" : "sm:max-w-xl"}`}
         onMouseDown={(event) => event.stopPropagation()}
       >
         <div className="mb-5 flex items-start justify-between gap-4">
@@ -227,43 +229,49 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
   }
 
   return (
-    <Modal title="Novo lançamento" subtitle="Receita, despesa ou transferência — única, parcelada ou fixa." onClose={onClose} wide>
-      <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2">
+    <Modal title="Novo lançamento" subtitle="Receita, despesa ou transferência — única, parcelada ou fixa." onClose={onClose} wide="extra">
+      <form onSubmit={submit} className="grid gap-4 lg:grid-cols-2 lg:gap-x-7">
         <input type="hidden" name="kind" value={kind} />
-        <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Tipo</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
-          {(["receita", "despesa", "transferencia"] as const).map((value) => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setCategoryId(""); setDestination(""); }} className={`ff-focus rounded-xl border px-2 py-3 text-xs font-extrabold transition sm:text-sm ${kind === value ? value === "receita" ? "border-primary bg-primary text-white shadow-sm" : value === "despesa" ? "border-red bg-red text-white shadow-sm" : "border-blue bg-blue text-white shadow-sm" : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "transferencia" ? "Transferência" : value.charAt(0).toUpperCase() + value.slice(1)}</button>)}
-        </div></fieldset>
-        <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} placeholder={kind === "transferencia" ? "Ex.: Reserva para outra conta" : "Ex.: Mercado"} className={INPUT} /></Field>
-        <Field label={frequency === "parcelada" && valueMode === "parcela" ? "Valor de cada parcela" : frequency === "parcelada" ? "Valor total" : "Valor"}><CurrencyInput name="value" required /></Field>
-        <Field label="Data"><FinFlowDatePicker name="scheduled_date" required defaultValue={initialDate ?? today} /></Field>
-        <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Repetição</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
-          {(["unica", "parcelada", "fixa"] as const).map((value) => <button key={value} type="button" aria-pressed={repetition === value} onClick={() => setRepetition(value)} className={`ff-focus rounded-xl border px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${repetition === value ? selectedChoice : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "unica" ? "Única" : value === "parcelada" ? "Parcelada" : "Fixa"}</button>)}
-        </div></fieldset>
-        {recurring && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Periodicidade</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
-          {(["semanal", "mensal", "anual"] as const).map((value) => <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)} className={`ff-focus rounded-xl border px-1 py-2.5 text-xs font-extrabold transition sm:text-sm ${period === value ? selectedChoice : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "semanal" ? "Semanal" : value === "mensal" ? "Mensal" : "Anual"}</button>)}
-        </div></fieldset>}
-        <input type="hidden" name="frequency" value={frequency} />
-        <input type="hidden" name="installment_frequency" value={repetition === "parcelada" ? period : "mensal"} />
-        {frequency === "parcelada" ? <Field label="Parcelas"><input name="installments" type="number" min={2} max={120} defaultValue={2} required className={INPUT} /></Field> : <input type="hidden" name="installments" value="2" />}
-        {frequency === "parcelada" && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">O valor informado é</legend><div className="grid grid-cols-2 gap-2">
-          {[["total", "Total da série"], ["parcela", "De cada parcela"]].map(([value, label]) => <button key={value} type="button" onClick={() => setValueMode(value)} className={`rounded-ff-sm border px-3 py-2 text-sm font-bold ${valueMode === value ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted"}`}>{label}</button>)}
-          <input type="hidden" name="value_mode" value={valueMode} />
-        </div></fieldset>}
-        {frequency !== "parcelada" && <input type="hidden" name="value_mode" value="total" />}
-        {repetition === "fixa" && <p className="sm:col-span-2 text-xs text-foreground-muted">O FinFlow mantém automaticamente os próximos cinco anos desta recorrência.</p>}
-        <Field label="Conta de origem"><FinFlowSelect name="account_id" required value={accountId} onChange={setAccountId} options={activeAccounts.map((account) => ({ value: String(account.id), label: account.nome }))} /></Field>
-        {kind === "transferencia" ? <Field label="Destino"><FinFlowSelect required value={destination} onChange={setDestination} placeholder="Selecione uma conta ou objetivo" options={[...activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => ({ value: `account:${account.id}`, label: account.nome, group: "Contas" })), ...goals.filter((goal) => !goal.arquivado).map((goal) => ({ value: `goal:${goal.id}`, label: goal.nome, group: "Objetivos" }))]} /><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><FinFlowSelect key={kind} name="category_id" required value={categoryId} onChange={setCategoryId} options={compatibleCategories.map((category) => ({ value: String(category.id), label: category.nome }))} /></Field>}
-        {kind === "transferencia" && <input type="hidden" name="category_id" value="0" />}
-        {recurring ? <input type="hidden" name="status" value="pendente" /> : <fieldset><legend className="mb-2 text-sm font-bold">Status</legend><div className="grid gap-2" role="radiogroup" aria-label="Status do lançamento">
-          {([['paga', 'Concluído na data'], ['pendente', 'Pendente']] as const).map(([value, label]) => <label key={value} className={`ff-focus flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-bold transition ${status === value ? 'border-primary bg-primary-soft text-primary-dark' : 'border-border bg-surface-muted text-foreground hover:border-primary/45'}`}>
-            <input type="radio" name="status" value={value} required checked={status === value} onChange={() => setStatus(value)} className="h-5 w-5 shrink-0 accent-primary" />
-            <span>{label}</span>
-          </label>)}
-        </div></fieldset>}
-        {!recurring && <div className="hidden sm:block" />}
-        {activeAccounts.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie ou reative uma conta antes de lançar.</p>}
-        {kind !== "transferencia" && compatibleCategories.length === 0 && <p role="alert" className="sm:col-span-2 text-sm font-semibold text-red">Crie uma categoria ativa compatível antes de lançar.</p>}
-        <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy || (!recurring && !status) || activeAccounts.length < 1 || (kind === "transferencia" && !destination) || (kind !== "transferencia" && compatibleCategories.length === 0)} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Criar lançamento"}</button></div>
+        {/* Esquerda: o quê, quanto, quando e de onde. */}
+        <div className="grid content-start gap-3.5 sm:grid-cols-2">
+          <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Tipo</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
+            {(["receita", "despesa", "transferencia"] as const).map((value) => <button key={value} type="button" aria-pressed={kind === value} onClick={() => { setKind(value); setCategoryId(""); setDestination(""); }} className={`ff-focus rounded-xl border px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${kind === value ? value === "receita" ? "border-primary bg-primary text-white shadow-sm" : value === "despesa" ? "border-red bg-red text-white shadow-sm" : "border-blue bg-blue text-white shadow-sm" : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "transferencia" ? "Transferência" : value.charAt(0).toUpperCase() + value.slice(1)}</button>)}
+          </div></fieldset>
+          <Field label="Descrição" className="sm:col-span-2"><input name="description" required maxLength={100} placeholder={kind === "transferencia" ? "Ex.: Reserva para outra conta" : "Ex.: Mercado"} className={INPUT} /></Field>
+          <Field label={frequency === "parcelada" && valueMode === "parcela" ? "Valor de cada parcela" : frequency === "parcelada" ? "Valor total" : "Valor"}><CurrencyInput name="value" required /></Field>
+          <Field label="Data"><FinFlowDatePicker name="scheduled_date" required defaultValue={initialDate ?? today} /></Field>
+          <Field label="Conta de origem"><FinFlowSelect name="account_id" required value={accountId} onChange={setAccountId} options={activeAccounts.map((account) => ({ value: String(account.id), label: account.nome }))} /></Field>
+          {kind === "transferencia" ? <Field label="Destino"><FinFlowSelect required value={destination} onChange={setDestination} placeholder="Selecione uma conta ou objetivo" options={[...activeAccounts.filter((account) => String(account.id) !== accountId).map((account) => ({ value: `account:${account.id}`, label: account.nome, group: "Contas" })), ...goals.filter((goal) => !goal.arquivado).map((goal) => ({ value: `goal:${goal.id}`, label: goal.nome, group: "Objetivos" }))]} /><input type="hidden" name="destination_account_id" value={destination.startsWith("account:") ? destination.slice(8) : "0"} /><input type="hidden" name="destination_goal_id" value={destination.startsWith("goal:") ? destination.slice(5) : "0"} /></Field> : <Field label="Categoria"><FinFlowSelect key={kind} name="category_id" required value={categoryId} onChange={setCategoryId} options={compatibleCategories.map((category) => ({ value: String(category.id), label: category.nome }))} /></Field>}
+          {kind === "transferencia" && <input type="hidden" name="category_id" value="0" />}
+        </div>
+        {/* Direita: como se repete e a situação. */}
+        <div className="grid content-start gap-3.5">
+          <fieldset><legend className="mb-2 text-sm font-bold">Repetição</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
+            {(["unica", "parcelada", "fixa"] as const).map((value) => <button key={value} type="button" aria-pressed={repetition === value} onClick={() => setRepetition(value)} className={`ff-focus rounded-xl border px-2 py-2.5 text-xs font-extrabold transition sm:text-sm ${repetition === value ? selectedChoice : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "unica" ? "Única" : value === "parcelada" ? "Parcelada" : "Fixa"}</button>)}
+          </div></fieldset>
+          {recurring && <fieldset><legend className="mb-2 text-sm font-bold">Periodicidade</legend><div className="grid grid-cols-3 gap-2 rounded-2xl bg-surface-muted/65 p-1.5">
+            {(["semanal", "mensal", "anual"] as const).map((value) => <button key={value} type="button" aria-pressed={period === value} onClick={() => setPeriod(value)} className={`ff-focus rounded-xl border px-1 py-2.5 text-xs font-extrabold transition sm:text-sm ${period === value ? selectedChoice : "border-transparent bg-transparent text-foreground-muted hover:bg-surface"}`}>{value === "semanal" ? "Semanal" : value === "mensal" ? "Mensal" : "Anual"}</button>)}
+          </div></fieldset>}
+          <input type="hidden" name="frequency" value={frequency} />
+          <input type="hidden" name="installment_frequency" value={repetition === "parcelada" ? period : "mensal"} />
+          {frequency === "parcelada" ? <div className="grid grid-cols-[minmax(6.5rem,8rem)_minmax(0,1fr)] items-end gap-3">
+            <Field label="Parcelas"><input name="installments" type="number" min={2} max={120} defaultValue={2} required className={INPUT} /></Field>
+            <fieldset><legend className="mb-1.5 text-sm font-bold">O valor informado é</legend><div className="grid grid-cols-2 gap-2">
+              {[["total", "Total da série"], ["parcela", "De cada parcela"]].map(([value, label]) => <button key={value} type="button" aria-pressed={valueMode === value} onClick={() => setValueMode(value)} className={`ff-focus min-h-12 rounded-xl border px-2 text-xs font-bold transition sm:text-sm ${valueMode === value ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted hover:border-primary/35"}`}>{label}</button>)}
+              <input type="hidden" name="value_mode" value={valueMode} />
+            </div></fieldset>
+          </div> : <><input type="hidden" name="installments" value="2" /><input type="hidden" name="value_mode" value="total" /></>}
+          {repetition === "fixa" && <p className="rounded-xl bg-surface-muted/65 px-3.5 py-3 text-xs leading-relaxed text-foreground-muted">O FinFlow mantém automaticamente os próximos cinco anos desta recorrência.</p>}
+          {recurring ? <input type="hidden" name="status" value="pendente" /> : <fieldset><legend className="mb-2 text-sm font-bold">Status</legend><div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Status do lançamento">
+            {([['paga', 'Concluído na data'], ['pendente', 'Pendente']] as const).map(([value, label]) => <label key={value} className={`ff-focus flex min-h-12 cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-bold transition ${status === value ? 'border-primary bg-primary-soft text-primary-dark' : 'border-border bg-surface-muted text-foreground hover:border-primary/45'}`}>
+              <input type="radio" name="status" value={value} required checked={status === value} onChange={() => setStatus(value)} className="h-5 w-5 shrink-0 accent-primary" />
+              <span>{label}</span>
+            </label>)}
+          </div></fieldset>}
+        </div>
+        {activeAccounts.length === 0 && <p role="alert" className="text-sm font-semibold text-red lg:col-span-2">Crie ou reative uma conta antes de lançar.</p>}
+        {kind !== "transferencia" && compatibleCategories.length === 0 && <p role="alert" className="text-sm font-semibold text-red lg:col-span-2">Crie uma categoria ativa compatível antes de lançar.</p>}
+        <div className="grid gap-3 sm:grid-cols-[1fr_auto_auto] sm:items-center lg:col-span-2"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy || (!recurring && !status) || activeAccounts.length < 1 || (kind === "transferencia" && !destination) || (kind !== "transferencia" && compatibleCategories.length === 0)} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Criar lançamento"}</button></div>
       </form>
     </Modal>
   );
@@ -678,7 +686,8 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
   function choosePeriod(value: PeriodFilter) { setPeriod(value); setLimit(PAGE_SIZE); syncUrl(value); }
-  function changeMonth(delta: number) { const next = shiftMonth(month, delta); setMonth(next); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", next); }
+  function chooseMonth(next: string) { setMonth(next); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", next); }
+  function changeMonth(delta: number) { chooseMonth(shiftMonth(month, delta)); }
   function clearFilters() {
     setSearch("");
     setPeriod("pending");
@@ -815,7 +824,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
         <div><p className="text-xs font-extrabold uppercase tracking-[0.18em] text-mint">Movimentações</p><h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Histórico</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-white/72">Lançamentos, recorrências, transferências e faturas em uma linha do tempo completa.</p></div>
       </div>
       <div className="relative mt-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex items-center gap-2"><button type="button" onClick={() => changeMonth(-1)} aria-label="Mês anterior" className="ff-focus grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/10 text-xl font-black text-white transition hover:bg-white/10">‹</button><div className="min-w-40 text-center"><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-white/55">Período mensal</p><p className="mt-0.5 font-black text-white">{monthTitle(month)}</p></div><button type="button" onClick={() => changeMonth(1)} aria-label="Próximo mês" className="ff-focus grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/10 text-xl font-black text-white transition hover:bg-white/10">›</button></div>
+        <div className="flex items-center gap-2"><button type="button" onClick={() => changeMonth(-1)} aria-label="Mês anterior" className="ff-focus grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/10 text-xl font-black text-white transition hover:bg-white/10">‹</button><MonthPicker month={month} currentMonth={today.slice(0, 7)} label={monthTitle(month)} onChange={chooseMonth} /><button type="button" onClick={() => changeMonth(1)} aria-label="Próximo mês" className="ff-focus grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/10 text-xl font-black text-white transition hover:bg-white/10">›</button></div>
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Itens</p><p className="truncate font-black">{filtered.length}</p></div><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Receitas</p><p data-private-value="true" className="truncate text-sm font-black text-mint sm:text-base">{formatarReais(totals.receita)}</p></div><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Despesas</p><p data-private-value="true" className="truncate text-sm font-black text-[#ff8c84] sm:text-base">{formatarReais(totals.despesa)}</p></div><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Transferências</p><p data-private-value="true" className="truncate text-sm font-black text-blue sm:text-base">{formatarReais(totals.transferencia)}</p></div></div>
       </div>
     </header>

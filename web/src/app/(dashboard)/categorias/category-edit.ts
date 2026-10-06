@@ -40,3 +40,24 @@ export function buildCategoryChanges(
 
   return { changes, conflicts };
 }
+
+export type CategoryTargetField = "monthly_goal" | "monthly_limit";
+
+function sameMoney(left: number | null, right: number | null) {
+  if (left === null || right === null) return left === right;
+  return Math.round(left * 100) === Math.round(right * 100);
+}
+
+/**
+ * Mesma regra para a meta/o limite mensal (null = sem valor): só muda o que
+ * a pessoa editou e não sobrescreve uma alteração feita em outro dispositivo.
+ */
+export function buildTargetChange(
+  current: number | null,
+  original: number | null,
+  desired: number | null,
+): { changed: boolean; conflict: boolean } {
+  if (sameMoney(desired, original)) return { changed: false, conflict: false };
+  if (!sameMoney(current, original)) return { changed: false, conflict: true };
+  return { changed: true, conflict: false };
+}

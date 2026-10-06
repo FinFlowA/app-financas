@@ -205,6 +205,25 @@ assert.match(telaInicio, /\(\["semanal", "mensal", "anual"\] as const\)/);
 assert.match(telaInicio, /payload\.installment_frequency = frequenciaParcelada/);
 assert.doesNotMatch(telaInicio, /"diaria"/, "Não existe repetição diária.");
 
+// Meta (receitas) e limite (despesas) mensais das categorias: fila offline,
+// campos e barra em Gerenciar Categorias (o cálculo é testado no site).
+const { buildOfflineUpdateCommand } = carregar("lib/offline-update-core.ts");
+assert.deepEqual(
+  buildOfflineUpdateCommand("update_category", 7, 3, { monthly_limit: 800, monthly_goal: null }).payload.changes,
+  { monthly_limit: 800, monthly_goal: null },
+  "A edição offline aceita a meta e o limite, e null para tirar o valor.",
+);
+assert.throws(() => buildOfflineUpdateCommand("update_category", 7, 3, { meta: 1 }), /OFFLINE_UNSUPPORTED_UPDATE_FIELD/);
+assert.match(telaInicio, /progressoDasCategorias\(categorias, transacoes, comprasCartao, mes\)/);
+assert.match(telaInicio, /<ProgressoMetaCategoria progresso=\{progresso\}/);
+assert.match(telaInicio, /\[tipoNovaCategoria === "receita" \? "monthly_goal" : "monthly_limit"\]: alvoNovo/);
+assert.match(telaInicio, /changes\[catEditando\.tipo === "receita" \? "monthly_goal" : "monthly_limit"\] = alvoDesejado/);
+
+// Histórico: o período abre a escolha de mês e ano (antes, só o ano).
+const telaHistorico = fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8");
+assert.match(telaHistorico, /Mês e ano do histórico/);
+assert.match(telaHistorico, /onPress=\{\(\) => escolherMesAno\(anoSeletor, indice \+ 1\)\}/);
+
 testeDemo.then(
   () => console.log("App helper tests passed."),
   (erro) => {

@@ -240,6 +240,8 @@ export default function TransacoesScreen() {
   const [modalFiltroCat, setModalFiltroCat] = useState(false);
   const [modalFiltroTipo, setModalFiltroTipo] = useState(false);
   const [modalFiltroAno, setModalFiltroAno] = useState(false);
+  // Ano mostrado na janela de mês e ano; só vira seleção ao tocar num mês.
+  const [anoSeletor, setAnoSeletor] = useState(() => new Date().getFullYear());
 
   // Edit transaction modal
   const [modalEditarTransVisivel, setModalEditarTransVisivel] = useState(false);
@@ -296,15 +298,14 @@ export default function TransacoesScreen() {
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
-  const alterarAno = (direcao: number) => {
+  const escolherMesAno = (ano: number, mes: number) => {
     setFiltroHoje(false);
     setFiltroProximosSeteDias(false);
     setFiltroVencidas(false);
-    const novoAno = anoSelecionado + direcao;
-    setAnoSelecionado(novoAno);
-    const mesNum = mesSelecionado.split("-")[1];
-    setMesSelecionado(`${novoAno}-${mesNum}`);
+    setAnoSelecionado(ano);
+    setMesSelecionado(`${ano}-${String(mes).padStart(2, "0")}`);
     setPaginaAtual(1);
+    setModalFiltroAno(false);
   };
 
   const alterarMes = (direcao: number) => {
@@ -2014,7 +2015,7 @@ export default function TransacoesScreen() {
           <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.periodSelectorArrow} accessibilityLabel="Mês anterior">
             <MaterialIcons name="chevron-left" size={25} color="#805AD5" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setModalFiltroAno(true)} style={styles.periodSelectorCenter} accessibilityLabel={`Período selecionado: ${formatarMesAno(mesSelecionado)}. Toque para alterar o ano.`}>
+          <TouchableOpacity onPress={() => { setAnoSeletor(Number(mesSelecionado.slice(0, 4))); setModalFiltroAno(true); }} style={styles.periodSelectorCenter} accessibilityLabel={`Período selecionado: ${formatarMesAno(mesSelecionado)}. Toque para escolher o mês e o ano.`}>
             <MaterialIcons name="calendar-today" size={16} color="#805AD5" />
             <Text style={[styles.periodSelectorText, { color: Cores.textoPrincipal }]}>{formatarMesAno(mesSelecionado)}</Text>
           </TouchableOpacity>
@@ -3017,30 +3018,52 @@ export default function TransacoesScreen() {
             <View style={styles.filterModalHeader}>
               <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#805AD51F" }]}><MaterialIcons name="calendar-today" size={21} color="#805AD5" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Ano do histórico</Text>
-                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Escolha o ano sem perder a navegação mensal.</Text>
+                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Mês e ano do histórico</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Escolha o ano nas setas e toque no mês.</Text>
               </View>
-              <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroAno(false)} accessibilityLabel="Fechar filtro por ano">
+              <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroAno(false)} accessibilityLabel="Fechar escolha de mês e ano">
                 <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
               </TouchableOpacity>
             </View>
 
             <View style={[styles.yearFilterStepper, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
-              <TouchableOpacity onPress={() => alterarAno(-1)} style={styles.yearFilterArrow} accessibilityLabel="Ano anterior">
+              <TouchableOpacity onPress={() => setAnoSeletor((ano) => ano - 1)} style={styles.yearFilterArrow} accessibilityLabel="Ano anterior">
                 <MaterialIcons name="chevron-left" size={27} color="#805AD5" />
               </TouchableOpacity>
               <View style={styles.yearFilterCurrent}>
-                <Text style={[styles.yearFilterLabel, { color: Cores.textoSecundario }]}>ANO SELECIONADO</Text>
-                <Text style={[styles.yearFilterValue, { color: Cores.textoPrincipal }]}>{anoSelecionado}</Text>
+                <Text style={[styles.yearFilterLabel, { color: Cores.textoSecundario }]}>ANO</Text>
+                <Text style={[styles.yearFilterValue, { color: Cores.textoPrincipal }]}>{anoSeletor}</Text>
               </View>
-              <TouchableOpacity onPress={() => alterarAno(1)} style={styles.yearFilterArrow} accessibilityLabel="Próximo ano">
+              <TouchableOpacity onPress={() => setAnoSeletor((ano) => ano + 1)} style={styles.yearFilterArrow} accessibilityLabel="Próximo ano">
                 <MaterialIcons name="chevron-right" size={27} color="#805AD5" />
               </TouchableOpacity>
             </View>
 
-            <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#805AD5" }]} onPress={() => setModalFiltroAno(false)}>
-              <Text style={styles.modalBotaoTexto}>Aplicar</Text>
-            </TouchableOpacity>
+            <View style={styles.monthPickerGrid}>
+              {["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"].map((nome, indice) => {
+                const chave = `${anoSeletor}-${String(indice + 1).padStart(2, "0")}`;
+                const selecionado = chave === mesSelecionado;
+                const atual = chave === mesAtualChave;
+                return (
+                  <TouchableOpacity
+                    key={nome}
+                    style={[styles.monthPickerCell, { borderColor: selecionado || atual ? "#805AD5" : Cores.borda, backgroundColor: selecionado ? "#805AD5" : Cores.pillFundo }]}
+                    onPress={() => escolherMesAno(anoSeletor, indice + 1)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: selecionado }}
+                    accessibilityLabel={`${nome} de ${anoSeletor}`}
+                  >
+                    <Text style={[styles.monthPickerText, { color: selecionado ? "#FFF" : atual ? "#805AD5" : Cores.textoPrincipal }]}>{nome}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {mesSelecionado !== mesAtualChave && (
+              <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#805AD5" }]} onPress={() => escolherMesAno(Number(mesAtualChave.slice(0, 4)), Number(mesAtualChave.slice(5, 7)))}>
+                <Text style={styles.modalBotaoTexto}>Voltar para o mês atual</Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
       </FinFlowPopup>
@@ -3429,6 +3452,9 @@ const styles = StyleSheet.create({
   yearFilterCurrent: { alignItems: "center", justifyContent: "center" },
   yearFilterLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 0.6, marginBottom: 2 },
   yearFilterValue: { fontSize: 25, fontWeight: "900" },
+  monthPickerGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8, marginBottom: 16 },
+  monthPickerCell: { width: "31.5%", minHeight: 46, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  monthPickerText: { fontSize: 15, fontWeight: "800" },
   yearFilterAvailableLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 0.65, marginBottom: 8 },
   yearFilterOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
   yearFilterOption: { minWidth: 72, minHeight: 40, paddingHorizontal: 13, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },

@@ -17,7 +17,8 @@ const UPDATE_CONTRACT = {
   },
   update_category: {
     resourceIdKey: "category_id",
-    fields: new Set(["name", "color", "icon"]),
+    // monthly_goal/monthly_limit: número positivo, ou null para tirar o valor.
+    fields: new Set(["name", "color", "icon", "monthly_goal", "monthly_limit"]),
   },
   update_goal: {
     resourceIdKey: "goal_id",
