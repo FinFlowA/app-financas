@@ -16,7 +16,7 @@ Ficam fora das migrations e são refeitos à parte num ambiente novo: segredos d
 |---|---|
 | `contas` | Contas financeiras, saldo inicial, cor, arquivamento e compartilhamento |
 | `transacoes` | Receitas, despesas, transferências e registros técnicos de pagamento |
-| `categorias` | Classificação de receitas/despesas e catálogo do usuário |
+| `categorias` | Classificação de receitas/despesas e catálogo do usuário, com meta mensal (`meta_mensal`, receitas) e limite mensal (`limite_mensal`, despesas) opcionais |
 | `caixinhas` | Objetivos, meta, saldo, prazo e compartilhamento |
 | `cartoes` | Cartões, limite, fechamento, vencimento e estado ativo |
 | `fatura_itens` | Compras e cobranças mensais/parceladas de cartão |

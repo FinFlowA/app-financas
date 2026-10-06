@@ -93,17 +93,38 @@ export function createLocalDemoSession(user = createLocalDemoUser()): LocalDemoS
 
 function categories(): LocalDemoRow[] {
   return [
-    { id: 1, user_id: LOCAL_DEMO_USER_ID, nome: "Alimentação", tipo: "despesa", cor: "#E76F51", icone: "restaurant", ativa: 1, bloqueado_plano: false },
+    { id: 1, user_id: LOCAL_DEMO_USER_ID, nome: "Alimentação", tipo: "despesa", cor: "#E76F51", icone: "restaurant", ativa: 1, bloqueado_plano: false, limite_mensal: 800 },
     { id: 2, user_id: LOCAL_DEMO_USER_ID, nome: "Moradia", tipo: "despesa", cor: "#457B9D", icone: "home", ativa: 1, bloqueado_plano: false },
-    { id: 3, user_id: LOCAL_DEMO_USER_ID, nome: "Transporte", tipo: "despesa", cor: "#F4A261", icone: "directions-car", ativa: 1, bloqueado_plano: false },
-    { id: 4, user_id: LOCAL_DEMO_USER_ID, nome: "Lazer", tipo: "despesa", cor: "#8A05BE", icone: "sports-esports", ativa: 1, bloqueado_plano: false },
+    { id: 3, user_id: LOCAL_DEMO_USER_ID, nome: "Transporte", tipo: "despesa", cor: "#F4A261", icone: "directions-car", ativa: 1, bloqueado_plano: false, limite_mensal: 250 },
+    { id: 4, user_id: LOCAL_DEMO_USER_ID, nome: "Lazer", tipo: "despesa", cor: "#8A05BE", icone: "sports-esports", ativa: 1, bloqueado_plano: false, limite_mensal: 300 },
     { id: 5, user_id: LOCAL_DEMO_USER_ID, nome: "Saúde", tipo: "despesa", cor: "#E63946", icone: "health-and-safety", ativa: 1, bloqueado_plano: false },
     { id: 6, user_id: LOCAL_DEMO_USER_ID, nome: "Outros", tipo: "despesa", cor: "#6C7D77", icone: "more-horiz", ativa: 1, bloqueado_plano: false },
-    { id: 7, user_id: LOCAL_DEMO_USER_ID, nome: "Salário", tipo: "receita", cor: "#2A9D8F", icone: "payments", ativa: 1, bloqueado_plano: false },
-    { id: 8, user_id: LOCAL_DEMO_USER_ID, nome: "Freelance", tipo: "receita", cor: "#3A86FF", icone: "laptop", ativa: 1, bloqueado_plano: false },
+    { id: 7, user_id: LOCAL_DEMO_USER_ID, nome: "Salário", tipo: "receita", cor: "#2A9D8F", icone: "payments", ativa: 1, bloqueado_plano: false, meta_mensal: 6500 },
+    { id: 8, user_id: LOCAL_DEMO_USER_ID, nome: "Freelance", tipo: "receita", cor: "#3A86FF", icone: "laptop", ativa: 1, bloqueado_plano: false, meta_mensal: 1500 },
     { id: 9, user_id: LOCAL_DEMO_USER_ID, nome: "Investimentos", tipo: "receita", cor: "#8AB17D", icone: "trending-up", ativa: 1, bloqueado_plano: false },
     { id: 10, user_id: LOCAL_DEMO_USER_ID, nome: "Outros", tipo: "receita", cor: "#6C7D77", icone: "more-horiz", ativa: 1, bloqueado_plano: false },
-    { id: 11, user_id: LOCAL_DEMO_USER_ID, nome: "Compras", tipo: "despesa", cor: "#EC7000", icone: "shopping-bag", ativa: 1, bloqueado_plano: false },
+    { id: 11, user_id: LOCAL_DEMO_USER_ID, nome: "Compras", tipo: "despesa", cor: "#EC7000", icone: "shopping-bag", ativa: 1, bloqueado_plano: false, limite_mensal: 400 },
+  ];
+}
+
+/**
+ * Lançamentos do mês corrente, para a demonstração mostrar o progresso das
+ * metas e limites das categorias (normal, alerta, estourado e meta). Os
+ * concluídos ficam no dia 1 (nunca no futuro) e os agendados, no dia 28.
+ */
+function currentMonthTransactions(): LocalDemoRow[] {
+  const now = new Date();
+  const month = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const base = { user_id: LOCAL_DEMO_USER_ID, conta_id: 1, criado_em: `${month}-01T12:00:00.000Z` };
+  const paid = { data_vencimento: `${month}-01`, data_realizacao: `${month}-01`, status: "paga" };
+  const scheduled = { data_vencimento: `${month}-28`, data_realizacao: null, status: "pendente" };
+  return [
+    { ...base, ...paid, id: 1001, categoria_id: 7, tipo: "receita", valor: 6200, descricao: "Salário do mês" },
+    { ...base, ...scheduled, id: 1002, categoria_id: 8, tipo: "receita", valor: 900, descricao: "Projeto freelance do mês" },
+    { ...base, ...paid, id: 1003, categoria_id: 1, tipo: "despesa", valor: 520.4, descricao: "Supermercado do mês" },
+    { ...base, ...scheduled, id: 1004, categoria_id: 1, tipo: "despesa", valor: 180, descricao: "Feira do fim do mês" },
+    { ...base, ...paid, id: 1005, categoria_id: 3, tipo: "despesa", valor: 210, descricao: "Combustível" },
+    { ...base, ...paid, id: 1006, categoria_id: 4, tipo: "despesa", valor: 320, descricao: "Show" },
   ];
 }
 
@@ -167,7 +188,7 @@ export function createLocalDemoFixtures(): LocalDemoDatabase {
   return {
     categorias: categories(),
     contas: accounts(),
-    transacoes: transactions(),
+    transacoes: [...transactions(), ...currentMonthTransactions()],
     caixinhas: goals(),
     cartoes: cards(),
     fatura_itens: invoiceItems(),

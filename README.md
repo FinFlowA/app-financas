@@ -351,6 +351,25 @@ com layouts bancários não padronizados.
   próprio, animado inteiro. O navegador não refaz mais o layout a cada quadro
   enquanto o usuário mexe o mouse ou seleciona texto; a aparência é a mesma.
 
+### Atualização de metas e limites por categoria — 06/10/2026
+
+- **Meta e limite mensais:** ao criar ou editar uma categoria, no app e no
+  site, dá para definir uma meta mensal (receitas) ou um limite mensal
+  (despesas). A tela de Categorias do site e "Gerenciar Categorias" no app
+  mostram a barra do mês: cheia com o que já aconteceu e mais clara com o que
+  está agendado. O limite fica laranja a partir de 80% e vermelho ao passar.
+  O cálculo é o mesmo nos dois (`web/src/lib/metas-categorias.ts`). Migration
+  `20261006120000_metas_e_limites_das_categorias.sql`, com testes em
+  `supabase/tests/metas_categorias.test.sql`.
+- **Histórico:** no site, clicar no mês abre a escolha de mês e ano; no app, a
+  janela do período, que só trocava o ano, agora escolhe mês e ano.
+- **Novo lançamento (site):** em tela grande a janela usa duas colunas e cabe
+  sem rolar; "Parcelas" fica ao lado de "O valor informado é".
+- **Atrasados (site):** a janela que abre no Início separa Receitas, Despesas e
+  Transferências em colunas, cada uma em ordem de vencimento. Transferências
+  atrasadas da conta selecionada passam a aparecer.
+  Regras em [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md).
+
 ## Deploy do site
 
 O painel precisa de um runtime Next.js completo: usa cookies no servidor, Proxy/Middleware, Server Components, Server Actions e rotas dinâmicas. Portanto, não é compatível com hospedagem puramente estática como GitHub Pages.

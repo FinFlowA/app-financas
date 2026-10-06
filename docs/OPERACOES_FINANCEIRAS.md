@@ -86,6 +86,18 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - No gráfico inicial do site, categorias com o mesmo nome normalizado são agrupadas, ainda que possuam IDs diferentes.
 - Transferências, objetivos e pagamentos técnicos de fatura são excluídos dos totais por categoria.
 
+## Metas e limites por categoria
+
+- Cada categoria pode ter uma **meta mensal** (receitas) ou um **limite mensal** (despesas), opcionais e maiores que zero; uma categoria `ambos` aceita os dois. Ficam em `categorias.meta_mensal` e `categorias.limite_mensal` e são definidos ao criar ou editar a categoria, no app e no site (campos `monthly_goal` e `monthly_limit` de `create_category` e `update_category`; na edição, `null` tira o valor). O banco recusa meta em despesa e limite em receita (`AI_CATEGORY_TARGET_NOT_ALLOWED`).
+- O acompanhamento é do mês atual e segue as regras da Visão do mês: concluído conta como realizado e pendente como agendado, pela data efetiva; transferências, objetivos e o pagamento bancário da fatura ficam de fora; cada compra do cartão conta como despesa realizada no mês da fatura, sem os ajustes de pagamento parcial.
+- A porcentagem usa só o realizado; o agendado aparece à parte, na parte mais clara da barra. Limite: normal abaixo de 80%, laranja de 80% a 100% e vermelho acima ("Passou R$ X do limite"). Meta: "Meta atingida" a partir de 100%. Não há aviso por notificação.
+- A regra fica em `web/src/lib/metas-categorias.ts` e é usada pela tela de Categorias do site e por "Gerenciar Categorias" no app.
+
+## Atrasados no Início (site)
+
+- Ao abrir o Início, uma janela lista os lançamentos pendentes com vencimento anterior a hoje em três colunas: Receitas, Despesas e Transferências (transferências entre contas e movimentos de objetivo). Cada coluna fica em ordem de vencimento e mostra a quantidade e o total.
+- Entram os lançamentos das contas selecionadas e as transferências que saem de uma conta selecionada. Depois de fechada, a janela só volta a abrir na mesma sessão se a lista de atrasados mudar.
+
 ## Idempotência e concorrência
 
 - Repetir a mesma requisição com a mesma chave deve devolver o recibo, não duplicar o lançamento.

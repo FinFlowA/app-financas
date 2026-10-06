@@ -2,7 +2,10 @@
 
 import { useActionState, useEffect, useId, useRef, useState } from "react";
 import ConfirmationDialog from "@/components/ui/confirmation-dialog";
+import CurrencyInput from "@/components/ui/currency-input";
 import FinancialIcon from "@/components/ui/financial-icon";
+import { formatarReais } from "@/lib/format";
+import { largurasDaBarra, type ProgressoDoAlvo } from "@/lib/metas-categorias";
 import type { Categoria } from "@/lib/types";
 import { useRequestId } from "@/lib/use-request-id";
 import {
@@ -12,6 +15,48 @@ import {
   type CategoriaActionState,
 } from "./actions";
 import { CATEGORY_COLORS, CATEGORY_ICONS } from "./category-options";
+
+/** Progresso do mês por categoria: meta (receitas) e/ou limite (despesas). */
+export type CategoryProgress = Record<number, { meta?: ProgressoDoAlvo; limite?: ProgressoDoAlvo }>;
+
+const TARGET_COPY = {
+  monthly_goal: { label: "Meta mensal (opcional)", hint: "Quanto você quer receber nesta categoria por mês." },
+  monthly_limit: { label: "Limite mensal (opcional)", hint: "Quanto você quer gastar, no máximo, nesta categoria por mês." },
+} as const;
+
+function TargetField({ field, name, defaultValue, className = "" }: { field: keyof typeof TARGET_COPY; name: string; defaultValue?: number | null; className?: string }) {
+  const copy = TARGET_COPY[field];
+  return <div className={className}>
+    <p className="text-sm font-bold text-foreground">{copy.label}</p>
+    <p className="mt-0.5 text-xs text-foreground-muted">{copy.hint} Deixe em branco para não usar.</p>
+    <div className="mt-1.5"><CurrencyInput name={name} defaultValue={defaultValue ?? undefined} ariaLabel={copy.label} /></div>
+  </div>;
+}
+
+function TargetProgress({ progress }: { progress: ProgressoDoAlvo }) {
+  const widths = largurasDaBarra(progress);
+  const limit = progress.tipo === "limite";
+  const tone = progress.situacao === "estourado" ? "bg-red" : progress.situacao === "alerta" ? "bg-[#F4A261]" : "bg-primary";
+  const percent = Math.round(progress.percentual);
+  const status = limit
+    ? progress.situacao === "estourado"
+      ? <span className="font-bold text-red">Passou <span data-private-value="true">{formatarReais(-progress.restante)}</span> do limite</span>
+      : <>{percent}% usado · restam <span data-private-value="true">{formatarReais(progress.restante)}</span></>
+    : progress.situacao === "atingida"
+      ? <span className="font-bold text-primary">Meta atingida</span>
+      : <>{percent}% da meta · faltam <span data-private-value="true">{formatarReais(progress.restante)}</span></>;
+  return <div className="relative mt-3 rounded-xl border border-border/70 bg-surface-muted/45 px-3 py-2.5">
+    <div className="flex items-baseline justify-between gap-2 text-xs">
+      <span className="font-bold text-foreground-muted">{limit ? "Limite do mês" : "Meta do mês"}</span>
+      <span className="truncate font-black text-foreground"><span data-private-value="true">{formatarReais(progress.realizado)}</span> <span className="font-semibold text-foreground-muted">de <span data-private-value="true">{formatarReais(progress.alvo)}</span></span></span>
+    </div>
+    <div className="mt-2 flex h-2 overflow-hidden rounded-full bg-border/60" role="progressbar" aria-label={limit ? "Uso do limite do mês" : "Progresso da meta do mês"} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, Math.max(0, percent))} aria-valuetext={`${percent}%`}>
+      <span className={`h-full ${tone} transition-[width] duration-500`} style={{ width: `${widths.realizado}%` }} />
+      <span className={`h-full ${tone} opacity-35 transition-[width] duration-500`} style={{ width: `${widths.agendado}%` }} />
+    </div>
+    <p className="mt-1.5 text-[11px] leading-snug text-foreground-muted">{status}{progress.agendado > 0.004 && <> · <span data-private-value="true">{formatarReais(progress.agendado)}</span> {limit ? "agendado" : "a receber"}</>}</p>
+  </div>;
+}
 
 const INITIAL: CategoriaActionState = { erro: null };
 const ICON_LABELS: Record<string, string> = {
@@ -66,6 +111,7 @@ function NewCategory() {
     {open && <form action={action} className="grid gap-4 border-t border-border/70 bg-surface-muted/35 p-4 sm:grid-cols-2 sm:p-5"><RequestId state={state} />
       <label className="text-sm font-bold">Nome<input name="name" maxLength={80} required className="ff-focus mt-1.5 w-full rounded-xl border border-border bg-surface-muted px-3.5 py-3 font-normal outline-none transition focus:border-primary" /></label>
       <fieldset><legend className="mb-1 text-sm font-bold">Tipo</legend><div className="grid grid-cols-2 gap-2 rounded-2xl bg-surface-muted/70 p-1.5"><input type="hidden" name="type" value={type} />{(["receita", "despesa"] as const).map((value) => <button key={value} type="button" aria-pressed={type === value} onClick={() => setType(value)} className={`ff-focus rounded-xl border px-3 py-2.5 text-sm font-bold capitalize transition ${type === value ? value === "receita" ? "border-primary bg-primary text-white shadow-sm" : "border-red bg-red text-white shadow-sm" : "border-transparent text-foreground-muted hover:bg-surface"}`}>{value}</button>)}</div></fieldset>
+      <TargetField key={type} field={type === "receita" ? "monthly_goal" : "monthly_limit"} name="monthly_target" className="sm:col-span-2 sm:max-w-md" />
       <div className="grid gap-4 sm:col-span-2"><ChoiceFields color={color} icon={icon} setColor={setColor} setIcon={setIcon} /></div>
       <div className="sm:col-span-2"><button disabled={pending} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50">{pending ? "Criando..." : "Criar categoria"}</button><Message state={state} /></div>
     </form>}
@@ -88,6 +134,8 @@ function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDisc
     <input type="hidden" name="original_color" value={category.cor} />
     <input type="hidden" name="original_icon" value={category.icone} />
     <label className="text-xs font-bold uppercase text-foreground-muted">Nome<input name="name" required defaultValue={category.nome} maxLength={80} className="mt-1 w-full rounded-ff-sm border border-border bg-surface-muted px-3 py-2.5 text-sm normal-case text-foreground outline-none focus:border-primary" /></label>
+    {category.tipo !== "despesa" && <><input type="hidden" name="original_monthly_goal" value={category.meta_mensal ?? ""} /><TargetField field="monthly_goal" name="monthly_goal" defaultValue={category.meta_mensal} /></>}
+    {category.tipo !== "receita" && <><input type="hidden" name="original_monthly_limit" value={category.limite_mensal ?? ""} /><TargetField field="monthly_limit" name="monthly_limit" defaultValue={category.limite_mensal} /></>}
     <ChoiceFields color={color} icon={icon} setColor={setColor} setIcon={setIcon} />
     <div className="grid gap-2 sm:grid-cols-2">
       <button type="button" disabled={editing} onClick={onDiscard} className="ff-focus rounded-full border border-border px-4 py-2.5 text-sm font-bold text-foreground-muted transition hover:bg-surface disabled:opacity-50">Descartar alterações</button>
@@ -97,7 +145,7 @@ function CategoryEditForm({ category, onDiscard }: { category: Categoria; onDisc
   </form>;
 }
 
-function CategoryCard({ category }: { category: Categoria }) {
+function CategoryCard({ category, progress }: { category: Categoria; progress?: ProgressoDoAlvo }) {
   const actionFormId = useId();
   const active = category.ativa === true || category.ativa === 1;
   const [expanded, setExpanded] = useState(false);
@@ -112,6 +160,7 @@ function CategoryCard({ category }: { category: Categoria }) {
       <span className="min-w-0 flex-1"><span className="block truncate font-extrabold text-foreground">{category.nome}</span><span className={`mt-0.5 block text-[9px] font-extrabold uppercase tracking-wide ${category.tipo === "receita" ? "text-primary" : "text-red"}`}>{active ? "Ativa" : "Arquivada"}</span></span>
       <span aria-hidden="true" className={`text-primary transition ${expanded ? "rotate-180" : ""}`}>⌄</span>
     </button>
+    {progress && <TargetProgress progress={progress} />}
     {expanded && <div className="relative mt-3 border-t border-border/70 pt-3">
       {active ? <>
         <button type="button" aria-expanded={editOpen} onClick={() => setEditOpen((value) => !value)} className="ff-focus flex w-full items-center justify-between rounded-lg py-1 text-left font-bold text-primary"><span>Editar categoria</span><span aria-hidden="true" className={`transition ${editOpen ? "rotate-180" : ""}`}>⌄</span></button>
@@ -137,7 +186,7 @@ function CategoryCard({ category }: { category: Categoria }) {
   </article>;
 }
 
-export default function CategoryManager({ categories }: { categories: Categoria[] }) {
+export default function CategoryManager({ categories, progress = {} }: { categories: Categoria[]; progress?: CategoryProgress }) {
   const ordered = [...categories].sort((a, b) => Number(Boolean(b.ativa)) - Number(Boolean(a.ativa)) || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
-  return <><NewCategory /><div className="grid items-start gap-6 lg:grid-cols-2">{(["despesa", "receita"] as const).map((type) => { const filtered = ordered.filter((category) => category.tipo === type || category.tipo === "ambos"); return <section key={type} className="min-w-0"><div className="mb-3 flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${type === "receita" ? "bg-primary" : "bg-red"}`} /><h2 className="text-lg font-extrabold text-foreground">Categorias de {type}</h2><span className="rounded-full bg-surface-muted px-2.5 py-1 text-[10px] font-extrabold text-foreground-muted">{filtered.length}</span></div><div className="grid gap-3">{filtered.map((category) => <CategoryCard key={`${type}-${category.id}`} category={category} />)}</div>{filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">Nenhuma categoria de {type} cadastrada.</div>}</section>; })}</div></>;
+  return <><NewCategory /><div className="grid items-start gap-6 lg:grid-cols-2">{(["despesa", "receita"] as const).map((type) => { const filtered = ordered.filter((category) => category.tipo === type || category.tipo === "ambos"); return <section key={type} className="min-w-0"><div className="mb-3 flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${type === "receita" ? "bg-primary" : "bg-red"}`} /><h2 className="text-lg font-extrabold text-foreground">Categorias de {type}</h2><span className="rounded-full bg-surface-muted px-2.5 py-1 text-[10px] font-extrabold text-foreground-muted">{filtered.length}</span></div><div className="grid gap-3">{filtered.map((category) => <CategoryCard key={`${type}-${category.id}`} category={category} progress={type === "receita" ? progress[category.id]?.meta : progress[category.id]?.limite} />)}</div>{filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">Nenhuma categoria de {type} cadastrada.</div>}</section>; })}</div></>;
 }

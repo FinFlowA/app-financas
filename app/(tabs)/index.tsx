@@ -32,6 +32,8 @@ import { useAppTheme } from "../_layout";
 import { agendarNotificacoesDoApp } from "../../lib/notifications";
 import { usuarioPodeAcessarIA } from "../../constants/features";
 import { fmtReais, formatarEntradaMoeda, valorDaEntradaMoeda } from "../../lib/utils";
+import { progressoDasCategorias, valorDoAlvo } from "../../web/src/lib/metas-categorias";
+import ProgressoMetaCategoria from "../../components/ProgressoMetaCategoria";
 import { limiteUsadoDoCartao } from "../../lib/lembretes-vencimento";
 import { FinFlowColors, FinFlowRadius, FinFlowShadow, finFlowTheme } from "../../constants/finflow-design";
 import Button from "../../components/FinFlowButton";
@@ -71,6 +73,9 @@ interface Categoria {
   tipo: string;
   ativa: number;
   version?: number;
+  /** Meta mensal (receitas) e limite mensal (despesas), opcionais. */
+  meta_mensal?: number | null;
+  limite_mensal?: number | null;
 }
 interface Conta {
   id: number;
@@ -292,12 +297,14 @@ export default function Dashboard() {
   const [corSelecionada, setCorSelecionada] = useState(PALETA_CORES[0]);
   const [tipoNovaCategoria, setTipoNovaCategoria] = useState<"receita" | "despesa">("despesa");
   const [iconeSelecionado, setIconeSelecionado] = useState("label");
+  const [alvoNovaCategoria, setAlvoNovaCategoria] = useState("");
 
   const [modalGerenciarCatVisivel, setModalGerenciarCatVisivel] = useState(false);
   const [catEditando, setCatEditando] = useState<Categoria | null>(null);
   const [nomeEditCat, setNomeEditCat] = useState("");
   const [corEditCat, setCorEditCat] = useState(PALETA_CORES[0]);
   const [iconeEditCat, setIconeEditCat] = useState("label");
+  const [alvoEditCat, setAlvoEditCat] = useState("");
   const [loadingEdicaoCat, setLoadingEdicaoCat] = useState(false);
   const [categoriaOperandoId, setCategoriaOperandoId] = useState<number | null>(null);
   const edicaoCategoriaEmAndamento = useRef(false);
@@ -557,6 +564,14 @@ export default function Dashboard() {
   }, [comprasCartao, contasEscopoHome, escopoHomeEhTodas, mesAtual, transacoesEscopoHome]);
 
   const temFaturaVencidaHome = escopoHomeEhTodas && temFaturaVencida;
+
+  // Meta e limite mensais de cada categoria no mês atual, com as mesmas regras
+  // da Visão do mês (web/src/lib/metas-categorias.ts, também usado pelo site).
+  const progressoCategorias = useMemo(() => {
+    const hoje = new Date();
+    const mes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+    return progressoDasCategorias(categorias, transacoes, comprasCartao, mes);
+  }, [categorias, comprasCartao, transacoes]);
 
   const chaveDataAgenda = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dataAgenda.getDate()).padStart(2, "0")}`;
   const itensAgendaPorData = useMemo(() => {
@@ -1047,6 +1062,8 @@ export default function Dashboard() {
 
   const salvarCategoria = async () => {
     if (nomeCategoria.trim() === "") return Alert.alert("Aviso", "Escreve um nome.");
+    // Meta (receita) ou limite (despesa) mensal; vazio ou zero = sem valor.
+    const alvoNovo = valorDoAlvo(valorDaEntradaMoeda(alvoNovaCategoria));
     // Verificar limite do plano para categorias
     const catDoTipo = categorias.filter(c => c.tipo === tipoNovaCategoria && c.ativa !== 0).length;
     const tipoLimite = tipoNovaCategoria === "receita" ? "categoriasReceita" : "categoriasDespesa";
@@ -1059,6 +1076,7 @@ export default function Dashboard() {
           type: tipoNovaCategoria,
           color: corSelecionada,
           icon: iconeSelecionado,
+          ...(alvoNovo !== null ? { [tipoNovaCategoria === "receita" ? "monthly_goal" : "monthly_limit"]: alvoNovo } : {}),
         });
         setLoadingCat(false);
         if (resultado.state === "rejected") {
@@ -1077,6 +1095,7 @@ export default function Dashboard() {
         setNomeCategoria("");
         setTipoNovaCategoria("despesa");
         setIconeSelecionado("label");
+        setAlvoNovaCategoria("");
         setModalCatVisivel(false);
         if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
         else void carregarDados();
@@ -1089,12 +1108,15 @@ export default function Dashboard() {
     const { error } = await supabase.from("categorias").insert([{
       nome: nomeCategoria, cor: corSelecionada, icone: iconeSelecionado,
       tipo: tipoNovaCategoria, ativa: 1, user_id: session.user.id,
+      meta_mensal: tipoNovaCategoria === "receita" ? alvoNovo : null,
+      limite_mensal: tipoNovaCategoria === "despesa" ? alvoNovo : null,
     }]);
     setLoadingCat(false);
     if (error) return Alert.alert("Erro", "Falha ao salvar categoria.");
     setNomeCategoria("");
     setTipoNovaCategoria("despesa");
     setIconeSelecionado("label");
+    setAlvoNovaCategoria("");
     setModalCatVisivel(false);
     carregarDados();
   };
@@ -1111,6 +1133,8 @@ export default function Dashboard() {
     setNomeEditCat(cat.nome);
     setCorEditCat(PALETA_CORES.includes(cat.cor) ? cat.cor : PALETA_CORES[0]);
     setIconeEditCat(cat.icone);
+    const alvoAtual = valorDoAlvo(cat.tipo === "receita" ? cat.meta_mensal : cat.limite_mensal);
+    setAlvoEditCat(alvoAtual === null ? "" : formatarEntradaMoeda(String(Math.round(alvoAtual * 100))));
   };
 
   const salvarEdicaoCategoria = async () => {
@@ -1120,6 +1144,10 @@ export default function Dashboard() {
       if (nomeEditCat.trim() !== catEditando.nome) changes.name = nomeEditCat.trim();
       if (corEditCat !== catEditando.cor) changes.color = corEditCat;
       if (iconeEditCat !== catEditando.icone) changes.icon = iconeEditCat;
+      // Meta (receita) ou limite (despesa): vazio ou zero tira o valor.
+      const alvoDesejado = valorDoAlvo(valorDaEntradaMoeda(alvoEditCat));
+      const alvoAtual = valorDoAlvo(catEditando.tipo === "receita" ? catEditando.meta_mensal : catEditando.limite_mensal);
+      if (alvoDesejado !== alvoAtual) changes[catEditando.tipo === "receita" ? "monthly_goal" : "monthly_limit"] = alvoDesejado;
       if (Object.keys(changes).length === 0) {
         setCatEditando(null);
         return;
@@ -1190,6 +1218,7 @@ export default function Dashboard() {
     try {
       const { error } = await supabase.from("categorias").update({
         nome: nomeEditCat, cor: corEditCat, icone: iconeEditCat,
+        [catEditando.tipo === "receita" ? "meta_mensal" : "limite_mensal"]: valorDoAlvo(valorDaEntradaMoeda(alvoEditCat)),
       }).eq("id", catEditando.id);
       if (error) return Alert.alert("Erro", "Falha ao atualizar categoria.");
       setCatEditando(null);
@@ -2784,6 +2813,20 @@ export default function Dashboard() {
                   value={nomeEditCat}
                   onChangeText={setNomeEditCat}
                 />
+                <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>{catEditando.tipo === "receita" ? "Meta mensal (opcional):" : "Limite mensal (opcional):"}</Text>
+                <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}>
+                  <Text style={{ color: Cores.textoSecundario, fontWeight: "700" }}>R$</Text>
+                  <TextInput
+                    style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]}
+                    placeholder="0,00"
+                    placeholderTextColor={Cores.textoSecundario}
+                    value={alvoEditCat}
+                    onChangeText={(texto) => setAlvoEditCat(formatarEntradaMoeda(texto))}
+                    keyboardType="numeric"
+                    accessibilityLabel={catEditando.tipo === "receita" ? "Meta mensal da categoria" : "Limite mensal da categoria"}
+                  />
+                </View>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 12, lineHeight: 16, marginTop: 6, marginBottom: 4 }}>Deixe em branco ou zero para não usar.</Text>
                 <Text style={[styles.colorLabel, { color: Cores.textoSecundario }]}>Cor:</Text>
                 <ScrollView horizontal nestedScrollEnabled showsHorizontalScrollIndicator={false} style={{ maxWidth: "100%" }} contentContainerStyle={styles.colorPalette}>
                   {PALETA_CORES.map((cor) => (
@@ -2819,39 +2862,47 @@ export default function Dashboard() {
                     <Text style={[styles.colorLabel, { color: Cores.textoSecundario, textTransform: "uppercase", letterSpacing: 1 }]}>
                       {tipo === "despesa" ? "Despesas" : "Receitas"}
                     </Text>
-                    {categorias.filter((c) => c.tipo === tipo).map((cat) => (
-                      <View key={cat.id} style={[styles.catGerenciarRow, { backgroundColor: Cores.pillFundo }]}>
-                        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: cat.cor, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                            <MaterialIcons name={cat.icone as any} size={16} color="#FFF" />
-                          </View>
-                          <Text style={{ color: cat.ativa !== 0 ? Cores.textoPrincipal : Cores.textoSecundario, fontWeight: "600", flex: 1 }} numberOfLines={1}>
-                            {cat.nome}
-                          </Text>
-                          {cat.ativa === 0 && (
-                            <View style={{ backgroundColor: "#555", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginRight: 8 }}>
-                              <Text style={{ color: "#CCC", fontSize: 10 }}>Arquivada</Text>
+                    {categorias.filter((c) => c.tipo === tipo).map((cat) => {
+                      const progresso = tipo === "receita" ? progressoCategorias.get(cat.id)?.meta : progressoCategorias.get(cat.id)?.limite;
+                      return (
+                      <View key={cat.id} style={[styles.catGerenciarItem, { backgroundColor: Cores.pillFundo }]}>
+                        <View style={styles.catGerenciarRow}>
+                          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: cat.cor, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
+                              <MaterialIcons name={cat.icone as any} size={16} color="#FFF" />
                             </View>
-                          )}
+                            <Text style={{ color: cat.ativa !== 0 ? Cores.textoPrincipal : Cores.textoSecundario, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+                              {cat.nome}
+                            </Text>
+                            {cat.ativa === 0 && (
+                              <View style={{ backgroundColor: "#555", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginRight: 8 }}>
+                                <Text style={{ color: "#CCC", fontSize: 10 }}>Arquivada</Text>
+                              </View>
+                            )}
+                          </View>
+                          <View style={{ flexDirection: "row", gap: 8 }}>
+                            <TouchableOpacity
+                              onPress={() => abrirEditarCategoria(cat)}
+                              style={[styles.iconeBotao, (cat.ativa === 0 || categoriaOperandoId === cat.id) && { opacity: 0.35 }]}
+                              disabled={cat.ativa === 0 || categoriaOperandoId !== null}
+                              accessibilityLabel={cat.ativa === 0 ? `${cat.nome} está arquivada` : `Editar ${cat.nome}`}
+                            >
+                              <MaterialIcons name="edit" size={18} color="#457B9D" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null}>
+                              <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => deletarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null} accessibilityLabel={`Excluir ${cat.nome}`}>
+                              <MaterialIcons name="delete-outline" size={18} color="#E76F51" />
+                            </TouchableOpacity>
+                          </View>
                         </View>
-                        <View style={{ flexDirection: "row", gap: 8 }}>
-                          <TouchableOpacity
-                            onPress={() => abrirEditarCategoria(cat)}
-                            style={[styles.iconeBotao, (cat.ativa === 0 || categoriaOperandoId === cat.id) && { opacity: 0.35 }]}
-                            disabled={cat.ativa === 0 || categoriaOperandoId !== null}
-                            accessibilityLabel={cat.ativa === 0 ? `${cat.nome} está arquivada` : `Editar ${cat.nome}`}
-                          >
-                            <MaterialIcons name="edit" size={18} color="#457B9D" />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null}>
-                            <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
-                          </TouchableOpacity>
-                          <TouchableOpacity onPress={() => deletarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null} accessibilityLabel={`Excluir ${cat.nome}`}>
-                            <MaterialIcons name="delete-outline" size={18} color="#E76F51" />
-                          </TouchableOpacity>
-                        </View>
+                        {progresso && (
+                          <ProgressoMetaCategoria progresso={progresso} formatar={formatarValorPrivado} corTexto={Cores.textoPrincipal} corTextoSecundario={Cores.textoSecundario} corTrilho={Cores.borda} />
+                        )}
                       </View>
-                    ))}
+                      );
+                    })}
                     {categorias.filter((c) => c.tipo === tipo).length === 0 && (
                       <Text style={{ color: Cores.textoSecundario, fontStyle: "italic", marginBottom: 10, fontSize: 13 }}>Nenhuma categoria.</Text>
                     )}
@@ -2910,6 +2961,22 @@ export default function Dashboard() {
                 onChangeText={setNomeCategoria}
               />
             </View>
+            <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>{tipoNovaCategoria === "receita" ? "Meta mensal (opcional)" : "Limite mensal (opcional)"}</Text>
+            <View style={[styles.transactionInputWrap, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda }]}>
+              <Text style={{ color: Cores.textoSecundario, fontWeight: "700" }}>R$</Text>
+              <TextInput
+                style={[styles.transactionTextInput, { color: Cores.textoPrincipal }]}
+                placeholder="0,00"
+                placeholderTextColor={Cores.textoSecundario}
+                value={alvoNovaCategoria}
+                onChangeText={(texto) => setAlvoNovaCategoria(formatarEntradaMoeda(texto))}
+                keyboardType="numeric"
+                accessibilityLabel={tipoNovaCategoria === "receita" ? "Meta mensal da categoria" : "Limite mensal da categoria"}
+              />
+            </View>
+            <Text style={{ color: Cores.textoSecundario, fontSize: 12, lineHeight: 16, marginTop: 6, marginBottom: 8 }}>
+              {tipoNovaCategoria === "receita" ? "Quanto você quer receber nesta categoria por mês." : "Quanto você quer gastar, no máximo, nesta categoria por mês."} Deixe em branco para não usar.
+            </Text>
             <Text style={[styles.transactionSectionLabel, { color: Cores.textoSecundario }]}>Cor</Text>
             <View style={styles.categoryOptionsGrid}>
               {PALETA_CORES.map((cor) => {
@@ -3863,7 +3930,8 @@ const styles = StyleSheet.create({
   transferSelected: { backgroundColor: "#457B9D" },
   freqButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   freqButtonText: { fontSize: 12, fontWeight: "600", textAlign: "center" },
-  catGerenciarRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, borderRadius: 10, marginBottom: 8 },
+  catGerenciarItem: { padding: 12, borderRadius: 10, marginBottom: 8 },
+  catGerenciarRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   iconeBotao: { padding: 6 },
   botaoApagar: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#E76F51", padding: 12, borderRadius: 8, gap: 6 },
   botaoApagarTexto: { color: "#FFF", fontWeight: "bold" },

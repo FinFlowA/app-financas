@@ -11,11 +11,10 @@
  * lista exibida.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-10-05-novidades-v19",
+  id: "2.0.0-2026-10-06-novidades-v20",
   items: [
-    "Parcelas agora podem ser semanais, mensais ou anuais: escolha na Periodicidade",
-    "A Visão do mês mostra o que já entrou e saiu, e o Balanço é a diferença entre os dois",
-    "Ao lançar, cada conta aparece com a cor que você escolheu para ela",
-    "Mudar a data de uma série semanal não junta mais as ocorrências no mesmo dia",
+    "Defina uma meta mensal nas categorias de receita e um limite mensal nas de despesa",
+    "Em Gerenciar Categorias, cada meta e limite mostra quanto do mês já foi usado e o que ainda está agendado",
+    "No Histórico, toque no mês para escolher qualquer mês e ano",
   ],
 } as const;

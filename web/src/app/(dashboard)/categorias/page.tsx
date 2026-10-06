@@ -1,13 +1,48 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
+import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
+import { mesAtualEmSaoPaulo } from "@/lib/date";
+import { progressoDasCategorias, type ItemCartaoParaAlvo, type TransacaoParaAlvo } from "@/lib/metas-categorias";
 import type { Categoria } from "@/lib/types";
-import CategoryManager from "./category-manager";
+import CategoryManager, { type CategoryProgress } from "./category-manager";
+
+/** Primeiro e último dia do mês "AAAA-MM". */
+function diasDoMes(mes: string): { inicio: string; fim: string } {
+  const [ano, numero] = mes.split("-").map(Number);
+  const ultimo = new Date(Date.UTC(ano, numero, 0)).getUTCDate();
+  return { inicio: `${mes}-01`, fim: `${mes}-${String(ultimo).padStart(2, "0")}` };
+}
 
 export default async function CategoriasPage() {
   const supabase = await createClient();
-  // `*` mantém a leitura compatível com bancos que ainda não receberam a
-  // coluna `version`; o RLS continua limitando as linhas ao usuário conectado.
-  const result = await fetchAllRows((from, to) => supabase.from("categorias").select("*").order("nome").range(from, to));
+  const mes = mesAtualEmSaoPaulo();
+  const { inicio, fim } = diasDoMes(mes);
+  // Filtro explícito das transações visíveis: o banco usa os índices em vez
+  // de ler a tabela inteira (ver lib/transacoes-visiveis.ts).
+  const filtroVisiveis = filtroTransacoesDoUsuario(supabase);
+  filtroVisiveis.catch(() => undefined);
+  const [result, transactionsResult, invoiceItemsResult] = await Promise.all([
+    // `*` mantém a leitura compatível com bancos que ainda não receberam a
+    // coluna `version`; o RLS continua limitando as linhas ao usuário conectado.
+    fetchAllRows((from, to) => supabase.from("categorias").select("*").order("nome").range(from, to)),
+    // Para o progresso das metas e limites: só o mês atual (vencimento ou
+    // realização no mês). A data efetiva de cada lançamento é conferida depois.
+    filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase
+      .from("transacoes")
+      .select("id, tipo, valor, status, data_vencimento, data_realizacao, descricao, categoria_id")
+      .or(filtro)
+      .or(`and(data_vencimento.gte.${inicio},data_vencimento.lte.${fim}),and(data_realizacao.gte.${inicio},data_realizacao.lte.${fim})`)
+      .not("categoria_id", "is", null)
+      .order("id")
+      .range(from, to))),
+    fetchAllRows((from, to) => supabase
+      .from("fatura_itens")
+      .select("id, valor, mes_fatura, categoria_id, descricao")
+      .eq("mes_fatura", mes)
+      .not("categoria_id", "is", null)
+      .order("id")
+      .range(from, to)),
+  ]);
   if (result.error) {
     return <section className="ff-card mx-auto max-w-3xl p-6 text-center"><h1 className="text-xl font-extrabold text-foreground">Categorias indisponíveis</h1><p className="mt-2 text-sm text-foreground-muted">Não foi possível carregar suas categorias agora. Atualize a página em instantes.</p></section>;
   }
@@ -15,6 +50,18 @@ export default async function CategoriasPage() {
   const active = categories.filter((category) => category.ativa === true || category.ativa === 1);
   const income = active.filter((category) => category.tipo === "receita" || category.tipo === "ambos").length;
   const expenses = active.filter((category) => category.tipo === "despesa" || category.tipo === "ambos").length;
+  // O progresso é um complemento: se a busca do mês falhar, as categorias
+  // continuam disponíveis e o aviso explica a ausência das barras.
+  const progressUnavailable = Boolean(transactionsResult.error || invoiceItemsResult.error);
+  const progress: CategoryProgress = progressUnavailable
+    ? {}
+    : Object.fromEntries(progressoDasCategorias(
+      categories,
+      (transactionsResult.data ?? []) as TransacaoParaAlvo[],
+      (invoiceItemsResult.data ?? []) as ItemCartaoParaAlvo[],
+      mes,
+    ));
+  const monthLabel = new Intl.DateTimeFormat("pt-BR", { month: "long", year: "numeric", timeZone: "UTC" }).format(new Date(`${mes}-15T12:00:00Z`));
 
   return (
     <div className="w-full">
@@ -34,9 +81,13 @@ export default async function CategoriasPage() {
       </header>
       <aside role="note" className="mb-6 flex items-start gap-3 rounded-2xl border border-primary/20 bg-primary-soft px-4 py-3 text-sm text-foreground">
         <span aria-hidden className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary text-xs font-black text-white">i</span>
-        <p className="pt-1"><strong>Como aparece no início:</strong> categorias com o mesmo nome são agrupadas no gráfico da página inicial.</p>
+        <div className="space-y-1 pt-1">
+          <p><strong>Metas e limites:</strong> defina uma meta mensal nas categorias de receita e um limite mensal nas de despesa. A barra mostra {monthLabel}: a parte cheia é o que já aconteceu e a mais clara, o que ainda está agendado. Compras do cartão contam no mês da fatura.</p>
+          <p><strong>Como aparece no início:</strong> categorias com o mesmo nome são agrupadas no gráfico da página inicial.</p>
+          {progressUnavailable && <p className="font-semibold text-red">Não foi possível calcular o progresso do mês agora. Atualize a página em instantes.</p>}
+        </div>
       </aside>
-      <CategoryManager categories={categories} />
+      <CategoryManager categories={categories} progress={progress} />
     </div>
   );
 }

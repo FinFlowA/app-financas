@@ -40,6 +40,20 @@ type Props = {
   invoiceItems: FaturaItem[];
 };
 
+type OverdueKind = "receita" | "despesa" | "transferencia";
+
+/** Transferências entre contas e movimentos de objetivo ficam numa coluna própria. */
+function overdueKind(transaction: Pick<Transacao, "tipo" | "descricao">): OverdueKind {
+  if (isTransferencia(transaction.descricao) || isMovimentoObjetivo(transaction.descricao)) return "transferencia";
+  return transaction.tipo === "receita" ? "receita" : "despesa";
+}
+
+const OVERDUE_COLUMNS: { kind: OverdueKind; label: string; empty: string }[] = [
+  { kind: "receita", label: "Receitas", empty: "Nenhuma receita atrasada." },
+  { kind: "despesa", label: "Despesas", empty: "Nenhuma despesa atrasada." },
+  { kind: "transferencia", label: "Transferências", empty: "Nenhuma transferência atrasada." },
+];
+
 type IconName = "arrow-left-right" | "bell" | "calendar" | "card" | "category" | "chevron" | "income" | "info" | "plus" | "receipt" | "sparkles" | "target" | "wallet";
 
 function Icon({ name, size = 20 }: { name: IconName; size?: number }) {
@@ -276,9 +290,22 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
     return result;
   }, [nextDate, scoped, today]);
 
-  const overdueTransactions = useMemo(() => scoped
-    .filter((transaction) => transaction.status === "pendente" && transaction.data_vencimento < today)
-    .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento)), [scoped, today]);
+  const overdueTransactions = useMemo(() => {
+    // `scoped` deixa de fora as transferências entre as contas selecionadas
+    // (não mudam o saldo do conjunto), mas uma transferência atrasada ainda
+    // precisa ser concluída: entra a que sai de uma conta selecionada.
+    const scopedIds = new Set(scoped.map((transaction) => transaction.id));
+    const transfers = transactions.filter((transaction) => isTransferencia(transaction.descricao)
+      && !scopedIds.has(transaction.id) && selectedSet.has(transaction.conta_id));
+    return [...scoped, ...transfers]
+      .filter((transaction) => transaction.status === "pendente" && transaction.data_vencimento < today)
+      .sort((a, b) => a.data_vencimento.localeCompare(b.data_vencimento) || a.id - b.id);
+  }, [scoped, selectedSet, today, transactions]);
+  const overdueColumns = useMemo(() => OVERDUE_COLUMNS.map((column) => {
+    const items = overdueTransactions.filter((transaction) => overdueKind(transaction) === column.kind);
+    const total = items.reduce((sum, transaction) => sum + (Number.isFinite(Number(transaction.valor)) ? Number(transaction.valor) : 0), 0);
+    return { ...column, items, total };
+  }), [overdueTransactions]);
   const overdueSignature = overdueTransactions.map((transaction) => transaction.id).join(",");
 
   useEffect(() => {
@@ -389,13 +416,20 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
 
   return <div className={`${styles.root} ${monthPending ? styles.monthPending : ""}`} aria-busy={monthPending}>
     {overdueOpen && createPortal(<div className="fixed inset-0 z-[9999] grid h-[100dvh] w-screen place-items-center overflow-hidden bg-[#02090c]/80 p-4 backdrop-blur-[5px]" role="presentation" onMouseDown={closeOverduePopup}>
-      <section role="dialog" aria-modal="true" aria-labelledby="overdue-title" onMouseDown={(event) => event.stopPropagation()} className="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[25px] border border-red/25 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6">
+      <section role="dialog" aria-modal="true" aria-labelledby="overdue-title" onMouseDown={(event) => event.stopPropagation()} className="flex max-h-[calc(100dvh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-[25px] border border-red/25 bg-surface p-5 shadow-[0_32px_100px_rgba(0,0,0,.52)] sm:p-6 md:max-w-5xl">
         <div className="flex items-start justify-between gap-4"><div><p className="text-[10px] font-extrabold uppercase tracking-[.15em] text-red">Atenção financeira</p><h2 id="overdue-title" className="mt-1 text-xl font-black text-foreground">Transações atrasadas</h2><p className="mt-1 text-sm text-foreground-muted">Confira os lançamentos que já passaram da data de vencimento.</p></div><button type="button" onClick={closeOverduePopup} aria-label="Fechar" className="ff-focus grid h-10 w-10 shrink-0 place-items-center rounded-full bg-surface-muted text-xl text-foreground-muted">×</button></div>
-        <div className="mt-5 min-h-0 space-y-2 overflow-y-auto overscroll-contain pr-1">{overdueTransactions.map((transaction) => { const category = transaction.categoria_id ? categoriesById.get(transaction.categoria_id) : undefined; return <Link href={`/transacoes?quick=overdue&focus=${transaction.id}`} onClick={closeOverduePopup} key={transaction.id} className="ff-focus grid grid-cols-[auto_1fr_auto] items-center gap-3 rounded-xl border border-border bg-surface-muted p-3 transition hover:border-red/35">
-          <span className="grid h-10 w-10 place-items-center rounded-lg bg-red/10 text-red"><Icon name={transaction.tipo === "receita" ? "income" : "receipt"} size={19}/></span>
-          <span className="min-w-0"><strong className="block truncate text-sm text-foreground">{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small className="text-xs text-foreground-muted">Venceu em {new Intl.DateTimeFormat("pt-BR").format(new Date(`${transaction.data_vencimento}T12:00:00-03:00`))} · {category?.nome ?? "Sem categoria"}</small></span>
-          <strong data-private-value="true" className={transaction.tipo === "receita" ? "text-sm text-primary" : "text-sm text-red"}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>
-        </Link>; })}</div>
+        {/* Uma coluna por tipo, cada uma em ordem de vencimento; no celular, uma embaixo da outra. */}
+        <div className="mt-5 min-h-0 overflow-y-auto overscroll-contain pr-1"><div className="grid gap-5 md:grid-cols-3 md:gap-4">{overdueColumns.map((column) => {
+          const tone = column.kind === "receita" ? "text-primary" : column.kind === "despesa" ? "text-red" : "text-blue";
+          const sign = column.kind === "receita" ? "+" : column.kind === "despesa" ? "−" : "";
+          return <section key={column.kind} aria-labelledby={`overdue-${column.kind}`} className="min-w-0">
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-border pb-2"><h3 id={`overdue-${column.kind}`} className="flex items-center gap-2 text-sm font-black text-foreground">{column.label}<span className="rounded-full bg-surface-muted px-2 py-0.5 text-[10px] font-extrabold text-foreground-muted">{column.items.length}</span></h3>{column.items.length > 0 && <strong data-private-value="true" className={`text-xs ${tone}`}>{sign}{formatarReais(column.total)}</strong>}</div>
+            {column.items.length ? <div className="space-y-2">{column.items.map((transaction) => { const category = transaction.categoria_id ? categoriesById.get(transaction.categoria_id) : undefined; return <Link href={`/transacoes?quick=overdue&focus=${transaction.id}`} onClick={closeOverduePopup} key={transaction.id} className="ff-focus grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-xl border border-border bg-surface-muted p-3 transition hover:border-red/35">
+              <span className="grid h-9 w-9 place-items-center rounded-lg bg-red/10 text-red"><Icon name={column.kind === "receita" ? "income" : column.kind === "despesa" ? "receipt" : "arrow-left-right"} size={18}/></span>
+              <span className="min-w-0"><strong className="block truncate text-sm text-foreground">{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><span className="mt-0.5 flex items-baseline justify-between gap-2"><small className="truncate text-xs text-foreground-muted">{new Intl.DateTimeFormat("pt-BR").format(new Date(`${transaction.data_vencimento}T12:00:00-03:00`))}{column.kind !== "transferencia" && <> · {category?.nome ?? "Sem categoria"}</>}</small><strong data-private-value="true" className={`shrink-0 text-sm ${tone}`}>{sign}{formatarReais(Number(transaction.valor))}</strong></span></span>
+            </Link>; })}</div> : <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-xs text-foreground-muted">{column.empty}</p>}
+          </section>;
+        })}</div></div>
         <div className="mt-5 flex flex-wrap justify-end gap-2"><button type="button" onClick={closeOverduePopup} className="ff-focus rounded-full border border-border px-4 py-2.5 text-sm font-bold text-foreground-muted">Ver depois</button><Link href="/transacoes?quick=overdue" onClick={closeOverduePopup} className="ff-focus rounded-full bg-red px-5 py-2.5 text-sm font-extrabold text-white">Revisar atrasos</Link></div>
       </section>
     </div>, document.body)}
@@ -551,8 +585,10 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
             return <Link href={`/transacoes?quick=next7&focus=${transaction.id}`} key={transaction.id} className={styles.upcomingItem}>
               <span className={styles.dateTile}><strong>{date.day}</strong><small>{date.month}</small></span>
               <span className={styles.upcomingIcon} style={{ "--item-color": safeColor(category?.cor ?? (transaction.tipo === "receita" ? "#56d39b" : "#ee6b63")) } as CSSProperties}>{category?.icone ? <FinancialIcon name={category.icone} /> : transaction.tipo === "receita" ? <Icon name="income"/> : <Icon name="receipt"/>}</span>
-              <span className={styles.upcomingInfo}><strong>{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small>{category?.nome ?? (transaction.tipo === "receita" ? "Receita" : "Despesa")}</small></span>
-              <strong data-private-value="true" className={transaction.tipo === "receita" ? styles.incomeText : styles.expenseText}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>
+              <span className={styles.upcomingInfo}><strong>{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small>{overdueKind(transaction) === "transferencia" ? "Transferência" : category?.nome ?? (transaction.tipo === "receita" ? "Receita" : "Despesa")}</small></span>
+              {overdueKind(transaction) === "transferencia"
+                ? <strong data-private-value="true" className="text-blue">{formatarReais(Number(transaction.valor))}</strong>
+                : <strong data-private-value="true" className={transaction.tipo === "receita" ? styles.incomeText : styles.expenseText}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>}
             </Link>;
           })}{!upcoming.length && <div className={styles.emptyUpcoming}><span>✓</span><div><strong>Nenhum compromisso próximo</strong><p>Seus próximos sete dias estão livres.</p></div></div>}</div>
         </section>
@@ -568,8 +604,10 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
             return <Link href={`/transacoes?quick=overdue&focus=${transaction.id}`} key={transaction.id} className={styles.upcomingItem}>
               <span className={`${styles.dateTile} ${styles.overdueDateTile}`}><strong>{date.day}</strong><small>{date.month}</small></span>
               <span className={styles.upcomingIcon} style={{ "--item-color": safeColor(category?.cor ?? (transaction.tipo === "receita" ? "#56d39b" : "#ee6b63")) } as CSSProperties}>{category?.icone ? <FinancialIcon name={category.icone} /> : transaction.tipo === "receita" ? <Icon name="income"/> : <Icon name="receipt"/>}</span>
-              <span className={styles.upcomingInfo}><strong>{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small>{category?.nome ?? (transaction.tipo === "receita" ? "Receita" : "Despesa")}</small></span>
-              <strong data-private-value="true" className={transaction.tipo === "receita" ? styles.incomeText : styles.expenseText}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>
+              <span className={styles.upcomingInfo}><strong>{descricaoVisivel(transaction.descricao) || "Lançamento"}</strong><small>{overdueKind(transaction) === "transferencia" ? "Transferência" : category?.nome ?? (transaction.tipo === "receita" ? "Receita" : "Despesa")}</small></span>
+              {overdueKind(transaction) === "transferencia"
+                ? <strong data-private-value="true" className="text-blue">{formatarReais(Number(transaction.valor))}</strong>
+                : <strong data-private-value="true" className={transaction.tipo === "receita" ? styles.incomeText : styles.expenseText}>{transaction.tipo === "receita" ? "+" : "−"}{formatarReais(Number(transaction.valor))}</strong>}
             </Link>;
           })}</div>
         </section> : <Link href={alerts.today ? "/transacoes?quick=today" : "/transacoes?quick=next7"} className={`${styles.panel} ${styles.alertCard}`}>
