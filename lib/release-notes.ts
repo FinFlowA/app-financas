@@ -15,6 +15,7 @@ export const RELEASE_NOTES = {
   items: [
     "Defina uma meta mensal nas categorias de receita e um limite mensal nas de despesa",
     "Em Gerenciar Categorias, cada meta e limite mostra quanto do mês já foi usado e o que ainda está agendado",
+    "Use as setas no topo de Gerenciar Categorias para ver metas e limites de meses anteriores e futuros",
     "No Histórico, toque no mês para escolher qualquer mês e ano",
   ],
 } as const;

@@ -65,6 +65,8 @@ import {
   sufixoRecorrencia,
 } from "../../lib/transacoes";
 
+const NOMES_MESES_CATEGORIAS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
+
 interface Categoria {
   id: number;
   nome: string;
@@ -305,6 +307,16 @@ export default function Dashboard() {
   const [corEditCat, setCorEditCat] = useState(PALETA_CORES[0]);
   const [iconeEditCat, setIconeEditCat] = useState("label");
   const [alvoEditCat, setAlvoEditCat] = useState("");
+  // Mês das metas e limites em Gerenciar Categorias (passado, atual ou futuro).
+  const mesAtualCategorias = (() => { const hoje = new Date(); return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`; })();
+  const [mesCategorias, setMesCategorias] = useState(mesAtualCategorias);
+  const [seletorMesCategoriasAberto, setSeletorMesCategoriasAberto] = useState(false);
+  const [anoSeletorCategorias, setAnoSeletorCategorias] = useState(() => new Date().getFullYear());
+  const moverMesCategorias = (delta: number) => {
+    const [ano, mes] = mesCategorias.split("-").map(Number);
+    const data = new Date(ano, mes - 1 + delta, 1);
+    setMesCategorias(`${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}`);
+  };
   const [loadingEdicaoCat, setLoadingEdicaoCat] = useState(false);
   const [categoriaOperandoId, setCategoriaOperandoId] = useState<number | null>(null);
   const edicaoCategoriaEmAndamento = useRef(false);
@@ -567,11 +579,10 @@ export default function Dashboard() {
 
   // Meta e limite mensais de cada categoria no mês atual, com as mesmas regras
   // da Visão do mês (web/src/lib/metas-categorias.ts, também usado pelo site).
-  const progressoCategorias = useMemo(() => {
-    const hoje = new Date();
-    const mes = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
-    return progressoDasCategorias(categorias, transacoes, comprasCartao, mes);
-  }, [categorias, comprasCartao, transacoes]);
+  const progressoCategorias = useMemo(
+    () => progressoDasCategorias(categorias, transacoes, comprasCartao, mesCategorias),
+    [categorias, comprasCartao, mesCategorias, transacoes],
+  );
 
   const chaveDataAgenda = `${dataAgenda.getFullYear()}-${String(dataAgenda.getMonth() + 1).padStart(2, "0")}-${String(dataAgenda.getDate()).padStart(2, "0")}`;
   const itensAgendaPorData = useMemo(() => {
@@ -2790,7 +2801,19 @@ export default function Dashboard() {
       <Modal animationType="slide" transparent visible onRequestClose={() => { setModalGerenciarCatVisivel(false); setCatEditando(null); }}>
         <View style={styles.modalOverlay}>
           <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "85%" }]}>
-            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Gerenciar Categorias</Text>
+            <View style={styles.catGerenciarCabecalho}>
+              {/* Espaço do mesmo tamanho do X, para o título ficar centralizado. */}
+              <View style={styles.catGerenciarCabecalhoLado} />
+              <Text style={[styles.modalTitle, styles.catGerenciarTitulo, { color: Cores.textoPrincipal }]}>Gerenciar Categorias</Text>
+              <TouchableOpacity
+                style={[styles.transactionClose, { backgroundColor: Cores.pillFundo }]}
+                onPress={() => { setModalGerenciarCatVisivel(false); setCatEditando(null); setSeletorMesCategoriasAberto(false); }}
+                accessibilityRole="button"
+                accessibilityLabel="Fechar Gerenciar Categorias"
+              >
+                <MaterialIcons name="close" size={20} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
 
             {!catEditando && (
               <TouchableOpacity
@@ -2857,6 +2880,56 @@ export default function Dashboard() {
             ) : (
               // Lista de categorias
               <ScrollView>
+                <View style={[styles.catMesBarra, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                  <TouchableOpacity onPress={() => moverMesCategorias(-1)} style={styles.catMesSeta} accessibilityLabel="Mês anterior">
+                    <MaterialIcons name="chevron-left" size={24} color="#2A9D8F" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.catMesCentro}
+                    onPress={() => { setAnoSeletorCategorias(Number(mesCategorias.slice(0, 4))); setSeletorMesCategoriasAberto((aberto) => !aberto); }}
+                    accessibilityLabel={`Metas e limites de ${NOMES_MESES_CATEGORIAS[Number(mesCategorias.slice(5, 7)) - 1]} de ${mesCategorias.slice(0, 4)}. Toque para escolher o mês e o ano.`}
+                  >
+                    <Text style={{ color: Cores.textoSecundario, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 }}>
+                      {mesCategorias < mesAtualCategorias ? "MÊS ENCERRADO" : mesCategorias > mesAtualCategorias ? "PREVISÃO" : "MÊS ATUAL"}
+                    </Text>
+                    <Text style={{ color: Cores.textoPrincipal, fontSize: 16, fontWeight: "900" }}>
+                      {NOMES_MESES_CATEGORIAS[Number(mesCategorias.slice(5, 7)) - 1]} {mesCategorias.slice(0, 4)}
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => moverMesCategorias(1)} style={styles.catMesSeta} accessibilityLabel="Próximo mês">
+                    <MaterialIcons name="chevron-right" size={24} color="#2A9D8F" />
+                  </TouchableOpacity>
+                </View>
+                {seletorMesCategoriasAberto && (
+                  <View style={[styles.catMesSeletor, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                    <View style={styles.catMesAno}>
+                      <TouchableOpacity onPress={() => setAnoSeletorCategorias((ano) => ano - 1)} accessibilityLabel="Ano anterior"><MaterialIcons name="chevron-left" size={24} color="#2A9D8F" /></TouchableOpacity>
+                      <Text style={{ color: Cores.textoPrincipal, fontSize: 16, fontWeight: "900" }}>{anoSeletorCategorias}</Text>
+                      <TouchableOpacity onPress={() => setAnoSeletorCategorias((ano) => ano + 1)} accessibilityLabel="Próximo ano"><MaterialIcons name="chevron-right" size={24} color="#2A9D8F" /></TouchableOpacity>
+                    </View>
+                    <View style={styles.catMesGrade}>
+                      {NOMES_MESES_CATEGORIAS.map((nome, indice) => {
+                        const chave = `${anoSeletorCategorias}-${String(indice + 1).padStart(2, "0")}`;
+                        const selecionado = chave === mesCategorias;
+                        return (
+                          <TouchableOpacity
+                            key={nome}
+                            style={[styles.catMesCelula, { borderColor: selecionado || chave === mesAtualCategorias ? "#2A9D8F" : Cores.borda, backgroundColor: selecionado ? "#2A9D8F" : "transparent" }]}
+                            onPress={() => { setMesCategorias(chave); setSeletorMesCategoriasAberto(false); }}
+                            accessibilityLabel={`${nome} de ${anoSeletorCategorias}`}
+                          >
+                            <Text style={{ color: selecionado ? "#FFF" : Cores.textoPrincipal, fontWeight: "800" }}>{nome.slice(0, 3)}</Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                    {mesCategorias !== mesAtualCategorias && (
+                      <TouchableOpacity onPress={() => { setMesCategorias(mesAtualCategorias); setSeletorMesCategoriasAberto(false); }} style={{ alignItems: "center", paddingVertical: 8 }}>
+                        <Text style={{ color: "#2A9D8F", fontWeight: "800" }}>Voltar para o mês atual</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
                 {["despesa", "receita"].map((tipo) => (
                   <View key={tipo}>
                     <Text style={[styles.colorLabel, { color: Cores.textoSecundario, textTransform: "uppercase", letterSpacing: 1 }]}>
@@ -3931,6 +4004,16 @@ const styles = StyleSheet.create({
   freqButton: { flex: 1, paddingVertical: 10, paddingHorizontal: 6, alignItems: "center", justifyContent: "center" },
   freqButtonText: { fontSize: 12, fontWeight: "600", textAlign: "center" },
   catGerenciarItem: { padding: 12, borderRadius: 10, marginBottom: 8 },
+  catGerenciarCabecalho: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 15 },
+  catGerenciarCabecalhoLado: { width: 38 },
+  catGerenciarTitulo: { flex: 1, marginBottom: 0 },
+  catMesBarra: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", borderWidth: 1, borderRadius: 12, marginBottom: 10 },
+  catMesSeta: { width: 44, height: 50, alignItems: "center", justifyContent: "center" },
+  catMesCentro: { flex: 1, alignItems: "center", paddingVertical: 6 },
+  catMesSeletor: { borderWidth: 1, borderRadius: 12, padding: 10, marginBottom: 12 },
+  catMesAno: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 },
+  catMesGrade: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 6 },
+  catMesCelula: { width: "31.5%", minHeight: 40, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   catGerenciarRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   iconeBotao: { padding: 6 },
   botaoApagar: { flexDirection: "row", alignItems: "center", justifyContent: "center", backgroundColor: "#E76F51", padding: 12, borderRadius: 8, gap: 6 },

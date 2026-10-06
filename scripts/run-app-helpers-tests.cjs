@@ -214,7 +214,9 @@ assert.deepEqual(
   "A edição offline aceita a meta e o limite, e null para tirar o valor.",
 );
 assert.throws(() => buildOfflineUpdateCommand("update_category", 7, 3, { meta: 1 }), /OFFLINE_UNSUPPORTED_UPDATE_FIELD/);
-assert.match(telaInicio, /progressoDasCategorias\(categorias, transacoes, comprasCartao, mes\)/);
+assert.match(telaInicio, /progressoDasCategorias\(categorias, transacoes, comprasCartao, mesCategorias\)/);
+assert.match(telaInicio, /moverMesCategorias\(-1\)/, "Gerenciar Categorias navega entre meses.");
+assert.match(telaInicio, /accessibilityLabel="Fechar Gerenciar Categorias"/, "Gerenciar Categorias tem o X para fechar.");
 assert.match(telaInicio, /<ProgressoMetaCategoria progresso=\{progresso\}/);
 assert.match(telaInicio, /\[tipoNovaCategoria === "receita" \? "monthly_goal" : "monthly_limit"\]: alvoNovo/);
 assert.match(telaInicio, /changes\[catEditando\.tipo === "receita" \? "monthly_goal" : "monthly_limit"\] = alvoDesejado/);
