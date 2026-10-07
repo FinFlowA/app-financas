@@ -150,6 +150,11 @@ describe("telas do site", () => {
     expect(seletor).toMatch(/Voltar para o mês atual/);
   });
 
+  it("Calendário: o mês abre a escolha de mês e ano, como no Histórico", () => {
+    const calendario = ler("web/src/app/(dashboard)/calendario/calendar-manager.tsx");
+    expect(calendario).toMatch(/<PeriodNavigator month=\{month\} currentMonth=\{today\.slice\(0, 7\)\} label=\{monthLabel\(month\)\} onChange=\{selectMonth\}/);
+  });
+
   it("Histórico: período de/até no lugar do mês, guardado no endereço", () => {
     const historico = ler("web/src/app/(dashboard)/transacoes/transaction-manager.tsx");
     expect(historico).toMatch(/const inPeriod = \(date: string\) => \(range \? date >= range\.start && date <= range\.end : date\.startsWith\(month\)\);/);
