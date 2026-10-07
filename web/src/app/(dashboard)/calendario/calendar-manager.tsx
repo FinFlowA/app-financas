@@ -6,6 +6,7 @@ import FinancialIcon from "@/components/ui/financial-icon";
 import { formatarReais } from "@/lib/format";
 import { dataEfetivaTransacao, descricaoVisivel, getOperacaoObjetivo, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import type { Caixinha, Categoria, Conta, Transacao } from "@/lib/types";
+import { PeriodNavigator } from "../transacoes/month-picker";
 import TransactionManager, { NewTransactionDialog } from "../transacoes/transaction-manager";
 import type { Cartao, FaturaItem } from "@/lib/types";
 
@@ -57,8 +58,7 @@ export default function CalendarManager({ userId, today, accounts, goals, catego
   const cells = Array.from({ length: firstWeekday + daysInMonth }, (_, index) => index < firstWeekday ? null : index - firstWeekday + 1);
   const selected = selectedDate ? byDate.get(selectedDate) ?? [] : [];
 
-  function selectMonth(delta: number) {
-    const next = shiftMonth(month, delta);
+  function selectMonth(next: string) {
     setMonth(next);
     // Só marca um dia sozinho quando o mês voltou a ser o atual (aí faz
     // sentido reaparecer "hoje"); qualquer outro mês começa sem seleção, em
@@ -70,7 +70,8 @@ export default function CalendarManager({ userId, today, accounts, goals, catego
     <header className="ff-page-hero mb-5 px-5 py-6 sm:px-7 sm:py-7"><p className="text-xs font-extrabold uppercase tracking-[.18em] text-mint">Planejamento diário</p><h1 className="mt-2 text-3xl font-black sm:text-4xl">Calendário</h1><p className="mt-2 max-w-2xl text-sm text-white/75">Veja os agendamentos de cada dia e crie um novo lançamento diretamente na data escolhida.</p></header>
     <section className="ff-card overflow-hidden p-4 sm:p-6">
       <div className="mb-4 flex flex-wrap gap-2" role="group" aria-label="Filtrar agendamentos por situação">{([['all','Todos'],['pending','Pendentes'],['completed','Concluídos']] as const).map(([value,label]) => <button key={value} type="button" aria-pressed={statusFilter === value} onClick={() => setStatusFilter(value)} className={`ff-focus rounded-full border px-4 py-2 text-xs font-extrabold transition ${statusFilter === value ? "border-primary bg-primary text-white" : "border-border bg-surface-muted text-foreground-muted hover:border-primary/35"}`}>{label}</button>)}</div>
-      <div className="mb-5 flex items-center justify-center gap-3"><button type="button" onClick={() => selectMonth(-1)} aria-label="Mês anterior" className="ff-focus grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border text-xl">‹</button><h2 className="min-w-44 text-center text-lg font-black text-foreground">{monthLabel(month)}</h2><button type="button" onClick={() => selectMonth(1)} aria-label="Próximo mês" className="ff-focus grid h-10 w-10 shrink-0 place-items-center rounded-full border border-border text-xl">›</button></div>
+      {/* Mês clicável, como no Histórico e nas Categorias: abre a escolha de mês e ano. */}
+      <div className="mb-5 flex justify-center"><PeriodNavigator month={month} currentMonth={today.slice(0, 7)} label={monthLabel(month)} onChange={selectMonth} onStep={(delta) => selectMonth(shiftMonth(month, delta))} /></div>
       <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-extrabold uppercase tracking-wide text-foreground-muted">{["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"].map((day) => <span key={day} className="py-2">{day}</span>)}</div>
       <div className="grid grid-cols-7 gap-1">{cells.map((day, index) => {
         if (!day) return <span key={`blank-${index}`} className="min-h-16 sm:min-h-24" />;
