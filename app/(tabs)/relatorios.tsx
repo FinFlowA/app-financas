@@ -19,6 +19,7 @@ import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { lancamentosDoFluxo } from "../../web/src/lib/fluxo-atrasados";
+import { transferenciasEntreContas } from "../../web/src/lib/fluxo-transferencias";
 import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
 import {
@@ -252,6 +253,13 @@ export default function RelatoriosScreen() {
     [considerarAtrasados, hojeIso, transacoesFiltradas],
   );
 
+  // Transferências entre as contas escolhidas: só aparecem no detalhe do mês
+  // (como no Histórico), sem mudar o saldo nem as barras.
+  const transferenciasDoCalculo = useMemo(
+    () => lancamentosDoFluxo(transferenciasEntreContas(transacoes, idsEscopoFluxo), considerarAtrasados, hojeIso),
+    [considerarAtrasados, hojeIso, idsEscopoFluxo, transacoes],
+  );
+
   const isAnoAtual = anoSelecionado === anoAtualNum;
 
   const {
@@ -280,6 +288,8 @@ export default function RelatoriosScreen() {
       resgatado: 0,
       aGuardar: 0,
       aResgatar: 0,
+      transferido: 0,
+      aTransferir: 0,
     }));
 
     for (const transacao of transacoesDoCalculo) {
@@ -325,6 +335,16 @@ export default function RelatoriosScreen() {
       }
     }
 
+    for (const transferencia of transferenciasDoCalculo) {
+      const valor = Number(transferencia.valor);
+      const dataEfetiva = dataEfetivaTransacao(transferencia);
+      if (!Number.isFinite(valor) || !dataEfetiva.startsWith(`${anoSelecionado}-`)) continue;
+      const mes = meses.at(Number(dataEfetiva.slice(5, 7)) - 1);
+      if (!mes) continue;
+      if (transferencia.status === "paga") mes.transferido += valor;
+      else mes.aTransferir += valor;
+    }
+
     const saldoAtual = saldoInicialTotal + receitasRealizadas - despesasRealizadas;
     const realizados = ordenarEventosComAcumulado(eventosRealizados);
     const pendentes = ordenarEventosComAcumulado(eventosPendentes);
@@ -364,7 +384,7 @@ export default function RelatoriosScreen() {
       todosOsMeses: meses,
       projecaoSaldo: projecoes,
     };
-  }, [anoAtualNum, anoSelecionado, contasFiltradas, isAnoAtual, mesAtualIdx, transacoesDoCalculo]);
+  }, [anoAtualNum, anoSelecionado, contasFiltradas, isAnoAtual, mesAtualIdx, transacoesDoCalculo, transferenciasDoCalculo]);
 
   // Chart Y scale (bars + balance line share same axis)
   const barMaxes = todosOsMeses.map(m => Math.max(m.recPagas, m.despPagas));
@@ -806,7 +826,7 @@ export default function RelatoriosScreen() {
                 cores={Cores}
               />}
 
-              {(mesDetalhe.guardado > 0 || mesDetalhe.resgatado > 0) && (
+              {(mesDetalhe.guardado > 0 || mesDetalhe.resgatado > 0 || mesDetalhe.transferido > 0) && (
                 <>
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
                   {mesDetalhe.guardado > 0 && (
@@ -815,10 +835,13 @@ export default function RelatoriosScreen() {
                   {mesDetalhe.resgatado > 0 && (
                     <DetalheRow label="Resgatado de objetivos" valor={`+ ${fmtReais(mesDetalhe.resgatado)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
                   )}
+                  {mesDetalhe.transferido > 0 && (
+                    <DetalheRow label="Transferências" valor={`↔ ${fmtReais(mesDetalhe.transferido)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
+                  )}
                 </>
               )}
 
-              {(mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0 || mesDetalhe.aGuardar > 0 || mesDetalhe.aResgatar > 0) && (
+              {(mesDetalhe.recPendentes > 0 || mesDetalhe.despPendentes > 0 || mesDetalhe.aGuardar > 0 || mesDetalhe.aResgatar > 0 || mesDetalhe.aTransferir > 0) && (
                 <>
                   <View style={[styles.detalheSep, { backgroundColor: Cores.borda }]} />
                   {mesDetalhe.recPendentes > 0 && (
@@ -844,6 +867,9 @@ export default function RelatoriosScreen() {
                   )}
                   {mesDetalhe.aResgatar > 0 && (
                     <DetalheRow label="A resgatar de objetivos" valor={`+ ${fmtReais(mesDetalhe.aResgatar)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
+                  )}
+                  {mesDetalhe.aTransferir > 0 && (
+                    <DetalheRow label="Transferências a fazer" valor={`↔ ${fmtReais(mesDetalhe.aTransferir)}`} cor="#457B9D" dotCor="#457B9D" cores={Cores} />
                   )}
                 </>
               )}

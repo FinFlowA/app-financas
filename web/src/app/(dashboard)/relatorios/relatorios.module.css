@@ -604,7 +604,8 @@
   color: var(--color-orange);
 }
 
-.tooltipRow[data-tone="goal-withdraw"] strong {
+.tooltipRow[data-tone="goal-withdraw"] strong,
+.tooltipRow[data-tone="transfer"] strong {
   color: var(--color-blue);
 }
 
@@ -708,7 +709,8 @@
   color: var(--color-orange);
 }
 
-.monthDetailItem[data-tone="goal-withdraw"] strong {
+.monthDetailItem[data-tone="goal-withdraw"] strong,
+.monthDetailItem[data-tone="transfer"] strong {
   color: var(--color-blue);
 }
 
