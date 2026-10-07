@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 
-type IconName = "home" | "history" | "goals" | "cards" | "flow" | "calendar" | "ai" | "settings" | "accounts" | "reconciliation" | "categories" | "plans" | "security" | "menu" | "close";
+type IconName = "home" | "history" | "goals" | "cards" | "flow" | "calendar" | "ai" | "settings" | "accounts" | "reconciliation" | "categories" | "plans" | "reports" | "security" | "menu" | "close";
 
 export const NAV_ITEMS = [
   { href: "/", label: "Início", icon: "home", exact: true },
@@ -15,6 +15,7 @@ export const NAV_ITEMS = [
   { href: "/objetivos", label: "Objetivos", icon: "goals" },
   { href: "/cartoes", label: "Cartões", icon: "cards" },
   { href: "/relatorios", label: "Fluxo de caixa", shortLabel: "Fluxo", icon: "flow" },
+  { href: "/exportar", label: "Relatórios", icon: "reports" },
   { href: "/calendario", label: "Calendário", icon: "calendar" },
   { href: "/assistente", label: "Finn", shortLabel: "Finn", icon: "ai" },
   // Planos temporariamente fora do ar (subiu antes da hora); reative removendo
@@ -55,6 +56,7 @@ export function NavIcon({ name, className = "" }: { name: IconName; className?: 
     accounts: <><rect x="3" y="5" width="18" height="14" rx="3" /><path d="M16 10h5v5h-5a2.5 2.5 0 0 1 0-5ZM7 9h4" /></>,
     reconciliation: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h3" /><path d="m14 15 1.5 1.5L19 13" /></>,
     categories: <><path d="m3 11 8-8h7l3 3v7l-8 8L3 11Z" /><circle cx="16" cy="8" r="1" /></>,
+    reports: <><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9l-6-6Z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></>,
     plans: <><path d="m4 8 3 3 5-7 5 7 3-3-2 11H6L4 8Z" /><path d="M7 15h10" /></>,
     security: <><path d="M12 22s8-3.5 8-10V5l-8-3-8 3v7c0 6.5 8 10 8 10Z" /><path d="m9 12 2 2 4-5" /></>,
     menu: <><circle cx="5" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none" /></>,

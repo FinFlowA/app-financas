@@ -34,7 +34,7 @@ Os valores exibidos no checkout são obtidos do Paddle e podem incluir localiza�
 | IA: consultas/dia | 0 | 60 | 200 |
 | IA: ações/dia | 0 | 15 | 50 |
 
-Fluxo diário, conciliação, relatórios completos e IA começam no Pro; análises avançadas exigem Plus. `billing_settings.limits_enabled` controla se os limites são efetivamente aplicados.
+Fluxo diário, conciliação, relatórios completos, relatórios em PDF e Excel (aba Relatórios do site, recurso `report_export`) e IA começam no Pro; análises avançadas exigem Plus. `billing_settings.limits_enabled` controla se os limites são efetivamente aplicados: desligado (como em 07/10/2026), todos os planos usam tudo.
 
 ## Paddle no site
 
