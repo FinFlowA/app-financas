@@ -375,6 +375,18 @@ com layouts bancários não padronizados.
   atrasadas da conta selecionada passam a aparecer.
   Regras em [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md).
 
+### Atualização de capturas de tela e período no Histórico — 07/10/2026
+
+- **Capturas de tela:** o app deixou de bloquear capturas e gravação de tela.
+  No iOS, os saldos continuam borrados no seletor de aplicativos; no Android,
+  a lista de recentes passa a mostrar a tela do app (as duas proteções são a
+  mesma trava lá). Detalhes em [Segurança](./docs/SEGURANCA.md).
+- **Período no Histórico (app e site):** além do mês, dá para escolher um
+  período de/até. Os lançamentos entram pela data efetiva e as faturas pelo
+  vencimento; os totais do topo somam o período. Nas setas, o período anda o
+  próprio tamanho. No site, ele vai no endereço
+  (`/transacoes?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`).
+
 ## Deploy do site
 
 O painel precisa de um runtime Next.js completo: usa cookies no servidor, Proxy/Middleware, Server Components, Server Actions e rotas dinâmicas. Portanto, não é compatível com hospedagem puramente estática como GitHub Pages.

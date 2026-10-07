@@ -144,10 +144,27 @@ describe("telas do site", () => {
 
   it("Histórico: o mês abre a escolha de mês e ano", () => {
     const historico = ler("web/src/app/(dashboard)/transacoes/transaction-manager.tsx");
-    expect(historico).toMatch(/<MonthPicker month=\{month\} currentMonth=\{today\.slice\(0, 7\)\} label=\{monthTitle\(month\)\} onChange=\{chooseMonth\} \/>/);
+    expect(historico).toMatch(/<PeriodNavigator month=\{month\} currentMonth=\{today\.slice\(0, 7\)\} label=\{range \? rangeLabel\(range\) : monthTitle\(month\)\} onChange=\{chooseMonth\} range=\{range\} onRangeChange=\{chooseRange\} onStep=\{changeMonth\} \/>/);
     const seletor = ler("web/src/app/(dashboard)/transacoes/month-picker.tsx");
     expect(seletor).toMatch(/role="dialog"\s+aria-label="Escolher mês e ano"/);
     expect(seletor).toMatch(/Voltar para o mês atual/);
+  });
+
+  it("Histórico: período de/até no lugar do mês, guardado no endereço", () => {
+    const historico = ler("web/src/app/(dashboard)/transacoes/transaction-manager.tsx");
+    expect(historico).toMatch(/const inPeriod = \(date: string\) => \(range \? date >= range\.start && date <= range\.end : date\.startsWith\(month\)\);/);
+    expect(historico).toMatch(/const inInvoicePeriod = range \? inPeriod\(invoice\.dueDate\) : invoice\.invoiceMonth === month;/);
+    expect(historico).toMatch(/url\.searchParams\.set\("inicio", nextRange\.start\);/);
+    const seletor = ler("web/src/app/(dashboard)/transacoes/month-picker.tsx");
+    expect(seletor).toMatch(/<RangeCalendar draft=\{draft\} month=\{month\} onChange=\{setDraft\} \/>/);
+    // Ao abrir "Período" sem período escolhido, nenhum dia vem marcado.
+    expect(seletor).toMatch(/range \?\? \{ start: "", end: "" \}/);
+    expect(seletor).not.toMatch(/type="date"/);
+    // No cabeçalho, classes "bg-white" ganham borda de botão de destaque.
+    expect(seletor).not.toMatch(/bg-white/);
+    expect(seletor).toMatch(/Aplicar período/);
+    const pagina = ler("web/src/app/(dashboard)/transacoes/page.tsx");
+    expect(pagina).toMatch(/first\(parameters\.inicio\)/);
   });
 
   it("Início: atrasados em colunas de receitas, despesas e transferências", () => {

@@ -293,8 +293,8 @@ requireText(
 );
 requireText(
   "app/_layout.tsx",
-  "preventScreenCaptureAsync",
-  "O aplicativo precisa proteger os dados financeiros na tela de aplicativos recentes.",
+  "await screenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA);",
+  "Capturas de tela ficam liberadas (decisão de 07/10/2026) e o app desfaz o bloqueio de versões anteriores.",
 );
 requireText(
   "app/_layout.tsx",

@@ -10,7 +10,7 @@
 | `/reset-password` | Recuperação de senha |
 | `/email-confirmed` | Confirmação de e-mail |
 | `/(tabs)` | Página inicial, visão do mês (com a explicação do Balanço atual), atalhos financeiros e Gerenciar Categorias (com metas e limites mensais de qualquer mês) |
-| `/(tabs)/transacoes` | Histórico (toque no mês para escolher mês e ano), criação, edição e conclusão |
+| `/(tabs)/transacoes` | Histórico (toque no mês para escolher um mês ou um período de/até), criação, edição e conclusão |
 | `/(tabs)/caixinhas` | Objetivos financeiros |
 | `/(tabs)/cartoes` | Cartões, compras e faturas |
 | `/(tabs)/relatorios` | Fluxo e relatórios do aplicativo, com o filtro "Considerar atrasados" |
@@ -43,7 +43,7 @@
 | Rota | Função |
 |---|---|
 | `/` | Dashboard, saldos, visão do mês (com a explicação do Balanço atual), gráficos, alertas e atalhos |
-| `/transacoes` | Lançamentos (Repetição e Periodicidade, como no app), filtros, baixa e reabertura; clicar no mês abre a escolha de mês e ano |
+| `/transacoes` | Lançamentos (Repetição e Periodicidade, como no app), filtros, baixa e reabertura; clicar no mês abre a escolha de um mês ou de um período de/até (`?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`) |
 | `/contas` | Contas e compartilhamento |
 | `/objetivos` | Objetivos |
 | `/cartoes` | Lista de cartões |

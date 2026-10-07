@@ -11,11 +11,9 @@
  * lista exibida.
  */
 export const RELEASE_NOTES = {
-  id: "2.0.0-2026-10-06-novidades-v20",
+  id: "2.0.0-2026-10-07-novidades-v21",
   items: [
-    "Defina uma meta mensal nas categorias de receita e um limite mensal nas de despesa",
-    "Em Gerenciar Categorias, cada meta e limite mostra quanto do mês já foi usado e o que ainda está agendado",
-    "Use as setas no topo de Gerenciar Categorias para ver metas e limites de meses anteriores e futuros",
-    "No Histórico, toque no mês para escolher qualquer mês e ano",
+    "Agora dá para tirar capturas de tela no app",
+    "No Histórico, toque no mês e escolha Período para ver os lançamentos entre duas datas",
   ],
 } as const;
