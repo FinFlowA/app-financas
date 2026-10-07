@@ -18,7 +18,7 @@ import { supabase } from "../../lib/supabase";
 import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
-import { lancamentosDoFluxo } from "../../web/src/lib/fluxo-atrasados";
+import { dataNoFluxo, lancamentosDoFluxo } from "../../web/src/lib/fluxo-atrasados";
 import { transferenciasEntreContas } from "../../web/src/lib/fluxo-transferencias";
 import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
@@ -308,9 +308,11 @@ export default function RelatoriosScreen() {
         if (vencimento) datasPendentesValidas.push(vencimento);
       }
 
-      if (!dataEfetiva.startsWith(`${anoSelecionado}-`)) continue;
+      // Atrasados de meses anteriores entram no mês atual, onde o saldo projetado os soma.
+      const dataDoMes = dataNoFluxo(transacao, dataEfetiva, hojeIso);
+      if (!dataDoMes.startsWith(`${anoSelecionado}-`)) continue;
 
-      const mesIdx = Number(dataEfetiva.slice(5, 7)) - 1;
+      const mesIdx = Number(dataDoMes.slice(5, 7)) - 1;
       const mes = meses.at(mesIdx);
       if (!mes) continue;
       const movimentoObjetivo = getMovimentoObjetivo(transacao.descricao);
@@ -337,7 +339,7 @@ export default function RelatoriosScreen() {
 
     for (const transferencia of transferenciasDoCalculo) {
       const valor = Number(transferencia.valor);
-      const dataEfetiva = dataEfetivaTransacao(transferencia);
+      const dataEfetiva = dataNoFluxo(transferencia, dataEfetivaTransacao(transferencia), hojeIso);
       if (!Number.isFinite(valor) || !dataEfetiva.startsWith(`${anoSelecionado}-`)) continue;
       const mes = meses.at(Number(dataEfetiva.slice(5, 7)) - 1);
       if (!mes) continue;
@@ -384,7 +386,7 @@ export default function RelatoriosScreen() {
       todosOsMeses: meses,
       projecaoSaldo: projecoes,
     };
-  }, [anoAtualNum, anoSelecionado, contasFiltradas, isAnoAtual, mesAtualIdx, transacoesDoCalculo, transferenciasDoCalculo]);
+  }, [anoAtualNum, anoSelecionado, contasFiltradas, hojeIso, isAnoAtual, mesAtualIdx, transacoesDoCalculo, transferenciasDoCalculo]);
 
   // Chart Y scale (bars + balance line share same axis)
   const barMaxes = todosOsMeses.map(m => Math.max(m.recPagas, m.despPagas));

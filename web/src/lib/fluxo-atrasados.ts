@@ -22,3 +22,15 @@ export function lancamentosDoFluxo<T extends LancamentoDoFluxo>(
     ? [...lancamentos]
     : lancamentos.filter((lancamento) => !estaEmAtraso(lancamento, hojeIso));
 }
+
+/**
+ * Data em que o lançamento entra nas informações do fluxo (barras, quadro do
+ * mês e do dia). Pendentes vencidos em meses anteriores entram no mês atual,
+ * no dia de hoje: é onde o saldo projetado já os soma, então a conta do mês
+ * fecha. Só chegam aqui com o filtro "Considerar atrasados" ligado; desligado,
+ * `lancamentosDoFluxo` já os tirou.
+ */
+export function dataNoFluxo(lancamento: LancamentoDoFluxo, dataEfetiva: string, hojeIso: string): string {
+  const vencimento = (lancamento.data_vencimento ?? "").slice(0, 10);
+  return lancamento.status !== "paga" && vencimento !== "" && vencimento < `${hojeIso.slice(0, 7)}-01` ? hojeIso : dataEfetiva;
+}

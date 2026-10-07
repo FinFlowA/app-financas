@@ -1,5 +1,5 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
-import { lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
+import { dataNoFluxo, lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
 import { transferenciasEntreContas } from "@/lib/fluxo-transferencias";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
@@ -52,7 +52,7 @@ function fluxoVazio(label: string): MesFluxo {
 function montarSeriesDoFluxo(
   lancamentos: Transacao[],
   transferencias: Transacao[],
-  { year, detailMonthIndex, initialBalance, referenceDate }: { year: number; detailMonthIndex: number; initialBalance: number; referenceDate: Date },
+  { year, detailMonthIndex, initialBalance, referenceDate, today }: { year: number; detailMonthIndex: number; initialBalance: number; referenceDate: Date; today: string },
 ) {
   const months = MONTHS.map((name) => fluxoVazio(`${name} ${year}`));
   const daysInDetailMonth = new Date(year, detailMonthIndex + 1, 0).getDate();
@@ -60,7 +60,7 @@ function montarSeriesDoFluxo(
   for (const transaction of lancamentos) {
     const value = Number(transaction.valor);
     if (!Number.isFinite(value)) continue;
-    const date = dataEfetivaTransacao(transaction);
+    const date = dataNoFluxo(transaction, dataEfetivaTransacao(transaction), today);
     if (!date.startsWith(`${year}-`)) continue;
     const monthIndex = Number(date.slice(5, 7)) - 1;
     const month = months[monthIndex];
@@ -96,7 +96,7 @@ function montarSeriesDoFluxo(
   }
   for (const transfer of transferencias) {
     const value = Number(transfer.valor);
-    const date = dataEfetivaTransacao(transfer);
+    const date = dataNoFluxo(transfer, dataEfetivaTransacao(transfer), today);
     if (!Number.isFinite(value) || !date.startsWith(`${year}-`)) continue;
     const monthIndex = Number(date.slice(5, 7)) - 1;
     const key = transfer.status === "paga" ? "transferencias" : "transferenciasPrevistas";
@@ -170,7 +170,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     0,
   );
   const referenceDate = new Date(`${today}T12:00:00-03:00`);
-  const opcoesDasSeries = { year, detailMonthIndex, initialBalance, referenceDate };
+  const opcoesDasSeries = { year, detailMonthIndex, initialBalance, referenceDate, today };
   const internas = transferenciasEntreContas(transactions, selectedSet);
   const seriesComAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, true, today), lancamentosDoFluxo(internas, true, today), opcoesDasSeries);
   const seriesSemAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, false, today), lancamentosDoFluxo(internas, false, today), opcoesDasSeries);
