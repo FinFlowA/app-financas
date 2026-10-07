@@ -1,5 +1,6 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
+import { transferenciasEntreContas } from "@/lib/fluxo-transferencias";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
@@ -38,12 +39,19 @@ function fluxoVazio(label: string): MesFluxo {
     resgatadoObjetivos: 0,
     guardarObjetivosPrevisto: 0,
     resgatarObjetivosPrevisto: 0,
+    transferencias: 0,
+    transferenciasPrevistas: 0,
   };
 }
 
-/** Meses, dias e saldos do gráfico a partir de uma lista de lançamentos. */
+/**
+ * Meses, dias e saldos do gráfico a partir de uma lista de lançamentos.
+ * `transferencias` (entre as contas escolhidas) só entram nas informações do
+ * mês e do dia: não mudam o saldo nem viram barra no gráfico.
+ */
 function montarSeriesDoFluxo(
   lancamentos: Transacao[],
+  transferencias: Transacao[],
   { year, detailMonthIndex, initialBalance, referenceDate }: { year: number; detailMonthIndex: number; initialBalance: number; referenceDate: Date },
 ) {
   const months = MONTHS.map((name) => fluxoVazio(`${name} ${year}`));
@@ -85,6 +93,17 @@ function montarSeriesDoFluxo(
       if (transaction.status === "paga") daily[key] += value;
       else daily[pendingKey] = (daily[pendingKey] ?? 0) + value;
     }
+  }
+  for (const transfer of transferencias) {
+    const value = Number(transfer.valor);
+    const date = dataEfetivaTransacao(transfer);
+    if (!Number.isFinite(value) || !date.startsWith(`${year}-`)) continue;
+    const monthIndex = Number(date.slice(5, 7)) - 1;
+    const key = transfer.status === "paga" ? "transferencias" : "transferenciasPrevistas";
+    const month = months[monthIndex];
+    if (month) month[key] = (month[key] ?? 0) + value;
+    const daily = monthIndex === detailMonthIndex ? dailyFlow[Number(date.slice(8, 10)) - 1] : undefined;
+    if (daily) daily[key] = (daily[key] ?? 0) + value;
   }
   const balances: PontoSaldo[] = calcularSaldoProjetadoPorMes(initialBalance, lancamentos, year, referenceDate)
     .map((point) => ({ label: `${MONTHS[point.mesIdx]} ${year}`, saldo: point.saldo, projetado: point.projetado }));
@@ -152,8 +171,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   );
   const referenceDate = new Date(`${today}T12:00:00-03:00`);
   const opcoesDasSeries = { year, detailMonthIndex, initialBalance, referenceDate };
-  const seriesComAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, true, today), opcoesDasSeries);
-  const seriesSemAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, false, today), opcoesDasSeries);
+  const internas = transferenciasEntreContas(transactions, selectedSet);
+  const seriesComAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, true, today), lancamentosDoFluxo(internas, true, today), opcoesDasSeries);
+  const seriesSemAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, false, today), lancamentosDoFluxo(internas, false, today), opcoesDasSeries);
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const expenseCategoryTotals = new Map<number | null, number>();
   const revenueCategoryTotals = new Map<number | null, number>();

@@ -14,6 +14,9 @@ export type MesFluxo = {
   resgatadoObjetivos?: number;
   guardarObjetivosPrevisto?: number;
   resgatarObjetivosPrevisto?: number;
+  /** Transferências entre as contas escolhidas: só informação, sem barra e sem efeito no saldo. */
+  transferencias?: number;
+  transferenciasPrevistas?: number;
 };
 export type PontoSaldo = { label: string; saldo: number; projetado: boolean };
 
@@ -46,6 +49,8 @@ const CAMPOS_DO_MES = [
   "resgatadoObjetivos",
   "guardarObjetivosPrevisto",
   "resgatarObjetivosPrevisto",
+  "transferencias",
+  "transferenciasPrevistas",
 ] as const;
 const DURACAO_ANIMACAO_MS = 450;
 
@@ -372,6 +377,8 @@ export default function FluxoSaldoChart({
             {(mesHover.resgatadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+{formatarReais(mesHover.resgatadoObjetivos ?? 0)}</strong></div>}
             {(mesHover.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>A guardar em objetivos</span><strong>−{formatarReais(mesHover.guardarObjetivosPrevisto ?? 0)}</strong></div>}
             {(mesHover.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+{formatarReais(mesHover.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesHover.transferencias ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="transfer"><span>Transferências</span><strong>↔ {formatarReais(mesHover.transferencias ?? 0)}</strong></div>}
+            {(mesHover.transferenciasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="transfer"><span>Transferências a fazer</span><strong>↔ {formatarReais(mesHover.transferenciasPrevistas ?? 0)}</strong></div>}
             <div className={styles.tooltipRow} data-tone={saldoHover.saldo < 0 ? "negative" : "balance"}><span>{saldoHover.projetado ? "Saldo projetado" : "Saldo realizado"}</span><strong>{formatarReais(saldoHover.saldo)}</strong></div>
           </aside>
         )}
@@ -410,6 +417,8 @@ export default function FluxoSaldoChart({
             {(mesSelecionado.resgatadoObjetivos ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+ {formatarReais(mesSelecionado.resgatadoObjetivos ?? 0)}</strong></div>}
             {(mesSelecionado.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-save"><span>A guardar em objetivos</span><strong>- {formatarReais(mesSelecionado.guardarObjetivosPrevisto ?? 0)}</strong></div>}
             {(mesSelecionado.resgatarObjetivosPrevisto ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="goal-withdraw"><span>A resgatar de objetivos</span><strong>+ {formatarReais(mesSelecionado.resgatarObjetivosPrevisto ?? 0)}</strong></div>}
+            {(mesSelecionado.transferencias ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="transfer"><span>Transferências</span><strong>↔ {formatarReais(mesSelecionado.transferencias ?? 0)}</strong></div>}
+            {(mesSelecionado.transferenciasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="transfer"><span>Transferências a fazer</span><strong>↔ {formatarReais(mesSelecionado.transferenciasPrevistas ?? 0)}</strong></div>}
           </div>
         </section>
       )}

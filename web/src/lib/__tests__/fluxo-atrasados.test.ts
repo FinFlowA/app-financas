@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { estaEmAtraso, lancamentosDoFluxo } from "../fluxo-atrasados";
+import { transferenciasEntreContas } from "../fluxo-transferencias";
 import { calcularSaldoProjetadoPorMes } from "../saldo-projetado";
 
 const HOJE = "2026-10-02";
@@ -40,8 +41,8 @@ describe("filtro Considerar atrasados do fluxo de caixa", () => {
     const filtros = readFileSync(join(raiz, "web/src/app/(dashboard)/relatorios/report-filters.tsx"), "utf8");
     const app = readFileSync(join(raiz, "app/(tabs)/relatorios.tsx"), "utf8");
     // O servidor monta as duas versões; a tela troca na hora, sem nova busca.
-    expect(pagina).toMatch(/montarSeriesDoFluxo\(lancamentosDoFluxo\(scoped, true, today\), opcoesDasSeries\)/);
-    expect(pagina).toMatch(/montarSeriesDoFluxo\(lancamentosDoFluxo\(scoped, false, today\), opcoesDasSeries\)/);
+    expect(pagina).toMatch(/montarSeriesDoFluxo\(lancamentosDoFluxo\(scoped, true, today\), lancamentosDoFluxo\(internas, true, today\), opcoesDasSeries\)/);
+    expect(pagina).toMatch(/montarSeriesDoFluxo\(lancamentosDoFluxo\(scoped, false, today\), lancamentosDoFluxo\(internas, false, today\), opcoesDasSeries\)/);
     expect(visao).toMatch(/considerarAtrasados \? series\.comAtrasados : series\.semAtrasados/);
     expect(visao).toMatch(/window\.history\.replaceState\(/);
     expect((visao.match(/params\.set\("atrasados", "0"\)/g) ?? []).length).toBe(3);
@@ -54,5 +55,38 @@ describe("filtro Considerar atrasados do fluxo de caixa", () => {
     expect(grafico).toMatch(/prefers-reduced-motion: reduce/);
     expect(app).toMatch(/lancamentosDoFluxo\(transacoesFiltradas, considerarAtrasados, hojeIso\)/);
     expect(app).toMatch(/Considerar atrasados/);
+  });
+});
+
+describe("transferências entre as contas escolhidas no fluxo", () => {
+  const transferencias = [
+    { id: 1, conta_id: 1, tipo: "despesa", valor: 200, status: "pendente", data_vencimento: "2026-09-25", descricao: "[Transf.] Reserva [Destino:2]" },
+    { id: 2, conta_id: 1, tipo: "despesa", valor: 80, status: "paga", data_vencimento: "2026-10-01", descricao: "[Transf.] Para a 3 [Destino:3]" },
+    { id: 3, conta_id: 1, tipo: "despesa", valor: 50, status: "pendente", data_vencimento: "2026-10-20", descricao: "[Transf.] Antiga" },
+    { id: 4, conta_id: 2, tipo: "receita", valor: 50, status: "pendente", data_vencimento: "2026-10-20", descricao: "[Transf.] Antiga" },
+    { id: 5, conta_id: 1, tipo: "despesa", valor: 90, status: "pendente", data_vencimento: "2026-09-20", descricao: "[Transf.] Guardar [Objetivo:4:guardar]" },
+    { id: 6, conta_id: 1, tipo: "despesa", valor: 10, status: "pendente", data_vencimento: "2026-09-20", descricao: "Mercado" },
+  ];
+
+  it("entram as que ficam dentro da seleção, inclusive atrasadas; antigas contam só a saída", () => {
+    expect(transferenciasEntreContas(transferencias, new Set([1, 2, 3])).map((t) => t.id)).toEqual([1, 2, 3]);
+    // A que vai para fora da seleção já conta como saída no fluxo.
+    expect(transferenciasEntreContas(transferencias, new Set([1, 2])).map((t) => t.id)).toEqual([1, 3]);
+    // Com uma conta só, a transferência já é entrada ou saída dela.
+    expect(transferenciasEntreContas(transferencias, new Set([1]))).toEqual([]);
+  });
+
+  it("seguem o filtro Considerar atrasados", () => {
+    const internas = transferenciasEntreContas(transferencias, new Set([1, 2, 3]));
+    expect(lancamentosDoFluxo(internas, false, HOJE).map((t) => t.id)).toEqual([2, 3]);
+  });
+
+  it("aparecem nas informações do mês do site e do app, sem mudar o saldo", () => {
+    const raiz = join(__dirname, "..", "..", "..", "..");
+    const grafico = readFileSync(join(raiz, "web/src/app/(dashboard)/relatorios/fluxo-saldo-chart.tsx"), "utf8");
+    expect(grafico).toMatch(/<span>Transferências a fazer<\/span>/);
+    const app = readFileSync(join(raiz, "app/(tabs)/relatorios.tsx"), "utf8");
+    expect(app).toMatch(/lancamentosDoFluxo\(transferenciasEntreContas\(transacoes, idsEscopoFluxo\), considerarAtrasados, hojeIso\)/);
+    expect(app).toMatch(/label="Transferências a fazer"/);
   });
 });
