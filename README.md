@@ -315,6 +315,8 @@ com layouts bancários não padronizados.
 - **Filtro "Considerar atrasados"** no fluxo de caixa do site e do app.
   Desligado, os lançamentos vencidos e não concluídos saem do saldo previsto e
   do gráfico. No site, a troca é instantânea e o gráfico anima a mudança.
+  Ligado, os atrasados de meses anteriores entram nas previsões do mês atual
+  (barras e informações do mês), onde o saldo projetado também os soma.
 - **Cartão no Balanço do mês:** com todas as contas, cada compra ou parcela
   entra em Saídas e no Balanço no mês da fatura; o pagamento da fatura fica de
   fora para não contar duas vezes. Regras em
