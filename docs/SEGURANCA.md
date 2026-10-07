@@ -19,6 +19,7 @@
 - Troca/redefinição de senha encerra as demais sessões no próprio Supabase Auth (`LogoutAllExceptMe`); o JWT de acesso já emitido vale até expirar.
 - Senha vazada: cadastro, definição e troca de senha consultam o HaveIBeenPwned por k-anonymity (`lib/pwned-password.ts` no app, `web/src/lib/auth/pwned-password.ts` no site). Só os 5 primeiros caracteres do SHA-1 saem; se a API cair, o fluxo segue. Substitui a proteção nativa da Supabase, que exige plano Pro.
 - SecureStore e bloqueio biométrico local.
+- Capturas e gravação de tela liberadas no app (decisão do responsável em 07/10/2026; antes ficavam bloqueadas). No iOS, os saldos continuam borrados no seletor de aplicativos enquanto houver sessão (`enableAppSwitcherProtectionAsync`). No Android, o bloqueio de capturas e o da lista de recentes são a mesma trava (FLAG_SECURE), então a lista de recentes passa a mostrar a tela do app. O `_layout` chama `allowScreenCaptureAsync` ao abrir, para desfazer o bloqueio de versões anteriores.
 - Retenção de mensagens da IA e metadados allowlisted.
 - Gitleaks no histórico completo e verificação própria `security-check.cjs`.
 

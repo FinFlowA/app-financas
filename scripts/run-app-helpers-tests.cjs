@@ -221,10 +221,19 @@ assert.match(telaInicio, /<ProgressoMetaCategoria progresso=\{progresso\}/);
 assert.match(telaInicio, /\[tipoNovaCategoria === "receita" \? "monthly_goal" : "monthly_limit"\]: alvoNovo/);
 assert.match(telaInicio, /changes\[catEditando\.tipo === "receita" \? "monthly_goal" : "monthly_limit"\] = alvoDesejado/);
 
-// Histórico: o período abre a escolha de mês e ano (antes, só o ano).
+// Histórico: a janela do período escolhe um mês ou um período de/até.
 const telaHistorico = fs.readFileSync(path.join(root, "app", "(tabs)", "transacoes.tsx"), "utf8");
-assert.match(telaHistorico, /Mês e ano do histórico/);
+assert.match(telaHistorico, /Período do histórico/);
 assert.match(telaHistorico, /onPress=\{\(\) => escolherMesAno\(anoSeletor, indice \+ 1\)\}/);
+assert.match(telaHistorico, /dataFiltro >= periodoHistorico\.inicio && dataFiltro <= periodoHistorico\.fim/, "O período filtra os lançamentos.");
+assert.match(telaHistorico, /vencimentoFatura < periodoHistorico\.inicio \|\| vencimentoFatura > periodoHistorico\.fim/, "No período, a fatura entra pelo vencimento.");
+assert.match(telaHistorico, /Aplicar período/);
+
+// Capturas de tela liberadas (07/10/2026): só o desfoque no seletor de apps do iOS continua.
+const layoutApp = fs.readFileSync(path.join(root, "app", "_layout.tsx"), "utf8");
+assert.doesNotMatch(layoutApp, /preventScreenCaptureAsync/, "O app não bloqueia mais capturas de tela.");
+assert.match(layoutApp, /await screenCapture\.allowScreenCaptureAsync\(CHAVE_PROTECAO_TELA\);/);
+assert.match(layoutApp, /enableAppSwitcherProtectionAsync\(0\.85\)/);
 
 testeDemo.then(
   () => console.log("App helper tests passed."),

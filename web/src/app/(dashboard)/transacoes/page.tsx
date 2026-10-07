@@ -39,6 +39,13 @@ export default async function TransactionsPage({
     ? requestedMonth
     : mesAtualEmSaoPaulo();
   const quick = quickFilter(first(parameters.quick));
+  // Período personalizado (?inicio=AAAA-MM-DD&fim=AAAA-MM-DD), no lugar do mês.
+  const isoDate = /^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/;
+  const requestedStart = first(parameters.inicio);
+  const requestedEnd = first(parameters.fim);
+  const initialRange = isoDate.test(requestedStart) && isoDate.test(requestedEnd)
+    ? requestedStart <= requestedEnd ? { start: requestedStart, end: requestedEnd } : { start: requestedEnd, end: requestedStart }
+    : null;
   const openNew = ["1", "true", "yes"].includes(first(parameters.new).toLowerCase());
   const initialKind = transactionKind(first(parameters.kind));
   const initialFocusId = positiveId(first(parameters.focus));
@@ -133,6 +140,7 @@ export default async function TransactionsPage({
       <TransactionManager
         userId={authData.user.id}
         initialMonth={month}
+        initialRange={initialRange}
         initialQuick={quick}
         initialOpenNew={openNew}
         initialKind={initialKind}

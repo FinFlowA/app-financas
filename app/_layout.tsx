@@ -706,9 +706,12 @@ export default function RootLayout() {
     else router.push("/(tabs)" as any);
   }), [router]);
 
-  // Protege saldos e movimentações na visualização de aplicativos recentes.
-  // No Android, FLAG_SECURE também bloqueia capturas enquanto houver sessão;
-  // no iOS, o sistema aplica um desfoque quando o app perde o foco.
+  // Capturas e gravação de tela ficam liberadas (decisão do responsável em
+  // 07/10/2026). Versões anteriores ligavam o bloqueio (FLAG_SECURE no
+  // Android) com esta chave; liberar aqui desfaz isso também em quem recebeu
+  // a atualização com o app aberto. No iOS, o desfoque dos saldos no seletor
+  // de aplicativos continua enquanto houver sessão. No Android não há como
+  // separar as duas coisas, então a lista de recentes mostra a tela do app.
   useEffect(() => {
     if (Platform.OS === "web") return;
     const screenCapture = getOptionalScreenCapture();
@@ -716,24 +719,10 @@ export default function RootLayout() {
 
     let efeitoAtual = true;
     const aplicarProtecaoNativa = async (proteger: boolean) => {
-      if (Platform.OS === "android") {
-        if (proteger) await screenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA);
-        else await screenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA);
-        return;
-      }
+      await screenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA);
       if (Platform.OS !== "ios") return;
-
-      const resultados = await Promise.allSettled(proteger
-        ? [
-            screenCapture.preventScreenCaptureAsync(CHAVE_PROTECAO_TELA),
-            screenCapture.enableAppSwitcherProtectionAsync(0.85),
-          ]
-        : [
-            screenCapture.allowScreenCaptureAsync(CHAVE_PROTECAO_TELA),
-            screenCapture.disableAppSwitcherProtectionAsync(),
-          ]);
-      const falha = resultados.find((resultado) => resultado.status === "rejected");
-      if (falha?.status === "rejected") throw falha.reason;
+      if (proteger) await screenCapture.enableAppSwitcherProtectionAsync(0.85);
+      else await screenCapture.disableAppSwitcherProtectionAsync();
     };
     const aplicar = async (proteger: boolean) => {
       try {

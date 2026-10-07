@@ -22,6 +22,7 @@ import {
 } from "react-native";
 import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
+import CalendarioPopup from "../../components/CalendarioPopup";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
@@ -146,6 +147,18 @@ const getEstiloBanco = (nome: string, isDark: boolean) => {
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 
 const getNomeMes = (mes: string) => MESES[parseInt(mes, 10) - 1];
+
+/** "AAAA-MM-DD" ↔ instante UTC, para andar o período de dia em dia. */
+const diaIsoParaUtc = (iso: string) => {
+  const [ano, mes, dia] = iso.split("-").map(Number);
+  return Date.UTC(ano, mes - 1, dia);
+};
+const utcParaDiaIso = (instante: number) => new Date(instante).toISOString().slice(0, 10);
+const dataLocalParaIso = (data: Date) =>
+  `${data.getFullYear()}-${String(data.getMonth() + 1).padStart(2, "0")}-${String(data.getDate()).padStart(2, "0")}`;
+const dataIsoParaBr = (iso: string) => iso.split("-").reverse().join("/");
+const rotuloPeriodo = (periodo: { inicio: string; fim: string }) =>
+  `${dataIsoParaBr(periodo.inicio)} a ${dataIsoParaBr(periodo.fim)}`;
 
 const formatarMesAno = (yyyymm: string) => {
   if (!yyyymm) return "";
@@ -298,10 +311,49 @@ export default function TransacoesScreen() {
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
 
+  // Período personalizado (de/até, datas "AAAA-MM-DD"). Quando existe, vale no
+  // lugar do mês; escolher um mês volta para a visão mensal.
+  const [periodoHistorico, setPeriodoHistorico] = useState<{ inicio: string; fim: string } | null>(null);
+  const [modoSeletorPeriodo, setModoSeletorPeriodo] = useState<"mes" | "periodo">("mes");
+  const [rascunhoPeriodo, setRascunhoPeriodo] = useState({ inicio: "", fim: "" });
+  const [calendarioPeriodo, setCalendarioPeriodo] = useState<"inicio" | "fim" | null>(null);
+  const valorRascunho = (campo: "inicio" | "fim") => (campo === "inicio" ? rascunhoPeriodo.inicio : rascunhoPeriodo.fim);
+
+  const abrirSeletorPeriodo = () => {
+    setAnoSeletor(Number(mesSelecionado.slice(0, 4)));
+    setModoSeletorPeriodo(periodoHistorico ? "periodo" : "mes");
+    setRascunhoPeriodo(periodoHistorico ?? { inicio: "", fim: "" });
+    setModalFiltroAno(true);
+  };
+
+  const aplicarPeriodo = () => {
+    const { inicio, fim } = rascunhoPeriodo;
+    if (!inicio || !fim) return;
+    setFiltroHoje(false);
+    setFiltroProximosSeteDias(false);
+    setFiltroVencidas(false);
+    // Datas invertidas viram o período certo, em vez de um erro.
+    setPeriodoHistorico(inicio <= fim ? { inicio, fim } : { inicio: fim, fim: inicio });
+    setPaginaAtual(1);
+    setModalFiltroAno(false);
+  };
+
+  // Nas setas, o período anda o próprio tamanho (ex.: de 15 em 15 dias).
+  const deslocarPeriodo = (direcao: number) => {
+    if (!periodoHistorico) return;
+    const dias = (diaIsoParaUtc(periodoHistorico.fim) - diaIsoParaUtc(periodoHistorico.inicio)) / 86_400_000 + 1;
+    setPeriodoHistorico({
+      inicio: utcParaDiaIso(diaIsoParaUtc(periodoHistorico.inicio) + direcao * dias * 86_400_000),
+      fim: utcParaDiaIso(diaIsoParaUtc(periodoHistorico.fim) + direcao * dias * 86_400_000),
+    });
+    setPaginaAtual(1);
+  };
+
   const escolherMesAno = (ano: number, mes: number) => {
     setFiltroHoje(false);
     setFiltroProximosSeteDias(false);
     setFiltroVencidas(false);
+    setPeriodoHistorico(null);
     setAnoSelecionado(ano);
     setMesSelecionado(`${ano}-${String(mes).padStart(2, "0")}`);
     setPaginaAtual(1);
@@ -309,6 +361,10 @@ export default function TransacoesScreen() {
   };
 
   const alterarMes = (direcao: number) => {
+    if (periodoHistorico) {
+      deslocarPeriodo(direcao);
+      return;
+    }
     setFiltroHoje(false);
     setFiltroProximosSeteDias(false);
     setFiltroVencidas(false);
@@ -1496,7 +1552,10 @@ export default function TransacoesScreen() {
           && passaFiltrosBasicos;
       }
 
-      const passaMes = (dataSegura || chaveHoje).startsWith(mesSelecionado);
+      const dataFiltro = dataSegura || chaveHoje;
+      const passaMes = periodoHistorico
+        ? dataFiltro >= periodoHistorico.inicio && dataFiltro <= periodoHistorico.fim
+        : dataFiltro.startsWith(mesSelecionado);
       let passaStatus = true;
       if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
@@ -1516,6 +1575,7 @@ export default function TransacoesScreen() {
       hojeRef,
       mesSelecionado,
       passaFiltrosBasicosHistorico,
+      periodoHistorico,
       transacoesPrincipais,
     ]);
 
@@ -1539,7 +1599,10 @@ export default function TransacoesScreen() {
           && dataSegura <= chaveLimiteProximosSeteDias
           && passaFiltrosBasicos;
       }
-      const passaMes = (dataSegura || chaveHoje).startsWith(mesSelecionado);
+      const dataFiltro = dataSegura || chaveHoje;
+      const passaMes = periodoHistorico
+        ? dataFiltro >= periodoHistorico.inicio && dataFiltro <= periodoHistorico.fim
+        : dataFiltro.startsWith(mesSelecionado);
       let passaStatus = true;
       if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
@@ -1553,6 +1616,7 @@ export default function TransacoesScreen() {
       filtroVencidas,
       mesSelecionado,
       passaFiltrosBasicosHistorico,
+      periodoHistorico,
       transacoes,
     ]);
 
@@ -1561,7 +1625,11 @@ export default function TransacoesScreen() {
     if (filtroHoje || filtroProximosSeteDias) return [];
     // Compras no cartão ainda não possuem uma conta bancária associada.
     if (filtroContas.length > 0) return [];
-    if (g.mes_fatura !== mesSelecionado) return [];
+    if (periodoHistorico) {
+      // No período, a fatura entra pelo dia do vencimento.
+      const vencimentoFatura = dataVencimentoFaturaHistorico(g.mes_fatura, g.dia_vencimento);
+      if (vencimentoFatura < periodoHistorico.inicio || vencimentoFatura > periodoHistorico.fim) return [];
+    } else if (g.mes_fatura !== mesSelecionado) return [];
     if (filtroStatus === "concluidos" && !g.pago) return [];
     if (filtroStatus === "pendentes" && g.pago) return [];
     if (filtroVencidas) {
@@ -1595,6 +1663,7 @@ export default function TransacoesScreen() {
     filtrosTipo,
     hojeRef,
     mesSelecionado,
+    periodoHistorico,
     termoBusca,
   ]);
 
@@ -1642,6 +1711,7 @@ export default function TransacoesScreen() {
   }, [eventosFinanceirosDoMes]);
 
   const temFiltroAtivo = mesSelecionado !== mesAtualChave
+    || periodoHistorico !== null
     || filtroContas.length > 0
     || filtroCategorias.length > 0
     || filtrosTipo.length > 0
@@ -1664,6 +1734,7 @@ export default function TransacoesScreen() {
   const limparFiltros = () => {
     setAnoSelecionado(anoAtualNum);
     setMesSelecionado(mesAtualChave);
+    setPeriodoHistorico(null);
     setFiltroContas([]);
     setFiltroCategorias([]);
     setFiltrosTipo([]);
@@ -1705,7 +1776,9 @@ export default function TransacoesScreen() {
       ? "Próximos 7 dias"
     : filtroVencidas
       ? "Lançamentos atrasados"
-      : formatarMesAno(mesSelecionado);
+      : periodoHistorico
+        ? rotuloPeriodo(periodoHistorico)
+        : formatarMesAno(mesSelecionado);
 
   const alturaCabecalho = scrollY.interpolate({
     inputRange: [0, HEADER_COLLAPSE_DISTANCE],
@@ -2011,15 +2084,15 @@ export default function TransacoesScreen() {
           )}
         </View>
 
-        <View style={[styles.periodSelector, { backgroundColor: Cores.pillFundo, borderColor: mesSelecionado !== mesAtualChave ? "#805AD5" : Cores.borda }]}>
-          <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.periodSelectorArrow} accessibilityLabel="Mês anterior">
+        <View style={[styles.periodSelector, { backgroundColor: Cores.pillFundo, borderColor: mesSelecionado !== mesAtualChave || periodoHistorico ? "#805AD5" : Cores.borda }]}>
+          <TouchableOpacity onPress={() => alterarMes(-1)} style={styles.periodSelectorArrow} accessibilityLabel={periodoHistorico ? "Período anterior" : "Mês anterior"}>
             <MaterialIcons name="chevron-left" size={25} color="#805AD5" />
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setAnoSeletor(Number(mesSelecionado.slice(0, 4))); setModalFiltroAno(true); }} style={styles.periodSelectorCenter} accessibilityLabel={`Período selecionado: ${formatarMesAno(mesSelecionado)}. Toque para escolher o mês e o ano.`}>
+          <TouchableOpacity onPress={abrirSeletorPeriodo} style={styles.periodSelectorCenter} accessibilityLabel={`Período selecionado: ${periodoHistorico ? rotuloPeriodo(periodoHistorico) : formatarMesAno(mesSelecionado)}. Toque para escolher o mês ou um período.`}>
             <MaterialIcons name="calendar-today" size={16} color="#805AD5" />
-            <Text style={[styles.periodSelectorText, { color: Cores.textoPrincipal }]}>{formatarMesAno(mesSelecionado)}</Text>
+            <Text style={[styles.periodSelectorText, { color: Cores.textoPrincipal }]} numberOfLines={1} adjustsFontSizeToFit>{periodoHistorico ? rotuloPeriodo(periodoHistorico) : formatarMesAno(mesSelecionado)}</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => alterarMes(1)} style={styles.periodSelectorArrow} accessibilityLabel="Próximo mês">
+          <TouchableOpacity onPress={() => alterarMes(1)} style={styles.periodSelectorArrow} accessibilityLabel={periodoHistorico ? "Próximo período" : "Próximo mês"}>
             <MaterialIcons name="chevron-right" size={25} color="#805AD5" />
           </TouchableOpacity>
         </View>
@@ -2286,7 +2359,7 @@ export default function TransacoesScreen() {
           {/* Rodapé */}
           {eventosFinanceirosDoMes.length > 0 && (
             <View style={[styles.tabelaFooter, { backgroundColor: Cores.headerTabela, borderColor: Cores.borda }]}>
-              <Text style={[styles.footerLabel, { color: Cores.textoSecundario }]}>Total do mês</Text>
+              <Text style={[styles.footerLabel, { color: Cores.textoSecundario }]}>{periodoHistorico ? "Total do período" : "Total do mês"}</Text>
               <View style={styles.footerTotais}>
                 <View style={styles.footerItem}>
                   <MaterialIcons name="arrow-upward" size={12} color="#2A9D8F" />
@@ -3018,14 +3091,73 @@ export default function TransacoesScreen() {
             <View style={styles.filterModalHeader}>
               <View style={[styles.filterModalHeaderIcon, { backgroundColor: "#805AD51F" }]}><MaterialIcons name="calendar-today" size={21} color="#805AD5" /></View>
               <View style={{ flex: 1 }}>
-                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Mês e ano do histórico</Text>
-                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>Escolha o ano nas setas e toque no mês.</Text>
+                <Text style={[styles.filterModalTitle, { color: Cores.textoPrincipal }]}>Período do histórico</Text>
+                <Text style={[styles.filterModalSubtitle, { color: Cores.textoSecundario }]}>{modoSeletorPeriodo === "mes" ? "Escolha o ano nas setas e toque no mês." : "Escolha a data de início e a de fim."}</Text>
               </View>
               <TouchableOpacity style={styles.filterModalClose} onPress={() => setModalFiltroAno(false)} accessibilityLabel="Fechar escolha de mês e ano">
                 <MaterialIcons name="close" size={21} color={Cores.textoSecundario} />
               </TouchableOpacity>
             </View>
 
+            <View style={[styles.periodModeTabs, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+              {(["mes", "periodo"] as const).map((modo) => {
+                const ativo = modoSeletorPeriodo === modo;
+                return (
+                  <TouchableOpacity
+                    key={modo}
+                    style={[styles.periodModeTab, ativo && { backgroundColor: "#805AD5" }]}
+                    onPress={() => setModoSeletorPeriodo(modo)}
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: ativo }}
+                  >
+                    <Text style={[styles.periodModeTabText, { color: ativo ? "#FFF" : Cores.textoSecundario }]}>{modo === "mes" ? "Mês" : "Período"}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            {modoSeletorPeriodo === "periodo" ? (
+              <>
+                {(["inicio", "fim"] as const).map((campo) => (
+                  <TouchableOpacity
+                    key={campo}
+                    style={[styles.periodDateField, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}
+                    onPress={() => setCalendarioPeriodo(campo)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${campo === "inicio" ? "Data de início" : "Data de fim"}: ${valorRascunho(campo) ? dataIsoParaBr(valorRascunho(campo)) : "não escolhida"}`}
+                  >
+                    <MaterialIcons name="event" size={20} color="#805AD5" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.yearFilterLabel, { color: Cores.textoSecundario }]}>{campo === "inicio" ? "DE" : "ATÉ"}</Text>
+                      <Text style={[styles.periodDateValue, { color: Cores.textoPrincipal }]}>{valorRascunho(campo) ? dataIsoParaBr(valorRascunho(campo)) : "Escolher data"}</Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={22} color={Cores.textoSecundario} />
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity
+                  style={[styles.modalBotaoAplicar, { backgroundColor: "#805AD5", opacity: rascunhoPeriodo.inicio && rascunhoPeriodo.fim ? 1 : 0.5 }]}
+                  onPress={aplicarPeriodo}
+                  disabled={!rascunhoPeriodo.inicio || !rascunhoPeriodo.fim}
+                >
+                  <Text style={styles.modalBotaoTexto}>Aplicar período</Text>
+                </TouchableOpacity>
+                <CalendarioPopup
+                  visivel={calendarioPeriodo !== null}
+                  valor={calendarioPeriodo && valorRascunho(calendarioPeriodo) ? new Date(`${valorRascunho(calendarioPeriodo)}T12:00:00`) : null}
+                  aoSelecionar={(data) => {
+                    const campo = calendarioPeriodo;
+                    if (campo) setRascunhoPeriodo((atual) => (campo === "inicio" ? { ...atual, inicio: dataLocalParaIso(data) } : { ...atual, fim: dataLocalParaIso(data) }));
+                    setCalendarioPeriodo(null);
+                  }}
+                  aoFechar={() => setCalendarioPeriodo(null)}
+                  corDestaque="#805AD5"
+                  cores={{ card: Cores.cardFundo, pill: Cores.pillFundo, borda: Cores.borda, texto: Cores.textoPrincipal, textoSecundario: Cores.textoSecundario }}
+                  titulo={calendarioPeriodo === "fim" ? "Data de fim" : "Data de início"}
+                  subtitulo="Escolha o dia."
+                />
+              </>
+            ) : (
+            <>
             <View style={[styles.yearFilterStepper, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
               <TouchableOpacity onPress={() => setAnoSeletor((ano) => ano - 1)} style={styles.yearFilterArrow} accessibilityLabel="Ano anterior">
                 <MaterialIcons name="chevron-left" size={27} color="#805AD5" />
@@ -3059,10 +3191,12 @@ export default function TransacoesScreen() {
               })}
             </View>
 
-            {mesSelecionado !== mesAtualChave && (
+            {(mesSelecionado !== mesAtualChave || periodoHistorico) && (
               <TouchableOpacity style={[styles.modalBotaoAplicar, { backgroundColor: "#805AD5" }]} onPress={() => escolherMesAno(Number(mesAtualChave.slice(0, 4)), Number(mesAtualChave.slice(5, 7)))}>
                 <Text style={styles.modalBotaoTexto}>Voltar para o mês atual</Text>
               </TouchableOpacity>
+            )}
+            </>
             )}
           </View>
         </View>
@@ -3452,6 +3586,11 @@ const styles = StyleSheet.create({
   yearFilterCurrent: { alignItems: "center", justifyContent: "center" },
   yearFilterLabel: { fontSize: 9, fontWeight: "800", letterSpacing: 0.6, marginBottom: 2 },
   yearFilterValue: { fontSize: 25, fontWeight: "900" },
+  periodModeTabs: { flexDirection: "row", borderWidth: 1, borderRadius: 14, padding: 4, marginBottom: 14, gap: 4 },
+  periodModeTab: { flex: 1, minHeight: 40, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  periodModeTabText: { fontSize: 14, fontWeight: "800" },
+  periodDateField: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 60, borderWidth: 1, borderRadius: 14, paddingHorizontal: 14, marginBottom: 10 },
+  periodDateValue: { fontSize: 17, fontWeight: "900" },
   monthPickerGrid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between", rowGap: 8, marginBottom: 16 },
   monthPickerCell: { width: "31.5%", minHeight: 46, borderRadius: 12, borderWidth: 1, alignItems: "center", justifyContent: "center" },
   monthPickerText: { fontSize: 15, fontWeight: "800" },

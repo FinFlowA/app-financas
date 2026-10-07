@@ -47,11 +47,13 @@ import {
   type TransactionKind,
   type TransactionRow,
 } from "./transaction-model";
-import MonthPicker from "./month-picker";
+import { PeriodNavigator, rangeLabel, type HistoryRange } from "./month-picker";
 
 type Props = {
   userId: string;
   initialMonth: string;
+  /** Período personalizado (datas "AAAA-MM-DD"); quando existe, vale no lugar do mês. */
+  initialRange?: HistoryRange | null;
   initialQuick: QuickFilter;
   initialOpenNew: boolean;
   initialKind: TransactionKind;
@@ -532,10 +534,13 @@ function InvoiceCard({ invoice, today }: { invoice: InvoiceHistoryGroup; today: 
   </article>;
 }
 
-export default function TransactionManager({ userId, initialMonth, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, goals, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds, detailOnly = false, onDetailClosed }: Props) {
+export default function TransactionManager({ userId, initialMonth, initialRange = null, initialQuick, initialOpenNew, initialKind, initialFocusId, returnHomeAfterCreate, today, accounts, goals, categories, cards, invoiceItems, transactions, financialEvents, paymentSummaryRows, reconciledTransactionIds, detailOnly = false, onDetailClosed }: Props) {
   const router = useRouter();
   const reconciledIds = useMemo(() => new Set(reconciledTransactionIds), [reconciledTransactionIds]);
   const [month, setMonth] = useState(initialMonth);
+  const [range, setRange] = useState<HistoryRange | null>(initialRange);
+  /** A data está no mês escolhido, ou no período personalizado quando houver. */
+  const inPeriod = (date: string) => (range ? date >= range.start && date <= range.end : date.startsWith(month));
   const [period, setPeriod] = useState<PeriodFilter>(initialQuick ?? "pending");
   const [search, setSearch] = useState("");
   const [types, setTypes] = useState<HistoryKind[]>([]);
@@ -615,8 +620,8 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     // Pendentes: mostra o que vence no mês selecionado, mais qualquer item
     // atrasado de meses anteriores que ainda segue pendente — senão ele some
     // da visão para sempre sem nunca ter sido resolvido.
-    if (candidate === "pending") return !summary.isFullyPaid && (date.startsWith(month) || transaction.data_vencimento < today);
-    if (!date.startsWith(month)) return false;
+    if (candidate === "pending") return !summary.isFullyPaid && (inPeriod(date) || transaction.data_vencimento < today);
+    if (!inPeriod(date)) return false;
     if (candidate === "completed") return summary.isFullyPaid;
     return true;
   }
@@ -634,8 +639,10 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     // O app mantém os atalhos de hoje e sete dias para agendamentos. Faturas
     // entram no atalho específico de atraso e na navegação mensal.
     if (candidate === "today" || candidate === "next7") return false;
-    if (candidate === "pending") return !invoice.paid && (invoice.invoiceMonth === month || invoice.dueDate < today);
-    if (invoice.invoiceMonth !== month) return false;
+    // No período personalizado, a fatura entra pelo dia do vencimento.
+    const inInvoicePeriod = range ? inPeriod(invoice.dueDate) : invoice.invoiceMonth === month;
+    if (candidate === "pending") return !invoice.paid && (inInvoicePeriod || invoice.dueDate < today);
+    if (!inInvoicePeriod) return false;
     if (candidate === "completed") return invoice.paid;
     return true;
   }
@@ -670,25 +677,39 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
     if (period === "overdue") return transaction.status === "pendente" && transaction.data_vencimento < today;
     if (period === "today") return transaction.status === "pendente" && transaction.data_vencimento === today;
     if (period === "next7") return transaction.status === "pendente" && transaction.data_vencimento >= today && transaction.data_vencimento <= nextSeven;
-    if (period === "pending") return transaction.status === "pendente" && (eventDate.startsWith(month) || transaction.data_vencimento < today);
-    if (!eventDate.startsWith(month)) return false;
+    if (period === "pending") return transaction.status === "pendente" && (inPeriod(eventDate) || transaction.data_vencimento < today);
+    if (!inPeriod(eventDate)) return false;
     if (period === "completed") return transaction.status === "paga";
     return true;
   });
   const totals = historyFinancialTotals(filteredFinancialEvents, filteredInvoices);
 
-  function syncUrl(nextPeriod: PeriodFilter, nextMonth = month) {
+  function syncUrl(nextPeriod: PeriodFilter, nextMonth = month, nextRange = range) {
     const url = new URL(window.location.href);
     url.searchParams.set("month", nextMonth);
+    if (nextRange) {
+      url.searchParams.set("inicio", nextRange.start);
+      url.searchParams.set("fim", nextRange.end);
+    } else {
+      url.searchParams.delete("inicio");
+      url.searchParams.delete("fim");
+    }
     url.searchParams.delete("new");
     if (nextPeriod === "attention" || nextPeriod === "overdue" || nextPeriod === "today" || nextPeriod === "next7") url.searchParams.set("quick", nextPeriod);
     else url.searchParams.delete("quick");
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
   function choosePeriod(value: PeriodFilter) { setPeriod(value); setLimit(PAGE_SIZE); syncUrl(value); }
-  function chooseMonth(next: string) { setMonth(next); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", next); }
-  function changeMonth(delta: number) { chooseMonth(shiftMonth(month, delta)); }
+  function chooseMonth(next: string) { setMonth(next); setRange(null); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", next, null); }
+  function chooseRange(next: HistoryRange) { setRange(next); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", month, next); }
+  // Nas setas, o período anda o próprio tamanho (ex.: de 15 em 15 dias).
+  function changeMonth(delta: number) {
+    if (!range) return chooseMonth(shiftMonth(month, delta));
+    const days = (Date.parse(`${range.end}T00:00:00Z`) - Date.parse(`${range.start}T00:00:00Z`)) / 86_400_000 + 1;
+    chooseRange({ start: addIsoDays(range.start, delta * days), end: addIsoDays(range.end, delta * days) });
+  }
   function clearFilters() {
+    setRange(null);
     setSearch("");
     setPeriod("pending");
     setTypes([]);
@@ -811,6 +832,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
   const revenueCategories = activeCategories.filter((category) => category.tipo === "receita" || category.tipo === "ambos");
   const expenseCategories = activeCategories.filter((category) => category.tipo === "despesa" || category.tipo === "ambos");
   const hasActiveFilters = search.trim().length > 0
+    || range !== null
     || period !== "pending"
     || types.length > 0
     || accountIds.length > 0
@@ -824,7 +846,7 @@ export default function TransactionManager({ userId, initialMonth, initialQuick,
         <div><p className="text-xs font-extrabold uppercase tracking-[0.18em] text-mint">Movimentações</p><h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Histórico</h1><p className="mt-2 max-w-xl text-sm leading-relaxed text-white/72">Lançamentos, recorrências, transferências e faturas em uma linha do tempo completa.</p></div>
       </div>
       <div className="relative mt-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex items-center gap-2"><button type="button" onClick={() => changeMonth(-1)} aria-label="Mês anterior" className="ff-focus grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/10 text-xl font-black text-white transition hover:bg-white/10">‹</button><MonthPicker month={month} currentMonth={today.slice(0, 7)} label={monthTitle(month)} onChange={chooseMonth} /><button type="button" onClick={() => changeMonth(1)} aria-label="Próximo mês" className="ff-focus grid h-10 w-10 place-items-center rounded-full border border-white/15 bg-black/10 text-xl font-black text-white transition hover:bg-white/10">›</button></div>
+        <PeriodNavigator month={month} currentMonth={today.slice(0, 7)} label={range ? rangeLabel(range) : monthTitle(month)} onChange={chooseMonth} range={range} onRangeChange={chooseRange} onStep={changeMonth} />
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Itens</p><p className="truncate font-black">{filtered.length}</p></div><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Receitas</p><p data-private-value="true" className="truncate text-sm font-black text-mint sm:text-base">{formatarReais(totals.receita)}</p></div><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Despesas</p><p data-private-value="true" className="truncate text-sm font-black text-[#ff8c84] sm:text-base">{formatarReais(totals.despesa)}</p></div><div className="min-w-0 rounded-xl border border-white/10 bg-black/15 px-2.5 py-2 sm:px-3"><p className="text-[9px] font-bold uppercase text-white/55">Transferências</p><p data-private-value="true" className="truncate text-sm font-black text-blue sm:text-base">{formatarReais(totals.transferencia)}</p></div></div>
       </div>
     </header>
