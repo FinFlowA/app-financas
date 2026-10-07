@@ -387,6 +387,25 @@ com layouts bancários não padronizados.
   próprio tamanho. No site, ele vai no endereço
   (`/transacoes?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`).
 
+### Relatórios em PDF e Excel (site)
+
+- Aba **Relatórios** (`/exportar`), só no site: escolha o período (mês ou de/até),
+  as contas e as seções — Resumo, Contas, Receitas, Despesas, Transferências,
+  Faturas, Compras no cartão, Categorias, Pendências e Objetivos. O período é o
+  primeiro bloco da página, em destaque, com as datas exatas à vista e o seletor
+  em tamanho maior (`PeriodNavigator` com `size="lg"`).
+- Sem gráficos: cada seção é uma tabela com a linha de títulos e os dados. No
+  Excel, cada seção vira uma aba (mais a aba "Sobre", com período e contas),
+  com datas e valores de verdade; no PDF, as tabelas vêm uma embaixo da outra.
+- As regras são as das telas (`web/src/lib/relatorio.ts`): data efetiva,
+  transferências e objetivos fora de Receitas/Despesas, compras do cartão pelo
+  vencimento da fatura e, com todas as contas, o pagamento da fatura fora de
+  Despesas. Os valores aparecem sempre.
+- O arquivo é gerado no navegador (`web/src/lib/relatorio-arquivos.ts`, com
+  jsPDF + jspdf-autotable e write-excel-file, carregados só ao gerar).
+- Plano: recurso `report_export`, a partir do Pro (vale quando
+  `billing_settings.limits_enabled` estiver ligado).
+
 ## Deploy do site
 
 O painel precisa de um runtime Next.js completo: usa cookies no servidor, Proxy/Middleware, Server Components, Server Actions e rotas dinâmicas. Portanto, não é compatível com hospedagem puramente estática como GitHub Pages.

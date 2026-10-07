@@ -93,14 +93,17 @@ function RangeCalendar({ draft, month, onChange }: { draft: HistoryRange; month:
  * `onRangeChange`, também um período de/até. A janela fica fora do cabeçalho
  * (portal), que corta o que passa da borda.
  */
-export default function MonthPicker({ month, currentMonth, label, onChange, range = null, onRangeChange }: {
+export default function MonthPicker({ month, currentMonth, label, onChange, range = null, onRangeChange, size = "md" }: {
   month: string;
   currentMonth: string;
   label: string;
   onChange: (month: string) => void;
   range?: HistoryRange | null;
   onRangeChange?: (range: HistoryRange) => void;
+  /** "lg": maior e em destaque, para telas em que o período é a escolha principal (Relatórios). */
+  size?: "md" | "lg";
 }) {
+  const large = size === "lg";
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<"month" | "range">(range ? "range" : "month");
   const [draft, setDraft] = useState<HistoryRange>(range ?? { start: "", end: "" });
@@ -173,10 +176,12 @@ export default function MonthPicker({ month, currentMonth, label, onChange, rang
       aria-expanded={open}
       aria-label={`${range ? "Período" : "Período mensal"}: ${label}. Escolher ${onRangeChange ? "mês ou período" : "mês e ano"}`}
       onClick={toggle}
-      className="ff-focus min-w-40 rounded-full px-4 py-1 text-center transition hover:bg-surface"
+      className={large
+        ? "ff-focus min-w-0 flex-1 rounded-full px-3 py-1.5 text-center transition hover:bg-surface-muted md:min-w-60 md:px-6"
+        : "ff-focus min-w-40 rounded-full px-4 py-1 text-center transition hover:bg-surface"}
     >
-      <span className="block text-[10px] font-extrabold uppercase tracking-[0.16em] text-foreground-muted">{range ? "Período" : "Período mensal"}</span>
-      <span className="mt-0.5 flex items-center justify-center gap-1.5 font-black text-foreground">{label}<span aria-hidden="true" className={`text-xs text-primary transition ${open ? "rotate-180" : ""}`}>⌄</span></span>
+      <span className={`block font-extrabold uppercase tracking-[0.16em] ${large ? "text-[11px] text-primary-dark" : "text-[10px] text-foreground-muted"}`}>{range ? "Período" : "Período mensal"}</span>
+      <span className={`mt-0.5 flex items-center justify-center gap-1.5 font-black text-foreground ${large ? "text-lg" : ""}`}>{label}<span aria-hidden="true" className={`text-xs text-primary transition ${open ? "rotate-180" : ""}`}>⌄</span></span>
     </button>
     {open && createPortal(<section
       ref={panel}
@@ -219,14 +224,22 @@ export default function MonthPicker({ month, currentMonth, label, onChange, rang
 }
 
 /**
- * Setas e mês numa cápsula só (Histórico e Categorias). Nas setas, o mês
- * anda um mês; com período personalizado, quem chama decide o passo.
+ * Setas e mês numa cápsula só (Histórico e Categorias; em Relatórios, no
+ * tamanho maior). Nas setas, o mês anda um mês; com período personalizado,
+ * quem chama decide o passo.
  */
-export function PeriodNavigator({ onStep, range = null, ...picker }: Parameters<typeof MonthPicker>[0] & { onStep: (delta: number) => void }) {
-  const arrow = "ff-focus grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg font-black text-foreground-muted transition hover:bg-surface hover:text-primary";
-  return <div className="inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted/70 p-1 shadow-sm">
-    <button type="button" onClick={() => onStep(-1)} aria-label={range ? "Período anterior" : "Mês anterior"} className={arrow}>‹</button>
-    <MonthPicker {...picker} range={range} />
-    <button type="button" onClick={() => onStep(1)} aria-label={range ? "Próximo período" : "Próximo mês"} className={arrow}>›</button>
+export function PeriodNavigator({ onStep, range = null, size = "md", ...picker }: Parameters<typeof MonthPicker>[0] & { onStep: (delta: number) => void }) {
+  const large = size === "lg";
+  const arrow = large
+    ? "ff-focus grid h-11 w-11 shrink-0 place-items-center rounded-full bg-surface-muted text-primary transition hover:bg-primary hover:text-white"
+    : "ff-focus grid h-9 w-9 shrink-0 place-items-center rounded-full text-lg font-black text-foreground-muted transition hover:bg-surface hover:text-primary";
+  // No tamanho maior, a seta em desenho fica nítida (o caractere "‹" é fino demais).
+  const chevron = (path: string) => <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d={path} /></svg>;
+  return <div className={large
+    ? "flex w-full items-center gap-1 rounded-full border border-border bg-surface p-1.5 shadow-sm md:inline-flex md:w-auto"
+    : "inline-flex items-center gap-1 rounded-full border border-border bg-surface-muted/70 p-1 shadow-sm"}>
+    <button type="button" onClick={() => onStep(-1)} aria-label={range ? "Período anterior" : "Mês anterior"} className={arrow}>{large ? chevron("M15 18l-6-6 6-6") : "‹"}</button>
+    <MonthPicker {...picker} range={range} size={size} />
+    <button type="button" onClick={() => onStep(1)} aria-label={range ? "Próximo período" : "Próximo mês"} className={arrow}>{large ? chevron("M9 18l6-6-6-6") : "›"}</button>
   </div>;
 }

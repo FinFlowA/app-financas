@@ -1,5 +1,5 @@
 export type PlanId = "free" | "smart" | "premium";
-export type PlanFeature = "daily_cash_flow" | "bank_reconciliation" | "full_category_reports" | "advanced_analysis" | "financial_ai";
+export type PlanFeature = "daily_cash_flow" | "bank_reconciliation" | "full_category_reports" | "advanced_analysis" | "financial_ai" | "report_export";
 
 export const PLAN_ORDER: Record<PlanId, number> = { free: 0, smart: 1, premium: 2 };
 
@@ -12,7 +12,7 @@ export const PLAN_DEFINITIONS = {
   smart: {
     name: "Pro", description: "Mais capacidade e automação para o dia a dia", badge: "Mais popular",
     limits: { transactions: 150, accounts: 5, cards: 3, goals: 3, categoriesPerType: 14, sharedLinks: 3, aiQueriesDaily: 60, aiActionsDaily: 15 },
-    features: ["150 lançamentos por mês", "5 contas, 3 cartões e 3 objetivos", "14 categorias por tipo", "3 vínculos compartilhados (contas ou objetivos)", "Fluxo diário, extrato e conciliação", "Relatórios completos por categoria", "IA básica: 60 consultas e 15 ações por dia"],
+    features: ["150 lançamentos por mês", "5 contas, 3 cartões e 3 objetivos", "14 categorias por tipo", "3 vínculos compartilhados (contas ou objetivos)", "Fluxo diário, extrato e conciliação", "Relatórios completos por categoria", "Relatórios em PDF e Excel", "IA básica: 60 consultas e 15 ações por dia"],
   },
   premium: {
     name: "Plus", description: "Controle completo com análises avançadas", badge: "Completo",
@@ -25,6 +25,6 @@ export function normalizePlan(value: unknown): PlanId { return value === "smart"
 
 export function planHasFeature(plan: PlanId, feature: PlanFeature, limitsEnabled = true) {
   if (!limitsEnabled) return true;
-  const minimum: Record<PlanFeature, PlanId> = { daily_cash_flow: "smart", bank_reconciliation: "smart", full_category_reports: "smart", advanced_analysis: "premium", financial_ai: "smart" };
+  const minimum: Record<PlanFeature, PlanId> = { daily_cash_flow: "smart", bank_reconciliation: "smart", full_category_reports: "smart", advanced_analysis: "premium", financial_ai: "smart", report_export: "smart" };
   return PLAN_ORDER[plan] >= PLAN_ORDER[minimum[feature]];
 }
