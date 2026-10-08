@@ -48,6 +48,11 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - O relatório por categoria usa as compras; o pagamento bancário da fatura é excluído para não duplicar a despesa.
 - Pagamento parcial preserva saldo remanescente; estorno restaura somente itens ligados ao pagamento selecionado.
 - Pagar a fatura pelo app cancela na hora os lembretes de vencimento daquela fatura (`cancelarLembretesDaFatura`). Os lembretes só são agendados para meses com itens ainda não pagos.
+- **Limite utilizado:** tudo o que não foi pago no cartão, inclusive o que sobrou de faturas de meses anteriores (no cartão de verdade, essa dívida continua ocupando o limite). Só as compras fixas ("(Fixa)") de meses futuros ainda não comprometem o limite. A regra é a mesma em todo lugar:
+  - na tela Cartões do site (`web/src/lib/cartoes-resumo.ts`) e do app, e no relatório;
+  - no aviso de 80% do app (`limiteUsadoDoCartao`) e do site (`web/src/lib/web-notifications.ts`);
+  - no banco (`private.ai_card_used_limit`, migration `20261008120000_limite_do_cartao_com_faturas_antigas.sql`), que recusa compra acima do disponível (`AI_CARD_LIMIT_EXCEEDED`) e limite abaixo do já usado (`AI_LIMIT_BELOW_USED`);
+  - no resumo que o Finn usa (`finance_ai_context_snapshot`).
 
 ## Balanço do mês (Início do app e do site)
 

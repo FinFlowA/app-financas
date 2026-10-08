@@ -239,10 +239,11 @@ export function limiteUsadoDoCartao(
   cartaoId: number,
   mesAtual: string,
 ): number {
+  // Tudo o que não foi pago, inclusive sobras de faturas antigas; só os fixos
+  // de meses futuros ainda não comprometem o limite (igual à tela Cartões).
   return itens
     .filter((item) => item.cartao_id === cartaoId
-      && item.mes_fatura >= mesAtual
       && !item.pago
-      && (!item.descricao.endsWith("(Fixa)") || item.mes_fatura === mesAtual))
+      && (!item.descricao.endsWith("(Fixa)") || item.mes_fatura <= mesAtual))
     .reduce((total, item) => total + Number(item.valor), 0);
 }

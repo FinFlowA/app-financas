@@ -153,7 +153,7 @@ export default function ReportOverview({
           >
             {formatarReais(displayedBalance)}
           </p>
-          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Transferências para objetivos não são tratadas como despesas.{!considerarAtrasados ? " Lançamentos em atraso estão fora deste cálculo." : ""}</p>
+          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Entradas e saídas são o dinheiro que entrou e saiu das contas: a fatura do cartão entra quando é paga. Transferências para objetivos não são tratadas como saídas.{!considerarAtrasados ? " Lançamentos em atraso estão fora deste cálculo." : ""}</p>
         </div>
         <div className={styles.heroMetrics} aria-label="Resumo do mês atual">
           {metrics.map((metric) => (

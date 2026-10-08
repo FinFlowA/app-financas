@@ -31,7 +31,7 @@ Nomes, quantidades, porcentagens e datas da tabela são exemplos. Singular e plu
 ## Regras de cada tipo
 
 - **Vencimentos e atrasos:** consideram só despesas e receitas pendentes. Quando um lançamento é concluído, a próxima atualização do Início refaz a agenda sem os avisos dele.
-- **Limite do cartão:** o uso é calculado como na tela de Cartões (`limiteUsadoDoCartao`): compras não pagas da fatura atual em diante; compras fixas só contam na fatura atual. O texto (`mensagemLimiteCartao`) mostra só porcentagens; o que resta é arredondado para baixo e, sem limite livre, o aviso diz que não há mais limite disponível.
+- **Limite do cartão:** o uso é calculado como na tela de Cartões (`limiteUsadoDoCartao`): tudo o que não foi pago, inclusive o que sobrou de faturas de meses anteriores; compras fixas de meses futuros ainda não contam. O aviso do site (`web/src/lib/web-notifications.ts`) usa a mesma regra. O texto (`mensagemLimiteCartao`) mostra só porcentagens; o que resta é arredondado para baixo e, sem limite livre, o aviso diz que não há mais limite disponível.
 - **Prazos dos objetivos:** objetivos sem prazo ou com a meta já alcançada não geram aviso. A porcentagem que falta é arredondada para cima, então nunca aparece "faltam 0%" enquanto houver valor faltando.
 - **Vencimento da fatura:** só é agendado para meses com itens ainda não pagos. Pagar a fatura pelo app cancela na hora os lembretes daquela fatura (`cancelarLembretesDaFatura`, que usa `tipo`, `cartaoId` e `mes` gravados em cada lembrete). No pagamento parcial, isso só acontece quando o restante vai para a fatura seguinte.
 - **Toque na notificação:** abre a área correspondente do app (lançamentos de hoje, atrasados, objetivos ou cartões).

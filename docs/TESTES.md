@@ -48,9 +48,37 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
 - `balanco-cartao.test.ts`: as parcelas do cartão no mês da fatura e o pagamento da fatura fora de Saídas e do Balanço, no site e no app;
 - `repeticao-e-visao-do-mes.test.ts`: a periodicidade das parcelas (sem repetição diária) no formulário e na ação do site, e Entradas e Saídas com o que já aconteceu na Visão do mês do site e do app;
 - `metas-categorias.test.ts`: o progresso das metas e limites das categorias (realizado, agendado, cartão no mês da fatura e o que fica de fora), as situações da barra, e as telas do site de Categorias, Novo lançamento, Histórico (mês e ano) e atrasados em colunas;
-- `relatorio.test.ts`: o conteúdo de cada seção do relatório em PDF e Excel (data efetiva, o que fica de fora, faturas pelo vencimento, pendências, saldos, filtro de contas), o texto do PDF e o acesso só para Pro e Plus.
+- `relatorio.test.ts`: o relatório em PDF e Excel.
+  - Análise:
+    - resultado igual ao Balanço do Início e saldo projetado igual ao do Fluxo de caixa;
+    - o saldo no fim do mês é o início do seguinte, e resultado e saldo fecham com objetivos, transferências e cartão;
+    - pendências a vencer e atrasadas, faturas em aberto à parte e a projeção sempre com os atrasados (a tela não pergunta);
+    - contas, categorias e maiores;
+    - cartões com a mesma conta da tela Cartões (`totaisDoCartao`);
+    - comparação com o período anterior.
+  - Filtros: mudam receitas, despesas e listas, nunca os saldos.
+  - Detalhamento: data efetiva, o que fica de fora, faturas pelo vencimento e contas escolhidas.
+  - Arquivos e acesso: páginas do PDF, abas do Excel com os gráficos, texto do PDF e acesso só para Pro e Plus.
+- `relatorio-auditoria.test.ts`: a auditoria dos números do relatório num cenário com cartão (parcelas futuras, fatura vencida e paga), transferências (entre contas, para conta arquivada e no formato antigo), objetivos, atrasados de antes do período e o ano anterior (`__tests__/fixtures/cenario-relatorio.ts`).
+  - Saldos: saldo atual igual ao da tela Contas, meses que fecham e encadeiam.
+  - Realizado e cartão: realizado só até o mês atual, sem contar duas vezes o cartão.
+  - Projeção e pendências: projeção igual à do Fluxo de caixa, a receber e a pagar iguais à lista de pendências e às categorias.
+  - Comparação: o mesmo trecho dos dois períodos.
+  - Gráficos e Excel: os mesmos números das tabelas.
+  - Filtros: de conta, categoria, situação, tipo e cartão.
+  - Pontos de atenção da auditoria de 08/10/2026:
+    - limite utilizado com o que sobrou de faturas antigas (sem os fixos de meses futuros);
+    - lançamento sem data de vencimento sem quebrar o relatório;
+    - porcentagens das categorias que somam 100%, iguais no gráfico e na tabela;
+    - primeira linha da projeção "a partir de hoje";
+    - avisos de saldo de cadastro, transferências pendentes e meta mensal em relatório de vários meses;
+    - meses com resultado zero e cada conta fechando lançamento a lançamento;
+    - juros de fatura levada para a próxima, fora das despesas;
+    - aviso de pagamento de fatura lançado como despesa comum;
+    - "Entradas e saídas de dinheiro" no Fluxo de caixa do site e do app.
+- `web-notifications.test.ts`: os avisos do site, inclusive o de 80% do limite com a mesma regra da tela Cartões.
 
-`npm run test:app-helpers` cobre os lembretes do app: horários, singular e plural, ausência de emoji e de travessão, e o cancelamento dos lembretes ao pagar a fatura. Cobre também a periodicidade (datas, rótulos e descrição base), a nova data dos itens ao editar uma série (`serieTemIntervaloCurto` e `novaDataItemSerie`), a meta e o limite das categorias na fila offline e na tela, e a escolha de mês e ano no Histórico.
+`npm run test:app-helpers` cobre os lembretes do app: horários, singular e plural, ausência de emoji e de travessão, e o cancelamento dos lembretes ao pagar a fatura. O limite do aviso de 80% (`limiteUsadoDoCartao`) conta o que sobrou de uma fatura antiga e deixa de fora o fixo de mês futuro. Cobre também a periodicidade (datas, rótulos e descrição base), a nova data dos itens ao editar uma série (`serieTemIntervaloCurto` e `novaDataItemSerie`), a meta e o limite das categorias na fila offline e na tela, e a escolha de mês e ano no Histórico.
 
 ## Teste de carga
 
@@ -77,7 +105,7 @@ Em resumo, com 50 pessoas simultâneas, 95% das aberturas do Início passaram de
 
 ## Banco (pgTAP)
 
-`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas e metas e limites das categorias) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
+`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas, metas e limites das categorias e o limite utilizado do cartão) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
 
 ```bash
 supabase db start

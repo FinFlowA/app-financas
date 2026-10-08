@@ -374,12 +374,13 @@ export default function CartoesScreen() {
 
   const calcularLimiteUsado = (cartaoId: number): number => {
     const mes = mesAtualStr();
+    // Tudo o que não foi pago, inclusive sobras de faturas antigas; só os
+    // fixos de meses futuros ainda não comprometem o limite (igual ao site).
     return itens
       .filter((i) =>
         i.cartao_id === cartaoId
-        && i.mes_fatura >= mes
         && !i.pago
-        && (!i.descricao.endsWith("(Fixa)") || i.mes_fatura === mes)
+        && (!i.descricao.endsWith("(Fixa)") || i.mes_fatura <= mes)
       )
       .reduce((acc, i) => acc + Number(i.valor), 0);
   };

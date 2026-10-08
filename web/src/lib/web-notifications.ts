@@ -294,9 +294,11 @@ export function evaluateFinancialNotificationEvents(input: FinancialNotification
 
     if (input.preferences.cardLimit) {
       const limit = amount(card.limite);
+      // Tudo o que não foi pago, inclusive sobras de faturas antigas; só os
+      // fixos de meses futuros ainda não comprometem o limite (igual à tela Cartões).
       const used = Math.max(0, input.invoiceItems
-        .filter((item) => item.cartao_id === card.id && !item.pago && item.mes_fatura >= currentMonth)
-        .filter((item) => !item.descricao?.endsWith("(Fixa)") || item.mes_fatura === currentMonth)
+        .filter((item) => item.cartao_id === card.id && !item.pago)
+        .filter((item) => !item.descricao?.endsWith("(Fixa)") || item.mes_fatura <= currentMonth)
         .reduce((total, item) => total + amount(item.valor), 0));
       if (limit > 0 && used / limit > 0.8) {
         events.push({

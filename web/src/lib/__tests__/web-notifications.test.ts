@@ -89,6 +89,26 @@ describe("regras de notificações financeiras web", () => {
     expect(zeroed).toEqual([]);
   });
 
+  it("limite do cartão: conta o que sobrou de faturas antigas, como a tela Cartões", () => {
+    const base = {
+      today: "2026-08-15",
+      preferences: { ...WEB_NOTIFICATION_DEFAULTS, overdue: false, today: false, invoiceClosing: false, invoiceDue: false, goalDeadline: false },
+      transactions: [],
+      cards: [{ id: 5, nome: "Cartão", limite: 1_000, dia_vencimento: 18, dia_fechamento: 10, ativo: true }],
+      goals: [],
+    };
+    const chaves = (invoiceItems: Parameters<typeof evaluateFinancialNotificationEvents>[0]["invoiceItems"]) => (
+      evaluateFinancialNotificationEvents({ ...base, invoiceItems }).map((event) => event.key)
+    );
+    // 300 da fatura de julho, que ficou sem pagar, mais 600 de agosto: 90% do limite.
+    expect(chaves([
+      { cartao_id: 5, mes_fatura: "2026-07", valor: 300, pago: false },
+      { cartao_id: 5, mes_fatura: "2026-08", valor: 600, pago: false },
+    ])).toEqual(["card-5-limit-over-80"]);
+    // Lançamento fixo de mês futuro ainda não compromete o limite.
+    expect(chaves([{ cartao_id: 5, mes_fatura: "2026-09", valor: 900, pago: false, descricao: "Aluguel (Fixa)" }])).toEqual([]);
+  });
+
   it("respeita o último dia de meses menores e ignora objetivos concluídos", () => {
     const events = evaluateFinancialNotificationEvents({
       today: "2026-02-26",

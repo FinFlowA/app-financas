@@ -397,22 +397,141 @@ com layouts bancários não padronizados.
   próprio tamanho. No site, ele vai no endereço
   (`/transacoes?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`).
 
+### Atualização do limite do cartão e do Fluxo de caixa — 08/10/2026
+
+- **Limite utilizado do cartão:** conta tudo o que não foi pago, inclusive o
+  que sobrou de faturas de meses anteriores (no cartão de verdade, essa dívida
+  continua ocupando o limite). Só os lançamentos fixos de meses futuros ficam
+  de fora. Vale na tela Cartões do site (`totaisDoCartao`) e do app, no aviso
+  de 80% do app (`limiteUsadoDoCartao`) e do site (`web-notifications.ts`), no
+  relatório e no banco: a compra acima do disponível é recusada e o Finn
+  responde com o mesmo limite (`private.ai_card_used_limit` e
+  `finance_ai_context_snapshot`, migration
+  `20261008120000_limite_do_cartao_com_faturas_antigas.sql`, com testes em
+  `supabase/tests/limite_do_cartao.test.sql`). Regras em
+  [Operações financeiras](./docs/OPERACOES_FINANCEIRAS.md).
+- **Fluxo de caixa (site e app):** os totais do mês passaram a se chamar
+  "Entradas de dinheiro no mês", "Saídas de dinheiro no mês" e "Entradas menos
+  saídas no mês" (no app, "Entradas e saídas de dinheiro"). Os números não
+  mudaram: são o dinheiro que entrou e saiu das contas, e a fatura do cartão
+  entra quando é paga. O nome evita a confusão com as receitas e despesas do
+  Início e dos relatórios, que contam a compra do cartão no mês da fatura.
+
 ### Relatórios em PDF e Excel (site)
 
-- Aba **Relatórios** (`/exportar`), só no site: escolha o período (mês ou de/até),
-  as contas e as seções — Resumo, Contas, Receitas, Despesas, Transferências,
-  Faturas, Compras no cartão, Categorias, Pendências e Objetivos. O período é o
-  primeiro bloco da página, em destaque, com as datas exatas à vista e o seletor
-  em tamanho maior (`PeriodNavigator` com `size="lg"`).
-- Sem gráficos: cada seção é uma tabela com a linha de títulos e os dados. No
-  Excel, cada seção vira uma aba (mais a aba "Sobre", com período e contas),
-  com datas e valores de verdade; no PDF, as tabelas vêm uma embaixo da outra.
-- As regras são as das telas (`web/src/lib/relatorio.ts`): data efetiva,
-  transferências e objetivos fora de Receitas/Despesas, compras do cartão pelo
-  vencimento da fatura e, com todas as contas, o pagamento da fatura fora de
-  Despesas. Os valores aparecem sempre.
-- O arquivo é gerado no navegador (`web/src/lib/relatorio-arquivos.ts`, com
-  jsPDF + jspdf-autotable e write-excel-file, carregados só ao gerar).
+- Aba **Relatórios** (`/exportar`), só no site: escolha o período (mês ou
+  de/até, primeiro bloco da página, com o seletor maior `PeriodNavigator`
+  `size="lg"`), as contas, os filtros e as seções. A análise aparece só nos
+  arquivos; a página monta o relatório.
+- **Análise** (`web/src/lib/relatorio-analise.ts`), sem regra nova: cada número
+  sai das funções das outras telas.
+  - Resumo: saldo inicial do período, saldo atual, receitas e despesas
+    realizadas, resultado, taxa de poupança, a receber e a pagar (a vencer e
+    atrasados, com quantidade), saldo projetado, faturas em aberto e destaques
+    (saldo crescendo, diminuindo ou estável, melhor e pior mês, meses positivos,
+    negativos, sem movimentação e com resultado zero).
+  - Evolução mensal: saldo no início do mês, receitas, despesas, resultado e
+    saldo no fim do mês (que é o início do seguinte), com os gráficos do saldo e
+    de receitas x despesas. Resultado e saldo são coisas diferentes: as colunas
+    "Objetivos e transferências" e "Cartão: compras menos faturas pagas" mostram
+    o que separa um do outro.
+  - Projeção do saldo: a mesma do Fluxo de caixa (saldo de hoje + entradas
+    previstas - saídas previstas), mês a mês, sempre com os atrasados incluídos
+    (o padrão do Fluxo de caixa; o relatório não pergunta, porque traz tudo e
+    os atrasados também aparecem à parte em Valores pendentes). As faturas do
+    cartão em aberto, que as outras telas ainda não contam, aparecem à parte
+    ("Saldo projetado com as faturas").
+  - Contas (saldo no início e no fim do período, receitas, despesas,
+    transferências e objetivos, saldo atual e o saldo de cada conta mês a mês),
+    categorias (quantidade, realizado, porcentagem, pendente, meta ou limite e
+    despesas por categoria mês a mês), maiores despesas e receitas (top 5 ou 10),
+    cartões (limite usado e disponível como na tela Cartões, gasto no período,
+    fatura atual e próxima, parcelas que faltam) e comparação com o período
+    anterior de mesma duração.
+- **Regras de cálculo:**
+  - resultado como a Visão do mês do Início: receitas e despesas concluídas;
+    com todas as contas, a compra do cartão entra no mês da fatura e o pagamento
+    da fatura fica de fora, para o mesmo gasto não contar duas vezes;
+  - com contas escolhidas, o cartão fica de fora e o pagamento da fatura é
+    despesa da conta;
+  - transferências e objetivos nunca são receita nem despesa;
+  - contas arquivadas ficam de fora, como no Início e no Fluxo de caixa;
+  - os filtros de categoria, tipo, situação e cartão mudam receitas, despesas e
+    listas, e os saldos e a projeção seguem só as contas (o relatório avisa);
+  - realizado vai até o fim do mês atual, o mesmo trecho da evolução mês a mês.
+    Meses futuros só entram na projeção, mesmo que já tenham parcelas do cartão
+    agendadas;
+  - o saldo da seleção é a soma do saldo de cada conta, como na tela Contas,
+    inclusive com transferências antigas (em duas linhas);
+  - a receber, a pagar, o pendente das categorias e a lista de Pendências saem
+    de uma lista só (`itensPendentes`), então os totais sempre batem;
+  - em período em andamento, a comparação usa o mesmo trecho dos dois períodos,
+    até hoje, e melhor e pior mês contam só meses completos;
+  - sem nenhuma receita nem despesa no trecho anterior, a comparação vira o
+    aviso "sem dados suficientes no período anterior para comparação"; com
+    algum dado, ela aparece normalmente, sem porcentagem sobre base R$ 0,00;
+  - o saldo projetado sempre diz para quando é ("Saldo projetado para
+    31/12/2026");
+  - os destaques mostram meses positivos, negativos, sem movimentação (sem
+    receitas nem despesas) e, quando houver, com resultado zero (receitas e
+    despesas que se anulam). Contam só os meses completos e, somados, dão o
+    número de meses completos;
+  - as porcentagens das categorias têm uma casa decimal e somam exatamente
+    100% (`porcentagensQueFecham`: o que sobra do arredondamento vai para as
+    maiores frações); o gráfico usa as mesmas da tabela;
+  - a primeira linha da projeção parte do saldo de hoje e diz isso ("Outubro
+    2026 (a partir de hoje, 15/10)");
+  - na tabela de contas, a coluna "Transferências, objetivos e faturas" é
+    somada lançamento a lançamento, e cada conta fecha: saldo no início +
+    receitas - despesas + essa coluna = saldo no fim;
+  - lançamento pendente sem data de vencimento (o banco aceita; os apps sempre
+    gravam a data) fica fora de a receber, a pagar e da lista, sem quebrar o
+    relatório.
+- **Avisos no próprio relatório**, só quando o caso aparece:
+  - sem lançamentos concluídos antes do período, o saldo inicial é o saldo de
+    cadastro das contas;
+  - transferências pendentes entre as contas do relatório estão em Valores
+    pendentes, mas não mudam o saldo total nem a projeção; objetivos e
+    transferências para contas de fora entram nas entradas e saídas previstas;
+  - meta e limite das categorias são mensais: com vários meses, o relatório
+    sugere comparar com a tabela mês a mês ou com a média por mês;
+  - juros de fatura levada para a próxima, na seção Cartões (`jurosDeFatura`):
+    só informação, porque estão dentro dos pagamentos de fatura e não entram
+    nas despesas;
+  - possível pagamento de fatura lançado como despesa comum
+    (`possiveisPagamentosDeFaturaManuais`): despesa concluída que fala em
+    "fatura" e tem o valor de uma fatura que vence a até 31 dias. O gasto
+    contaria duas vezes; o relatório avisa e orienta usar "Pagar fatura", sem
+    mudar nenhum valor.
+- **Diferenças propositais em relação a outras telas** (documentadas no próprio
+  relatório):
+  - o Fluxo de caixa mostra entradas e saídas de dinheiro das contas, e a
+    fatura do cartão sai quando é paga; aqui, como no Início, são receitas e
+    despesas, com a compra do cartão no mês da fatura. A coluna "Cartão:
+    compras menos faturas pagas" mostra a diferença;
+  - o saldo projetado é o mesmo do Fluxo de caixa; as faturas em aberto, que as
+    outras telas ainda não contam, aparecem à parte;
+  - com contas escolhidas, o Início conta a transferência para uma conta de fora
+    como entrada ou saída, e o relatório não (transferência nunca é receita nem
+    despesa);
+  - o Histórico soma agendados e o total das faturas, outro conceito.
+- Auditoria dos números: `web/src/lib/__tests__/relatorio-auditoria.test.ts`
+  (cenário em `__tests__/fixtures/cenario-relatorio.ts`).
+- **Detalhamento** (as listas de antes): Receitas, Despesas, Transferências,
+  Faturas, Compras no cartão, Pendências e Objetivos, com data efetiva e os
+  valores sempre à vista.
+- **Arquivos** (`web/src/lib/relatorio-arquivos.ts`), gerados no navegador com
+  jsPDF + jspdf-autotable e write-excel-file, carregados só ao gerar.
+  - PDF: uma página para cada parte (resumo, evolução, contas, categorias,
+    cartões e detalhamento).
+  - Excel: abas Resumo, Evolução Mensal, Contas, Categorias, Cartões, Receitas,
+    Despesas, Transferências, Pendências, Projeção e Objetivos, com datas e
+    valores de verdade e negativos em vermelho.
+  - Gráficos: desenhados uma vez (`web/src/lib/relatorio-graficos.ts`); vão
+    para o PDF e, como imagem, para o Excel.
+- Os valores de cartão vêm de `totaisDoCartao` (`web/src/lib/cartoes-resumo.ts`),
+  a mesma função da tela Cartões. O limite utilizado conta o que sobrou de
+  faturas antigas, como explicado acima.
 - Plano: recurso `report_export`, a partir do Pro (vale quando
   `billing_settings.limits_enabled` estiver ligado).
 
