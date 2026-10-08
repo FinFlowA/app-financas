@@ -260,8 +260,9 @@ Deno.test("distingue pagamento total, parcial e saldo levado na fatura", () => {
 
   const card = snapshot.cardMetrics.get(5);
   assert(card, "métrica do cartão ausente");
-  assertMoney(card.used_limit, 65, "limite usado deve ignorar fixa futura e incluir saldo levado");
-  assertMoney(card.available_limit, 935, "limite disponível");
+  // 60 que sobraram da fatura de julho + 45 do saldo levado + 20 da parcela; a fixa de outubro fica de fora.
+  assertMoney(card.used_limit, 125, "limite usado deve ignorar fixa futura e incluir saldo levado e a sobra de fatura antiga");
+  assertMoney(card.available_limit, 875, "limite disponível");
   assert(card.displayed_invoice_month === "2026-09", "deve exibir a próxima fatura quando a atual está paga");
 });
 

@@ -591,7 +591,7 @@ export default function RelatoriosScreen() {
           <View style={styles.chartHeader}>
             <MaterialIcons name="bar-chart" size={18} color="#2A9D8F" />
             <Text style={[styles.chartTitle, { color: Cores.textoPrincipal }]}>
-              Receitas & Despesas — {anoSelecionado}
+              Entradas e saídas de dinheiro — {anoSelecionado}
             </Text>
           </View>
 
@@ -599,11 +599,11 @@ export default function RelatoriosScreen() {
           <View style={styles.legendaRow}>
             <View style={styles.legendaItem}>
               <View style={[styles.legendaDot, { backgroundColor: "#2A9D8F" }]} />
-              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Recebido</Text>
+              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Entradas</Text>
             </View>
             <View style={styles.legendaItem}>
               <View style={[styles.legendaDot, { backgroundColor: "#E76F51" }]} />
-              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Pago</Text>
+              <Text style={[styles.legendaTxt, { color: Cores.textoSecundario }]}>Saídas</Text>
             </View>
             <View style={styles.legendaItem}>
               <View style={[styles.legendaLinha, { backgroundColor: Cores.linhaBalance }]} />
@@ -814,14 +814,14 @@ export default function RelatoriosScreen() {
               </Text>
 
               {mesDetalhe.recPagas > 0 && <DetalheRow
-                label="Recebido"
+                label="Entradas"
                 valor={`+ ${fmtReais(mesDetalhe.recPagas)}`}
                 cor="#2A9D8F"
                 dotCor="#2A9D8F"
                 cores={Cores}
               />}
               {mesDetalhe.despPagas > 0 && <DetalheRow
-                label="Pago"
+                label="Saídas"
                 valor={`- ${fmtReais(mesDetalhe.despPagas)}`}
                 cor="#E76F51"
                 dotCor="#E76F51"

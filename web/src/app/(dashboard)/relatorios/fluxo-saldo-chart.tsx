@@ -159,7 +159,7 @@ export default function FluxoSaldoChart({
       <div className={styles.chartHeader}>
         <div>
           <h2 className={styles.chartTitle}>Evolução {period === "day" ? "diária" : "mensal"}</h2>
-          <p className={styles.chartSubtitle}>Receitas, despesas e saldo acumulado {period === "day" ? "por dia" : "no mesmo eixo"}.</p>
+          <p className={styles.chartSubtitle}>Entradas, saídas e saldo acumulado {period === "day" ? "por dia" : "no mesmo eixo"}.</p>
         </div>
         <div className={styles.legend} aria-label="Legenda do gráfico">
         <span className={styles.legendItem}>
@@ -170,8 +170,8 @@ export default function FluxoSaldoChart({
           <svg width="16" height="2"><line x1="0" y1="1" x2="16" y2="1" stroke="var(--color-blue)" strokeWidth={2} strokeDasharray="4 3" /></svg>
           Saldo projetado
         </span>
-        <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-primary)" }} /> Receitas</span>
-        <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-red)" }} /> Despesas</span>
+        <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-primary)" }} /> Entradas</span>
+        <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-red)" }} /> Saídas</span>
         {period === "day" && <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-orange)" }} /> Guardado em objetivos</span>}
         {period === "day" && <span className={styles.legendItem}><span className={styles.legendDot} style={{ background: "var(--color-blue)" }} /> Resgatado de objetivos</span>}
         </div>
@@ -182,7 +182,7 @@ export default function FluxoSaldoChart({
           viewBox={`0 0 ${largura} ${altura}`}
           className={styles.chartSvg}
           role="group"
-          aria-label={`Receitas, despesas e saldo acumulado por ${period === "day" ? "dia" : "mês"}, no mesmo eixo com 0 compartilhado`}
+          aria-label={`Entradas, saídas e saldo acumulado por ${period === "day" ? "dia" : "mês"}, no mesmo eixo com 0 compartilhado`}
         >
           {[0, 0.25, 0.5, 0.75, 1].map((fracao) => {
             const valor = pisoEixo + range * fracao;
@@ -244,7 +244,7 @@ export default function FluxoSaldoChart({
                 tabIndex={0}
                 role="button"
                 aria-pressed={selectedIndex === indice}
-                aria-label={`${mes.label}: recebido ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, gasto ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, guardado em objetivos ${formatarReais(mes.guardadoObjetivos ?? 0)}, resgatado de objetivos ${formatarReais(mes.resgatadoObjetivos ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
+                aria-label={`${mes.label}: entrou ${formatarReais(mes.receitas)}, a receber ${formatarReais(mes.receitasPrevistas ?? 0)}, saiu ${formatarReais(mes.despesas)}, a pagar ${formatarReais(mes.despesasPrevistas ?? 0)}, guardado em objetivos ${formatarReais(mes.guardadoObjetivos ?? 0)}, resgatado de objetivos ${formatarReais(mes.resgatadoObjetivos ?? 0)}, saldo ${formatarReais(saldos[indice]?.saldo ?? 0)}`}
                 style={{ cursor: "pointer" }}
               >
                 <rect className={styles.chartMonthHitArea} x={grupoX} y={margemTopo} width={larguraGrupo} height={areaAltura} fill="transparent" />
@@ -369,10 +369,10 @@ export default function FluxoSaldoChart({
         {ativo !== null && mesHover && saldoHover && (
           <aside className={styles.tooltip} style={tooltipPosition ? { ...tooltipPosition, right: "auto" } : undefined} aria-hidden="true">
             <p className={styles.tooltipTitle}>{mesHover.label}</p>
-            {mesHover.receitas > 0 && <div className={styles.tooltipRow} data-tone="positive"><span>Receitas realizadas</span><strong>+{formatarReais(mesHover.receitas)}</strong></div>}
-            {(mesHover.receitasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-positive"><span>Receitas previstas</span><strong>+{formatarReais(mesHover.receitasPrevistas ?? 0)}</strong></div>}
-            {mesHover.despesas > 0 && <div className={styles.tooltipRow} data-tone="negative"><span>Despesas realizadas</span><strong>−{formatarReais(mesHover.despesas)}</strong></div>}
-            {(mesHover.despesasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-negative"><span>Despesas previstas</span><strong>−{formatarReais(mesHover.despesasPrevistas ?? 0)}</strong></div>}
+            {mesHover.receitas > 0 && <div className={styles.tooltipRow} data-tone="positive"><span>Entradas realizadas</span><strong>+{formatarReais(mesHover.receitas)}</strong></div>}
+            {(mesHover.receitasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-positive"><span>Entradas previstas</span><strong>+{formatarReais(mesHover.receitasPrevistas ?? 0)}</strong></div>}
+            {mesHover.despesas > 0 && <div className={styles.tooltipRow} data-tone="negative"><span>Saídas realizadas</span><strong>−{formatarReais(mesHover.despesas)}</strong></div>}
+            {(mesHover.despesasPrevistas ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="expected-negative"><span>Saídas previstas</span><strong>−{formatarReais(mesHover.despesasPrevistas ?? 0)}</strong></div>}
             {(mesHover.guardadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>Guardado em objetivos</span><strong>−{formatarReais(mesHover.guardadoObjetivos ?? 0)}</strong></div>}
             {(mesHover.resgatadoObjetivos ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-withdraw"><span>Resgatado de objetivos</span><strong>+{formatarReais(mesHover.resgatadoObjetivos ?? 0)}</strong></div>}
             {(mesHover.guardarObjetivosPrevisto ?? 0) > 0 && <div className={styles.tooltipRow} data-tone="goal-save"><span>A guardar em objetivos</span><strong>−{formatarReais(mesHover.guardarObjetivosPrevisto ?? 0)}</strong></div>}
@@ -398,11 +398,11 @@ export default function FluxoSaldoChart({
           </div>
           <div className={styles.monthDetailsGrid}>
             {mesSelecionado.receitas > 0 && <div className={styles.monthDetailItem} data-tone="positive">
-              <span>Receitas realizadas</span>
+              <span>Entradas realizadas</span>
               <strong>+ {formatarReais(mesSelecionado.receitas)}</strong>
             </div>}
             {mesSelecionado.despesas > 0 && <div className={styles.monthDetailItem} data-tone="negative">
-              <span>Despesas realizadas</span>
+              <span>Saídas realizadas</span>
               <strong>- {formatarReais(mesSelecionado.despesas)}</strong>
             </div>}
             {(mesSelecionado.receitasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="expected-positive">

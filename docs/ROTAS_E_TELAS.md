@@ -50,7 +50,7 @@
 | `/cartoes/[id]` | Fatura, compras, pagamento e estorno |
 | `/categorias` | Categorias, metas e limites mensais (progresso de qualquer mês, `?mes=AAAA-MM`) e arquivamento |
 | `/relatorios` | Fluxo mensal/diário, seleção de contas e filtro "Considerar atrasados" (`atrasados=0`) |
-| `/exportar` | Relatórios em PDF e Excel (período, contas e seções à escolha; Pro e Plus) |
+| `/exportar` | Relatórios em PDF e Excel: período, contas, filtros (tipo, situação, categorias, cartões) e seções de análise (resumo, evolução mensal, projeção, contas, categorias, maiores, cartões, comparação) e de detalhamento; Pro e Plus |
 | `/calendario` | Agenda financeira (clicar no mês abre a escolha de mês e ano) |
 | `/conciliacao` | Importação CSV/OFX e conciliação |
 | `/assistente` | Finn no site |

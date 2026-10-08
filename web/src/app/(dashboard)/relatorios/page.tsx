@@ -235,9 +235,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
     return {
       ...series,
       metrics: [
-        { label: "Receitas realizadas no mês", value: totalReceitas, tone: "positive" },
-        { label: "Despesas realizadas no mês", value: totalDespesas, tone: "negative" },
-        { label: "Balanço realizado do mês", value: resultadoRealizado, tone: resultadoRealizado < 0 ? "negative" : "positive" },
+        // Entradas e saídas de dinheiro das contas: a fatura do cartão entra quando
+        // é paga. Por isso não se chamam receitas e despesas (no Início e no
+        // Relatório, a compra do cartão conta no mês da fatura).
+        { label: "Entradas de dinheiro no mês", value: totalReceitas, tone: "positive" },
+        { label: "Saídas de dinheiro no mês", value: totalDespesas, tone: "negative" },
+        { label: "Entradas menos saídas no mês", value: resultadoRealizado, tone: resultadoRealizado < 0 ? "negative" : "positive" },
         { label: "Saldo previsto no fim do mês", value: saldoFimMes, tone: saldoFimMes < 0 ? "negative" : "positive" },
       ],
     };

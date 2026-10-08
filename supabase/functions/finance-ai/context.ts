@@ -1173,12 +1173,14 @@ export function calculateFinancialSnapshot(input: FinancialSnapshotInput): Finan
   for (const card of cards) {
     const cardId = number(card.id);
     const limit = number(card.limite);
+    // Tudo o que não foi pago, inclusive o que sobrou de faturas antigas; só os
+    // fixos de meses futuros ainda não comprometem o limite (igual à tela
+    // Cartões e a private.ai_card_used_limit).
     const usedLimit = number(invoiceItems.reduce((sum, item) => {
       if (number(item.cartao_id) !== cardId || activeFlag(item.pago, false)) return sum;
       const invoiceMonth = text(item.mes_fatura, 7);
-      if (invoiceMonth < currentMonth) return sum;
-      const fixedOutsideCurrent = text(item.descricao, 300).endsWith("(Fixa)") && invoiceMonth !== currentMonth;
-      return fixedOutsideCurrent ? sum : sum + number(item.valor);
+      const fixedInFutureMonth = text(item.descricao, 300).endsWith("(Fixa)") && invoiceMonth > currentMonth;
+      return fixedInFutureMonth ? sum : sum + number(item.valor);
     }, 0));
     const currentItems = invoiceItems.filter((item) => (
       number(item.cartao_id) === cardId && text(item.mes_fatura, 7) === currentMonth

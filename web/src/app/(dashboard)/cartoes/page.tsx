@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { mesAtualEmSaoPaulo } from "@/lib/date";
+import { totaisDoCartao } from "@/lib/cartoes-resumo";
 import { invoicePresentationStatus } from "@/lib/invoice-status";
 import type { Cartao, FaturaItem } from "@/lib/types";
 import { adicionarMeses } from "./card-utils";
@@ -35,14 +36,7 @@ export default async function CartoesPage() {
   const itens = (itensData ?? []) as FaturaItem[];
   const resumos: CartaoResumo[] = cartoes.map((cartao) => {
     const itensDaFaturaAtual = itens.filter((item) => item.cartao_id === cartao.id && item.mes_fatura === mesAtual);
-    const itensDoCartao = itens.filter((item) => item.cartao_id === cartao.id && !item.pago);
-    const limiteUsado = Math.max(0, itensDoCartao
-      .filter((item) => item.mes_fatura >= mesAtual)
-      .filter((item) => !item.descricao.endsWith("(Fixa)") || item.mes_fatura === mesAtual)
-      .reduce((total, item) => total + Number(item.valor), 0));
-    const totalDoMes = (mes: string) => Math.max(0, itensDoCartao
-      .filter((item) => item.mes_fatura === mes)
-      .reduce((total, item) => total + Number(item.valor), 0));
+    const { limiteUsado, emAbertoNoMes: totalDoMes } = totaisDoCartao(cartao.id, itens, mesAtual);
 
     return {
       ...cartao,

@@ -127,7 +127,8 @@ assert.equal(lembretes.mensagemPrazoObjetivo(objetivo, 0).titulo, "O prazo do se
 assert.match(lembretes.mensagemPrazoObjetivo({ ...objetivo, saldo_atual: 996 }, 3).corpo, /Ainda falta 1% da meta/, "Com qualquer valor faltando, nunca 'faltam 0%'.");
 assert.ok(!/R\$/.test(lembretes.mensagemPrazoObjetivo(objetivo, 7).corpo), "O aviso do objetivo não mostra valores.");
 
-// Limite do cartão, como a tela de Cartões calcula.
+// Limite do cartão, como a tela de Cartões calcula: tudo o que não foi pago,
+// inclusive a sobra de uma fatura antiga; só o fixo de mês futuro fica de fora.
 const itensCartao = [
   { cartao_id: 1, mes_fatura: "2026-10", pago: false, descricao: "Mercado", valor: 100 },
   { cartao_id: 1, mes_fatura: "2026-11", pago: false, descricao: "Parcela 2/3", valor: "50" },
@@ -137,7 +138,7 @@ const itensCartao = [
   { cartao_id: 1, mes_fatura: "2026-10", pago: true, descricao: "Paga", valor: 999 },
   { cartao_id: 2, mes_fatura: "2026-10", pago: false, descricao: "Outro cartão", valor: 999 },
 ];
-assert.equal(lembretes.limiteUsadoDoCartao(itensCartao, 1, "2026-10"), 180);
+assert.equal(lembretes.limiteUsadoDoCartao(itensCartao, 1, "2026-10"), 1179);
 
 // Aviso de limite do cartão: só porcentagens, sem valores em reais.
 assert.deepEqual(lembretes.mensagemLimiteCartao({ nome: "Nubank", limite: 2000, limite_usado: 1700 }), { titulo: "Cartão Nubank com 85% do limite usado", corpo: "Ainda restam 15% do limite disponível." });

@@ -85,7 +85,6 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
       if (!await sessionStillBelongsToUser(expectedGeneration)) return;
 
       const today = hojeEmSaoPaulo();
-      const currentMonth = today.slice(0, 7);
       let preferences;
       try {
         preferences = readWebNotificationPreferences(localStorage, userId);
@@ -137,10 +136,10 @@ export default function FinancialNotificationScheduler({ userId }: { userId: str
           .from("fatura_itens")
           .select("cartao_id, mes_fatura, valor, pago, descricao")
           .in("cartao_id", activeCardIds)
+          // Só o que não foi pago: o limite conta também as sobras de faturas
+          // antigas (igual à tela Cartões); os avisos de vencimento olham só o
+          // mês atual e o próximo.
           .eq("pago", false)
-          // Faturas passadas não entram nos marcos futuros nem no cálculo de
-          // limite adotado pelas telas web; evita reler todo o histórico.
-          .gte("mes_fatura", currentMonth)
           .order("id")
           .range(from, to));
         if (invoiceItemsResult.error || !await sessionStillBelongsToUser(expectedGeneration)) return;

@@ -14,7 +14,7 @@ export default async function ExportarPage() {
   const entitlementRaw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
   const entitlement = entitlementRaw && typeof entitlementRaw === "object" ? entitlementRaw as Record<string, unknown> : {};
   if (!planHasFeature(normalizePlan(entitlement.plan), "report_export", entitlement.limits_enabled === true)) {
-    return <FeatureGate title="Relatórios" description="Gere relatórios em PDF e Excel com receitas, despesas, transferências, faturas, categorias e pendências com o plano Pro ou Plus." />;
+    return <FeatureGate title="Relatórios" description="Gere relatórios em PDF e Excel com a análise do seu dinheiro (saldo, resultado, evolução mês a mês, projeção, categorias e cartões) e o detalhamento dos lançamentos com o plano Pro ou Plus." />;
   }
 
   // Filtro explícito das transações visíveis: o banco usa os índices em vez
