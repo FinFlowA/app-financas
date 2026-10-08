@@ -317,6 +317,14 @@ com layouts bancários não padronizados.
   do gráfico. No site, a troca é instantânea e o gráfico anima a mudança.
   Ligado, os atrasados de meses anteriores entram nas previsões do mês atual
   (barras e informações do mês), onde o saldo projetado também os soma.
+  O filtro nunca afeta o que já foi concluído.
+- **O que o fluxo de caixa mostra:** recebido e pago, a receber e a pagar,
+  guardado, resgatado, a guardar e a resgatar em objetivos, e as transferências
+  entre as contas escolhidas ("Transferências" e "Transferências a fazer",
+  inclusive atrasadas). Essas transferências aparecem só nas informações do
+  mês, sem barra no gráfico e sem mudar o saldo, porque o dinheiro só troca de
+  conta (`web/src/lib/fluxo-transferencias.ts`). Para uma conta fora da
+  seleção, a transferência conta como saída ou entrada.
 - **Cartão no Balanço do mês:** com todas as contas, cada compra ou parcela
   entra em Saídas e no Balanço no mês da fatura; o pagamento da fatura fica de
   fora para não contar duas vezes. Regras em
