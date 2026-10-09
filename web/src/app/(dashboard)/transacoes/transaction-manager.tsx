@@ -700,8 +700,12 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
     window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
   function choosePeriod(value: PeriodFilter) { setPeriod(value); setLimit(PAGE_SIZE); syncUrl(value); }
-  function chooseMonth(next: string) { setMonth(next); setRange(null); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", next, null); }
-  function chooseRange(next: HistoryRange) { setRange(next); setPeriod("pending"); setLimit(PAGE_SIZE); syncUrl("pending", month, next); }
+  // Trocar de mês ou de período mantém Todos, Concluídos e Pendentes. Atrasados
+  // e os atalhos (hoje, próximos 7 dias) não dependem do mês: aí a troca mostra
+  // os Pendentes do mês escolhido.
+  const periodForNewDates = (): PeriodFilter => (period === "all" || period === "completed" || period === "pending" ? period : "pending");
+  function chooseMonth(next: string) { const nextPeriod = periodForNewDates(); setMonth(next); setRange(null); setPeriod(nextPeriod); setLimit(PAGE_SIZE); syncUrl(nextPeriod, next, null); }
+  function chooseRange(next: HistoryRange) { const nextPeriod = periodForNewDates(); setRange(next); setPeriod(nextPeriod); setLimit(PAGE_SIZE); syncUrl(nextPeriod, month, next); }
   // Nas setas, o período anda o próprio tamanho (ex.: de 15 em 15 dias).
   function changeMonth(delta: number) {
     if (!range) return chooseMonth(shiftMonth(month, delta));
@@ -709,6 +713,9 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
     chooseRange({ start: addIsoDays(range.start, delta * days), end: addIsoDays(range.end, delta * days) });
   }
   function clearFilters() {
+    // Limpar volta tudo ao começo, inclusive o mês atual.
+    const currentMonth = today.slice(0, 7);
+    setMonth(currentMonth);
     setRange(null);
     setSearch("");
     setPeriod("pending");
@@ -716,7 +723,7 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
     setAccountIds([]);
     setCategoryIds([]);
     setLimit(PAGE_SIZE);
-    syncUrl("pending");
+    syncUrl("pending", currentMonth, null);
   }
   function toggle<T>(value: T, values: T[], setter: (next: T[]) => void) { setter(values.includes(value) ? values.filter((item) => item !== value) : [...values, value]); setLimit(PAGE_SIZE); }
   function toggleType(value: HistoryKind) {
@@ -833,6 +840,7 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
   const expenseCategories = activeCategories.filter((category) => category.tipo === "despesa" || category.tipo === "ambos");
   const hasActiveFilters = search.trim().length > 0
     || range !== null
+    || month !== today.slice(0, 7)
     || period !== "pending"
     || types.length > 0
     || accountIds.length > 0
