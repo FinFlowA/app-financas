@@ -137,6 +137,20 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
     },
   },
   {
+    route: "/exportar",
+    content: {
+      ...FINN.organize,
+      title: "Relatórios",
+      description: "Gere um relatório completo em PDF ou Excel, com análise, gráficos e o detalhamento do período.",
+      items: [
+        "Escolha o período, as contas e, se quiser, filtros de categoria, tipo, situação ou cartão.",
+        "Marque as seções: resumo, evolução, projeção, contas, categorias, cartões, comparação e as listas de lançamentos.",
+        "Os números seguem as mesmas regras do Início e do Fluxo de caixa; os filtros não mudam os saldos.",
+      ],
+      note: "O arquivo é gerado no seu navegador; nada é enviado para fora do FinFlow.",
+    },
+  },
+  {
     route: "/calendario",
     content: {
       ...FINN.organize,
