@@ -76,6 +76,7 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
     - juros de fatura levada para a próxima, fora das despesas;
     - aviso de pagamento de fatura lançado como despesa comum;
     - "Entradas e saídas de dinheiro" no Fluxo de caixa do site e do app.
+- `seletor-com-busca.test.ts`: a pesquisa dos seletores do site, com a mesma regra do app, ligada nos campos de categoria, conta e destino;
 - `web-notifications.test.ts`: os avisos do site, inclusive o de 80% do limite com a mesma regra da tela Cartões.
 
 `npm run test:app-helpers` cobre os lembretes do app: horários, singular e plural, ausência de emoji e de travessão, e o cancelamento dos lembretes ao pagar a fatura. O limite do aviso de 80% (`limiteUsadoDoCartao`) conta o que sobrou de uma fatura antiga e deixa de fora o fixo de mês futuro. Cobre também a periodicidade (datas, rótulos e descrição base), a nova data dos itens ao editar uma série (`serieTemIntervaloCurto` e `novaDataItemSerie`), a meta e o limite das categorias na fila offline e na tela, e a escolha de mês e ano no Histórico.

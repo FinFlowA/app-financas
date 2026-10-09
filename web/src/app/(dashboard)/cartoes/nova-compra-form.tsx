@@ -112,7 +112,7 @@ export default function NovaCompraForm({ cartaoId, diaFechamento, categorias, in
                 </label>
                 <label>
                   <span className={styles.fieldLabel}>Categoria</span>
-                  <FinFlowSelect name="category_id" required options={categoriasAtivas.map((categoria) => ({ value: String(categoria.id), label: categoria.nome }))} />
+                  <FinFlowSelect name="category_id" required searchable options={categoriasAtivas.map((categoria) => ({ value: String(categoria.id), label: categoria.nome }))} />
                 </label>
                 <label>
                   <span className={styles.fieldLabel}>Tipo</span>

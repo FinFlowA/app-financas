@@ -397,6 +397,15 @@ com layouts bancários não padronizados.
   próprio tamanho. No site, ele vai no endereço
   (`/transacoes?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`).
 
+### Pesquisa nos seletores do site — 09/10/2026
+
+- Os campos de categoria (lançamento, edição, compra no cartão e
+  Conciliação), conta e destino de transferência têm um campo "Digite para
+  pesquisar" no topo da lista (`FinFlowSelect` com `searchable`). A busca é a
+  mesma do app (`lib/seletor-busca.ts`): sem acentos, sem maiúsculas e com as
+  palavras em qualquer ordem. Com o campo em foco, começar a digitar já abre a
+  lista pesquisando; setas, Enter e Esc funcionam.
+
 ### Atualização do limite do cartão e do Fluxo de caixa — 08/10/2026
 
 - **Limite utilizado do cartão:** conta tudo o que não foi pago, inclusive o
