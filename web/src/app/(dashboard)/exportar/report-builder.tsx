@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import {
   dataBr,
   linhasPorSecao,
+  secoesForaDoFiltro,
   montarRelatorio,
   SECOES_RELATORIO,
   type DadosRelatorio,
@@ -67,6 +68,10 @@ export default function ReportBuilder({ dados, mesAtual }: { dados: DadosRelator
     () => linhasPorSecao(montarRelatorio(dados, { ...opcoes, secoes: SECOES_RELATORIO.map((secao) => secao.id) })),
     [dados, opcoes],
   );
+  // Listas que o filtro deixaria vazias: ficam apagadas e fora do arquivo, sem
+  // perder a escolha da pessoa (voltam marcadas quando o filtro sai).
+  const foraDoFiltro = useMemo(() => secoesForaDoFiltro({ tipo, categoriaIds }), [categoriaIds, tipo]);
+  const secoesNoArquivo = secoes.filter((secao) => !foraDoFiltro.has(secao));
   const contasAtivas = dados.contas.filter((conta) => !conta.arquivado);
   const cartoes = dados.cartoes.filter((cartao) => cartao.ativo || dados.itensFatura.some((item) => item.cartao_id === cartao.id));
   const categorias = [...dados.categorias].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
@@ -104,11 +109,11 @@ export default function ReportBuilder({ dados, mesAtual }: { dados: DadosRelator
   }
 
   async function gerar(formato: "pdf" | "excel") {
-    if (gerando || secoes.length === 0) return;
+    if (gerando || secoesNoArquivo.length === 0) return;
     setGerando(formato);
     setErro(null);
     try {
-      const blocos = montarRelatorio(dados, { ...opcoes, secoes });
+      const blocos = montarRelatorio(dados, { ...opcoes, secoes: secoesNoArquivo });
       const cabecalho = {
         periodo: `${dataBr(inicio)} a ${dataBr(fim)}`,
         contas: resumoContas,
@@ -237,12 +242,13 @@ export default function ReportBuilder({ dados, mesAtual }: { dados: DadosRelator
           <legend className="mb-2 text-sm font-black text-foreground">{titulo} <span className="text-xs font-semibold text-foreground-muted">· {dica}</span></legend>
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {SECOES_RELATORIO.filter((secao) => secao.grupo === grupo).map((secao) => {
-              const marcada = secoes.includes(secao.id);
+              const motivo = foraDoFiltro.get(secao.id);
+              const marcada = !motivo && secoes.includes(secao.id);
               const linhas = contagem.get(secao.id) ?? 0;
-              return <label key={secao.id} className={`ff-focus flex cursor-pointer items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-bold transition ${marcada ? "border-primary bg-primary-soft text-primary-dark" : "border-border bg-surface-muted text-foreground hover:border-primary/45"}`}>
-                <input type="checkbox" checked={marcada} onChange={() => setSecoes((atuais) => alternar(atuais, secao.id))} className="h-5 w-5 shrink-0 accent-primary" />
+              return <label key={secao.id} title={motivo} className={`ff-focus flex items-center gap-3 rounded-xl border px-3.5 py-3 text-sm font-bold transition ${motivo ? "cursor-not-allowed border-dashed border-border bg-surface-muted/40 text-foreground-muted opacity-60" : marcada ? "cursor-pointer border-primary bg-primary-soft text-primary-dark" : "cursor-pointer border-border bg-surface-muted text-foreground hover:border-primary/45"}`}>
+                <input type="checkbox" checked={marcada} disabled={Boolean(motivo)} onChange={() => setSecoes((atuais) => alternar(atuais, secao.id))} className="h-5 w-5 shrink-0 accent-primary" />
                 <span className="flex-1">{secao.titulo}</span>
-                <span className="text-xs font-semibold text-foreground-muted">{linhas} {linhas === 1 ? "linha" : "linhas"}</span>
+                <span className="text-xs font-semibold text-foreground-muted">{motivo ?? `${linhas} ${linhas === 1 ? "linha" : "linhas"}`}</span>
               </label>;
             })}
           </div>
@@ -253,12 +259,12 @@ export default function ReportBuilder({ dados, mesAtual }: { dados: DadosRelator
     <section className="ff-card flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-5">
       <div className="text-sm text-foreground-muted">
         <p><strong className="text-foreground">{periodo ? rangeLabel(periodo) : monthTitle(mes)}</strong> · {resumoContas}{filtrosAtivos ? " · com filtros" : ""}</p>
-        <p className="mt-0.5 text-xs">{secoes.length === 0 ? "Marque ao menos uma parte do relatório." : `${secoes.length} ${secoes.length === 1 ? "parte" : "partes"} no relatório. O arquivo é gerado no seu navegador.`}</p>
+        <p className="mt-0.5 text-xs">{secoesNoArquivo.length === 0 ? "Marque ao menos uma parte do relatório." : `${secoesNoArquivo.length} ${secoesNoArquivo.length === 1 ? "parte" : "partes"} no relatório. O arquivo é gerado no seu navegador.`}</p>
         {erro && <p role="alert" className="mt-1 text-xs font-semibold text-red">{erro}</p>}
       </div>
       <div className="grid grid-cols-2 gap-2 sm:flex">
-        <button type="button" disabled={secoes.length === 0 || gerando !== null} onClick={() => void gerar("pdf")} className="ff-focus rounded-full border border-primary px-5 py-3 text-sm font-extrabold text-primary transition hover:bg-primary-soft disabled:opacity-50">{gerando === "pdf" ? "Gerando..." : "Gerar PDF"}</button>
-        <button type="button" disabled={secoes.length === 0 || gerando !== null} onClick={() => void gerar("excel")} className="ff-focus rounded-full bg-primary px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50">{gerando === "excel" ? "Gerando..." : "Gerar Excel"}</button>
+        <button type="button" disabled={secoesNoArquivo.length === 0 || gerando !== null} onClick={() => void gerar("pdf")} className="ff-focus rounded-full border border-primary px-5 py-3 text-sm font-extrabold text-primary transition hover:bg-primary-soft disabled:opacity-50">{gerando === "pdf" ? "Gerando..." : "Gerar PDF"}</button>
+        <button type="button" disabled={secoesNoArquivo.length === 0 || gerando !== null} onClick={() => void gerar("excel")} className="ff-focus rounded-full bg-primary px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50">{gerando === "excel" ? "Gerando..." : "Gerar Excel"}</button>
       </div>
     </section>
   </div>;

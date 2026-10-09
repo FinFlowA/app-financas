@@ -556,7 +556,12 @@ com layouts bancários não padronizados.
   (cenário em `__tests__/fixtures/cenario-relatorio.ts`).
 - **Detalhamento** (as listas de antes): Receitas, Despesas, Transferências,
   Faturas, Compras no cartão, Pendências e Objetivos, com data efetiva e os
-  valores sempre à vista.
+  valores sempre à vista. O filtro Tipo decide o que conta; o detalhamento só
+  escolhe as listas do arquivo. Listas que o filtro deixaria vazias ficam
+  apagadas e fora do arquivo (`secoesForaDoFiltro`): com Despesas, Receitas e
+  Transferências; com Receitas, Despesas, Faturas, Compras no cartão e
+  Transferências; com filtro de categoria, Transferências (não têm
+  categoria). Ao voltar para Todos, a escolha anterior volta.
 - **Arquivos** (`web/src/lib/relatorio-arquivos.ts`), gerados no navegador com
   jsPDF + jspdf-autotable e write-excel-file, carregados só ao gerar.
   - PDF: uma página para cada parte (resumo, evolução, contas, categorias,
