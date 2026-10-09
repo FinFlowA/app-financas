@@ -30,6 +30,9 @@ function RangeCalendar({ draft, month, onChange }: { draft: HistoryRange; month:
   // Sem período escolhido, nada vem marcado e o calendário abre no mês do Histórico.
   const inicial = draft.start || `${month}-01`;
   const [view, setView] = useState(() => ({ year: Number(inicial.slice(0, 4)), month: Number(inicial.slice(5, 7)) }));
+  // Clicar no mês do calendário abre a escolha de mês e ano (sem ir de seta em seta).
+  const [choosingMonth, setChoosingMonth] = useState(false);
+  const [gridYear, setGridYear] = useState(view.year);
   const firstWeekday = new Date(Date.UTC(view.year, view.month - 1, 1)).getUTCDay();
   const count = new Date(Date.UTC(view.year, view.month, 0)).getUTCDate();
   const days = [...Array<null>(firstWeekday).fill(null), ...Array.from({ length: count }, (_, index) => index + 1)];
@@ -65,9 +68,20 @@ function RangeCalendar({ draft, month, onChange }: { draft: HistoryRange; month:
   return <div className="grid gap-2">
     <div className="grid grid-cols-2 gap-2">{field("start")}{field("end")}</div>
     <p className="text-[11px] text-foreground-muted">{editing === "start" ? "Toque no dia de início." : "Agora toque no dia de fim."}</p>
+    {choosingMonth ? <div className="grid gap-2">
+      <div className="flex items-center justify-between">
+        <button type="button" aria-label="Ano anterior do calendário" disabled={gridYear <= MIN_YEAR} onClick={() => setGridYear((value) => value - 1)} className="ff-focus grid h-9 w-9 place-items-center rounded-full border border-border text-lg text-primary disabled:opacity-40">‹</button>
+        <button type="button" aria-label="Voltar para os dias" onClick={() => setChoosingMonth(false)} className="ff-focus rounded-lg px-2 py-1 text-sm font-black hover:bg-primary-soft hover:text-primary-dark">{gridYear} ⌃</button>
+        <button type="button" aria-label="Próximo ano do calendário" disabled={gridYear >= MAX_YEAR} onClick={() => setGridYear((value) => value + 1)} className="ff-focus grid h-9 w-9 place-items-center rounded-full border border-border text-lg text-primary disabled:opacity-40">›</button>
+      </div>
+      <div className="grid grid-cols-3 gap-1.5">{MONTHS.map((name, index) => {
+        const active = gridYear === view.year && index + 1 === view.month;
+        return <button key={name} type="button" aria-pressed={active} aria-label={`${name} de ${gridYear} no calendário`} onClick={() => { setView({ year: gridYear, month: index + 1 }); setChoosingMonth(false); }} className={`ff-focus rounded-xl px-2 py-2.5 text-sm font-bold transition ${active ? "bg-primary text-white" : "text-foreground-muted hover:bg-surface-muted hover:text-foreground"}`}>{name}</button>;
+      })}</div>
+    </div> : <>
     <div className="flex items-center justify-between">
       <button type="button" aria-label="Mês anterior do calendário" onClick={() => setView(shiftView(view, -1))} className="ff-focus grid h-9 w-9 place-items-center rounded-full border border-border text-lg text-primary">‹</button>
-      <strong className="text-sm capitalize">{title}</strong>
+      <button type="button" aria-label={`${title}. Escolher mês e ano do calendário`} onClick={() => { setGridYear(view.year); setChoosingMonth(true); }} className="ff-focus rounded-lg px-2 py-1 text-sm font-black capitalize hover:bg-primary-soft hover:text-primary-dark">{title} ⌄</button>
       <button type="button" aria-label="Próximo mês do calendário" onClick={() => setView(shiftView(view, 1))} className="ff-focus grid h-9 w-9 place-items-center rounded-full border border-border text-lg text-primary">›</button>
     </div>
     <div className="grid grid-cols-7 text-center text-[10px] font-extrabold uppercase text-foreground-muted">{"DSTQQSS".split("").map((day, index) => <span key={`${day}-${index}`} className="py-0.5">{day}</span>)}</div>
@@ -85,6 +99,7 @@ function RangeCalendar({ draft, month, onChange }: { draft: HistoryRange; month:
         className={`ff-focus grid h-8 place-items-center rounded-lg text-sm font-bold transition ${edge ? "bg-primary text-white" : inside ? "bg-primary-soft text-primary-dark" : "hover:bg-primary-soft hover:text-primary-dark"}`}
       >{day}</button>;
     })}</div>
+    </>}
   </div>;
 }
 
