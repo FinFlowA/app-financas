@@ -161,7 +161,7 @@ function NewEntryEditor({ entry, draft, categories, onChange }: {
         </label>
         <div className="text-sm font-bold text-foreground">
           <span>Categoria</span>
-          <FinFlowSelect value={item.categoryId ? String(item.categoryId) : ""} onChange={(value) => updateEntry(item.id, { categoryId: Number(value) || null })} options={categories.map((category) => ({ value: String(category.id), label: category.nome }))} />
+          <FinFlowSelect searchable value={item.categoryId ? String(item.categoryId) : ""} onChange={(value) => updateEntry(item.id, { categoryId: Number(value) || null })} options={categories.map((category) => ({ value: String(category.id), label: category.nome }))} />
         </div>
         {splitting && <label className="grid gap-2 text-sm font-bold text-foreground">
           <span>Valor</span>
