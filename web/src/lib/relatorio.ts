@@ -714,6 +714,22 @@ export function montarRelatorio(dados: DadosRelatorio, opcoes: OpcoesRelatorio):
 }
 
 /** Linhas de tabela de cada seção (para mostrar ao lado de cada uma na tela). */
+/**
+ * Listas do detalhamento que o filtro deixa sempre vazias, com o motivo: com
+ * Tipo = Despesas não há receitas; com Tipo = Receitas não há despesas, faturas
+ * nem compras no cartão; transferências não são receita nem despesa e não têm
+ * categoria. A tela apaga essas listas em vez de gerar tabelas vazias.
+ */
+export function secoesForaDoFiltro(opcoes: Pick<OpcoesRelatorio, "tipo" | "categoriaIds">): Map<SecaoRelatorio, string> {
+  const fora = new Map<SecaoRelatorio, string>();
+  const tipo = opcoes.tipo ?? "todos";
+  if (tipo === "despesa") fora.set("receitas", "fora do filtro Tipo: Despesas");
+  if (tipo === "receita") for (const secao of ["despesas", "faturas", "compras_cartao"] as const) fora.set(secao, "fora do filtro Tipo: Receitas");
+  if (tipo !== "todos") fora.set("transferencias", `fora do filtro Tipo: ${tipo === "receita" ? "Receitas" : "Despesas"}`);
+  else if ((opcoes.categoriaIds ?? []).length > 0) fora.set("transferencias", "transferências não têm categoria");
+  return fora;
+}
+
 export function linhasPorSecao(blocos: BlocoRelatorio[]): Map<SecaoRelatorio, number> {
   const contagem = new Map<SecaoRelatorio, number>();
   for (const bloco of blocos) {

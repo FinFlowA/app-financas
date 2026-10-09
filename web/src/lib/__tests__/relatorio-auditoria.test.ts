@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { totaisDoCartao } from "../cartoes-resumo";
 import { lancamentosDoFluxo } from "../fluxo-atrasados";
-import { montarRelatorio, SECOES_RELATORIO, tabelasDoRelatorio, type BlocoRelatorio, type DadosRelatorio, type OpcoesRelatorio, type TabelaRelatorio } from "../relatorio";
+import { linhasPorSecao, montarRelatorio, SECOES_RELATORIO, secoesForaDoFiltro, tabelasDoRelatorio, type BlocoRelatorio, type DadosRelatorio, type OpcoesRelatorio, type TabelaRelatorio } from "../relatorio";
 import { criarContexto, evolucaoMensal, porcentagensQueFecham, projecaoDoSaldo } from "../relatorio-analise";
 import { abasDoExcel } from "../relatorio-arquivos";
 import { calcularSaldoProjetadoPorMes } from "../saldo-projetado";
@@ -372,5 +372,22 @@ describe("auditoria: pontos de atenção corrigidos", () => {
     expect(pagina).not.toMatch(/realizadas no mês/);
     const app = readFileSync(join(raiz, "app/(tabs)/relatorios.tsx"), "utf8");
     expect(app).toMatch(/Entradas e saídas de dinheiro — \{anoSelecionado\}/);
+  });
+});
+
+describe("filtro Tipo e listas do detalhamento", () => {
+  it("as listas que a tela apaga são justamente as que o filtro deixa vazias", () => {
+    for (const filtro of [{ tipo: "despesa" as const }, { tipo: "receita" as const }, { categoriaIds: [2] }]) {
+      const fora = secoesForaDoFiltro(filtro);
+      const linhas = linhasPorSecao(montarRelatorio(cenario, { ...ano, ...filtro }));
+      for (const secao of fora.keys()) expect([secao, linhas.get(secao) ?? 0]).toEqual([secao, 0]);
+    }
+    // Sem filtro, nenhuma lista fica apagada; transferências e receitas existem no cenário.
+    expect(secoesForaDoFiltro({ tipo: "todos", categoriaIds: [] }).size).toBe(0);
+    const tudo = linhasPorSecao(montarRelatorio(cenario, ano));
+    expect(tudo.get("transferencias")).toBeGreaterThan(0);
+    expect(tudo.get("receitas")).toBeGreaterThan(0);
+    expect([...secoesForaDoFiltro({ tipo: "receita" }).keys()].sort()).toEqual(["compras_cartao", "despesas", "faturas", "transferencias"]);
+    expect([...secoesForaDoFiltro({ tipo: "despesa" }).keys()].sort()).toEqual(["receitas", "transferencias"]);
   });
 });
