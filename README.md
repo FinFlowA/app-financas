@@ -397,6 +397,34 @@ com layouts bancários não padronizados.
   próprio tamanho. No site, ele vai no endereço
   (`/transacoes?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`).
 
+### Tela do Finn no site — 09/10/2026
+
+- **Conversa nova:** o Finn se apresenta com ilustração, saudação pelo nome
+  (mesma regra do Início) e as mesmas quatro sugestões do app, cada uma com
+  uma linha explicando o que faz.
+- **Cabeçalho:** status "online"/"digitando…" como no app, ajuda e "Limpar
+  conversa".
+- **Cota de consultas:** como no app, um anel à esquerda do campo de mensagem
+  (`lib/cota-ia.ts`, a mesma leitura e as mesmas cores do app); o clique mostra
+  "X de Y consultas ao Finn restantes hoje" e as ações disponíveis.
+- **Conversa:** largura toda, como no app (o Finn à esquerda e a pessoa à
+  direita), com balões de no máximo 760px para o texto não virar linhas longas
+  demais; "digitando" com três pontos e campo de mensagem que cresce com o
+  texto, com botão redondo de enviar.
+- **Ajuda:** nesta tela abre pelo "?" do cabeçalho (evento
+  `ABRIR_AJUDA_EVENTO` de `contextual-help.tsx`); o botão flutuante não aparece
+  ali, porque cobria o botão de enviar no celular.
+- **Celular e tablet:** o quadro cabe entre o cabeçalho e a barra de baixo
+  (antes ficava parcialmente atrás dela).
+- **Apagar histórico:** se a limpeza falha, o erro aparece dentro da janela de
+  confirmação (antes ficava escondido atrás dela e parecia que o botão não
+  fazia nada). Com proposta pendente, o cancelamento é feito uma vez só: uma
+  nova tentativa apenas limpa.
+- **Site local:** o Finn não responde em `localhost` (mensagens, cota e
+  "Apagar histórico"), porque o servidor do Finn em produção só aceita pedidos
+  do site oficial (ver `supabase/functions/_shared/http.ts`).
+- Funciona nos temas claro e escuro.
+
 ### Pesquisa nos seletores do site — 09/10/2026
 
 - Os campos de categoria (lançamento, edição, compra no cartão e

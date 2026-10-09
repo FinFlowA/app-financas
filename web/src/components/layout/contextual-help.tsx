@@ -5,6 +5,11 @@ import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import Image from "next/image";
 
+/** Telas que abrem a ajuda por um botão próprio (disparando este evento) em vez
+ *  do botão flutuante, que lá cobriria o campo de mensagem no celular. */
+export const ABRIR_AJUDA_EVENTO = "finflow:abrir-ajuda";
+const ROTAS_COM_BOTAO_PROPRIO = ["/assistente"];
+
 type HelpContent = {
   title: string;
   description: string;
@@ -227,9 +232,19 @@ export default function ContextualHelp() {
   const closeRef = useRef<HTMLButtonElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
 
+  const botaoProprio = ROTAS_COM_BOTAO_PROPRIO.some((rota) => pathname.startsWith(rota));
+
+  useEffect(() => {
+    if (!content) return;
+    const abrir = () => setOpen(true);
+    window.addEventListener(ABRIR_AJUDA_EVENTO, abrir);
+    return () => window.removeEventListener(ABRIR_AJUDA_EVENTO, abrir);
+  }, [content]);
+
   useEffect(() => {
     if (!open) return;
-    const trigger = triggerRef.current;
+    // Ao fechar, o foco volta para o botão que abriu a ajuda (o flutuante ou o da tela).
+    const trigger = triggerRef.current ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null);
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     closeRef.current?.focus();
@@ -268,7 +283,7 @@ export default function ContextualHelp() {
 
   return (
     <>
-      <button
+      {!botaoProprio && <button
         ref={triggerRef}
         type="button"
         className="ff-focus fixed bottom-24 right-4 z-40 grid h-12 w-12 place-items-center rounded-full border border-primary/40 bg-surface-raised text-xl font-black text-primary-dark shadow-[0_16px_38px_rgba(0,0,0,0.28)] transition hover:-translate-y-0.5 hover:border-primary hover:bg-primary-soft lg:bottom-6 lg:right-6"
@@ -284,7 +299,7 @@ export default function ContextualHelp() {
           className="h-full w-full rounded-full object-cover"
           aria-hidden="true"
         />
-      </button>
+      </button>}
 
       {open && typeof document !== "undefined" && createPortal(
         <div
