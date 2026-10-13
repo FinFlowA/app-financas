@@ -69,7 +69,7 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 
 - Um lançamento está **em atraso** quando ainda não foi concluído e o vencimento é anterior a hoje (data de São Paulo). Lançamentos concluídos nunca são afetados.
 - O filtro "Considerar atrasados" vem ligado. Desligado, os atrasados saem do cálculo do fluxo: saldo previsto, linha do gráfico e valores previstos de cada mês e dia.
-- O filtro não muda o saldo atual das contas, os valores realizados nem a distribuição por categoria (que usa só lançamentos concluídos).
+- O filtro não muda o saldo atual das contas, os valores realizados nem a distribuição por categoria (que usa só lançamentos concluídos). Nas visões Mensal e Diária, o saldo mostrado para hoje é sempre o saldo real das contas; o ponto de hoje no gráfico diário soma os atrasados (previsão).
 - A regra fica em `web/src/lib/fluxo-atrasados.ts` (`estaEmAtraso` e `lancamentosDoFluxo`), usada pelo site e pelo app.
 - **Site:** a página monta as duas versões do fluxo (com e sem atrasados) e a troca acontece na tela, sem nova busca ao servidor; a URL guarda a escolha com `atrasados=0`, que segue ao trocar mês, visão e contas. O gráfico anima a mudança e respeita a preferência do sistema por menos movimento.
 - **App:** a escolha vale enquanto a tela estiver aberta.
