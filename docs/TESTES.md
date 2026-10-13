@@ -77,6 +77,7 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
     - aviso de pagamento de fatura lançado como despesa comum;
     - "Entradas e saídas de dinheiro" no Fluxo de caixa do site e do app.
 - `ajuda-contextual.test.ts`: toda aba do menu do site tem a ajuda do Finn cadastrada;
+- `historico-app-resumos.test.ts`: o Histórico do app e o do site pedem os resumos de pagamento em blocos de 500 (limite do banco);
 - `fluxo-saldo-hoje.test.ts`: no Fluxo de caixa diário, o dia de hoje mostra o saldo real das contas (o ponto do gráfico soma os atrasados);
 - `seletor-periodo.test.ts`: o mês do calendário do período (Histórico e Relatórios) é clicável e abre a escolha de mês e ano;
 - `historico-filtros.test.ts`: no Histórico do site, trocar de mês mantém Todos, Concluídos e Pendentes, e "Limpar filtros" volta para o mês atual;

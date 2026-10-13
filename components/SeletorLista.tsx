@@ -38,6 +38,9 @@ type Props = {
   corDestaque: string;
   cores: CoresSeletor;
   iconePadrao?: React.ComponentProps<typeof MaterialIcons>["name"];
+  /** Borda do campo na cor de destaque quando há escolha. Em telas de edição,
+   *  onde tudo já vem preenchido, a borda fica neutra (não parece alerta). */
+  bordaDestacada?: boolean;
 };
 
 /**
@@ -56,6 +59,7 @@ export default function SeletorLista({
   corDestaque,
   cores,
   iconePadrao = "label-outline",
+  bordaDestacada = true,
 }: Props) {
   const [aberto, setAberto] = useState(false);
   const [busca, setBusca] = useState("");
@@ -118,7 +122,7 @@ export default function SeletorLista({
   return (
     <>
       <TouchableOpacity
-        style={[styles.gatilho, { backgroundColor: cores.campo, borderColor: selecionado ? corDestaque : cores.borda }]}
+        style={[styles.gatilho, { backgroundColor: cores.campo, borderColor: selecionado && bordaDestacada ? corDestaque : cores.borda }]}
         onPress={() => setAberto(true)}
         accessibilityRole="button"
         accessibilityLabel={`${rotulo}: ${selecionado?.titulo ?? "nenhuma opção escolhida"}. Toque para escolher.`}

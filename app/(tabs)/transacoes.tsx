@@ -14,7 +14,6 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -23,6 +22,7 @@ import {
 import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import CalendarioPopup from "../../components/CalendarioPopup";
+import SeletorLista from "../../components/SeletorLista";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
@@ -45,7 +45,7 @@ import {
   OFFLINE_SYNC_COMPLETED_EVENT,
   salvarEdicaoFinanceira,
 } from "../../lib/offline-sync";
-import { FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
+import { FinFlowRadius, FinFlowShadow, FinFlowTabHeader, finFlowTheme } from "../../constants/finflow-design";
 import { randomUuidCompat } from "../../lib/optional-native-modules";
 import {
   createInvoiceOperationRequestId,
@@ -422,15 +422,20 @@ export default function TransacoesScreen() {
         setTransacoes(todas);
         let resumos = normalizeTransactionPaymentSummaries([], raizes);
         if (raizes.length > 0) {
-          const { data: dadosResumo, error: erroResumo } = await supabase.rpc(
-            "list_transaction_payment_summaries",
-            { p_transaction_ids: raizes.map((transacao) => transacao.id) },
-          );
-          if (!erroResumo) {
-            resumos = normalizeTransactionPaymentSummaries(dadosResumo, raizes);
-          } else if (erroResumo.code !== "PGRST202") {
-            console.warn("Falha ao carregar resumos de pagamentos do Histórico:", erroResumo.message);
+          // O banco aceita no máximo 500 lançamentos por pedido
+          // (TRANSACTION_SUMMARY_LIMIT_EXCEEDED): pede em blocos, como o site.
+          const blocos: number[][] = [];
+          for (let inicio = 0; inicio < raizes.length; inicio += 500) {
+            blocos.push(raizes.slice(inicio, inicio + 500).map((transacao) => transacao.id));
           }
+          const respostas = await Promise.all(blocos.map((ids) => supabase.rpc("list_transaction_payment_summaries", { p_transaction_ids: ids })));
+          const linhas: unknown[] = [];
+          for (const { data: dadosResumo, error: erroResumo } of respostas) {
+            if (!erroResumo) linhas.push(...((dadosResumo as unknown[] | null) ?? []));
+            else if (erroResumo.code !== "PGRST202") console.warn("Falha ao carregar resumos de pagamentos do Histórico:", erroResumo.message);
+          }
+          // Quem ficou sem resumo (bloco com erro) segue com o resumo calculado do próprio lançamento.
+          resumos = normalizeTransactionPaymentSummaries(linhas, raizes);
         }
         setResumosPagamentos(resumos);
       }
@@ -2881,125 +2886,127 @@ export default function TransacoesScreen() {
       )}
 
       {/* MODAIS DE FILTRO */}
-      {/* MODAL EDITAR TRANSAÇÃO */}
-      {modalEditarTransVisivel && (
+      {/* MODAL EDITAR TRANSAÇÃO (mesmo formato do Novo lançamento) */}
+      {modalEditarTransVisivel && transacaoEditando && (() => {
+        const corEdicao = transacaoEditando.tipo === "receita" ? "#2A9D8F" : "#E76F51";
+        const coresSeletor = { card: Cores.cardFundo, campo: Cores.pillFundo, borda: Cores.borda, pill: Cores.pillFundo, texto: Cores.textoPrincipal, textoSecundario: Cores.textoSecundario };
+        const parcela = getParcelaRecorrencia(transacaoEditando.descricao);
+        const pago = editStatus === "paga";
+        // Contas ativas, mais a do lançamento se ela estiver arquivada.
+        const contasDaEdicao = contas.filter((c) => !c.arquivado || c.id === editContaId);
+        return (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalEditarTransVisivel(false)}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: isDark ? "#1E1E1E" : "#FFF", width: "95%", maxHeight: "90%" }]}>
-            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-              <Text style={[styles.modalTitle, { color: isDark ? "#FFF" : "#1A1A1A" }]}>Editar Transação</Text>
-
-              {/* Status */}
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16, padding: 12, backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0", borderRadius: 10 }}>
-                <Text style={{ color: isDark ? "#FFF" : "#1A1A1A", fontWeight: "600" }}>
-                  {editStatus === "paga" ? "✓ Pago/Recebido" : "⏳ Pendente"}
-                </Text>
-                <Switch
-                  value={editStatus === "paga"}
-                  disabled
-                  trackColor={{ false: "#767577", true: "#2A9D8F" }}
-                />
+        <View style={styles.editOverlay}>
+          <View style={[styles.editSheet, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={[styles.editHandle, { backgroundColor: Cores.borda }]} />
+            <KeyboardAvoidingView style={styles.editKeyboardArea} enabled={Platform.OS === "ios"} behavior="padding">
+            <View style={styles.editHeader}>
+              <View style={[styles.editHeaderIcon, { backgroundColor: `${corEdicao}22` }]}>
+                <MaterialIcons name="edit" size={23} color={corEdicao} />
               </View>
-              <Text style={{ color: isDark ? "#888" : "#777", fontSize: 11, lineHeight: 16, marginTop: -9, marginBottom: 14 }}>
-                Para concluir ou reabrir, use a ação do lançamento no histórico. Assim a data e o valor realizado são confirmados com segurança.
-              </Text>
+              <View style={styles.editHeaderCopy}>
+                <Text style={[styles.editTitle, { color: Cores.textoPrincipal }]}>Editar transação</Text>
+                <Text style={[styles.editSubtitle, { color: Cores.textoSecundario }]}>{transacaoEditando.tipo === "receita" ? "Receita" : "Despesa"} · ajuste descrição, valor, data, conta e categoria.</Text>
+              </View>
+              <TouchableOpacity style={[styles.editClose, { backgroundColor: Cores.pillFundo }]} onPress={() => setModalEditarTransVisivel(false)} accessibilityLabel="Fechar">
+                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.editFormScroll} contentContainerStyle={styles.editForm} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
+              <Text style={[styles.editSectionLabel, { color: Cores.textoSecundario }]}>Status</Text>
+              <View style={[styles.editStatus, { backgroundColor: pago ? "#2A9D8F1A" : "#E9A15B1A", borderColor: pago ? "#2A9D8F55" : "#E9A15B55" }]}>
+                <MaterialIcons name={pago ? "check-circle" : "schedule"} size={20} color={pago ? "#2A9D8F" : "#E9A15B"} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ color: Cores.textoPrincipal, fontWeight: "800", fontSize: 14 }}>{pago ? (transacaoEditando.tipo === "receita" ? "Recebido" : "Pago") : "Pendente"}</Text>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 11, lineHeight: 15, marginTop: 2 }}>Para concluir ou reabrir, use a ação do lançamento no Histórico. Assim a data e o valor realizado são confirmados com segurança.</Text>
+                </View>
+              </View>
 
-              {/* Descrição */}
-              <TextInput
-                style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", color: isDark ? "#FFF" : "#1A1A1A", borderColor: isDark ? "#444" : "#DDD" }]}
-                placeholder="Descrição"
-                placeholderTextColor={isDark ? "#888" : "#AAA"}
-                value={editDescricao}
-                onChangeText={setEditDescricao}
-              />
-
-              {transacaoEditando && getParcelaRecorrencia(transacaoEditando.descricao) && (
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 7, marginBottom: 12, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 10, backgroundColor: Cores.blocoData }}>
+              <Text style={[styles.editSectionLabel, { color: Cores.textoSecundario }]}>Detalhes</Text>
+              <View style={[styles.editInputWrap, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                <MaterialIcons name="notes" size={19} color={Cores.textoSecundario} />
+                <TextInput style={[styles.editTextInput, { color: Cores.textoPrincipal }]} placeholder="Descrição" placeholderTextColor={Cores.textoSecundario} value={editDescricao} onChangeText={setEditDescricao} />
+              </View>
+              {parcela && (
+                <View style={[styles.editLockedInfo, { backgroundColor: Cores.blocoData }]}>
                   <MaterialIcons name="lock-outline" size={16} color={Cores.textoSecundario} />
-                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>
-                    Parcela {getParcelaRecorrencia(transacaoEditando.descricao)?.atual} de {getParcelaRecorrencia(transacaoEditando.descricao)?.total} — informação fixa
-                  </Text>
+                  <Text style={{ color: Cores.textoSecundario, fontSize: 12, fontWeight: "700" }}>Parcela {parcela.atual} de {parcela.total}: informação fixa</Text>
                 </View>
               )}
-
-              {/* Valor */}
-              <View style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", borderColor: isDark ? "#444" : "#DDD", flexDirection: "row", alignItems: "center" }]}>
-                <Text style={{ color: isDark ? "#888" : "#AAA", fontSize: 15, marginRight: 4 }}>R$</Text>
+              <TouchableOpacity style={[styles.editInputWrap, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]} onPress={() => setMostrarCalendarioEdit(true)} accessibilityLabel="Escolher data">
+                <MaterialIcons name="calendar-today" size={19} color={corEdicao} />
+                <Text style={{ color: Cores.textoPrincipal, fontSize: 16, fontWeight: "500" }}>
+                  {String(editData.getDate()).padStart(2, "0")}/{String(editData.getMonth() + 1).padStart(2, "0")}/{editData.getFullYear()}
+                </Text>
+                <MaterialIcons name="chevron-right" size={20} color={Cores.textoSecundario} style={{ marginLeft: "auto" }} />
+              </TouchableOpacity>
+              <CalendarioPopup
+                visivel={mostrarCalendarioEdit}
+                valor={editData}
+                aoSelecionar={(data) => { setEditData(data); setMostrarCalendarioEdit(false); }}
+                aoFechar={() => setMostrarCalendarioEdit(false)}
+                corDestaque={corEdicao}
+                cores={{ card: Cores.cardFundo, pill: Cores.pillFundo, borda: Cores.borda, texto: Cores.textoPrincipal, textoSecundario: Cores.textoSecundario }}
+                subtitulo="Escolha o dia do lançamento."
+              />
+              <View style={[styles.editInputWrap, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
+                <View style={[styles.editCurrency, { backgroundColor: `${corEdicao}22` }]}><Text style={{ color: corEdicao, fontSize: 12, fontWeight: "900" }}>R$</Text></View>
                 <TextInput
-                  style={{ flex: 1, color: isDark ? "#FFF" : "#1A1A1A", fontSize: 15 }}
+                  style={[styles.editTextInput, { color: Cores.textoPrincipal, fontSize: 17, fontWeight: "700" }]}
                   placeholder="0,00"
-                  placeholderTextColor={isDark ? "#888" : "#AAA"}
+                  placeholderTextColor={Cores.textoSecundario}
                   value={editValor}
                   onChangeText={(texto) => setEditValor(formatarEntradaMoeda(texto))}
-                  keyboardType="numeric"
+                  keyboardType="number-pad"
                 />
               </View>
 
-              {/* Data */}
-              <TouchableOpacity
-                style={[styles.editInput, { backgroundColor: isDark ? "#2C2C2C" : "#F5F5F5", borderColor: isDark ? "#444" : "#DDD", flexDirection: "row", alignItems: "center" }]}
-                onPress={() => setMostrarCalendarioEdit(true)}
-              >
-                <MaterialIcons name="calendar-today" size={18} color={isDark ? "#AAA" : "#666"} style={{ marginRight: 8 }} />
-                <Text style={{ color: isDark ? "#FFF" : "#1A1A1A" }}>
-                  {String(editData.getDate()).padStart(2, "0")}/{String(editData.getMonth() + 1).padStart(2, "0")}/{editData.getFullYear()}
-                </Text>
-              </TouchableOpacity>
-              {mostrarCalendarioEdit && (
-                <DateTimePicker
-                  value={editData}
-                  mode="date"
-                  display="default"
-                  onChange={(_e, d) => { setMostrarCalendarioEdit(false); if (d) setEditData(d); }}
-                />
-              )}
+              <Text style={[styles.editSectionLabel, { color: Cores.textoSecundario }]}>Conta</Text>
+              <SeletorLista
+                rotulo="Conta"
+                placeholder="Escolha a conta"
+                iconePadrao="account-balance-wallet"
+                opcoes={contasDaEdicao.map((conta) => ({ id: conta.id, titulo: conta.arquivado ? `${conta.nome} (arquivada)` : conta.nome, cor: conta.cor ?? undefined, icone: "account-balance-wallet" }))}
+                selecionadoId={editContaId}
+                onSelecionar={(opcao) => setEditContaId(Number(opcao.id))}
+                corDestaque={corEdicao}
+                cores={coresSeletor}
+                bordaDestacada={false}
+              />
 
-              {/* Conta */}
-              <Text style={{ color: isDark ? "#AAA" : "#666", fontSize: 12, marginBottom: 6, marginTop: 4 }}>Conta:</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                {contas.map((c) => (
-                  <TouchableOpacity
-                    key={c.id}
-                    style={[styles.filterPill, { backgroundColor: editContaId === c.id ? "#457B9D" : (isDark ? "#2C2C2C" : "#F0F0F0"), borderWidth: 1, borderColor: editContaId === c.id ? "#457B9D" : (isDark ? "#444" : "#DDD"), marginRight: 8 }]}
-                    onPress={() => setEditContaId(c.id)}
-                  >
-                    <Text style={[styles.filterPillText, { color: editContaId === c.id ? "#FFF" : (isDark ? "#FFF" : "#1A1A1A") }]}>{c.nome}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-              {/* Categoria */}
-              {transacaoEditando && !ehMovimentoInternoSemCategoria(transacaoEditando) && (
+              {!ehMovimentoInternoSemCategoria(transacaoEditando) && (
                 <>
-                  <Text style={{ color: isDark ? "#AAA" : "#666", fontSize: 12, marginBottom: 6 }}>Categoria:</Text>
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 14 }}>
-                    {categorias.filter((c) => c.ativa !== 0 && (c.tipo === transacaoEditando.tipo || c.tipo === "ambos")).map((cat) => (
-                      <TouchableOpacity
-                        key={cat.id}
-                        style={[styles.filterPill, { backgroundColor: editCategoriaId === cat.id ? cat.cor : (isDark ? "#2C2C2C" : "#F0F0F0"), borderWidth: 1, borderColor: editCategoriaId === cat.id ? cat.cor : (isDark ? "#444" : "#DDD"), marginRight: 8 }]}
-                        onPress={() => setEditCategoriaId(cat.id)}
-                      >
-                        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: editCategoriaId === cat.id ? "#FFF" : cat.cor, marginRight: 4 }} />
-                        <Text style={[styles.filterPillText, { color: editCategoriaId === cat.id ? "#FFF" : (isDark ? "#FFF" : "#1A1A1A") }]}>{cat.nome}</Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
+                  <Text style={[styles.editSectionLabel, { color: Cores.textoSecundario }]}>Categoria</Text>
+                  <SeletorLista
+                    rotulo="Categoria"
+                    placeholder="Escolha a categoria"
+                    opcoes={categorias
+                      .filter((c) => (c.ativa !== 0 || c.id === editCategoriaId) && (c.tipo === transacaoEditando.tipo || c.tipo === "ambos"))
+                      .map((cat) => ({ id: cat.id, titulo: cat.ativa === 0 ? `${cat.nome} (arquivada)` : cat.nome, cor: cat.cor }))}
+                    selecionadoId={editCategoriaId}
+                    onSelecionar={(opcao) => setEditCategoriaId(Number(opcao.id))}
+                    corDestaque={corEdicao}
+                    cores={coresSeletor}
+                    bordaDestacada={false}
+                  />
                 </>
               )}
 
-              <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 12, marginTop: 8 }}>
-                <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: isDark ? "#2C2C2C" : "#F0F0F0" }} onPress={() => setModalEditarTransVisivel(false)}>
-                  <Text style={{ color: isDark ? "#AAA" : "#666", fontWeight: "bold" }}>Cancelar</Text>
+              <View style={styles.editActions}>
+                <TouchableOpacity style={[styles.editActionButton, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda, borderWidth: 1 }]} onPress={() => setModalEditarTransVisivel(false)}>
+                  <Text style={{ color: Cores.textoSecundario, fontWeight: "800", fontSize: 15 }}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={{ flex: 1, padding: 14, borderRadius: 10, alignItems: "center", backgroundColor: "#2A9D8F" }} onPress={salvarEdicaoTransacao}>
-                  <Text style={{ color: "#FFF", fontWeight: "bold" }}>Salvar</Text>
+                <TouchableOpacity style={[styles.editActionButton, { backgroundColor: corEdicao }]} onPress={salvarEdicaoTransacao}>
+                  <Text style={{ color: "#FFF", fontWeight: "800", fontSize: 15 }}>Salvar</Text>
                 </TouchableOpacity>
               </View>
             </ScrollView>
+            </KeyboardAvoidingView>
           </View>
         </View>
       </Modal>
-      )}
+        );
+      })()}
 
       {/* MODAL OPÇÕES SÉRIE */}
       {modalOpcoesSerie && (
@@ -3392,6 +3399,28 @@ export default function TransacoesScreen() {
 }
 
 const styles = StyleSheet.create({
+  // Editar transação: mesmo formato do Novo lançamento (app/(tabs)/index.tsx).
+  editOverlay: { flex: 1, backgroundColor: "rgba(2,12,15,0.78)", justifyContent: "flex-end", alignItems: "center" },
+  editSheet: { width: "100%", maxWidth: 620, maxHeight: "94%", borderTopLeftRadius: 28, borderTopRightRadius: 28, borderWidth: 1, borderBottomWidth: 0, paddingTop: 12, ...FinFlowShadow },
+  editHandle: { width: 42, height: 4, borderRadius: 2, alignSelf: "center", marginBottom: 12 },
+  editKeyboardArea: { flex: 1 },
+  editHeader: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingBottom: 16 },
+  editHeaderIcon: { width: 46, height: 46, borderRadius: 15, alignItems: "center", justifyContent: "center" },
+  editHeaderCopy: { flex: 1, minWidth: 0, paddingHorizontal: 11 },
+  editTitle: { fontSize: 20, fontWeight: "900", letterSpacing: -0.3 },
+  editSubtitle: { fontSize: 10, lineHeight: 15, marginTop: 2 },
+  editClose: { width: 38, height: 38, borderRadius: 13, alignItems: "center", justifyContent: "center" },
+  editFormScroll: { flex: 1 },
+  editForm: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 32 },
+  editSectionLabel: { fontSize: 10, fontWeight: "900", letterSpacing: 0.45, textTransform: "uppercase", marginBottom: 8 },
+  editStatus: { flexDirection: "row", alignItems: "center", gap: 11, borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, marginBottom: 18 },
+  editInputWrap: { minHeight: 54, flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 13, marginBottom: 13 },
+  editTextInput: { flex: 1, minHeight: 52, fontSize: 15 },
+  editCurrency: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  editLockedInfo: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: -4, marginBottom: 13, paddingHorizontal: 11, paddingVertical: 9, borderRadius: 10 },
+  // Botões no pé da folha, como no Novo lançamento.
+  editActions: { flexDirection: "row", gap: 10, marginTop: "auto", paddingTop: 18 },
+  editActionButton: { flex: 1, minHeight: 50, borderRadius: FinFlowRadius.medium, alignItems: "center", justifyContent: "center" },
   safeArea: { flex: 1 },
   screenContent: { flex: 1, position: "relative" },
   mainScroll: { flex: 1 },
