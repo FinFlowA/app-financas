@@ -86,8 +86,10 @@ export default function ReportOverview({
   today.setHours(0, 0, 0, 0);
   selectedDay.setHours(0, 0, 0, 0);
   const isToday = selectedDay.getTime() === today.getTime();
+  // Hoje é sempre o saldo real das contas: o ponto de hoje no gráfico diário
+  // já soma os atrasados (com "Considerar atrasados"), que ainda não aconteceram.
   const displayedBalance = view === "daily"
-    ? activeDayPoint?.saldo ?? initialBalance
+    ? isToday ? currentBalance : activeDayPoint?.saldo ?? initialBalance
     : isCurrentMonth ? currentBalance : activePoint?.saldo ?? initialBalance;
   const balanceLabel = view === "daily"
     ? isToday
