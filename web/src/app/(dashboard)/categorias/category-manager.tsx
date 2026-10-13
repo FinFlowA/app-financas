@@ -59,6 +59,7 @@ function TargetProgress({ progress }: { progress: ProgressoDoAlvo }) {
 }
 
 const INITIAL: CategoriaActionState = { erro: null };
+const TYPE_LABELS: Record<string, string> = { receita: "Receita", despesa: "Despesa", ambos: "Receita e despesa" };
 const ICON_LABELS: Record<string, string> = {
   label: "Etiqueta", restaurant: "Alimentação", "directions-car": "Carro", home: "Casa", favorite: "Favorito",
   "shopping-cart": "Compras", school: "Educação", "fitness-center": "Atividade física", "local-hospital": "Hospital",
@@ -157,7 +158,7 @@ function CategoryCard({ category, progress }: { category: Categoria; progress?: 
     <div aria-hidden="true" className="absolute -right-10 -top-12 h-32 w-32 rounded-full opacity-[0.08] blur-2xl transition group-hover:opacity-[0.16]" style={{ backgroundColor: category.cor }} />
     <button type="button" aria-expanded={expanded} onClick={() => { setExpanded((value) => !value); if (expanded) setEditOpen(false); }} className="ff-focus relative flex w-full items-center gap-3 rounded-xl p-1 text-left">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 text-white shadow-sm" style={{ backgroundColor: category.cor }}><FinancialIcon name={category.icone} size={20} /></span>
-      <span className="min-w-0 flex-1"><span className="block truncate font-extrabold text-foreground">{category.nome}</span><span className={`mt-0.5 block text-[9px] font-extrabold uppercase tracking-wide ${category.tipo === "receita" ? "text-primary" : "text-red"}`}>{active ? "Ativa" : "Arquivada"}</span></span>
+      <span className="min-w-0 flex-1"><span className="block truncate font-extrabold text-foreground">{category.nome}</span><span className={`mt-0.5 block text-[9px] font-extrabold uppercase tracking-wide ${category.tipo === "receita" ? "text-primary" : category.tipo === "despesa" ? "text-red" : "text-foreground-muted"}`}>{active ? "Ativa" : `${TYPE_LABELS[category.tipo] ?? "Categoria"} · arquivada`}</span></span>
       <span aria-hidden="true" className={`text-primary transition ${expanded ? "rotate-180" : ""}`}>⌄</span>
     </button>
     {progress && <TargetProgress progress={progress} />}
@@ -167,12 +168,14 @@ function CategoryCard({ category, progress }: { category: Categoria; progress?: 
         {editOpen && <CategoryEditForm category={category} onDiscard={() => setEditOpen(false)} />}
       </> : <p className="text-xs font-semibold text-foreground-muted">Reative a categoria para editá-la.</p>}
     </div>}
-    {expanded && <form id={actionFormId} action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} />
+    {expanded && <form id={actionFormId} action={stateAction} className="mt-3 flex flex-wrap gap-2"><RequestId state={state} /><input type="hidden" name="category_id" value={category.id} /><input type="hidden" name="was_archived" value={active ? "0" : "1"} />
       {active ? <button name="operation" value="archive_category" disabled={changing} className="rounded-ff-sm border border-border px-3 py-2 text-xs font-bold text-foreground-muted">Arquivar</button> : <button name="operation" value="reactivate_category" disabled={changing} className="rounded-ff-sm border border-primary px-3 py-2 text-xs font-bold text-primary">Reativar</button>}
       <button type="button" disabled={changing} onClick={() => setDeleteBaseline(state)} className="rounded-ff-sm border border-red/40 px-3 py-2 text-xs font-bold text-red">Excluir</button>
       {confirmDelete && <ConfirmationDialog
         title={`Excluir ${category.nome}?`}
-        description="Se houver lançamentos nesta categoria, ela será arquivada e os vínculos atuais continuarão preservados. Uma categoria sem uso será excluída definitivamente."
+        description={active
+          ? "Se houver lançamentos nesta categoria, ela será arquivada e os vínculos atuais continuarão preservados. Uma categoria sem uso será excluída definitivamente."
+          : "Uma categoria sem lançamentos será excluída definitivamente. Se tiver lançamentos, ela não pode ser excluída e continua arquivada."}
         confirmLabel="Confirmar exclusão"
         confirmName="operation"
         confirmValue="delete_category"
@@ -186,7 +189,24 @@ function CategoryCard({ category, progress }: { category: Categoria; progress?: 
   </article>;
 }
 
+function ArchivedCategories({ categories }: { categories: Categoria[] }) {
+  const [open, setOpen] = useState(false);
+  if (categories.length === 0) return null;
+  return <section className="mt-7">
+    <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="ff-focus flex w-full items-center gap-3 rounded-2xl border border-border bg-surface px-4 py-3 text-left transition hover:border-primary/25">
+      <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-surface-muted text-foreground-muted"><FinancialIcon name="archive" size={18} /></span>
+      <span className="min-w-0 flex-1"><span className="block font-extrabold text-foreground">Categorias arquivadas</span><span className="block text-xs text-foreground-muted">{categories.length} categoria(s) · clique para {open ? "esconder" : "ver"}</span></span>
+      <span aria-hidden="true" className={`text-primary transition ${open ? "rotate-180" : ""}`}>⌄</span>
+    </button>
+    {open && <div className="mt-3 grid items-start gap-3 sm:grid-cols-2 xl:grid-cols-3">{categories.map((category) => <CategoryCard key={category.id} category={category} />)}</div>}
+  </section>;
+}
+
 export default function CategoryManager({ categories, progress = {} }: { categories: Categoria[]; progress?: CategoryProgress }) {
-  const ordered = [...categories].sort((a, b) => Number(Boolean(b.ativa)) - Number(Boolean(a.ativa)) || a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
-  return <><NewCategory /><div className="grid items-start gap-6 lg:grid-cols-2">{(["despesa", "receita"] as const).map((type) => { const filtered = ordered.filter((category) => category.tipo === type || category.tipo === "ambos"); return <section key={type} className="min-w-0"><div className="mb-3 flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${type === "receita" ? "bg-primary" : "bg-red"}`} /><h2 className="text-lg font-extrabold text-foreground">Categorias de {type}</h2><span className="rounded-full bg-surface-muted px-2.5 py-1 text-[10px] font-extrabold text-foreground-muted">{filtered.length}</span></div><div className="grid gap-3">{filtered.map((category) => <CategoryCard key={`${type}-${category.id}`} category={category} progress={type === "receita" ? progress[category.id]?.meta : progress[category.id]?.limite} />)}</div>{filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">Nenhuma categoria de {type} cadastrada.</div>}</section>; })}</div></>;
+  const isActive = (category: Categoria) => category.ativa === true || category.ativa === 1;
+  const ordered = [...categories].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR", { sensitivity: "base" }));
+  const active = ordered.filter(isActive);
+  // Arquivadas ficam num bloco à parte, aberto ao clicar (como no app).
+  const archived = ordered.filter((category) => !isActive(category));
+  return <><NewCategory /><div className="grid items-start gap-6 lg:grid-cols-2">{(["despesa", "receita"] as const).map((type) => { const filtered = active.filter((category) => category.tipo === type || category.tipo === "ambos"); return <section key={type} className="min-w-0"><div className="mb-3 flex items-center gap-3"><span className={`h-2.5 w-2.5 rounded-full ${type === "receita" ? "bg-primary" : "bg-red"}`} /><h2 className="text-lg font-extrabold text-foreground">Categorias de {type}</h2><span className="rounded-full bg-surface-muted px-2.5 py-1 text-[10px] font-extrabold text-foreground-muted">{filtered.length}</span></div><div className="grid gap-3">{filtered.map((category) => <CategoryCard key={`${type}-${category.id}`} category={category} progress={type === "receita" ? progress[category.id]?.meta : progress[category.id]?.limite} />)}</div>{filtered.length === 0 && <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-foreground-muted">Nenhuma categoria de {type} ativa.</div>}</section>; })}</div><ArchivedCategories categories={archived} /></>;
 }

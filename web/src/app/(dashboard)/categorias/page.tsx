@@ -55,6 +55,8 @@ export default async function CategoriasPage({ searchParams }: { searchParams: P
   const active = categories.filter((category) => category.ativa === true || category.ativa === 1);
   const income = active.filter((category) => category.tipo === "receita" || category.tipo === "ambos").length;
   const expenses = active.filter((category) => category.tipo === "despesa" || category.tipo === "ambos").length;
+  // Sem nenhuma meta ou limite, o seletor de mês não tem o que mostrar.
+  const hasTargets = active.some((category) => category.meta_mensal != null || category.limite_mensal != null);
   // O progresso é um complemento: se a busca do mês falhar, as categorias
   // continuam disponíveis e o aviso explica a ausência das barras.
   const progressUnavailable = Boolean(transactionsResult.error || invoiceItemsResult.error);
@@ -92,10 +94,10 @@ export default async function CategoriasPage({ searchParams }: { searchParams: P
           {progressUnavailable && <p className="font-semibold text-red">Não foi possível calcular o progresso do mês agora. Atualize a página em instantes.</p>}
         </div>
       </aside>
-      <section className="ff-page-hero mb-5 flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      {hasTargets && <section className="ff-page-hero mb-5 flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div><p className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-foreground-muted">Metas e limites de</p><p className="font-black capitalize text-foreground">{monthLabel}{mes < mesAtual ? " · mês encerrado" : mes > mesAtual ? " · previsão" : " · mês atual"}</p></div>
         <div><CategoryMonthNav month={mes} currentMonth={mesAtual} /></div>
-      </section>
+      </section>}
       <CategoryManager categories={categories} progress={progress} />
     </div>
   );

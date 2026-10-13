@@ -417,6 +417,11 @@ com layouts bancários não padronizados.
   ficavam sem os resumos de baixa parcial (erro 400).
 - **Ajuda do Finn:** a aba Relatórios (`/exportar`) ganhou a explicação, e um
   teste garante que toda aba do menu tenha ajuda.
+- **Categorias (app e site):** o seletor de mês das metas só aparece quando
+  alguma categoria ativa tem meta ou limite. As arquivadas ficam num bloco à
+  parte, aberto ao tocar ou clicar, como as contas, e mostram se são receita
+  ou despesa. Excluir uma arquivada com lançamentos não oferece arquivar de
+  novo: o aviso explica que ela não pode ser apagada e continua arquivada.
 
 ### Tela do Finn no site — 09/10/2026
 

@@ -153,10 +153,17 @@ export async function alterarEstadoCategoria(_: CategoriaActionState, formData: 
   }, formString(formData, "request_id"));
   if (result.erro) return result;
   refreshCategories();
-  const sucesso = operation === "reactivate_category"
-    ? "Categoria reativada."
-    : operation === "delete_category"
-      ? "Categoria excluída. Se havia lançamentos, ela foi apenas arquivada e o histórico foi preservado."
-      : "Categoria arquivada.";
+  if (operation === "delete_category") {
+    // Com lançamentos o banco não apaga: só arquiva (deleted: false).
+    const envelope = (result.data ?? {}) as { deleted?: unknown; result?: { deleted?: unknown } };
+    const deleted = (envelope.result?.deleted ?? envelope.deleted) !== false;
+    if (deleted) return { erro: null, sucesso: "Categoria excluída." };
+    // Já estava arquivada: nada mudou, só explica por que ela continua.
+    if (formString(formData, "was_archived") === "1") {
+      return { erro: "Esta categoria tem lançamentos vinculados, por isso não pode ser excluída: assim o histórico continua certo. Ela já está arquivada e não aparece para novos lançamentos." };
+    }
+    return { erro: null, sucesso: "A categoria tem lançamentos, então foi arquivada e o histórico foi preservado." };
+  }
+  const sucesso = operation === "reactivate_category" ? "Categoria reativada." : "Categoria arquivada.";
   return { erro: null, sucesso };
 }

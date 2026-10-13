@@ -311,6 +311,8 @@ export default function Dashboard() {
   const mesAtualCategorias = (() => { const hoje = new Date(); return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`; })();
   const [mesCategorias, setMesCategorias] = useState(mesAtualCategorias);
   const [seletorMesCategoriasAberto, setSeletorMesCategoriasAberto] = useState(false);
+  // Categorias arquivadas ficam num bloco à parte, aberto ao tocar (como as contas).
+  const [mostrarCategoriasArquivadas, setMostrarCategoriasArquivadas] = useState(false);
   const [anoSeletorCategorias, setAnoSeletorCategorias] = useState(() => new Date().getFullYear());
   const moverMesCategorias = (delta: number) => {
     const [ano, mes] = mesCategorias.split("-").map(Number);
@@ -579,6 +581,50 @@ export default function Dashboard() {
 
   // Meta e limite mensais de cada categoria no mês atual, com as mesmas regras
   // da Visão do mês (web/src/lib/metas-categorias.ts, também usado pelo site).
+  // Uma categoria em Gerenciar Categorias (ativas e arquivadas usam a mesma linha).
+  const linhaCategoria = (cat: Categoria): React.ReactElement => {
+    const progresso = cat.tipo === "receita" ? progressoCategorias.get(cat.id)?.meta : progressoCategorias.get(cat.id)?.limite;
+    return (
+    <View key={cat.id} style={[styles.catGerenciarItem, { backgroundColor: Cores.pillFundo }]}>
+      <View style={styles.catGerenciarRow}>
+        <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+          <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: cat.cor, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
+            <MaterialIcons name={cat.icone as any} size={16} color="#FFF" />
+          </View>
+          <Text style={{ color: cat.ativa !== 0 ? Cores.textoPrincipal : Cores.textoSecundario, fontWeight: "600", flex: 1 }} numberOfLines={1}>
+            {cat.nome}
+          </Text>
+          {cat.ativa === 0 && (
+            // Arquivada: diz também se é de receita ou de despesa, na cor do tipo.
+            <View style={{ backgroundColor: cat.tipo === "receita" ? "#2A9D8F22" : cat.tipo === "despesa" ? "#E76F5122" : "#5552", paddingHorizontal: 7, paddingVertical: 2, borderRadius: 8, marginRight: 8 }}>
+              <Text style={{ color: cat.tipo === "receita" ? "#2A9D8F" : cat.tipo === "despesa" ? "#E76F51" : Cores.textoSecundario, fontSize: 10, fontWeight: "800" }}>{cat.tipo === "receita" ? "Receita" : cat.tipo === "despesa" ? "Despesa" : "Receita e despesa"} · arquivada</Text>
+            </View>
+          )}
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity
+            onPress={() => abrirEditarCategoria(cat)}
+            style={[styles.iconeBotao, (cat.ativa === 0 || categoriaOperandoId === cat.id) && { opacity: 0.35 }]}
+            disabled={cat.ativa === 0 || categoriaOperandoId !== null}
+            accessibilityLabel={cat.ativa === 0 ? `${cat.nome} está arquivada` : `Editar ${cat.nome}`}
+          >
+            <MaterialIcons name="edit" size={18} color="#457B9D" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null}>
+            <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => deletarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null} accessibilityLabel={`Excluir ${cat.nome}`}>
+            <MaterialIcons name="delete-outline" size={18} color="#E76F51" />
+          </TouchableOpacity>
+        </View>
+      </View>
+      {progresso && (
+        <ProgressoMetaCategoria progresso={progresso} formatar={formatarValorPrivado} corTexto={Cores.textoPrincipal} corTextoSecundario={Cores.textoSecundario} corTrilho={Cores.borda} />
+      )}
+    </View>
+    );
+  };
+
   const progressoCategorias = useMemo(
     () => progressoDasCategorias(categorias, transacoes, comprasCartao, mesCategorias),
     [categorias, comprasCartao, mesCategorias, transacoes],
@@ -1283,6 +1329,17 @@ export default function Dashboard() {
     }
 
     const totalReferencias = (referenciasTransacoes.count ?? 0) + (referenciasCartao.count ?? 0);
+
+    if (totalReferencias > 0 && cat.ativa === 0) {
+      // Já arquivada: com lançamentos ela não pode ser apagada, e arquivar de
+      // novo não muda nada. Só explica.
+      Alert.alert(
+        "Categoria já arquivada",
+        `A categoria "${cat.nome}" tem lançamentos vinculados, por isso não pode ser excluída: assim o histórico continua certo. Ela já está arquivada e não aparece para novos lançamentos.`,
+        [{ text: "Entendi" }],
+      );
+      return;
+    }
 
     if (totalReferencias > 0) {
       Alert.alert(
@@ -2880,6 +2937,7 @@ export default function Dashboard() {
             ) : (
               // Lista de categorias
               <ScrollView>
+                {categorias.some((c) => c.ativa !== 0 && (c.meta_mensal != null || c.limite_mensal != null)) && (<>
                 <View style={[styles.catMesBarra, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda }]}>
                   <TouchableOpacity onPress={() => moverMesCategorias(-1)} style={styles.catMesSeta} accessibilityLabel="Mês anterior">
                     <MaterialIcons name="chevron-left" size={24} color="#2A9D8F" />
@@ -2930,57 +2988,37 @@ export default function Dashboard() {
                     )}
                   </View>
                 )}
+                </>)}
                 {["despesa", "receita"].map((tipo) => (
                   <View key={tipo}>
                     <Text style={[styles.colorLabel, { color: Cores.textoSecundario, textTransform: "uppercase", letterSpacing: 1 }]}>
                       {tipo === "despesa" ? "Despesas" : "Receitas"}
                     </Text>
-                    {categorias.filter((c) => c.tipo === tipo).map((cat) => {
-                      const progresso = tipo === "receita" ? progressoCategorias.get(cat.id)?.meta : progressoCategorias.get(cat.id)?.limite;
-                      return (
-                      <View key={cat.id} style={[styles.catGerenciarItem, { backgroundColor: Cores.pillFundo }]}>
-                        <View style={styles.catGerenciarRow}>
-                          <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
-                            <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: cat.cor, alignItems: "center", justifyContent: "center", marginRight: 10 }}>
-                              <MaterialIcons name={cat.icone as any} size={16} color="#FFF" />
-                            </View>
-                            <Text style={{ color: cat.ativa !== 0 ? Cores.textoPrincipal : Cores.textoSecundario, fontWeight: "600", flex: 1 }} numberOfLines={1}>
-                              {cat.nome}
-                            </Text>
-                            {cat.ativa === 0 && (
-                              <View style={{ backgroundColor: "#555", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, marginRight: 8 }}>
-                                <Text style={{ color: "#CCC", fontSize: 10 }}>Arquivada</Text>
-                              </View>
-                            )}
-                          </View>
-                          <View style={{ flexDirection: "row", gap: 8 }}>
-                            <TouchableOpacity
-                              onPress={() => abrirEditarCategoria(cat)}
-                              style={[styles.iconeBotao, (cat.ativa === 0 || categoriaOperandoId === cat.id) && { opacity: 0.35 }]}
-                              disabled={cat.ativa === 0 || categoriaOperandoId !== null}
-                              accessibilityLabel={cat.ativa === 0 ? `${cat.nome} está arquivada` : `Editar ${cat.nome}`}
-                            >
-                              <MaterialIcons name="edit" size={18} color="#457B9D" />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => arquivarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null}>
-                              <MaterialIcons name={cat.ativa !== 0 ? "archive" : "unarchive"} size={18} color="#F4A261" />
-                            </TouchableOpacity>
-                            <TouchableOpacity onPress={() => deletarCategoria(cat)} style={[styles.iconeBotao, categoriaOperandoId === cat.id && { opacity: 0.35 }]} disabled={categoriaOperandoId !== null} accessibilityLabel={`Excluir ${cat.nome}`}>
-                              <MaterialIcons name="delete-outline" size={18} color="#E76F51" />
-                            </TouchableOpacity>
-                          </View>
-                        </View>
-                        {progresso && (
-                          <ProgressoMetaCategoria progresso={progresso} formatar={formatarValorPrivado} corTexto={Cores.textoPrincipal} corTextoSecundario={Cores.textoSecundario} corTrilho={Cores.borda} />
-                        )}
-                      </View>
-                      );
-                    })}
-                    {categorias.filter((c) => c.tipo === tipo).length === 0 && (
+                    {categorias.filter((c) => c.tipo === tipo && c.ativa !== 0).map((cat) => linhaCategoria(cat))}
+                    {categorias.filter((c) => c.tipo === tipo && c.ativa !== 0).length === 0 && (
                       <Text style={{ color: Cores.textoSecundario, fontStyle: "italic", marginBottom: 10, fontSize: 13 }}>Nenhuma categoria.</Text>
                     )}
                   </View>
                 ))}
+                {categorias.some((c) => c.ativa === 0) && (
+                  <>
+                    <TouchableOpacity
+                      style={[styles.accountScopeArchivedToggle, { borderColor: Cores.borda }]}
+                      onPress={() => setMostrarCategoriasArquivadas((atual) => !atual)}
+                      accessibilityLabel={mostrarCategoriasArquivadas ? "Esconder categorias arquivadas" : "Mostrar categorias arquivadas"}
+                    >
+                      <View style={[styles.accountScopeArchivedIcon, { backgroundColor: Cores.inputFundo }]}>
+                        <MaterialIcons name="archive" size={17} color={Cores.textoSecundario} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.accountScopeOptionTitle, { color: Cores.textoPrincipal }]}>Categorias arquivadas</Text>
+                        <Text style={[styles.accountScopeOptionText, { color: Cores.textoSecundario }]}>{categorias.filter((c) => c.ativa === 0).length} categoria(s) · toque para {mostrarCategoriasArquivadas ? "esconder" : "ver"}</Text>
+                      </View>
+                      <MaterialIcons name={mostrarCategoriasArquivadas ? "expand-less" : "expand-more"} size={22} color={Cores.textoSecundario} />
+                    </TouchableOpacity>
+                    {mostrarCategoriasArquivadas && categorias.filter((c) => c.ativa === 0).map((cat) => linhaCategoria(cat))}
+                  </>
+                )}
                 <View style={{ marginTop: 10 }}>
                   <Button title="Fechar" color="#999" onPress={() => setModalGerenciarCatVisivel(false)} />
                 </View>
