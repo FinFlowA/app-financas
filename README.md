@@ -397,6 +397,27 @@ com layouts bancários não padronizados.
   próprio tamanho. No site, ele vai no endereço
   (`/transacoes?inicio=AAAA-MM-DD&fim=AAAA-MM-DD`).
 
+### Ajustes do Histórico, do período, do Fluxo e da edição no app — 13/10/2026
+
+- **Histórico (site):** as setas de mês e o período de/até mantêm o filtro
+  Todos, Concluídos ou Pendentes (Atrasados e os atalhos passam para os
+  Pendentes do mês). "Limpar filtros" também volta para o mês atual, e estar
+  em outro mês conta como filtro ativo.
+- **Calendário do período (Relatórios e Histórico):** o mês do pequeno
+  calendário é clicável e abre a escolha de mês e ano (`month-picker.tsx`).
+- **Fluxo de caixa diário:** o dia de hoje mostra o saldo real das contas,
+  como a visão Mensal, o Início e o relatório. Com "Considerar atrasados", os
+  atrasados entram só na previsão (o ponto de hoje no gráfico os soma).
+- **Editar transação (app):** mesmo formato do Novo lançamento, com conta e
+  categoria pesquisáveis (`SeletorLista`, com `bordaDestacada={false}` nesta
+  tela), calendário do FinFlow e botões no pé da folha.
+- **Histórico do app:** os resumos de pagamento
+  (`list_transaction_payment_summaries`) são pedidos em blocos de 500, o
+  limite do banco, como no site. Antes, contas com mais de 500 lançamentos
+  ficavam sem os resumos de baixa parcial (erro 400).
+- **Ajuda do Finn:** a aba Relatórios (`/exportar`) ganhou a explicação, e um
+  teste garante que toda aba do menu tenha ajuda.
+
 ### Tela do Finn no site — 09/10/2026
 
 - **Conversa nova:** o Finn se apresenta com ilustração, saudação pelo nome
