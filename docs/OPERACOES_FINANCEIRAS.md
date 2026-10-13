@@ -87,7 +87,8 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 ## Categorias e relatórios
 
 - Categorias aceitam `receita`, `despesa` ou `ambos` conforme o schema vigente.
-- Categorias arquivadas preservam lançamentos antigos.
+- Categorias arquivadas preservam lançamentos antigos. Excluir uma categoria com lançamentos só a arquiva (o banco responde `deleted: false`); se ela já estava arquivada, o app e o site apenas explicam que ela não pode ser apagada.
+- No app ("Gerenciar Categorias") e no site, as arquivadas ficam num bloco à parte, aberto ao tocar ou clicar, com o tipo (receita, despesa ou ambos).
 - No gráfico inicial do site, categorias com o mesmo nome normalizado são agrupadas, ainda que possuam IDs diferentes.
 - Transferências, objetivos e pagamentos técnicos de fatura são excluídos dos totais por categoria.
 
@@ -96,7 +97,7 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - Cada categoria pode ter uma **meta mensal** (receitas) ou um **limite mensal** (despesas), opcionais e maiores que zero; uma categoria `ambos` aceita os dois. Ficam em `categorias.meta_mensal` e `categorias.limite_mensal` e são definidos ao criar ou editar a categoria, no app e no site (campos `monthly_goal` e `monthly_limit` de `create_category` e `update_category`; na edição, `null` tira o valor). O banco recusa meta em despesa e limite em receita (`AI_CATEGORY_TARGET_NOT_ALLOWED`).
 - O acompanhamento é do mês atual e segue as regras da Visão do mês: concluído conta como realizado e pendente como agendado, pela data efetiva; transferências, objetivos e o pagamento bancário da fatura ficam de fora; cada compra do cartão conta como despesa realizada no mês da fatura, sem os ajustes de pagamento parcial.
 - A porcentagem usa só o realizado; o agendado aparece à parte, na parte mais clara da barra. Limite: normal abaixo de 80%, laranja de 80% a 100% e vermelho acima ("Passou R$ X do limite"). Meta: "Meta atingida" a partir de 100%. Não há aviso por notificação.
-- Um seletor de mês (setas e escolha de mês e ano) mostra o mesmo acompanhamento em meses anteriores (metas batidas e limites ultrapassados, com o mês encerrado) e futuros (previsão com o que já está agendado). No site, o mês vai na URL (`/categorias?mes=AAAA-MM`); no app, fica em "Gerenciar Categorias".
+- Um seletor de mês (setas e escolha de mês e ano) mostra o mesmo acompanhamento em meses anteriores (metas batidas e limites ultrapassados, com o mês encerrado) e futuros (previsão com o que já está agendado). No site, o mês vai na URL (`/categorias?mes=AAAA-MM`); no app, fica em "Gerenciar Categorias". O seletor só aparece quando alguma categoria ativa tem meta ou limite.
 - A regra fica em `web/src/lib/metas-categorias.ts` e é usada pela tela de Categorias do site e por "Gerenciar Categorias" no app.
 
 ## Atrasados no Início (site)
