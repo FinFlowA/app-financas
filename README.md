@@ -422,6 +422,9 @@ com layouts bancários não padronizados.
   parte, aberto ao tocar ou clicar, como as contas, e mostram se são receita
   ou despesa. Excluir uma arquivada com lançamentos não oferece arquivar de
   novo: o aviso explica que ela não pode ser apagada e continua arquivada.
+- **Editar guardar/resgatar de objetivo (site):** séries antigas, sem
+  "[Transf.]" na descrição, eram recusadas com "Escolha uma categoria
+  compatível". A edição agora as trata como transferência, como a tela e o app.
 
 ### Tela do Finn no site — 09/10/2026
 

@@ -11,7 +11,7 @@ import {
 import { hojeEmSaoPaulo } from "@/lib/date";
 import { mensagemTetoSeguranca, traduzirErro } from "@/lib/error-messages";
 import { parseMoney } from "@/lib/money";
-import { descricaoTransferenciaPendenteObjetivo, descricaoVisivel, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
+import { descricaoTransferenciaPendenteObjetivo, descricaoVisivel, isMovimentoObjetivo, isPagamentoFatura, isTransferencia } from "@/lib/transacoes";
 import { createClient } from "@/lib/supabase/server";
 
 export type TransactionActionState<T = unknown> = {
@@ -282,7 +282,9 @@ export async function updateTransaction(formData: FormData): Promise<Transaction
   if (current.status === "paga") return { erro: "Reabra o lançamento antes de editar. Um item concluído não pode ser alterado." };
   if (scope !== "one" && current.version !== expectedVersion) return { erro: "Este lançamento mudou em outro dispositivo. Atualize a página e tente novamente." };
 
-  const transfer = isTransferencia(current.descricao);
+  // Guardar e resgatar de objetivo não têm categoria, como as transferências
+  // (as fixas antigas não trazem "[Transf.]" na descrição). A tela já os trata assim.
+  const transfer = isTransferencia(current.descricao) || isMovimentoObjetivo(current.descricao);
   if (!transfer && !validId(categoryId)) return { erro: "Escolha uma categoria compatível." };
 
   const changes: Record<string, string | number> = {};
