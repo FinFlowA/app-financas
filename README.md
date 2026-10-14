@@ -448,6 +448,17 @@ com layouts bancários não padronizados.
   (`#263437`), no lugar do quase preto.
 - **Login do app no navegador:** o painel fica centralizado em telas
   estreitas, com até 520 px.
+- **Finn no app:** a conversa nova abre como no site, com o Finn flutuando, a
+  saudação do Início ("Boa noite, Nome! Como posso ajudar?"), as quatro
+  sugestões com uma linha explicando cada uma e a faixa "Nada é alterado sem a
+  sua confirmação". A saudação por hora fica em `lib/saudacao.ts`, usada pelo
+  Início e pelo Finn.
+- **Distribuição do Mês (Início do app):** tocar numa categoria abre o que
+  formou o valor no mês, no modo escolhido (Concluídos ou Previstos): total,
+  porcentagem, quantidade e cada lançamento com data, situação (concluído, a
+  vencer ou atrasado) e valor, e as compras do cartão do mês da fatura. Com
+  "ocultar valores", os valores continuam escondidos. No site, os gráficos de
+  Relatórios já trazem esse detalhe.
 
 ### Tela do Finn no site — 09/10/2026
 

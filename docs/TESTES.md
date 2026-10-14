@@ -81,7 +81,8 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
 - `fluxo-saldo-hoje.test.ts`: no Fluxo de caixa diário, o dia de hoje mostra o saldo real das contas (o ponto do gráfico soma os atrasados) e o quadro de hoje traz os atrasados, inclusive os vencidos neste mês;
 - `seletor-periodo.test.ts`: o mês do calendário do período (Histórico e Relatórios) é clicável e abre a escolha de mês e ano;
 - `historico-filtros.test.ts`: no Histórico do site, trocar de mês mantém Todos, Concluídos e Pendentes, e "Limpar filtros" volta para o mês atual;
-- `finn-tela.test.ts`: a apresentação do Finn com as mesmas sugestões do app, a cota pela leitura do app e a ajuda aberta pelo cabeçalho, sem o botão flutuante nessa tela;
+- `finn-tela.test.ts`: a apresentação do Finn com as mesmas sugestões do app (e a mesma apresentação no app), a cota pela leitura do app e a ajuda aberta pelo cabeçalho, sem o botão flutuante nessa tela;
+- `inicio-detalhe-categoria.test.ts`: no Início do app, tocar numa categoria da Distribuição do Mês mostra os lançamentos e as compras do cartão que formam o valor;
 - `seletor-com-busca.test.ts`: a pesquisa dos seletores do site, com a mesma regra do app, ligada nos campos de categoria, conta e destino;
 - `web-notifications.test.ts`: os avisos do site, inclusive o de 80% do limite com a mesma regra da tela Cartões.
 

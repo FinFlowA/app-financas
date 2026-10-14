@@ -50,6 +50,7 @@ import {
 import { mensagemErroLimitePlano } from "../../lib/planos";
 import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 import SeletorLista from "../../components/SeletorLista";
+import { saudacaoPorHora } from "../../lib/saudacao";
 import OndasCabecalho from "../../components/OndasCabecalho";
 import { useCampoFocadoVisivel, useSobreposicaoTeclado } from "../../hooks/use-teclado";
 import {
@@ -59,11 +60,17 @@ import {
   descricaoTransferencia,
   descricaoTransferenciaObjetivo,
   getContaDestinoTransferencia,
+  descricaoVisivel,
   isMovimentoObjetivo,
   isTransferencia,
   type FrequenciaRecorrencia,
   sufixoRecorrencia,
 } from "../../lib/transacoes";
+
+const hojeIsoLocal = () => {
+  const hoje = new Date();
+  return `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+};
 
 const NOMES_MESES_CATEGORIAS = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 
@@ -122,11 +129,25 @@ interface CompraCartao {
   categoria_id: number | null;
 }
 
+interface ItemDistribuicaoCategoria {
+  chave: string;
+  descricao: string;
+  valor: number;
+  /** Data efetiva do lançamento ou data da compra no cartão (AAAA-MM-DD). */
+  data: string;
+  pendente: boolean;
+  /** Compra ou parcela do cartão, que conta no mês da fatura. */
+  cartao: boolean;
+}
+
 interface DadoDistribuicaoCategoria {
+  chave: string;
   cor: string;
   valor: number;
   nome: string;
   icone?: string;
+  /** O que forma o valor: lançamentos do mês e compras do cartão no mês da fatura. */
+  itens: ItemDistribuicaoCategoria[];
 }
 
 type TipoFinanceiro = "receita" | "despesa";
@@ -186,13 +207,6 @@ const LISTA_ICONES = [
   "payments", "trending-up", "volunteer-activism", "business-center",
 ];
 
-const getSaudacao = () => {
-  const hora = new Date().getHours();
-  if (hora >= 5 && hora < 12) return "Bom dia";
-  if (hora >= 12 && hora < 18) return "Boa tarde";
-  return "Boa noite";
-};
-
 const isPagamentoFatura = (descricao?: string | null) =>
   (descricao ?? "").includes("[PagFatura:");
 
@@ -201,8 +215,8 @@ const mesesEmPortugues = [
   "Julho","Agosto","Setembro","Outubro","Novembro","Dezembro",
 ];
 
-// Gráfico de barras horizontais por categoria
-const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total, isDark, valoresVisiveis }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean; valoresVisiveis: boolean }) {
+// Gráfico de barras horizontais por categoria; tocar numa linha abre o detalhe dela.
+const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total, isDark, valoresVisiveis, onSelecionar }: { dados: DadoDistribuicaoCategoria[]; total: number; isDark: boolean; valoresVisiveis: boolean; onSelecionar?: (chave: string) => void }) {
   if (total === 0 || dados.length === 0) return (
     <View style={{ alignItems: "center", justifyContent: "center", paddingVertical: 20 }}>
       <MaterialIcons name="bar-chart" size={32} color={isDark ? "#333" : "#DDD"} />
@@ -211,10 +225,18 @@ const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total
   );
   return (
     <View style={{ width: "100%" }}>
-      {dados.map((item, i) => {
+      {dados.map((item) => {
         const pct = total > 0 ? (item.valor / total) * 100 : 0;
         return (
-          <View key={i} style={{ marginBottom: 10 }}>
+          <TouchableOpacity
+            key={item.chave}
+            style={{ marginBottom: 10 }}
+            onPress={onSelecionar ? () => onSelecionar(item.chave) : undefined}
+            disabled={!onSelecionar}
+            activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`${item.nome}, ${pct.toFixed(0)}%. Ver o que entrou no mês`}
+          >
             <View style={{ flexDirection: "row", justifyContent: "space-between", marginBottom: 3 }}>
               <View style={{ flexDirection: "row", alignItems: "center", flex: 1, marginRight: 8 }}>
                 <View style={{ width: 25, height: 25, borderRadius: 8, backgroundColor: `${item.cor}26`, marginRight: 7, alignItems: "center", justifyContent: "center" }}>
@@ -222,19 +244,22 @@ const BarChartCategorias = React.memo(function BarChartCategorias({ dados, total
                 </View>
                 <Text style={{ flex: 1, fontSize: 12, color: isDark ? "#AAA" : "#555" }} numberOfLines={1}>{item.nome}</Text>
               </View>
-              <View style={{ alignItems: "flex-end" }}>
-                <Text style={{ fontSize: 12, fontWeight: "bold", color: isDark ? "#FFF" : "#222" }}>
-                  {pct.toFixed(0)}%
-                </Text>
-                <Text style={{ fontSize: 10, color: isDark ? "#AAA" : "#666" }}>
-                  {valoresVisiveis ? fmtReais(item.valor) : "R$ ••••••"}
-                </Text>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <View style={{ alignItems: "flex-end" }}>
+                  <Text style={{ fontSize: 12, fontWeight: "bold", color: isDark ? "#FFF" : "#222" }}>
+                    {pct.toFixed(0)}%
+                  </Text>
+                  <Text style={{ fontSize: 10, color: isDark ? "#AAA" : "#666" }}>
+                    {valoresVisiveis ? fmtReais(item.valor) : "R$ ••••••"}
+                  </Text>
+                </View>
+                {onSelecionar && <MaterialIcons name="chevron-right" size={18} color={isDark ? "#6F7C80" : "#A3ADB0"} style={{ marginLeft: 2, marginRight: -4 }} />}
               </View>
             </View>
             <View style={{ height: 7, backgroundColor: isDark ? "#2C2C2C" : "#E5E7EB", borderRadius: 4, overflow: "hidden" }}>
               <View style={{ height: 7, width: `${pct}%`, backgroundColor: item.cor, borderRadius: 4 }} />
             </View>
-          </View>
+          </TouchableOpacity>
         );
       })}
     </View>
@@ -415,6 +440,10 @@ export default function Dashboard() {
   const [contasHomeRascunhoIds, setContasHomeRascunhoIds] = useState<number[]>([]);
   const [mostrarArquivadas, setMostrarArquivadas] = useState(false);
   const [modoDistribuicao, setModoDistribuicao] = useState<"previstos" | "concluidos">("concluidos");
+  // Categoria aberta no detalhe da Distribuição do Mês (tipo e grupo).
+  const [categoriaDetalhe, setCategoriaDetalhe] = useState<{ tipo: TipoFinanceiro; chave: string } | null>(null);
+  const abrirDetalheDespesa = useCallback((chave: string) => setCategoriaDetalhe({ tipo: "despesa", chave }), []);
+  const abrirDetalheReceita = useCallback((chave: string) => setCategoriaDetalhe({ tipo: "receita", chave }), []);
   const [comprasCartao, setComprasCartao] = useState<CompraCartao[]>([]);
   const [temFaturaVencida, setTemFaturaVencida] = useState(false);
   const [modalVencidosVisivel, setModalVencidosVisivel] = useState(false);
@@ -740,60 +769,79 @@ export default function Dashboard() {
     const tipoCategoria = (categoria.tipo ?? "").trim().toLocaleLowerCase("pt-BR");
     return tipoCategoria === tipo || tipoCategoria === "ambos";
   };
+  type ItemSemValor = Omit<ItemDistribuicaoCategoria, "valor">;
+  const itemDaTransacao = (transacao: Transacao): ItemSemValor => ({
+    chave: `transacao:${transacao.id}`,
+    descricao: descricaoVisivel(transacao.descricao ?? "") || "Sem descrição",
+    data: dataEfetivaTransacao(transacao).slice(0, 10),
+    pendente: transacao.status !== "paga",
+    cartao: false,
+  });
+  const itemDaCompra = (compra: CompraCartao): ItemSemValor => ({
+    chave: `cartao:${compra.id}`,
+    descricao: descricaoVisivel(compra.descricao ?? "") || "Compra no cartão",
+    data: (compra.data_compra ?? "").slice(0, 10),
+    pendente: false,
+    cartao: true,
+  });
   const montarDistribuicao = (tipo: TipoFinanceiro, somenteRealizadas: boolean) => {
     const buckets = new Map<string, DadoDistribuicaoCategoria>();
 
-    const somarBucket = (chave: string, dados: Omit<DadoDistribuicaoCategoria, "valor">, valorBruto: number) => {
+    const somarBucket = (chave: string, dados: Omit<DadoDistribuicaoCategoria, "valor" | "chave" | "itens">, valorBruto: number, item: ItemSemValor) => {
       const valor = Number(valorBruto);
       if (!Number.isFinite(valor) || valor === 0) return;
       const existente = buckets.get(chave);
       if (existente) {
         existente.valor += valor;
+        existente.itens.push({ ...item, valor });
       } else {
-        buckets.set(chave, { ...dados, valor });
+        buckets.set(chave, { ...dados, chave, valor, itens: [{ ...item, valor }] });
       }
     };
 
-    const somarSemCategoria = (valor: number) => somarBucket("especial:sem-categoria", {
+    const somarSemCategoria = (valor: number, item: ItemSemValor) => somarBucket("especial:sem-categoria", {
       nome: "Sem categoria",
       cor: "#6D7280",
       icone: "help-outline",
-    }, valor);
+    }, valor, item);
 
-    const somarCategoriaOuSemCategoria = (categoriaId: number | null, valor: number) => {
+    const somarCategoriaOuSemCategoria = (categoriaId: number | null, valor: number, item: ItemSemValor) => {
       const categoria = categoriaId == null ? undefined : categoriasPorId.get(String(categoriaId));
       if (!categoria || !categoriaCompativel(categoria, tipo)) {
-        somarSemCategoria(valor);
+        somarSemCategoria(valor, item);
         return;
       }
       somarBucket(`categoria:${categoria.id}`, {
         nome: categoria.nome,
         cor: categoria.cor,
         icone: categoria.icone,
-      }, valor);
+      }, valor, item);
     };
 
     transacoesFinanceirasDoMes.forEach((transacao) => {
       if (transacao.tipo !== tipo || (somenteRealizadas && transacao.status !== "paga")) return;
+      const item = itemDaTransacao(transacao);
 
       if (isTransferencia(transacao.descricao)) {
-        somarBucket("especial:transferencias", { nome: "Transferências", cor: "#F4A261", icone: "swap-horiz" }, transacao.valor);
+        somarBucket("especial:transferencias", { nome: "Transferências", cor: "#F4A261", icone: "swap-horiz" }, transacao.valor, item);
         return;
       }
       if (tipo === "despesa" && isPagamentoFatura(transacao.descricao)) {
-        somarBucket("especial:fatura", { nome: "Fatura do cartão", cor: "#805AD5", icone: "credit-card" }, transacao.valor);
+        somarBucket("especial:fatura", { nome: "Fatura do cartão", cor: "#805AD5", icone: "credit-card" }, transacao.valor, item);
         return;
       }
 
-      somarCategoriaOuSemCategoria(transacao.categoria_id, transacao.valor);
+      somarCategoriaOuSemCategoria(transacao.categoria_id, transacao.valor, item);
     });
 
     // Cada compra/parcela entra na categoria do respectivo mês da fatura. O
     // pagamento bancário da fatura é excluído para não duplicar a despesa.
     if (tipo === "despesa") {
-      comprasCartaoDoMes.forEach((item) => somarCategoriaOuSemCategoria(item.categoria_id, Number(item.valor)));
+      comprasCartaoDoMes.forEach((compra) => somarCategoriaOuSemCategoria(compra.categoria_id, Number(compra.valor), itemDaCompra(compra)));
     }
 
+    // No detalhe, os mais recentes primeiro.
+    buckets.forEach((grupo) => grupo.itens.sort((a, b) => b.data.localeCompare(a.data) || b.valor - a.valor));
     return [...buckets.values()]
       .filter((item) => item.valor > 0)
       .sort((a, b) => b.valor - a.valor || a.nome.localeCompare(b.nome, "pt-BR"));
@@ -820,6 +868,15 @@ export default function Dashboard() {
     totalReceitasPorCatRealizadas,
   };
   }, [categorias, comprasCartaoDoMes, transacoesFinanceirasDoMes]);
+
+  const detalheConcluidos = modoDistribuicao === "concluidos";
+  const dadosDoDetalhe = categoriaDetalhe?.tipo === "receita"
+    ? (detalheConcluidos ? dadosReceitasPorCatRealizadas : dadosReceitasPorCat)
+    : (detalheConcluidos ? dadosDespesasPorCatRealizadas : dadosDespesasPorCat);
+  const totalDoDetalhe = categoriaDetalhe?.tipo === "receita"
+    ? (detalheConcluidos ? totalReceitasPorCatRealizadas : totalReceitasPorCat)
+    : (detalheConcluidos ? totalDespesasPorCatRealizadas : totalDespesasPorCat);
+  const grupoDetalhe = categoriaDetalhe ? dadosDoDetalhe.find((grupo) => grupo.chave === categoriaDetalhe.chave) : undefined;
 
   // --- Dados ---
   const carregarDados = useCallback(async () => {
@@ -2012,7 +2069,7 @@ export default function Dashboard() {
           <View style={styles.homeHeroContent}>
           <View style={styles.homeHeroTop}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.homeHeroGreeting}>{getSaudacao()}, {nomeUsuario}</Text>
+              <Text style={styles.homeHeroGreeting}>{saudacaoPorHora()}, {nomeUsuario}</Text>
               <TouchableOpacity onPress={() => { setAnoTemp(mesAtual.getFullYear()); setMesTemp(mesAtual.getMonth()); setMostrarPickerMesAno(true); }} style={styles.homeMonthButton}>
                 <Text style={styles.homeMonthText}>{nomeDoMes}</Text>
                 <MaterialIcons name="keyboard-arrow-down" size={16} color="rgba(255,255,255,0.8)" />
@@ -2125,7 +2182,7 @@ export default function Dashboard() {
         <View style={styles.header}>
           <View style={{ flex: 1 }}>
             <Text style={[styles.greeting, { color: "#FFF" }]}>
-              {getSaudacao()}, {nomeUsuario}!
+              {saudacaoPorHora()}, {nomeUsuario}!
             </Text>
             <Text style={[styles.subtitle, { color: "rgba(255,255,255,0.78)" }]}>
               Seu painel financeiro FinFlow
@@ -2265,6 +2322,7 @@ export default function Dashboard() {
               total={modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat}
               isDark={isDark}
               valoresVisiveis={valoresVisiveis}
+              onSelecionar={abrirDetalheDespesa}
             />
             {(modoDistribuicao === "concluidos" ? totalDespesasPorCatRealizadas : totalDespesasPorCat) > 0 && (
               <Text style={{ color: "#E76F51", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
@@ -2284,6 +2342,7 @@ export default function Dashboard() {
               total={modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat}
               isDark={isDark}
               valoresVisiveis={valoresVisiveis}
+              onSelecionar={abrirDetalheReceita}
             />
             {(modoDistribuicao === "concluidos" ? totalReceitasPorCatRealizadas : totalReceitasPorCat) > 0 && (
               <Text style={{ color: "#8AB17D", fontWeight: "bold", textAlign: "center", marginTop: 8, fontSize: 13 }}>
@@ -2294,6 +2353,78 @@ export default function Dashboard() {
         </View>
 
       </ScrollView>
+
+      {categoriaDetalhe && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setCategoriaDetalhe(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.accountScopePageShell}>
+          <View style={styles.accountScopeCenterStage}>
+          <View style={[styles.accountScopePanel, { backgroundColor: Cores.cardFundo, borderColor: Cores.borda }]}>
+            <View style={styles.accountScopeHeader}>
+              <View style={[styles.accountScopeHeaderIcon, { backgroundColor: `${grupoDetalhe?.cor ?? novoTema.primary}26` }]}>
+                <MaterialIcons name={(grupoDetalhe?.icone || "label") as any} size={22} color={grupoDetalhe?.cor ?? novoTema.primary} />
+              </View>
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={[styles.accountScopeTitle, { color: Cores.textoPrincipal }]} numberOfLines={1}>{grupoDetalhe?.nome ?? "Categoria"}</Text>
+                <Text style={[styles.accountScopeSubtitle, { color: Cores.textoSecundario }]}>
+                  {categoriaDetalhe.tipo === "despesa" ? "Despesas" : "Receitas"} de {NOMES_MESES_CATEGORIAS[mesAtual.getMonth()]} de {mesAtual.getFullYear()} · {detalheConcluidos ? "concluídos" : "previstos"}
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.notificationClose} onPress={() => setCategoriaDetalhe(null)} accessibilityLabel="Fechar">
+                <MaterialIcons name="close" size={22} color={Cores.textoSecundario} />
+              </TouchableOpacity>
+            </View>
+
+            {grupoDetalhe ? (
+              <>
+                <View style={[styles.categoriaDetalheResumo, { backgroundColor: Cores.pillFundo }]}>
+                  <View>
+                    <Text style={[styles.accountScopeSectionLabel, { color: Cores.textoSecundario, marginBottom: 2 }]}>TOTAL NO MÊS</Text>
+                    <Text style={[styles.categoriaDetalheTotal, { color: categoriaDetalhe.tipo === "despesa" ? "#E76F51" : "#8AB17D" }]}>{formatarValorPrivado(grupoDetalhe.valor)}</Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end" }}>
+                    <Text style={[styles.categoriaDetalhePercentual, { color: Cores.textoPrincipal }]}>
+                      {totalDoDetalhe > 0 ? ((grupoDetalhe.valor / totalDoDetalhe) * 100).toFixed(0) : "0"}%
+                    </Text>
+                    <Text style={[styles.categoriaDetalheMeta, { color: Cores.textoSecundario }]}>
+                      {grupoDetalhe.itens.length} {grupoDetalhe.itens.length === 1 ? "lançamento" : "lançamentos"}
+                    </Text>
+                  </View>
+                </View>
+                <ScrollView style={styles.categoriaDetalheLista} showsVerticalScrollIndicator={false}>
+                  {grupoDetalhe.itens.map((item) => {
+                    const mesItem = Number(item.data.slice(5, 7)) - 1;
+                    const atrasado = item.pendente && item.data !== "" && item.data < hojeIsoLocal();
+                    const situacao = item.cartao
+                      ? "Cartão de crédito · conta na fatura do mês"
+                      : !item.pendente ? "Concluído" : atrasado ? "Atrasado" : "A vencer";
+                    return (
+                      <View key={item.chave} style={[styles.categoriaDetalheItem, { borderBottomColor: Cores.borda }]}>
+                        <View style={[styles.categoriaDetalheData, { backgroundColor: Cores.pillFundo }]}>
+                          <Text style={[styles.categoriaDetalheDia, { color: Cores.textoPrincipal }]}>{item.data.slice(8, 10) || "--"}</Text>
+                          <Text style={[styles.categoriaDetalheMes, { color: Cores.textoSecundario }]}>{(NOMES_MESES_CATEGORIAS.at(mesItem) ?? "").slice(0, 3).toUpperCase()}</Text>
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0 }}>
+                          <Text style={[styles.categoriaDetalheDescricao, { color: Cores.textoPrincipal }]} numberOfLines={2}>{item.descricao}</Text>
+                          <Text style={[styles.categoriaDetalheMeta, { color: atrasado ? "#E76F51" : Cores.textoSecundario }]}>{situacao}</Text>
+                        </View>
+                        <Text style={[styles.categoriaDetalheValor, { color: categoriaDetalhe.tipo === "despesa" ? "#E76F51" : "#8AB17D" }]}>{formatarValorPrivado(item.valor)}</Text>
+                      </View>
+                    );
+                  })}
+                </ScrollView>
+              </>
+            ) : (
+              <Text style={[styles.categoriaDetalheVazio, { color: Cores.textoSecundario }]}>
+                Nada {detalheConcluidos ? "concluído" : "previsto"} nesta categoria no mês.
+              </Text>
+            )}
+          </View>
+          </View>
+          </View>
+        </View>
+      </Modal>
+      )}
 
       {modalContasHomeVisivel && (
       <Modal animationType="fade" transparent visible onRequestClose={() => setModalContasHomeVisivel(false)}>
@@ -3966,6 +4097,18 @@ const styles = StyleSheet.create({
   accountScopeCreateText: { color: "#FFF", fontSize: 13, fontWeight: "900" },
   accountScopeSectionLabel: { fontSize: 9, fontWeight: "900", letterSpacing: 0.8, marginBottom: 8 },
   accountScopeList: { maxHeight: 330, flexShrink: 1, minHeight: 0, marginTop: 8 },
+  categoriaDetalheResumo: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 12, marginBottom: 6 },
+  categoriaDetalheTotal: { fontSize: 20, fontWeight: "900" },
+  categoriaDetalhePercentual: { fontSize: 16, fontWeight: "900" },
+  categoriaDetalheLista: { maxHeight: 420, flexShrink: 1, minHeight: 0 },
+  categoriaDetalheItem: { flexDirection: "row", alignItems: "center", gap: 11, paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth },
+  categoriaDetalheData: { width: 42, height: 42, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  categoriaDetalheDia: { fontSize: 14, lineHeight: 16, fontWeight: "900" },
+  categoriaDetalheMes: { fontSize: 9, fontWeight: "800", letterSpacing: 0.4 },
+  categoriaDetalheDescricao: { fontSize: 13, lineHeight: 17, fontWeight: "700" },
+  categoriaDetalheMeta: { fontSize: 11, lineHeight: 15, marginTop: 2 },
+  categoriaDetalheValor: { fontSize: 13, fontWeight: "900", marginLeft: 6 },
+  categoriaDetalheVazio: { fontSize: 13, textAlign: "center", paddingVertical: 24 },
   accountScopeOption: { minHeight: 54, borderRadius: 15, borderWidth: 1, paddingHorizontal: 13, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
   accountScopeManagedOption: { minHeight: 62, borderRadius: 15, borderWidth: 1, paddingLeft: 13, paddingRight: 8, flexDirection: "row", alignItems: "center", marginBottom: 8 },
   accountScopeSelectArea: { flex: 1, minWidth: 0, minHeight: 60, flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 8 },
