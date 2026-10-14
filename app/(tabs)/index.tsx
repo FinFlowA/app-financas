@@ -3707,7 +3707,7 @@ export default function Dashboard() {
                       placeholder="Escolha a categoria"
                       opcoes={categorias
                         .filter((c) => c.ativa !== 0 && c.tipo === tipoTransacao)
-                        .map((cat) => ({ id: cat.id, titulo: cat.nome, cor: cat.cor }))}
+                        .map((cat) => ({ id: cat.id, titulo: cat.nome, cor: cat.cor, icone: cat.icone || "label" }))}
                       selecionadoId={catSelecionadaId}
                       onSelecionar={(opcao) => setCatSelecionadaId(Number(opcao.id))}
                       corDestaque={corTipoTransacao}

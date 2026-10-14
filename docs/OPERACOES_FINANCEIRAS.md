@@ -13,6 +13,7 @@
 - Podem ser únicas, parceladas ou fixas. Parceladas e fixas têm periodicidade **semanal, mensal ou anual**, escolhida em "Periodicidade" no app e no site. Não há repetição diária.
 - Parcelamento distribui centavos sem perder ou criar valor. As parcelas vão de 2 a 120; a periodicidade chega ao banco no campo `installment_frequency`, e sem ele as parcelas são mensais.
 - Fixas mantêm um horizonte renovado por `refresh_my_recurring_schedules` a cada abertura do Início. Todas mantêm 5 anos à frente.
+- Excluir uma fixa com "esta e as próximas" (app e site) apaga o item escolhido e os pendentes seguintes; os anteriores continuam. O banco (`ai_execute_transaction_action`, `series_scope = current_and_future`) registra a série em `private.series_fixas_encerradas`, e a renovação deixa de completá-la, para os meses apagados não voltarem (migration `20261014120000_encerrar_fixa_a_partir_do_mes.sql`). "Toda a série" apaga todos os pendentes.
 - Mudar a data de uma série com "esta e as próximas" desloca todos os itens pelo mesmo número de dias quando a série é semanal, fixa ou parcelada. Nas mensais e anuais, cada item fica no seu mês, no novo dia, limitado ao fim do mês. Como as parcelas não dizem o intervalo na descrição, a série é tratada como semanal quando dois itens estão a menos de 28 dias um do outro. O banco (`ai_execute_transaction_action`) e o Histórico do app (`novaDataItemSerie`) usam a mesma regra.
 - Ocorrências já concluídas não devem ser alteradas ao editar/excluir o restante da série.
 
@@ -38,6 +39,7 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - Ambos são movimentos internos, sem categoria e sem efeito na receita/despesa.
 - Alteração do saldo do objetivo deve ocorrer na mesma transação da movimentação da conta.
 - Objetivos compartilhados dependem de parceria válida e permissão explícita.
+- Na barra do objetivo (app e site), a parte forte é o que já está guardado e a parte mais clara vai até a previsão na data-meta, com o que está agendado.
 
 ## Cartões e faturas
 
@@ -70,6 +72,7 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - Um lançamento está **em atraso** quando ainda não foi concluído e o vencimento é anterior a hoje (data de São Paulo). Lançamentos concluídos nunca são afetados.
 - O filtro "Considerar atrasados" vem ligado. Desligado, os atrasados saem do cálculo do fluxo: saldo previsto, linha do gráfico e valores previstos de cada mês e dia.
 - O filtro não muda o saldo atual das contas, os valores realizados nem a distribuição por categoria (que usa só lançamentos concluídos). Nas visões Mensal e Diária, o saldo mostrado para hoje é sempre o saldo real das contas; o ponto de hoje no gráfico diário soma os atrasados (previsão).
+- Na visão Diária do site, todo atrasado (inclusive os vencidos neste mês) entra nas barras e no quadro do dia de hoje, onde o saldo projetado já o soma, com o aviso "Inclui N lançamentos atrasados". Assim o quadro explica a queda do gráfico. Na visão Mensal, os atrasados de meses anteriores entram no mês atual (`dataNoFluxo`).
 - A regra fica em `web/src/lib/fluxo-atrasados.ts` (`estaEmAtraso` e `lancamentosDoFluxo`), usada pelo site e pelo app.
 - **Site:** a página monta as duas versões do fluxo (com e sem atrasados) e a troca acontece na tela, sem nova busca ao servidor; a URL guarda a escolha com `atrasados=0`, que segue ao trocar mês, visão e contas. O gráfico anima a mudança e respeita a preferência do sistema por menos movimento.
 - **App:** a escolha vale enquanto a tela estiver aberta.

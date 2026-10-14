@@ -879,6 +879,10 @@ export default function CaixinhasScreen() {
                 </View>
 
                 <View style={[styles.progressBarBackground, { backgroundColor: Cores.barraFundo }]}>
+                  {/* Parte clara: até onde o objetivo chega na data-meta com o que está agendado. */}
+                  {!isCompleto && previsaoAtePrazo !== null && previsaoAtePrazo / metaSegura * 100 > porcentagem && (
+                    <View style={[styles.progressBarFill, { position: "absolute", left: 0, top: 0, opacity: 0.35, backgroundColor: caixa.cor, width: `${Math.min(previsaoAtePrazo / metaSegura * 100, 100)}%` }]} />
+                  )}
                   <View style={[styles.progressBarFill, { backgroundColor: isCompleto ? "#2A9D8F" : caixa.cor, width: `${porcentagem}%` }]} />
                 </View>
 

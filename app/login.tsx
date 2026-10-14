@@ -558,11 +558,12 @@ export default function LoginScreen() {
                 styles.formPanel,
                 { backgroundColor: theme.surface, borderColor: theme.border },
                 isWide ? styles.formPanelWide : styles.formPanelMobile,
+                // No navegador estreito, largura explícita (15 px de cada lado,
+                // até 520) e centralizado, alinhado com o cabeçalho.
                 !isWide && Platform.OS === "web" && {
-                  width: Math.min(Math.max(viewportWidth - 74, 0), 520),
+                  width: Math.min(Math.max(viewportWidth - 30, 0), 520),
                   marginHorizontal: 0,
-                  marginLeft: 15,
-                  alignSelf: "flex-start",
+                  alignSelf: "center",
                 },
               ]}
             >

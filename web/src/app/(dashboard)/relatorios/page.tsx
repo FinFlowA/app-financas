@@ -1,5 +1,5 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
-import { dataNoFluxo, lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
+import { dataNoFluxo, estaEmAtraso, lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
 import { transferenciasEntreContas } from "@/lib/fluxo-transferencias";
 import { invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
@@ -57,6 +57,17 @@ function montarSeriesDoFluxo(
   const months = MONTHS.map((name) => fluxoVazio(`${name} ${year}`));
   const daysInDetailMonth = new Date(year, detailMonthIndex + 1, 0).getDate();
   const dailyFlow = Array.from({ length: daysInDetailMonth }, (_, index) => fluxoVazio(`${String(index + 1).padStart(2, "0")} de ${MONTHS[detailMonthIndex]}`));
+  // No gráfico diário, todo atrasado (inclusive deste mês) entra no dia de
+  // hoje, onde o saldo projetado já o soma; assim o quadro do dia explica a
+  // queda. A visão mensal segue `dataNoFluxo`.
+  const diaNoFluxoDiario = (lancamento: Transacao, date: string) => {
+    const atrasado = estaEmAtraso(lancamento, today);
+    const dia = atrasado ? today : date;
+    if (Number(dia.slice(0, 4)) !== year || Number(dia.slice(5, 7)) - 1 !== detailMonthIndex) return undefined;
+    const daily = dailyFlow[Number(dia.slice(8, 10)) - 1];
+    if (daily && atrasado) daily.atrasados = (daily.atrasados ?? 0) + 1;
+    return daily;
+  };
   for (const transaction of lancamentos) {
     const value = Number(transaction.valor);
     if (!Number.isFinite(value)) continue;
@@ -65,7 +76,7 @@ function montarSeriesDoFluxo(
     const monthIndex = Number(date.slice(5, 7)) - 1;
     const month = months[monthIndex];
     if (!month) continue;
-    const daily = monthIndex === detailMonthIndex ? dailyFlow[Number(date.slice(8, 10)) - 1] : undefined;
+    const daily = diaNoFluxoDiario(transaction, date);
     if (isMovimentoObjetivo(transaction.descricao)) {
       const operation = getOperacaoObjetivo(transaction.descricao);
       if (operation === "guardar") {
@@ -102,7 +113,7 @@ function montarSeriesDoFluxo(
     const key = transfer.status === "paga" ? "transferencias" : "transferenciasPrevistas";
     const month = months[monthIndex];
     if (month) month[key] = (month[key] ?? 0) + value;
-    const daily = monthIndex === detailMonthIndex ? dailyFlow[Number(date.slice(8, 10)) - 1] : undefined;
+    const daily = diaNoFluxoDiario(transfer, date);
     if (daily) daily[key] = (daily[key] ?? 0) + value;
   }
   const balances: PontoSaldo[] = calcularSaldoProjetadoPorMes(initialBalance, lancamentos, year, referenceDate)

@@ -516,6 +516,7 @@ export default function ObjetivosManager({
           const percentual = Math.min(100, Math.max(0, Number(objetivo.saldo_atual) / meta * 100));
           const proprio = objetivo.user_id === userId;
           const previsaoMetaAbaixo = objetivo.previstoMeta !== null && objetivo.previstoMeta < meta;
+          const percentualPrevisto = objetivo.previstoMeta === null ? 0 : Math.min(100, Math.max(0, objetivo.previstoMeta / meta * 100));
           const historicoAberto = painel?.tipo === "historico" && painel.objetivo.id === objetivo.id;
           return (
             <article key={objetivo.id} className="group relative overflow-hidden rounded-[20px] border border-border bg-surface p-4 shadow-[0_14px_38px_rgba(0,0,0,0.07)] transition duration-300 hover:border-primary/25 hover:shadow-[0_18px_44px_rgba(0,0,0,0.11)]">
@@ -543,7 +544,9 @@ export default function ObjetivosManager({
                 <div className="text-right"><strong className="block text-sm text-foreground">{Math.round(percentual)}%</strong><span className="text-[11px] text-foreground-muted">Meta {formatarReais(meta)}</span></div>
               </div>
               <div className="relative h-2.5 overflow-hidden rounded-full bg-surface-muted">
-                <div className="h-full rounded-full transition-[width] duration-500" style={{ width: `${percentual}%`, backgroundColor: objetivo.cor }} />
+                {/* Parte clara: até onde o objetivo chega na data-meta com o que está agendado. */}
+                {percentualPrevisto > percentual && <div aria-hidden="true" className="absolute inset-y-0 left-0 rounded-full opacity-35 transition-[width] duration-500" style={{ width: `${percentualPrevisto}%`, backgroundColor: objetivo.cor }} />}
+                <div className="relative h-full rounded-full transition-[width] duration-500" style={{ width: `${percentual}%`, backgroundColor: objetivo.cor }} />
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-semibold text-foreground-muted">
                 {objetivo.previstoMeta !== null && (

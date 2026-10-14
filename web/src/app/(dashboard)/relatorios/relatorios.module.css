@@ -662,6 +662,13 @@
   gap: 8px;
 }
 
+.monthDetailsNote {
+  margin-top: 10px;
+  color: var(--foreground-muted);
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .monthDetailItem {
   min-width: 0;
   border: 1px solid var(--border);

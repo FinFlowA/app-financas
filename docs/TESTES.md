@@ -78,7 +78,7 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
     - "Entradas e saídas de dinheiro" no Fluxo de caixa do site e do app.
 - `ajuda-contextual.test.ts`: toda aba do menu do site tem a ajuda do Finn cadastrada;
 - `historico-app-resumos.test.ts`: o Histórico do app e o do site pedem os resumos de pagamento em blocos de 500 (limite do banco);
-- `fluxo-saldo-hoje.test.ts`: no Fluxo de caixa diário, o dia de hoje mostra o saldo real das contas (o ponto do gráfico soma os atrasados);
+- `fluxo-saldo-hoje.test.ts`: no Fluxo de caixa diário, o dia de hoje mostra o saldo real das contas (o ponto do gráfico soma os atrasados) e o quadro de hoje traz os atrasados, inclusive os vencidos neste mês;
 - `seletor-periodo.test.ts`: o mês do calendário do período (Histórico e Relatórios) é clicável e abre a escolha de mês e ano;
 - `historico-filtros.test.ts`: no Histórico do site, trocar de mês mantém Todos, Concluídos e Pendentes, e "Limpar filtros" volta para o mês atual;
 - `finn-tela.test.ts`: a apresentação do Finn com as mesmas sugestões do app, a cota pela leitura do app e a ajuda aberta pelo cabeçalho, sem o botão flutuante nessa tela;
@@ -112,7 +112,7 @@ Em resumo, com 50 pessoas simultâneas, 95% das aberturas do Início passaram de
 
 ## Banco (pgTAP)
 
-`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas, metas e limites das categorias e o limite utilizado do cartão) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
+`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas, metas e limites das categorias, o limite utilizado do cartão e o encerramento de fixas com "esta e as próximas") num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
 
 ```bash
 supabase db start
@@ -135,6 +135,7 @@ Cada arquivo roda numa transação desfeita no fim (`rollback`), então não dei
 
 - Criar receita e despesa única, parcelada e fixa, nas periodicidades semanal, mensal e anual.
 - Mudar a data de uma série com "esta e as próximas" (semanal desloca todos os itens; mensal e anual mudam o dia em cada mês).
+- Excluir uma fixa com "esta e as próximas" a partir de um mês futuro, reabrir o Início e conferir que os meses apagados não voltam e os anteriores continuam.
 - Definir meta e limite em categorias e conferir a barra do mês (realizado, agendado e compra do cartão no mês da fatura); tirar o valor deixando o campo em branco.
 - Verificar divisão exata de centavos.
 - Concluir integral/parcial com data, juros e desconto.

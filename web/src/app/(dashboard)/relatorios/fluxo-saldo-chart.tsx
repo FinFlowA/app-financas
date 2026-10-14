@@ -17,6 +17,8 @@ export type MesFluxo = {
   /** Transferências entre as contas escolhidas: só informação, sem barra e sem efeito no saldo. */
   transferencias?: number;
   transferenciasPrevistas?: number;
+  /** Quantos lançamentos atrasados entraram neste dia (só no dia de hoje, visão diária). */
+  atrasados?: number;
 };
 export type PontoSaldo = { label: string; saldo: number; projetado: boolean };
 
@@ -420,6 +422,9 @@ export default function FluxoSaldoChart({
             {(mesSelecionado.transferencias ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="transfer"><span>Transferências</span><strong>↔ {formatarReais(mesSelecionado.transferencias ?? 0)}</strong></div>}
             {(mesSelecionado.transferenciasPrevistas ?? 0) > 0 && <div className={styles.monthDetailItem} data-tone="transfer"><span>Transferências a fazer</span><strong>↔ {formatarReais(mesSelecionado.transferenciasPrevistas ?? 0)}</strong></div>}
           </div>
+          {(mesSelecionado.atrasados ?? 0) > 0 && <p className={styles.monthDetailsNote}>
+            Inclui {mesSelecionado.atrasados} {mesSelecionado.atrasados === 1 ? "lançamento atrasado" : "lançamentos atrasados"}: o que venceu antes e ainda não foi concluído entra na previsão de hoje.
+          </p>}
         </section>
       )}
     </section>
