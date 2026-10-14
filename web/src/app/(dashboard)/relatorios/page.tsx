@@ -1,7 +1,7 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { dataNoFluxo, estaEmAtraso, lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
 import { transferenciasEntreContas } from "@/lib/fluxo-transferencias";
-import { invoicePurchasesInMonth } from "@/lib/invoices";
+import { invoiceDueDate, invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
 import { parseReportAccountSelection } from "@/lib/report-scope";
 import { createClient } from "@/lib/supabase/server";
@@ -9,7 +9,7 @@ import { filtroTransacoesDoUsuario } from "@/lib/supabase/transacoes-visiveis";
 import { fetchAllRows } from "@/lib/supabase/pagination";
 import { calcularSaldosPorConta, dataEfetivaTransacao, descricaoVisivel, getOperacaoObjetivo, isMovimentoObjetivo, isPagamentoFatura, transacoesNoEscopo } from "@/lib/transacoes";
 import type { Categoria, Conta, FaturaItem, Transacao } from "@/lib/types";
-import CategoryDistributionChart, { type CategoryDistributionItem } from "./category-distribution-chart";
+import type { CategoryDistributionItem } from "./category-distribution-chart";
 import type { MesFluxo, PontoSaldo } from "./fluxo-saldo-chart";
 import ReportOverview, { type SeriesDoFluxo } from "./report-overview";
 import styles from "./relatorios.module.css";
@@ -138,7 +138,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   // Se a página sair antes de usar o filtro (sessão inválida), a falha dele
   // não vira erro solto no servidor; quem usa o filtro continua recebendo o erro.
   filtroVisiveis.catch(() => undefined);
-  const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult, entitlementResult] = await Promise.all([
+  const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult, entitlementResult, cardsResult] = await Promise.all([
     filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase
       .from("transacoes")
       .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
@@ -154,6 +154,8 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       .order("id")
       .range(from, to)),
     supabase.rpc("get_my_entitlement"),
+    // Vencimento das faturas: na visão diária, as compras do cartão contam nesse dia.
+    supabase.from("cartoes").select("id, dia_vencimento"),
   ]);
   const entitlementRaw = Array.isArray(entitlementResult.data) ? entitlementResult.data[0] : entitlementResult.data;
   const entitlement = entitlementRaw && typeof entitlementRaw === "object" ? entitlementRaw as Record<string, unknown> : {};
@@ -210,13 +212,14 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
       expenseCategoryDetails.set(transaction.categoria_id, [...(expenseCategoryDetails.get(transaction.categoria_id) ?? []), { id: `transaction-${transaction.id}`, description: descricaoVisivel(transaction.descricao), value, date: date.slice(0, 10) }]);
     }
   }
+  const dueDayByCard = new Map(((cardsResult.data ?? []) as { id: number; dia_vencimento: number }[]).map((card) => [card.id, Number(card.dia_vencimento)]));
   if (allAccountsSelected) {
     for (const item of invoicePurchasesInMonth((invoiceItemsResult.data ?? []) as FaturaItem[], detailMonth)) {
       const value = Number(item.valor);
       if (!Number.isFinite(value)) continue;
       detailExpense += value;
       expenseCategoryTotals.set(item.categoria_id, (expenseCategoryTotals.get(item.categoria_id) ?? 0) + value);
-      expenseCategoryDetails.set(item.categoria_id, [...(expenseCategoryDetails.get(item.categoria_id) ?? []), { id: `invoice-${item.id}`, description: descricaoVisivel(item.descricao), value, date: item.data_compra }]);
+      expenseCategoryDetails.set(item.categoria_id, [...(expenseCategoryDetails.get(item.categoria_id) ?? []), { id: `invoice-${item.id}`, description: descricaoVisivel(item.descricao), value, date: item.data_compra, day: invoiceDueDate(detailMonth, dueDayByCard.get(item.cartao_id) ?? 1) }]);
     }
   }
   const distributionItems = (totals: Map<number | null, number>, details: Map<number | null, CategoryDistributionItem["details"]>, total: number, kind: "receita" | "despesa"): CategoryDistributionItem[] => (
@@ -272,20 +275,15 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
         view={view}
         dailyEnabled={dailyEnabled}
         considerarAtrasados={considerarAtrasados}
+        categorias={{
+          receitas: revenueDistribution,
+          despesas: expenseDistribution,
+          totalReceitas: detailRevenue,
+          totalDespesas: detailExpense,
+          detalhes: categoryDetailsEnabled,
+          nomeDoMes: MONTHS[detailMonthIndex].toLocaleLowerCase("pt-BR"),
+        }}
       />
-
-      <div className={styles.analysisGrid}>
-        <section className={styles.distributionPanel}>
-          <h2 className={styles.sectionTitle}>Receitas por categoria</h2>
-          <p className={styles.chartSubtitle}>Distribuição das receitas realizadas em {MONTHS[detailMonthIndex].toLocaleLowerCase("pt-BR")}.</p>
-          <CategoryDistributionChart items={revenueDistribution} total={detailRevenue} kind="receitas" detailsEnabled={categoryDetailsEnabled} />
-        </section>
-        <section className={styles.rankingPanel}>
-          <h2 className={styles.sectionTitle}>Despesas por categoria</h2>
-          <p className={styles.chartSubtitle}>Distribuição das despesas realizadas em {MONTHS[detailMonthIndex].toLocaleLowerCase("pt-BR")}.</p>
-          <CategoryDistributionChart items={expenseDistribution} total={detailExpense} kind="despesas" detailsEnabled={categoryDetailsEnabled} />
-        </section>
-      </div>
     </div>
   );
 }

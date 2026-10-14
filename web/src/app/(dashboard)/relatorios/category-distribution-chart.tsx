@@ -11,7 +11,8 @@ export type CategoryDistributionItem = {
   color: string;
   value: number;
   percentage: number;
-  details: { id: string; description: string; value: number; date: string }[];
+  /** `day`: dia em que o item conta na visão diária (as compras do cartão contam no vencimento da fatura); sem ele, vale `date`. */
+  details: { id: string; description: string; value: number; date: string; day?: string }[];
 };
 
 const RADIUS = 52;
@@ -22,15 +23,17 @@ export default function CategoryDistributionChart({
   total,
   kind,
   detailsEnabled = true,
+  periodo = "mês",
 }: {
   items: CategoryDistributionItem[];
   total: number;
   kind: "receitas" | "despesas";
   detailsEnabled?: boolean;
+  periodo?: "mês" | "dia";
 }) {
   const [selected, setSelected] = useState<CategoryDistributionItem | null>(null);
   if (!items.length || total <= 0) {
-    return <p className={styles.empty}>Nenhuma {kind === "receitas" ? "receita" : "despesa"} realizada neste mês.</p>;
+    return <p className={styles.empty}>Nenhuma {kind === "receitas" ? "receita" : "despesa"} realizada neste {periodo}.</p>;
   }
 
   const segments = items.map((item, index) => ({
