@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatarReais } from "@/lib/format";
+import CategoryDistributionChart, { type CategoryDistributionItem } from "./category-distribution-chart";
 import FluxoSaldoChart, { type MesFluxo, type PontoSaldo } from "./fluxo-saldo-chart";
 import ReportFilters from "./report-filters";
 import styles from "./relatorios.module.css";
@@ -23,6 +24,30 @@ export type SeriesDoFluxo = {
   metrics: Metric[];
 };
 
+type CategoriasDoPeriodo = {
+  receitas: CategoryDistributionItem[];
+  despesas: CategoryDistributionItem[];
+  totalReceitas: number;
+  totalDespesas: number;
+  detalhes: boolean;
+  nomeDoMes: string;
+};
+
+/** Só o que conta no dia (AAAA-MM-DD), com valores e porcentagens refeitos. */
+function categoriasDoDia(itens: CategoryDistributionItem[], dia: string): { itens: CategoryDistributionItem[]; total: number } {
+  const doDia = itens
+    .map((item) => {
+      const details = item.details.filter((detalhe) => (detalhe.day ?? detalhe.date).slice(0, 10) === dia);
+      return { ...item, details, value: details.reduce((soma, detalhe) => soma + detalhe.value, 0) };
+    })
+    .filter((item) => item.value > 0);
+  const total = doDia.reduce((soma, item) => soma + item.value, 0);
+  return {
+    itens: doDia.map((item) => ({ ...item, percentage: total ? item.value / total * 100 : 0 })).sort((a, b) => b.value - a.value),
+    total,
+  };
+}
+
 export default function ReportOverview({
   year,
   currentYear,
@@ -36,6 +61,7 @@ export default function ReportOverview({
   view,
   dailyEnabled = true,
   considerarAtrasados: considerarAtrasadosDaUrl = true,
+  categorias,
 }: {
   year: number;
   currentYear: number;
@@ -50,6 +76,8 @@ export default function ReportOverview({
   view: "monthly" | "daily";
   dailyEnabled?: boolean;
   considerarAtrasados?: boolean;
+  /** Receitas e despesas realizadas por categoria no mês detalhado. */
+  categorias: CategoriasDoPeriodo;
 }) {
   const router = useRouter();
   const [, startTransition] = useTransition();
@@ -100,6 +128,20 @@ export default function ReportOverview({
       : activePoint?.projetado
         ? `Saldo previsto no fim de ${months[activeMonthIndex]?.label.split(" ")[0] ?? "mês"}`
         : `Saldo realizado no fim de ${months[activeMonthIndex]?.label.split(" ")[0] ?? "mês"}`;
+
+  // Na visão diária, os gráficos por categoria mostram só o dia selecionado.
+  const diaIso = `${year}-${String(selectedMonthIndex + 1).padStart(2, "0")}-${String(activeDayIndex + 1).padStart(2, "0")}`;
+  const receitasDoPeriodo = useMemo(
+    () => view === "daily" ? categoriasDoDia(categorias.receitas, diaIso) : { itens: categorias.receitas, total: categorias.totalReceitas },
+    [categorias.receitas, categorias.totalReceitas, diaIso, view],
+  );
+  const despesasDoPeriodo = useMemo(
+    () => view === "daily" ? categoriasDoDia(categorias.despesas, diaIso) : { itens: categorias.despesas, total: categorias.totalDespesas },
+    [categorias.despesas, categorias.totalDespesas, diaIso, view],
+  );
+  const periodoDasCategorias = view === "daily"
+    ? `${activeDayIndex + 1} de ${categorias.nomeDoMes}`
+    : categorias.nomeDoMes;
 
   function selectMonth(index: number) {
     setSelection({ sourceYear: year, sourceMonthIndex: selectedMonthIndex, activeMonthIndex: index });
@@ -193,6 +235,20 @@ export default function ReportOverview({
           period="day"
         />
       )}
+
+      <div className={styles.analysisGrid}>
+        <section className={styles.distributionPanel}>
+          <h2 className={styles.sectionTitle}>Receitas por categoria</h2>
+          <p className={styles.chartSubtitle}>Distribuição das receitas realizadas em {periodoDasCategorias}.</p>
+          {/* key: ao trocar de dia, fecha o detalhe aberto da categoria. */}
+          <CategoryDistributionChart key={`receitas-${view}-${diaIso}`} items={receitasDoPeriodo.itens} total={receitasDoPeriodo.total} kind="receitas" detailsEnabled={categorias.detalhes} periodo={view === "daily" ? "dia" : "mês"} />
+        </section>
+        <section className={styles.rankingPanel}>
+          <h2 className={styles.sectionTitle}>Despesas por categoria</h2>
+          <p className={styles.chartSubtitle}>Distribuição das despesas realizadas em {periodoDasCategorias}.</p>
+          <CategoryDistributionChart key={`despesas-${view}-${diaIso}`} items={despesasDoPeriodo.itens} total={despesasDoPeriodo.total} kind="despesas" detailsEnabled={categorias.detalhes} periodo={view === "daily" ? "dia" : "mês"} />
+        </section>
+      </div>
     </>
   );
 }

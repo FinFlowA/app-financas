@@ -459,6 +459,9 @@ com layouts bancários não padronizados.
   vencer ou atrasado) e valor, e as compras do cartão do mês da fatura. Com
   "ocultar valores", os valores continuam escondidos. No site, os gráficos de
   Relatórios já trazem esse detalhe.
+- **Fluxo de caixa diário (site):** Receitas e Despesas por categoria mostram
+  só o dia selecionado, como a visão mensal mostra o mês. As compras do cartão
+  contam no dia do vencimento da fatura.
 
 ### Tela do Finn no site — 09/10/2026
 
