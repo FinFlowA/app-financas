@@ -12,4 +12,14 @@ describe("saldo de hoje no Fluxo de caixa", () => {
     expect(visao).toContain("? isToday ? currentBalance : activeDayPoint?.saldo ?? initialBalance");
     expect(visao).toContain('? "Saldo atual das contas"');
   });
+
+  it("visão diária: os atrasados, inclusive deste mês, aparecem no quadro de hoje", () => {
+    // O saldo projetado já os soma em hoje; o quadro do dia precisa explicar a queda.
+    const pagina = readFileSync(join(raiz, "web/src/app/(dashboard)/relatorios/page.tsx"), "utf8");
+    expect(pagina).toContain("const dia = atrasado ? today : date;");
+    expect(pagina).toContain("const daily = diaNoFluxoDiario(transaction, date);");
+    expect(pagina).toContain("const daily = diaNoFluxoDiario(transfer, date);");
+    const grafico = readFileSync(join(raiz, "web/src/app/(dashboard)/relatorios/fluxo-saldo-chart.tsx"), "utf8");
+    expect(grafico).toContain('"lançamento atrasado" : "lançamentos atrasados"');
+  });
 });

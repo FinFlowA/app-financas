@@ -15,6 +15,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import Modal from "../components/FinFlowPopup";
@@ -29,6 +30,7 @@ import { usuarioPodeAcessarIA } from "../constants/features";
 import { parseFinanceAiHttpResponse } from "../lib/finance-ai/validation";
 import { formatAssistantMessage } from "../lib/assistant-message-format";
 import { inFinnVoice } from "../lib/finn-voice";
+import { saudacaoPorHora } from "../lib/saudacao";
 import { finnProductGuidance } from "../lib/finn-product-guidance";
 import { getOptionalSecureStore } from "../lib/optional-native-modules";
 import { supabase } from "../lib/supabase";
@@ -509,14 +511,44 @@ export default function ChatIAScreen() {
     ? FinFlowColors.red
     : cotaConsultas?.nivel === "atencao" ? "#E9A15B" : theme.primary;
 
+  // As mesmas sugestões do site, com uma linha dizendo o que cada uma faz.
   const suggestions = useMemo(() => [
-    { icon: "account-balance-wallet" as const, text: "Qual é meu saldo atual?" },
-    { icon: "add-card" as const, text: "Registrar uma despesa" },
+    { icon: "account-balance-wallet" as const, text: "Qual é meu saldo atual?", hint: "O saldo de cada conta e o total" },
     limitsEnabled && !limites.iaAnalitica
-      ? { icon: "receipt-long" as const, text: "Quais despesas tenho neste mês?" }
-      : { icon: "insights" as const, text: "Como estão meus gastos?" },
-    { icon: "savings" as const, text: "Criar um objetivo" },
+      ? { icon: "receipt-long" as const, text: "Quais despesas tenho neste mês?", hint: "O que já saiu e o que ainda vai vencer" }
+      : { icon: "insights" as const, text: "Como estão meus gastos?", hint: "Um resumo dos seus gastos do mês" },
+    { icon: "add-card" as const, text: "Registrar uma despesa", hint: "Eu preparo e você confere antes de salvar" },
+    { icon: "savings" as const, text: "Criar um objetivo", hint: "Para guardar dinheiro para uma meta" },
   ], [limites.iaAnalitica, limitsEnabled]);
+
+  // Conversa nova: o Finn se apresenta (ilustração, saudação e sugestões) no
+  // lugar do balão de boas-vindas, como no site.
+  const mostrarApresentacao = hasAccess && !loadingHistory && !pendingAction
+    && messages.length <= 1 && messages[0]?.id === "welcome";
+  // Mesmo nome e mesma saudação do Início.
+  const nomeSaudacao = session?.user?.user_metadata?.nome_usuario || session?.user?.email?.split("@")[0] || "";
+  const primeiroNome = String(nomeSaudacao).trim().split(/\s+/)[0] ?? "";
+  const { height: alturaTela } = useWindowDimensions();
+  const apresentacaoCompacta = alturaTela < 720;
+  const corFinnTexto = isDark ? "#8FC3FF" : "#2F6FD6";
+  const corFinnBrilho = isDark ? "rgba(90, 168, 255, 0.24)" : "rgba(75, 157, 255, 0.2)";
+
+  // O Finn flutua devagar na apresentação; parado com "reduzir movimento".
+  const flutuacao = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!mostrarApresentacao) return;
+    let ativo = true;
+    let laco: Animated.CompositeAnimation | null = null;
+    void AccessibilityInfo.isReduceMotionEnabled().then((reduzirMovimento) => {
+      if (!ativo || reduzirMovimento) return;
+      laco = Animated.loop(Animated.sequence([
+        Animated.timing(flutuacao, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(flutuacao, { toValue: 0, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      ]));
+      laco.start();
+    });
+    return () => { ativo = false; laco?.stop(); };
+  }, [flutuacao, mostrarApresentacao]);
 
   const autocompleteChoices = useMemo(() => {
     const query = normalizeChoice(input);
@@ -622,9 +654,11 @@ export default function ChatIAScreen() {
   }, [conversationStorageKey, legacyConversationStorageKey, operationIsCurrent, pendingStorageKey, session?.user?.id]);
 
   useEffect(() => {
+    // Na apresentação a tela fica no topo: rolar até o fim esconderia o Finn em celulares baixos.
+    if (mostrarApresentacao) return;
     const timer = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
     return () => clearTimeout(timer);
-  }, [loading, messages, pendingAction]);
+  }, [loading, messages, mostrarApresentacao, pendingAction]);
 
   const applyResponse = useCallback(async (
     response: FinanceAiResponse,
@@ -915,7 +949,7 @@ export default function ChatIAScreen() {
         <ScrollView
           ref={scrollRef}
           style={styles.flex}
-          contentContainerStyle={styles.messagesContent}
+          contentContainerStyle={[styles.messagesContent, mostrarApresentacao && styles.messagesContentApresentacao]}
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
@@ -936,7 +970,7 @@ export default function ChatIAScreen() {
             </View>
           )}
 
-          {messages.map((message) => {
+          {!mostrarApresentacao && messages.map((message) => {
             const isUser = message.role === "user";
             return (
               <View key={message.id}>
@@ -971,20 +1005,64 @@ export default function ChatIAScreen() {
             );
           })}
 
-          {hasAccess && messages.length <= 1 && !loadingHistory && (
-            <View style={styles.suggestionsWrap}>
-              <Text style={[styles.suggestionsTitle, { color: theme.textMuted }]}>Experimente perguntar</Text>
-              <View style={styles.suggestionsGrid}>
+          {mostrarApresentacao && (
+            <View style={styles.hero}>
+              <View style={[styles.heroArt, apresentacaoCompacta && styles.heroArtCompacta]} accessible={false}>
+                <Animated.View
+                  style={[styles.heroGlow, apresentacaoCompacta && styles.heroGlowCompacto, {
+                    backgroundColor: corFinnBrilho,
+                    opacity: flutuacao.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }),
+                    transform: [{ scale: flutuacao.interpolate({ inputRange: [0, 1], outputRange: [1, 1.08] }) }],
+                  }]}
+                />
+                <Animated.View style={{ transform: [{ translateY: flutuacao.interpolate({ inputRange: [0, 1], outputRange: [0, -7] }) }] }}>
+                  <Image
+                    source={require("../assets/images/finn-chat-header.png")}
+                    style={[styles.heroFinn, apresentacaoCompacta && styles.heroFinnCompacto]}
+                    contentFit="contain"
+                    accessibilityLabel="Finn, mascote do FinFlow"
+                  />
+                </Animated.View>
+              </View>
+              <Text style={[styles.heroEyebrow, { color: corFinnTexto }]}>Finn · seu assistente financeiro</Text>
+              <Text style={[styles.heroTitle, { color: theme.text }]} accessibilityRole="header">
+                {saudacaoPorHora()}{primeiroNome ? `, ${primeiroNome}` : ""}! Como posso ajudar?
+              </Text>
+              <Text style={[styles.heroText, { color: theme.textMuted }]}>
+                Posso explicar seus números, tirar dúvidas e preparar lançamentos e objetivos para você revisar.
+              </Text>
+              <View style={styles.heroSuggestions}>
                 {suggestions.map((suggestion) => (
                   <TouchableOpacity
                     key={suggestion.text}
-                    style={[styles.suggestionCard, { backgroundColor: theme.surface, borderColor: theme.border }]}
+                    style={[styles.heroSuggestion, { backgroundColor: theme.surface, borderColor: theme.border }]}
                     onPress={() => void sendMessage(suggestion.text)}
                     disabled={loading}
+                    accessibilityRole="button"
+                    accessibilityLabel={suggestion.text}
+                    accessibilityHint={suggestion.hint}
                   >
-                    <MaterialIcons name={suggestion.icon} size={19} color={theme.primary} />
-                    <Text style={[styles.suggestionText, { color: theme.text }]}>{suggestion.text}</Text>
+                    <View style={[styles.heroSuggestionIcon, { backgroundColor: isDark ? "rgba(82, 184, 122, 0.16)" : "rgba(52, 161, 100, 0.12)" }]}>
+                      <MaterialIcons name={suggestion.icon} size={20} color={theme.primaryDark} />
+                    </View>
+                    <View style={styles.heroSuggestionCopy}>
+                      <Text style={[styles.heroSuggestionText, { color: theme.text }]}>{suggestion.text}</Text>
+                      <Text style={[styles.heroSuggestionHint, { color: theme.textMuted }]}>{suggestion.hint}</Text>
+                    </View>
+                    <MaterialIcons name="chevron-right" size={20} color={theme.textMuted} />
                   </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.trustRow}>
+                {([
+                  ["lock-outline", "Nada é alterado sem a sua confirmação"],
+                  ["insights", "Explica os números do seu FinFlow"],
+                  ["verified-user", "Conexão protegida"],
+                ] as const).map(([icone, texto]) => (
+                  <View key={texto} style={styles.trustItem}>
+                    <MaterialIcons name={icone} size={14} color={theme.primary} />
+                    <Text style={[styles.trustText, { color: theme.textMuted }]}>{texto}</Text>
+                  </View>
                 ))}
               </View>
             </View>
@@ -1285,6 +1363,7 @@ const styles = StyleSheet.create({
   contatoFechar: { width: "100%", minHeight: 48, borderRadius: 14, alignItems: "center", justifyContent: "center", marginTop: 6 },
   contatoFecharTexto: { color: "#FFF", fontSize: 14, fontWeight: "900" },
   messagesContent: { paddingHorizontal: 14, paddingTop: 20, paddingBottom: 20 },
+  messagesContentApresentacao: { flexGrow: 1, justifyContent: "center" },
   historyLoader: { marginVertical: 15 },
   accessNotice: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 15 },
   accessNoticeIcon: { width: 40, height: 40, borderRadius: 13, alignItems: "center", justifyContent: "center" },
@@ -1316,11 +1395,26 @@ const styles = StyleSheet.create({
   accountBalanceName: { fontSize: 9.5, fontWeight: "800", letterSpacing: 0.3, textTransform: "uppercase" },
   accountBalanceValue: { fontSize: 14, fontWeight: "900", fontVariant: ["tabular-nums"] },
   accountBalanceHidden: { alignSelf: "center", fontSize: 10.5, fontWeight: "700", paddingHorizontal: 4 },
-  suggestionsWrap: { marginTop: 7, marginBottom: 12 },
-  suggestionsTitle: { fontSize: 11, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 9, marginLeft: 2 },
-  suggestionsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-  suggestionCard: { width: "48.6%", minHeight: 74, borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, justifyContent: "space-between" },
-  suggestionText: { fontSize: 12, lineHeight: 16, fontWeight: "700", marginTop: 8 },
+  // Apresentação do Finn (mesmas medidas do site, ajustadas ao celular).
+  hero: { alignItems: "center", paddingBottom: 6 },
+  heroArt: { width: 150, height: 150, alignItems: "center", justifyContent: "center" },
+  heroArtCompacta: { width: 112, height: 112 },
+  heroGlow: { position: "absolute", width: 116, height: 116, borderRadius: 58 },
+  heroGlowCompacto: { width: 88, height: 88, borderRadius: 44 },
+  heroFinn: { width: 150, height: 150 },
+  heroFinnCompacto: { width: 112, height: 112 },
+  heroEyebrow: { marginTop: 10, fontSize: 10.5, fontWeight: "800", letterSpacing: 1.3, textTransform: "uppercase", textAlign: "center" },
+  heroTitle: { marginTop: 6, fontSize: 23, lineHeight: 28, fontWeight: "900", letterSpacing: -0.5, textAlign: "center" },
+  heroText: { marginTop: 8, maxWidth: 420, fontSize: 13.5, lineHeight: 20, textAlign: "center" },
+  heroSuggestions: { width: "100%", maxWidth: 560, gap: 9, marginTop: 20 },
+  heroSuggestion: { flexDirection: "row", alignItems: "center", gap: 12, minHeight: 62, borderWidth: 1, borderRadius: FinFlowRadius.medium, paddingHorizontal: 13, paddingVertical: 11 },
+  heroSuggestionIcon: { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  heroSuggestionCopy: { flex: 1, minWidth: 0 },
+  heroSuggestionText: { fontSize: 13.5, lineHeight: 18, fontWeight: "800" },
+  heroSuggestionHint: { fontSize: 12, lineHeight: 16, marginTop: 2 },
+  trustRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", columnGap: 16, rowGap: 8, marginTop: 18, maxWidth: 560 },
+  trustItem: { flexDirection: "row", alignItems: "center", gap: 5 },
+  trustText: { fontSize: 11.5, lineHeight: 15 },
   choiceCard: { borderWidth: 1, borderRadius: FinFlowRadius.medium, padding: 12, marginTop: 2, marginBottom: 14 },
   choiceTitle: { fontSize: 11, lineHeight: 16, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.45, marginBottom: 9 },
   choiceGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },

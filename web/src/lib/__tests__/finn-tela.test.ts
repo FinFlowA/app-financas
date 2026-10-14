@@ -16,6 +16,11 @@ describe("tela do Finn no site", () => {
       expect(app).toContain(`text: "${sugestao}"`);
     }
     expect(tela).toMatch(/messages\.length <= 1 && messages\[0\]\?\.id === "welcome"/);
+    // O app mostra a mesma apresentação: saudação do Início, sugestões com a explicação e a faixa de confiança.
+    expect(app).toMatch(/messages\.length <= 1 && messages\[0\]\?\.id === "welcome"/);
+    expect(app).toContain('{saudacaoPorHora()}{primeiroNome ? `, ${primeiroNome}` : ""}! Como posso ajudar?');
+    expect(app).toContain('hint: "Eu preparo e você confere antes de salvar"');
+    expect(app).toContain('"Nada é alterado sem a sua confirmação"');
     // A cota de consultas usa a mesma leitura do app e fica num anel à esquerda do campo de mensagem.
     expect(tela).toContain("lerCotaConsultas(quota)");
     const campo = tela.slice(tela.indexOf("className={styles.composerRow}"));

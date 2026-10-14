@@ -426,6 +426,40 @@ com layouts bancários não padronizados.
   "[Transf.]" na descrição, eram recusadas com "Escolha uma categoria
   compatível". A edição agora as trata como transferência, como a tela e o app.
 
+### Exclusão de fixas a partir de um mês e ajustes visuais — 14/10/2026
+
+- **Excluir uma fixa "esta e as próximas" (app e site):** além de "Apenas
+  esta" e "Toda a série", as fixas ganharam a opção de apagar o item escolhido
+  e os seguintes, mantendo os anteriores. A migration
+  `20261014120000_encerrar_fixa_a_partir_do_mes.sql` registra o encerramento
+  em `private.series_fixas_encerradas`, e `refresh_my_recurring_schedules`
+  deixa de completar a série; antes, os meses apagados voltavam na abertura
+  seguinte do Início. No app, a opção usa a ação do banco (`delete_transaction`
+  com `current_and_future`).
+- **Fluxo de caixa diário (site):** o quadro de hoje traz os atrasados,
+  inclusive os vencidos neste mês, com o aviso "Inclui N lançamentos
+  atrasados". É onde o saldo projetado já os soma, então o quadro explica a
+  queda do gráfico.
+- **Categorias no lançamento (app):** os seletores de categoria do Novo
+  lançamento e do Editar mostram o ícone de cada categoria, na cor dela.
+- **Barra do objetivo (app e site):** uma faixa mais clara vai até a previsão
+  na data-meta.
+- **Tema claro do site:** o texto principal usa o mesmo tom do app
+  (`#263437`), no lugar do quase preto.
+- **Login do app no navegador:** o painel fica centralizado em telas
+  estreitas, com até 520 px.
+- **Finn no app:** a conversa nova abre como no site, com o Finn flutuando, a
+  saudação do Início ("Boa noite, Nome! Como posso ajudar?"), as quatro
+  sugestões com uma linha explicando cada uma e a faixa "Nada é alterado sem a
+  sua confirmação". A saudação por hora fica em `lib/saudacao.ts`, usada pelo
+  Início e pelo Finn.
+- **Distribuição do Mês (Início do app):** tocar numa categoria abre o que
+  formou o valor no mês, no modo escolhido (Concluídos ou Previstos): total,
+  porcentagem, quantidade e cada lançamento com data, situação (concluído, a
+  vencer ou atrasado) e valor, e as compras do cartão do mês da fatura. Com
+  "ocultar valores", os valores continuam escondidos. No site, os gráficos de
+  Relatórios já trazem esse detalhe.
+
 ### Tela do Finn no site — 09/10/2026
 
 - **Conversa nova:** o Finn se apresenta com ilustração, saudação pelo nome

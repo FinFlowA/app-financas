@@ -869,6 +869,27 @@ export default function TransacoesScreen() {
     carregarDados();
   };
 
+  // Exclui este item e os próximos de uma fixa pelo banco, que registra o
+  // encerramento: assim a renovação automática não recria os meses apagados.
+  const encerrarFixaAPartirDe = async (transacao: Transacao) => {
+    if (!session?.user?.id) {
+      Alert.alert("Sessão inválida", "Entre novamente antes de excluir.");
+      return;
+    }
+    const { data, error } = await supabase.rpc("execute_manual_financial_action", {
+      p_action_type: "delete_transaction",
+      p_payload: { transaction_id: transacao.id, series_scope: "current_and_future" },
+      p_idempotency_key: randomUuidCompat(),
+      p_expected_user_id: session.user.id,
+      p_client_created_at: new Date().toISOString(),
+    });
+    if (error || !data || typeof data !== "object" || (data as { ok?: unknown }).ok !== true) {
+      Alert.alert("Erro", "Não foi possível excluir a partir deste mês. Nada foi alterado.");
+      return;
+    }
+    carregarDados();
+  };
+
   const deletarTransacao = (id: number) => {
     const transacao = transacoes.find((t) => t.id === id);
     if (!transacao) return;
@@ -901,6 +922,9 @@ export default function TransacoesScreen() {
           corSerie: "#E76F51",
           onSerie: () => { setModalOpcoesSerie(null); deletarTodasParcelasEmAberto(transacao); },
         } : {
+          // Fixas: encerra a repetição a partir deste item (os anteriores continuam).
+          labelFuturas: "Esta e as próximas",
+          onFuturas: () => { setModalOpcoesSerie(null); encerrarFixaAPartirDe(transacao); },
           labelSerie: "Toda a série",
           corSerie: "#E76F51",
           onSerie: () => {
@@ -2982,7 +3006,7 @@ export default function TransacoesScreen() {
                     placeholder="Escolha a categoria"
                     opcoes={categorias
                       .filter((c) => (c.ativa !== 0 || c.id === editCategoriaId) && (c.tipo === transacaoEditando.tipo || c.tipo === "ambos"))
-                      .map((cat) => ({ id: cat.id, titulo: cat.ativa === 0 ? `${cat.nome} (arquivada)` : cat.nome, cor: cat.cor }))}
+                      .map((cat) => ({ id: cat.id, titulo: cat.ativa === 0 ? `${cat.nome} (arquivada)` : cat.nome, cor: cat.cor, icone: cat.icone || "label" }))}
                     selecionadoId={editCategoriaId}
                     onSelecionar={(opcao) => setEditCategoriaId(Number(opcao.id))}
                     corDestaque={corEdicao}
