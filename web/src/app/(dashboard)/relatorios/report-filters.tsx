@@ -15,6 +15,8 @@ export default function ReportFilters({
   view = "monthly",
   considerarAtrasados = true,
   onAlternarAtrasados,
+  considerarIncertos = true,
+  onAlternarIncertos,
 }: {
   year: number;
   month: number;
@@ -23,6 +25,8 @@ export default function ReportFilters({
   view?: "monthly" | "daily";
   considerarAtrasados?: boolean;
   onAlternarAtrasados?: () => void;
+  considerarIncertos?: boolean;
+  onAlternarIncertos?: () => void;
 }) {
   const router = useRouter();
   const [draftAccounts, setDraftAccounts] = useState(selected);
@@ -41,6 +45,7 @@ export default function ReportFilters({
     });
     if (view === "daily") params.set("view", "daily");
     if (!considerarAtrasados) params.set("atrasados", "0");
+    if (!considerarIncertos) params.set("incertos", "0");
     return `/relatorios?${params.toString()}`;
   }
 
@@ -86,6 +91,7 @@ export default function ReportFilters({
       <input type="hidden" name="accounts" value={draftAccounts.join(",")} />
       {view === "daily" && <input type="hidden" name="view" value="daily" />}
       {!considerarAtrasados && <input type="hidden" name="atrasados" value="0" />}
+      {!considerarIncertos && <input type="hidden" name="incertos" value="0" />}
       <div className={styles.filtersRow}>
         <div className={styles.yearFilter} ref={periodPickerRef}>
           <span className={styles.filterLabel}>{view === "daily" ? "Mês" : "Ano"}</span>
@@ -166,6 +172,7 @@ export default function ReportFilters({
     {/* Filtro de atrasados: cartão próprio fora da caixa de filtros e em
         laranja, como no app, para não parecer mais uma conta. Ligado por
         padrão; desligado, os pendentes já vencidos saem do cálculo. */}
+    <div className={styles.flowToggles}>
     <button
       type="button"
       role="switch"
@@ -184,6 +191,28 @@ export default function ReportFilters({
       </span>
       <span aria-hidden className={styles.overdueSwitch} />
     </button>
+    {/* Incertos: receitas e despesas únicas marcadas como "não tenho certeza".
+        Ligado por padrão; desligado, saem do cálculo, para ver só o garantido. */}
+    <button
+      type="button"
+      role="switch"
+      aria-checked={considerarIncertos}
+      data-active={considerarIncertos}
+      className={`${styles.overdueToggle} ${styles.uncertainToggle}`}
+      onClick={onAlternarIncertos}
+    >
+      <svg aria-hidden viewBox="0 0 24 24" className={styles.overdueIcon}>
+        <circle cx="12" cy="12" r="8.5" fill="none" stroke="currentColor" strokeWidth="2" />
+        <path d="M9.7 9.5a2.4 2.4 0 0 1 4.6.9c0 1.6-2.3 2-2.3 3.5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <circle cx="12" cy="16.9" r="1.1" fill="currentColor" />
+      </svg>
+      <span className={styles.overdueText}>
+        <strong>Considerar incertos</strong>
+        <small aria-live="polite">{considerarIncertos ? "Lançamentos sem certeza entram no saldo previsto." : "Lançamentos sem certeza estão fora do cálculo."}</small>
+      </span>
+      <span aria-hidden className={styles.overdueSwitch} />
+    </button>
+    </div>
     </>
   );
 }

@@ -23,6 +23,7 @@ import Modal, { useFinFlowNavigation } from "../../components/FinFlowScreen";
 import FinFlowPopup from "../../components/FinFlowPopup";
 import CalendarioPopup from "../../components/CalendarioPopup";
 import SeletorLista from "../../components/SeletorLista";
+import OpcaoIncerto from "../../components/OpcaoIncerto";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { IS_LOCAL_DEMO, supabase } from "../../lib/supabase";
 import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
@@ -110,6 +111,8 @@ interface Transacao {
   version?: number;
   transacao_pai_id?: number | null;
   criado_por_ia?: boolean;
+  /** Receita ou despesa única pendente marcada como "não tenho certeza". */
+  incerta?: boolean;
 }
 
 type ItemHistorico =
@@ -244,7 +247,7 @@ export default function TransacoesScreen() {
   const [filtroVencidas, setFiltroVencidas] = useState(false);
   const [filtroHoje, setFiltroHoje] = useState(false);
   const [filtroProximosSeteDias, setFiltroProximosSeteDias] = useState(false);
-  const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes">("pendentes");
+  const [filtroStatus, setFiltroStatus] = useState<"todos" | "concluidos" | "pendentes" | "incertos">("pendentes");
   const [busca, setBusca] = useState("");
   const [paginaAtual, setPaginaAtual] = useState(1);
   const ITENS_POR_PAGINA = 30;
@@ -265,6 +268,7 @@ export default function TransacoesScreen() {
   const [editStatus, setEditStatus] = useState<"paga" | "pendente">("paga");
   const [editCategoriaId, setEditCategoriaId] = useState<number | null>(null);
   const [editContaId, setEditContaId] = useState<number | null>(null);
+  const [editIncerto, setEditIncerto] = useState(false);
   const [mostrarCalendarioEdit, setMostrarCalendarioEdit] = useState(false);
   const [modalOpcoesSerie, setModalOpcoesSerie] = useState<{
     titulo: string; descricao: string;
@@ -391,7 +395,7 @@ export default function TransacoesScreen() {
         // de ler a tabela inteira (ver web/src/lib/transacoes-visiveis.ts).
         promessaContas.then((contasVisiveis) => fetchAllRows<Transacao>((from, to) => supabase
           .from("transacoes")
-          .select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id")
+          .select("id, user_id, tipo, valor, data_vencimento, data_realizacao, descricao, categoria_id, conta_id, status, version, transacao_pai_id, incerta")
           .or(filtroTransacoesVisiveis(session.user.id, (contasVisiveis.data ?? []).map((conta: { id: number }) => conta.id)))
           .order("id", { ascending: true })
           .range(from, to))),
@@ -990,11 +994,28 @@ export default function TransacoesScreen() {
     setEditStatus(t.status === "paga" ? "paga" : "pendente");
     setEditCategoriaId(t.categoria_id);
     setEditContaId(t.conta_id);
+    setEditIncerto(t.incerta === true);
     setModalEditarTransVisivel(true);
+  };
+
+  // Incerto: só em receita ou despesa única pendente, com categoria (o banco aplica a mesma regra).
+  const podeSerIncerta = (t: Transacao) => t.status !== "paga"
+    && (t.tipo === "receita" || t.tipo === "despesa")
+    && t.categoria_id != null
+    && t.transacao_pai_id == null
+    && !isRecorrente(t)
+    && !isTransferencia(t.descricao)
+    && !isMovimentoObjetivo(t.descricao)
+    && !parseInvoicePaymentMarker(t.descricao);
+  const gravarIncerto = async (id: number, incerta: boolean) => {
+    const { error } = await supabase.from("transacoes").update({ incerta }).eq("id", id);
+    if (error) showToast("Não foi possível mudar a marcação de incerto. Tente novamente com conexão.", "info");
   };
 
   const executarEdicao = async (apenasEsta: boolean) => {
     if (!transacaoEditando) return;
+    const incertoMudou = apenasEsta && podeSerIncerta(transacaoEditando) && editStatus === "pendente"
+      && editIncerto !== (transacaoEditando.incerta === true);
     if (!apenasEsta && temPagamentosRegistrados(transacaoEditando.id)) {
       setAvisoPagamentoVinculado({
         titulo: "Edição individual",
@@ -1022,6 +1043,10 @@ export default function TransacoesScreen() {
         changes.category_id = editCategoriaId;
       }
       if (Object.keys(changes).length === 0) {
+        if (incertoMudou) {
+          await gravarIncerto(transacaoEditando.id, editIncerto);
+          void carregarDados();
+        }
         setModalEditarTransVisivel(false);
         setTransacaoEditando(null);
         return;
@@ -1039,6 +1064,7 @@ export default function TransacoesScreen() {
         if (resultado.state === "uncertain") {
           return Alert.alert("Sessão alterada", "Não foi possível confirmar a edição. Entre novamente e confira os dados antes de reenviar.");
         }
+        if (incertoMudou) await gravarIncerto(transacaoEditando.id, editIncerto);
         setModalEditarTransVisivel(false);
         setTransacaoEditando(null);
         if (resultado.state === "queued") showToast(OFFLINE_EDIT_SAVED_MESSAGE, "info");
@@ -1063,7 +1089,7 @@ export default function TransacoesScreen() {
     if (apenasEsta) {
       const baseEditada = isRecorrente(transacaoEditando) ? descricaoBase(editDescricao) : editDescricao.trim();
       const descricaoAtualizada = substituirDescricaoBase(transacaoEditando.descricao, baseEditada);
-      const { error } = await supabase.from("transacoes").update({ ...campos, descricao: descricaoAtualizada, data_vencimento: dataFormatada }).eq("id", transacaoEditando.id);
+      const { error } = await supabase.from("transacoes").update({ ...campos, descricao: descricaoAtualizada, data_vencimento: dataFormatada, ...(incertoMudou ? { incerta: editIncerto } : {}) }).eq("id", transacaoEditando.id);
       if (error) return Alert.alert("Erro", "Não foi possível salvar as alterações.");
     } else {
       const base = descricaoBase(transacaoEditando.descricao);
@@ -1588,6 +1614,7 @@ export default function TransacoesScreen() {
       let passaStatus = true;
       if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
+      else if (filtroStatus === "incertos") passaStatus = t.status === "pendente" && t.incerta === true;
       return passaFiltrosBasicos && passaMes && passaStatus;
     })
     .sort((a, b) => compararHistoricoPorData(
@@ -1635,6 +1662,7 @@ export default function TransacoesScreen() {
       let passaStatus = true;
       if (filtroStatus === "concluidos") passaStatus = t.status === "paga";
       else if (filtroStatus === "pendentes") passaStatus = t.status === "pendente";
+      else if (filtroStatus === "incertos") passaStatus = t.status === "pendente" && t.incerta === true;
       return passaFiltrosBasicos && passaMes && passaStatus;
     }), [
       chaveHoje,
@@ -1661,6 +1689,7 @@ export default function TransacoesScreen() {
     } else if (g.mes_fatura !== mesSelecionado) return [];
     if (filtroStatus === "concluidos" && !g.pago) return [];
     if (filtroStatus === "pendentes" && g.pago) return [];
+    if (filtroStatus === "incertos") return [];
     if (filtroVencidas) {
       const vencimento = new Date(`${dataVencimentoFaturaHistorico(g.mes_fatura, g.dia_vencimento)}T00:00:00`);
       if (g.pago || vencimento >= hojeRef) return [];
@@ -2038,6 +2067,7 @@ export default function TransacoesScreen() {
           { key: "concluidos", label: "Concluídos" },
           { key: "pendentes", label: "Pendentes" },
           { key: "atrasados", label: "Atrasados" },
+          { key: "incertos", label: "Incertos" },
         ] as const).map((item) => {
           const ativo = !filtroHoje && !filtroProximosSeteDias && (item.key === "atrasados" ? filtroVencidas : (!filtroVencidas && filtroStatus === item.key));
           return (
@@ -2056,7 +2086,7 @@ export default function TransacoesScreen() {
                 {item.key === "atrasados" && quantidadeAtrasadasNoEscopo > 0 && (
                   <MaterialIcons name="warning-amber" size={14} color={ativo ? "#FFF" : "#E76F51"} />
                 )}
-                <Text style={[styles.statusFilterText, { color: ativo ? "#FFF" : Cores.textoSecundario }]}>{item.label}</Text>
+                <Text style={[styles.statusFilterText, { color: ativo ? "#FFF" : Cores.textoSecundario }]} numberOfLines={1} adjustsFontSizeToFit>{item.label}</Text>
               </View>
             </TouchableOpacity>
           );
@@ -2339,6 +2369,9 @@ export default function TransacoesScreen() {
                       )}
                       {isPendente && <View style={[styles.pendentePill, { backgroundColor: `${corStatus}22` }]}>
                         <Text style={[styles.pendenteText, { color: corStatus }]}>{textoStatus}</Text>
+                      </View>}
+                      {isPendente && t.incerta && <View style={[styles.pendentePill, { backgroundColor: "#8B6CDB22" }]}>
+                        <Text style={[styles.pendenteText, { color: "#8B6CDB" }]}>Incerto</Text>
                       </View>}
                       {transacoesConciliadas.has(t.id) && <View style={[styles.pendentePill, { backgroundColor: "#457B9D22" }]}>
                         <Text style={[styles.pendenteText, { color: "#457B9D" }]}>Conciliado</Text>
@@ -3016,6 +3049,14 @@ export default function TransacoesScreen() {
                 </>
               )}
 
+              {podeSerIncerta(transacaoEditando) && !pago && (
+                <OpcaoIncerto
+                  marcado={editIncerto}
+                  onAlternar={() => setEditIncerto((atual) => !atual)}
+                  cores={{ texto: Cores.textoPrincipal, textoSecundario: Cores.textoSecundario, borda: Cores.borda, fundo: Cores.pillFundo }}
+                />
+              )}
+
               <View style={styles.editActions}>
                 <TouchableOpacity style={[styles.editActionButton, { backgroundColor: Cores.pillFundo, borderColor: Cores.borda, borderWidth: 1 }]} onPress={() => setModalEditarTransVisivel(false)}>
                   <Text style={{ color: Cores.textoSecundario, fontWeight: "800", fontSize: 15 }}>Cancelar</Text>
@@ -3514,8 +3555,8 @@ const styles = StyleSheet.create({
   compactTotals: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 12 },
   compactIncome: { flex: 1, color: "#B7F5D8", fontSize: 10, fontWeight: "800", textAlign: "left" },
   compactExpense: { flex: 1, color: "#FFC0B5", fontSize: 10, fontWeight: "800", textAlign: "right" },
-  statusFilters: { flexDirection: "row", gap: 7, paddingHorizontal: 14, marginTop: 14, marginBottom: 12 },
-  statusFilter: { flex: 1, paddingVertical: 8, borderRadius: 18, borderWidth: 1, alignItems: "center" },
+  statusFilters: { flexDirection: "row", gap: 5, paddingHorizontal: 14, marginTop: 14, marginBottom: 12 },
+  statusFilter: { flex: 1, paddingVertical: 8, paddingHorizontal: 3, borderRadius: 18, borderWidth: 1, alignItems: "center" },
   statusFilterContent: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 3 },
   statusFilterText: { fontSize: 11, fontWeight: "700" },
   periodFilterBanner: { marginHorizontal: 14, marginBottom: 10, minHeight: 58, borderWidth: 1, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 9, flexDirection: "row", alignItems: "center", gap: 10 },

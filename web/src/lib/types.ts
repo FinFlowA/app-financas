@@ -79,6 +79,8 @@ export interface Transacao {
   status: "pendente" | "paga";
   version: number;
   transacao_pai_id: number | null;
+  /** Receita ou despesa única pendente marcada como "não tenho certeza". */
+  incerta?: boolean;
 }
 
 export interface Parceria {

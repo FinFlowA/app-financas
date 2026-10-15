@@ -48,7 +48,7 @@ export type PaymentHistory = {
 };
 
 export type TransactionKind = "receita" | "despesa" | "transferencia";
-export type PeriodFilter = "all" | "attention" | "completed" | "pending" | "overdue" | "today" | "next7";
+export type PeriodFilter = "all" | "attention" | "completed" | "pending" | "overdue" | "uncertain" | "today" | "next7";
 export type QuickFilter = "attention" | "overdue" | "today" | "next7" | null;
 
 function numberValue(value: unknown): number | null {

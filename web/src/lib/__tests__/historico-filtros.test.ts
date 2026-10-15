@@ -10,7 +10,7 @@ describe("filtros do Histórico", () => {
   const tela = readFileSync(join(raiz, "web/src/app/(dashboard)/transacoes/transaction-manager.tsx"), "utf8");
 
   it("as setas de mês e o período de/até mantêm Todos, Concluídos e Pendentes", () => {
-    expect(tela).toContain('period === "all" || period === "completed" || period === "pending" ? period : "pending"');
+    expect(tela).toContain('period === "all" || period === "completed" || period === "pending" || period === "uncertain" ? period : "pending"');
     expect(tela).toMatch(/function chooseMonth\(next: string\) \{ const nextPeriod = periodForNewDates\(\);/);
     expect(tela).toMatch(/function chooseRange\(next: HistoryRange\) \{ const nextPeriod = periodForNewDates\(\);/);
   });

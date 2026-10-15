@@ -19,6 +19,7 @@ import { fetchAllRows } from "../../lib/supabase-pagination";
 import { useAppTheme } from "../_layout";
 import { fmtReais } from "../../lib/utils";
 import { dataNoFluxo, lancamentosDoFluxo } from "../../web/src/lib/fluxo-atrasados";
+import { lancamentosSemIncertos } from "../../web/src/lib/fluxo-incertos";
 import { transferenciasEntreContas } from "../../web/src/lib/fluxo-transferencias";
 import { filtroTransacoesVisiveis } from "../../web/src/lib/transacoes-visiveis";
 import { finFlowTheme, FinFlowTabHeader } from "../../constants/finflow-design";
@@ -38,6 +39,7 @@ interface Transacao {
   data_realizacao?: string | null;
   conta_id: number;
   descricao: string;
+  incerta?: boolean;
 }
 
 interface Conta {
@@ -123,6 +125,9 @@ export default function RelatoriosScreen() {
   // Filtro "Considerar atrasados" (igual ao do site): ligado por padrão;
   // desligado, os pendentes já vencidos saem do cálculo do fluxo.
   const [considerarAtrasados, setConsiderarAtrasados] = useState(true);
+  // Filtro "Considerar incertos" (igual ao do site): ligado por padrão;
+  // desligado, receitas e despesas marcadas como incertas saem do cálculo.
+  const [considerarIncertos, setConsiderarIncertos] = useState(true);
   const anoAtualNum = hoje.getFullYear();
   const mesAtualIdx = hoje.getMonth();
 
@@ -170,7 +175,7 @@ export default function RelatoriosScreen() {
       const [resT, resC] = await Promise.all([
         promessaContas.then((contasVisiveis) => fetchAllRows<Transacao>((from, to) => supabase
           .from("transacoes")
-          .select("valor, tipo, status, data_vencimento, data_realizacao, conta_id, descricao")
+          .select("valor, tipo, status, data_vencimento, data_realizacao, conta_id, descricao, incerta")
           .or(filtroTransacoesVisiveis(session.user.id, (contasVisiveis.data ?? []).map((conta: { id: number }) => conta.id)))
           .order("id", { ascending: true })
           .range(from, to))),
@@ -249,8 +254,8 @@ export default function RelatoriosScreen() {
   }), [contasFiltradas.length, idsEscopoFluxo, transacoes]);
 
   const transacoesDoCalculo = useMemo(
-    () => lancamentosDoFluxo(transacoesFiltradas, considerarAtrasados, hojeIso),
-    [considerarAtrasados, hojeIso, transacoesFiltradas],
+    () => lancamentosSemIncertos(lancamentosDoFluxo(transacoesFiltradas, considerarAtrasados, hojeIso), considerarIncertos),
+    [considerarAtrasados, considerarIncertos, hojeIso, transacoesFiltradas],
   );
 
   // Transferências entre as contas escolhidas: só aparecem no detalhe do mês
@@ -570,6 +575,31 @@ export default function RelatoriosScreen() {
           </View>
           <View style={[styles.atrasadosTrilho, { backgroundColor: considerarAtrasados ? COR_ATRASADOS : Cores.borda }]}>
             <View style={[styles.atrasadosBolinha, considerarAtrasados && styles.atrasadosBolinhaLigada]} />
+          </View>
+        </TouchableOpacity>
+
+        {/* Incertos: receitas e despesas únicas marcadas como "não tenho certeza". */}
+        <TouchableOpacity
+          onPress={() => setConsiderarIncertos((atual) => !atual)}
+          style={[
+            styles.atrasadosToggle,
+            considerarIncertos
+              ? { backgroundColor: isDark ? "rgba(139,108,219,0.18)" : "#F1ECFB", borderColor: COR_INCERTOS }
+              : { backgroundColor: Cores.cardFundo, borderColor: Cores.borda },
+          ]}
+          accessibilityRole="switch"
+          accessibilityState={{ checked: considerarIncertos }}
+          accessibilityLabel="Considerar lançamentos incertos no cálculo"
+        >
+          <MaterialIcons name="help-outline" size={17} color={considerarIncertos ? COR_INCERTOS : Cores.textoSecundario} />
+          <View style={styles.atrasadosTextos}>
+            <Text style={[styles.atrasadosTitulo, { color: Cores.textoPrincipal }]}>Considerar incertos</Text>
+            <Text style={[styles.atrasadosDescricao, { color: Cores.textoSecundario }]}>
+              {considerarIncertos ? "Lançamentos sem certeza entram no saldo previsto." : "Lançamentos sem certeza estão fora do cálculo."}
+            </Text>
+          </View>
+          <View style={[styles.atrasadosTrilho, { backgroundColor: considerarIncertos ? COR_INCERTOS : Cores.borda }]}>
+            <View style={[styles.atrasadosBolinha, considerarIncertos && styles.atrasadosBolinhaLigada]} />
           </View>
         </TouchableOpacity>
 
@@ -940,6 +970,7 @@ function DetalheRow({ label, valor, cor, dotCor, isIcon, iconName, bold, cores }
 
 // Âmbar: a mesma cor de "atenção" usada no app, diferente das contas.
 const COR_ATRASADOS = "#E9A15B";
+const COR_INCERTOS = "#8B6CDB";
 
 const styles = StyleSheet.create({
   safe: { flex: 1 },

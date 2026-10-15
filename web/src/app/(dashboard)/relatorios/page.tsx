@@ -1,5 +1,6 @@
 import { anoAtualEmSaoPaulo, hojeEmSaoPaulo } from "@/lib/date";
 import { dataNoFluxo, estaEmAtraso, lancamentosDoFluxo } from "@/lib/fluxo-atrasados";
+import { lancamentosSemIncertos } from "@/lib/fluxo-incertos";
 import { transferenciasEntreContas } from "@/lib/fluxo-transferencias";
 import { invoiceDueDate, invoicePurchasesInMonth } from "@/lib/invoices";
 import { calcularSaldoProjetadoPorDia, calcularSaldoProjetadoPorMes } from "@/lib/saldo-projetado";
@@ -123,7 +124,7 @@ function montarSeriesDoFluxo(
   return { months, dailyFlow, balances, dailyBalances };
 }
 
-export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ year?: string; month?: string; accounts?: string | string[]; view?: string; atrasados?: string }> }) {
+export default async function RelatoriosPage({ searchParams }: { searchParams: Promise<{ year?: string; month?: string; accounts?: string | string[]; view?: string; atrasados?: string; incertos?: string }> }) {
   const params = await searchParams;
   const year = validYear(params.year);
   const today = hojeEmSaoPaulo();
@@ -141,7 +142,7 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const [transactionsResult, categoriesResult, accountsResult, invoiceItemsResult, entitlementResult, cardsResult] = await Promise.all([
     filtroVisiveis.then((filtro) => fetchAllRows((from, to) => supabase
       .from("transacoes")
-      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version")
+      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, transacao_pai_id, version, incerta")
       .or(filtro)
       .order("id")
       .range(from, to))),
@@ -175,6 +176,9 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   // lançamentos pendentes já vencidos saem do cálculo do fluxo. O servidor
   // monta as duas versões para a troca na tela ser instantânea.
   const considerarAtrasados = params.atrasados !== "0";
+  // Filtro "Considerar incertos": ligado por padrão; com incertos=0, as
+  // receitas e despesas marcadas como incertas saem do fluxo.
+  const considerarIncertos = params.incertos !== "0";
   const scoped = transacoesNoEscopo(transactions, selectedSet, selectedAccounts.length);
   const initialBalance = selectedAccounts.reduce((sum, account) => sum + Number(account.saldo_inicial), 0);
   const balancesByAccount = calcularSaldosPorConta(selectedAccounts, transactions);
@@ -185,8 +189,12 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
   const referenceDate = new Date(`${today}T12:00:00-03:00`);
   const opcoesDasSeries = { year, detailMonthIndex, initialBalance, referenceDate, today };
   const internas = transferenciasEntreContas(transactions, selectedSet);
-  const seriesComAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, true, today), lancamentosDoFluxo(internas, true, today), opcoesDasSeries);
-  const seriesSemAtrasados = montarSeriesDoFluxo(lancamentosDoFluxo(scoped, false, today), lancamentosDoFluxo(internas, false, today), opcoesDasSeries);
+  // As quatro combinações dos filtros (atrasados e incertos), para a troca na tela ser instantânea.
+  const seriesDoFiltro = (atrasados: boolean, incertos: boolean) => montarSeriesDoFluxo(
+    lancamentosSemIncertos(lancamentosDoFluxo(scoped, atrasados, today), incertos),
+    lancamentosDoFluxo(internas, atrasados, today),
+    opcoesDasSeries,
+  );
   const categoriesById = new Map(categories.map((category) => [category.id, category]));
   const expenseCategoryTotals = new Map<number | null, number>();
   const revenueCategoryTotals = new Map<number | null, number>();
@@ -269,12 +277,16 @@ export default async function RelatoriosPage({ searchParams }: { searchParams: P
         selectedMonthIndex={detailMonthIndex}
         currentBalance={currentBalance}
         initialBalance={initialBalance}
-        series={{ comAtrasados: comMetricas(seriesComAtrasados), semAtrasados: comMetricas(seriesSemAtrasados) }}
+        series={{
+          comAtrasados: { comIncertos: comMetricas(seriesDoFiltro(true, true)), semIncertos: comMetricas(seriesDoFiltro(true, false)) },
+          semAtrasados: { comIncertos: comMetricas(seriesDoFiltro(false, true)), semIncertos: comMetricas(seriesDoFiltro(false, false)) },
+        }}
         selectedAccountIds={selectedIds}
         accounts={accounts.map((account) => ({ id: account.id, name: account.nome, color: account.cor }))}
         view={view}
         dailyEnabled={dailyEnabled}
         considerarAtrasados={considerarAtrasados}
+        considerarIncertos={considerarIncertos}
         categorias={{
           receitas: revenueDistribution,
           despesas: expenseDistribution,

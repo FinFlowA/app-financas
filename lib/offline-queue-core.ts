@@ -49,7 +49,7 @@ export type OfflineExecutionRequest = Readonly<{
 }>;
 
 export type OfflineExecutionResult =
-  | { ok: true; replayed?: boolean }
+  | { ok: true; replayed?: boolean; /** Resposta do banco (ex.: ids criados). */ result?: unknown }
   | { ok: false; retryable: boolean; errorCode: string };
 
 export type OfflineExecutor = (

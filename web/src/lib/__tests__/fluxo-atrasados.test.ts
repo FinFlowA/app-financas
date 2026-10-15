@@ -40,9 +40,12 @@ describe("filtro Considerar atrasados do fluxo de caixa", () => {
     const visao = readFileSync(join(raiz, "web/src/app/(dashboard)/relatorios/report-overview.tsx"), "utf8");
     const filtros = readFileSync(join(raiz, "web/src/app/(dashboard)/relatorios/report-filters.tsx"), "utf8");
     const app = readFileSync(join(raiz, "app/(tabs)/relatorios.tsx"), "utf8");
-    // O servidor monta as duas versões; a tela troca na hora, sem nova busca.
-    expect(pagina).toMatch(/montarSeriesDoFluxo\(lancamentosDoFluxo\(scoped, true, today\), lancamentosDoFluxo\(internas, true, today\), opcoesDasSeries\)/);
-    expect(pagina).toMatch(/montarSeriesDoFluxo\(lancamentosDoFluxo\(scoped, false, today\), lancamentosDoFluxo\(internas, false, today\), opcoesDasSeries\)/);
+    // O servidor monta as versões (com e sem atrasados, e em cada uma com e sem
+    // incertos); a tela troca na hora, sem nova busca.
+    expect(pagina).toContain("lancamentosSemIncertos(lancamentosDoFluxo(scoped, atrasados, today), incertos)");
+    expect(pagina).toContain("lancamentosDoFluxo(internas, atrasados, today)");
+    expect(pagina).toContain("comAtrasados: { comIncertos: comMetricas(seriesDoFiltro(true, true)), semIncertos: comMetricas(seriesDoFiltro(true, false)) }");
+    expect(pagina).toContain("semAtrasados: { comIncertos: comMetricas(seriesDoFiltro(false, true)), semIncertos: comMetricas(seriesDoFiltro(false, false)) }");
     expect(visao).toMatch(/considerarAtrasados \? series\.comAtrasados : series\.semAtrasados/);
     expect(visao).toMatch(/window\.history\.replaceState\(/);
     expect((visao.match(/params\.set\("atrasados", "0"\)/g) ?? []).length).toBe(3);

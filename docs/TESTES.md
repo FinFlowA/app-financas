@@ -82,6 +82,7 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
 - `seletor-periodo.test.ts`: o mês do calendário do período (Histórico e Relatórios) é clicável e abre a escolha de mês e ano;
 - `historico-filtros.test.ts`: no Histórico do site, trocar de mês mantém Todos, Concluídos e Pendentes, e "Limpar filtros" volta para o mês atual;
 - `finn-tela.test.ts`: a apresentação do Finn com as mesmas sugestões do app (e a mesma apresentação no app), a cota pela leitura do app e a ajuda aberta pelo cabeçalho, sem o botão flutuante nessa tela;
+- `lancamento-incerto.test.ts`: o filtro "Considerar incertos" do Fluxo de caixa (site e app) e a marcação de incerto no Histórico, na criação e na edição;
 - `acoes-sem-refresh-duplo.test.ts`: as ações de lançamento atualizam a página pelo servidor, sem `router.refresh()` repetido, e o Histórico busca transações, faturas e conciliação ao mesmo tempo;
 - `fluxo-categorias-do-dia.test.ts`: no Fluxo de caixa diário, Receitas e Despesas por categoria mostram só o dia selecionado, com as compras do cartão no vencimento da fatura;
 - `inicio-detalhe-categoria.test.ts`: no Início do app, tocar numa categoria da Distribuição do Mês mostra os lançamentos e as compras do cartão que formam o valor;
@@ -115,7 +116,7 @@ Em resumo, com 50 pessoas simultâneas, 95% das aberturas do Início passaram de
 
 ## Banco (pgTAP)
 
-`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas, metas e limites das categorias, o limite utilizado do cartão e o encerramento de fixas com "esta e as próximas") num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
+`supabase/tests/*.test.sql` testa o comportamento do banco (tetos de segurança, tamanho dos textos, permissões, `pg_net`, registro de push, visibilidade das regras de acesso, renovação das séries fixas, periodicidade das parcelas, metas e limites das categorias, o limite utilizado do cartão, o encerramento de fixas com "esta e as próximas" e o lançamento incerto) num banco Supabase vazio com todas as migrations aplicadas. Precisa de Docker:
 
 ```bash
 supabase db start

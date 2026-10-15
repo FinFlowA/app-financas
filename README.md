@@ -468,6 +468,20 @@ com layouts bancários não padronizados.
   `router.refresh()` em seguida (Histórico, Início e Calendário). O Histórico
   também busca transações, faturas e conciliação ao mesmo tempo.
 
+### Lançamento incerto — 15/10/2026
+
+- **Criar e editar (app e site):** receitas e despesas únicas pendentes podem
+  ser marcadas como "Não tenho certeza deste lançamento". Parcelas, fixas,
+  transferências e objetivos não têm a opção. Ao concluir, a marcação some.
+- **Fluxo de caixa (app e site):** filtro "Considerar incertos", ligado por
+  padrão; desligado, os incertos saem do saldo previsto e do gráfico.
+- **Histórico (app e site):** etiqueta "Incerto" e filtro "Incertos".
+- **Banco:** coluna `transacoes.incerta` e a trigger
+  `finflow_normalizar_incerta` (migration
+  `20261015120000_lancamento_incerto.sql`). A criação marca o lançamento
+  logo depois de criado (no app, a fila offline passou a devolver a resposta
+  do banco com o id criado).
+
 ### Tela do Finn no site — 09/10/2026
 
 - **Conversa nova:** o Finn se apresenta com ilustração, saudação pelo nome
