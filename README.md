@@ -462,6 +462,11 @@ com layouts bancários não padronizados.
 - **Fluxo de caixa diário (site):** Receitas e Despesas por categoria mostram
   só o dia selecionado, como a visão mensal mostra o mês. As compras do cartão
   contam no dia do vencimento da fatura.
+- **Ações mais rápidas no site:** concluir, editar, excluir, reabrir e criar
+  lançamentos não montam mais a página duas vezes. A ação do servidor já
+  devolve a página atualizada (`revalidatePath`), e a tela deixou de chamar
+  `router.refresh()` em seguida (Histórico, Início e Calendário). O Histórico
+  também busca transações, faturas e conciliação ao mesmo tempo.
 
 ### Tela do Finn no site — 09/10/2026
 
