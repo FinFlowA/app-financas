@@ -99,6 +99,13 @@ export function descricaoTransferenciaObjetivo(
   return `[Transf.] ${textoVisivel} [Objetivo:${objetivoId}:${operacao}]`;
 }
 
+/** Id do lançamento criado, na resposta do banco (create_transaction). */
+export function idDoLancamentoCriado(resultado: unknown): number | null {
+  const dados = (resultado ?? {}) as { transaction_ids?: unknown[]; transaction_id?: unknown };
+  const id = Number(dados.transaction_ids?.[0] ?? dados.transaction_id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
 export function descricaoVisivel(descricao: string): string {
   return descricao
     .replace(/\s*\[PagFatura:\d+:\d{4}-\d{2}:[^\]]+\]\s*$/, "")

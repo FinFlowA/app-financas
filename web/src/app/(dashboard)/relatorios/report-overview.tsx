@@ -61,6 +61,7 @@ export default function ReportOverview({
   view,
   dailyEnabled = true,
   considerarAtrasados: considerarAtrasadosDaUrl = true,
+  considerarIncertos: considerarIncertosDaUrl = true,
   categorias,
 }: {
   year: number;
@@ -69,13 +70,17 @@ export default function ReportOverview({
   selectedMonthIndex: number;
   currentBalance: number;
   initialBalance: number;
-  /** As duas versões do fluxo, com e sem os lançamentos em atraso. */
-  series: { comAtrasados: SeriesDoFluxo; semAtrasados: SeriesDoFluxo };
+  /** As versões do fluxo com e sem os atrasados e, em cada uma, com e sem os incertos. */
+  series: {
+    comAtrasados: { comIncertos: SeriesDoFluxo; semIncertos: SeriesDoFluxo };
+    semAtrasados: { comIncertos: SeriesDoFluxo; semIncertos: SeriesDoFluxo };
+  };
   selectedAccountIds: number[];
   accounts: AccountOption[];
   view: "monthly" | "daily";
   dailyEnabled?: boolean;
   considerarAtrasados?: boolean;
+  considerarIncertos?: boolean;
   /** Receitas e despesas realizadas por categoria no mês detalhado. */
   categorias: CategoriasDoPeriodo;
 }) {
@@ -85,7 +90,10 @@ export default function ReportOverview({
   // servidor. A escolha vale até a página receber outro valor pela URL.
   const [atrasados, setAtrasados] = useState({ origem: considerarAtrasadosDaUrl, valor: considerarAtrasadosDaUrl });
   const considerarAtrasados = atrasados.origem === considerarAtrasadosDaUrl ? atrasados.valor : considerarAtrasadosDaUrl;
-  const { months, balances, metrics, dailyFlow, dailyBalances } = considerarAtrasados ? series.comAtrasados : series.semAtrasados;
+  const [incertos, setIncertos] = useState({ origem: considerarIncertosDaUrl, valor: considerarIncertosDaUrl });
+  const considerarIncertos = incertos.origem === considerarIncertosDaUrl ? incertos.valor : considerarIncertosDaUrl;
+  const seriesDosAtrasados = considerarAtrasados ? series.comAtrasados : series.semAtrasados;
+  const { months, balances, metrics, dailyFlow, dailyBalances } = considerarIncertos ? seriesDosAtrasados.comIncertos : seriesDosAtrasados.semIncertos;
   const [selection, setSelection] = useState({
     sourceYear: year,
     sourceMonthIndex: selectedMonthIndex,
@@ -152,6 +160,7 @@ export default function ReportOverview({
       accounts: selectedAccountIds.join(","),
     });
     if (!considerarAtrasados) params.set("atrasados", "0");
+    if (!considerarIncertos) params.set("incertos", "0");
     startTransition(() => router.replace(`/relatorios?${params.toString()}`, { scroll: false }));
   }
 
@@ -163,6 +172,15 @@ export default function ReportOverview({
     const params = new URLSearchParams(window.location.search);
     if (proximo) params.delete("atrasados");
     else params.set("atrasados", "0");
+    window.history.replaceState(null, "", `/relatorios?${params.toString()}`);
+  }
+
+  function alternarIncertos() {
+    const proximo = !considerarIncertos;
+    setIncertos({ origem: considerarIncertosDaUrl, valor: proximo });
+    const params = new URLSearchParams(window.location.search);
+    if (proximo) params.delete("incertos");
+    else params.set("incertos", "0");
     window.history.replaceState(null, "", `/relatorios?${params.toString()}`);
   }
 
@@ -179,6 +197,7 @@ export default function ReportOverview({
     });
     if (nextView === "daily") params.set("view", "daily");
     if (!considerarAtrasados) params.set("atrasados", "0");
+    if (!considerarIncertos) params.set("incertos", "0");
     startTransition(() => router.replace(`/relatorios?${params.toString()}`, { scroll: false }));
   }
 
@@ -197,7 +216,7 @@ export default function ReportOverview({
           >
             {formatarReais(displayedBalance)}
           </p>
-          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Entradas e saídas são o dinheiro que entrou e saiu das contas: a fatura do cartão entra quando é paga. Transferências para objetivos não são tratadas como saídas.{!considerarAtrasados ? " Lançamentos em atraso estão fora deste cálculo." : ""}</p>
+          <p className={styles.heroDescription}>Selecione {view === "daily" ? "um dia" : "um mês"} no gráfico para conferir o saldo daquele período. Entradas e saídas são o dinheiro que entrou e saiu das contas: a fatura do cartão entra quando é paga. Transferências para objetivos não são tratadas como saídas.{!considerarAtrasados ? " Lançamentos em atraso estão fora deste cálculo." : ""}{!considerarIncertos ? " Lançamentos incertos estão fora deste cálculo." : ""}</p>
         </div>
         <div className={styles.heroMetrics} aria-label="Resumo do mês atual">
           {metrics.map((metric) => (
@@ -223,6 +242,8 @@ export default function ReportOverview({
         view={view}
         considerarAtrasados={considerarAtrasados}
         onAlternarAtrasados={alternarAtrasados}
+        considerarIncertos={considerarIncertos}
+        onAlternarIncertos={alternarIncertos}
       />
       {view === "monthly" ? (
         <FluxoSaldoChart meses={months} saldos={balances} selectedIndex={activeMonthIndex} onSelect={selectMonth} />

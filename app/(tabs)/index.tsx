@@ -50,6 +50,7 @@ import {
 import { mensagemErroLimitePlano } from "../../lib/planos";
 import { mensagemTetoSeguranca, TITULO_TETO_SEGURANCA } from "../../lib/teto-seguranca";
 import SeletorLista from "../../components/SeletorLista";
+import OpcaoIncerto from "../../components/OpcaoIncerto";
 import { saudacaoPorHora } from "../../lib/saudacao";
 import OndasCabecalho from "../../components/OndasCabecalho";
 import { useCampoFocadoVisivel, useSobreposicaoTeclado } from "../../hooks/use-teclado";
@@ -61,6 +62,7 @@ import {
   descricaoTransferenciaObjetivo,
   getContaDestinoTransferencia,
   descricaoVisivel,
+  idDoLancamentoCriado,
   isMovimentoObjetivo,
   isTransferencia,
   type FrequenciaRecorrencia,
@@ -420,6 +422,8 @@ export default function Dashboard() {
   const [mesExibidoTransacao, setMesExibidoTransacao] = useState(() => new Date());
   const [seletorPeriodoTransacaoVisivel, setSeletorPeriodoTransacaoVisivel] = useState(false);
   const [foiPago, setFoiPago] = useState(true);
+  // "Não tenho certeza deste lançamento" (só em receita ou despesa única a receber ou a pagar).
+  const [incertoNovo, setIncertoNovo] = useState(false);
   const conclusaoMovimentoObjetivoRequestIdsRef = useRef(new Map<string, string>());
   const corTipoTransacao = tipoTransacao === "despesa"
     ? "#E76F51"
@@ -1711,6 +1715,7 @@ export default function Dashboard() {
         payload.recurrence_count = totalRepeticoes;
       }
 
+      const marcarIncerto = incertoNovo && !foiPago && frequencia === "unica";
       setLoadingTrans(true);
       try {
         const resultado = await salvarCriacaoFinanceira("create_transaction", payload);
@@ -1726,7 +1731,16 @@ export default function Dashboard() {
         setDescTransacao(""); setValorTransacao(""); setCatSelecionadaId(null);
         setContaSelecionadaId(null); setContaDestinoId(null); setCaixinhaDestinoId(null); setFrequencia("unica");
         setNumParcelas("2"); setModoValorParcelado("parcela"); setFrequenciaFixa("mensal"); setFrequenciaParcelada("mensal"); setDataSelecionada(new Date()); setFoiPago(true);
+        setIncertoNovo(false);
         setModalTransVisivel(false);
+        // A marcação de incerto vai depois da criação, no lançamento criado.
+        if (marcarIncerto) {
+          const idCriado = resultado.state === "synced" ? idDoLancamentoCriado(resultado.result) : null;
+          const { error: erroIncerto } = idCriado
+            ? await supabase.from("transacoes").update({ incerta: true }).eq("id", idCriado)
+            : { error: true };
+          if (erroIncerto) showToast("Lançamento salvo, mas não foi possível marcá-lo como incerto. Edite o lançamento para marcar.", "info");
+        }
         if (resultado.state === "queued") showToast(OFFLINE_SAVED_MESSAGE, "info");
         else void carregarDados();
         return;
@@ -2104,7 +2118,7 @@ export default function Dashboard() {
 
         <View style={[styles.homeActions, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]}>
           {[
-            { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => setModalTransVisivel(true) },
+            { label: "Transação", icon: "swap-horiz", color: novoTema.primary, action: () => { setIncertoNovo(false); setModalTransVisivel(true); } },
             { label: "Categorias", icon: "category", color: "#4D76E8", action: () => setModalGerenciarCatVisivel(true) },
             { label: "Cartões", icon: "credit-card", color: "#C0392E", action: () => router.push("/(tabs)/cartoes" as any) },
             { label: "IA", icon: "auto-awesome", color: "#805AD5", finn: true, action: () => router.push("/chat-ia") },
@@ -2212,7 +2226,7 @@ export default function Dashboard() {
 
         <View style={styles.actionGrid}>
           <View style={styles.actionRow}>
-            <TouchableOpacity style={[styles.actionButton, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]} onPress={() => setModalTransVisivel(true)}>
+            <TouchableOpacity style={[styles.actionButton, { backgroundColor: novoTema.surface, borderColor: novoTema.border }]} onPress={() => { setIncertoNovo(false); setModalTransVisivel(true); }}>
               <MaterialIcons name="swap-horiz" size={20} color={novoTema.primary} style={{ marginRight: 7 }} />
               <Text style={[styles.actionButtonText, { color: novoTema.text }]}>+ Transação</Text>
             </TouchableOpacity>
@@ -3593,6 +3607,13 @@ export default function Dashboard() {
                       <Text numberOfLines={1} adjustsFontSizeToFit style={[styles.freqButtonText, !foiPago ? { color: "#FFF" } : { color: Cores.textoSecundario }]}>{tipoTransacao === "receita" ? "A Receber" : "A Pagar"}</Text>
                     </TouchableOpacity>
                   </View>
+                  {!foiPago && tipoTransacao !== "transferencia" && (
+                    <OpcaoIncerto
+                      marcado={incertoNovo}
+                      onAlternar={() => setIncertoNovo((atual) => !atual)}
+                      cores={{ texto: Cores.textoPrincipal, textoSecundario: Cores.textoSecundario, borda: Cores.borda, fundo: Cores.inputFundo }}
+                    />
+                  )}
                 </>
               )}
 

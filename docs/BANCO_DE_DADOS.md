@@ -45,6 +45,8 @@ O aplicativo e o navegador podem ler somente os direitos do próprio usuário. E
 - `ai_request_usage`: medição de solicitações.
 - `ai_transaction_origins`: associação entre ação da IA e transação criada.
 
+Desde 15/10/2026, `transacoes.incerta` (boolean, padrão falso) marca a receita ou despesa única pendente que a pessoa não tem certeza de que vai acontecer; a trigger `finflow_normalizar_incerta` só mantém a marcação nesses casos e a tira ao concluir (ver [OPERACOES_FINANCEIRAS.md](./OPERACOES_FINANCEIRAS.md)).
+
 ## Tabelas privadas
 
 O schema `private` contém recibos e controles internos, entre eles:

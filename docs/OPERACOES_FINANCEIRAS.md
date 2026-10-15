@@ -78,6 +78,14 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - **Site:** a página monta as duas versões do fluxo (com e sem atrasados) e a troca acontece na tela, sem nova busca ao servidor; a URL guarda a escolha com `atrasados=0`, que segue ao trocar mês, visão e contas. O gráfico anima a mudança e respeita a preferência do sistema por menos movimento.
 - **App:** a escolha vale enquanto a tela estiver aberta.
 
+## Lançamento incerto
+
+- Na criação e na edição (app e site), uma receita ou despesa **única e pendente** pode ser marcada como "Não tenho certeza deste lançamento" (coluna `transacoes.incerta`). Parcelas, fixas, transferências, objetivos e faturas não aceitam a marcação.
+- O banco (trigger `finflow_normalizar_incerta`, migration `20261015120000_lancamento_incerto.sql`) só mantém a marcação nesses casos e a tira ao concluir o lançamento.
+- **Fluxo de caixa (app e site):** o filtro "Considerar incertos" vem ligado; desligado, os incertos saem do saldo previsto, do gráfico e dos valores previstos (`web/src/lib/fluxo-incertos.ts`). No site, a escolha vai na URL (`incertos=0`).
+- **Histórico (app e site):** etiqueta "Incerto" no lançamento e filtro "Incertos" (os pendentes marcados).
+- Início, relatório e Finn tratam o incerto como qualquer pendente.
+
 ## Conciliação bancária
 
 - O site aceita CSV e OFX; o arquivo bruto permanece no navegador.

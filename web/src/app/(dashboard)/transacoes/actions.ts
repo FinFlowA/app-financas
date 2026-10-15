@@ -33,6 +33,7 @@ type TransactionSnapshot = {
   status: "pendente" | "paga";
   version: number;
   transacao_pai_id: number | null;
+  incerta?: boolean;
 };
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -51,6 +52,25 @@ function refreshTransactions() {
   revalidatePath("/objetivos");
   revalidatePath("/calendario");
 }
+
+/**
+ * Marca ou desmarca um lançamento como incerto ("não tenho certeza"). O banco
+ * só aceita a marcação em receita ou despesa única pendente (trigger
+ * finflow_normalizar_incerta) e a tira ao concluir.
+ */
+async function setUncertain(transactionId: number, uncertain: boolean): Promise<boolean> {
+  const supabase = await createClient();
+  const { error } = await supabase.from("transacoes").update({ incerta: uncertain }).eq("id", transactionId);
+  return !error;
+}
+
+function createdTransactionId(data: unknown): number | null {
+  const envelope = (data ?? {}) as { result?: { transaction_ids?: unknown[]; transaction_id?: unknown } };
+  const id = Number(envelope.result?.transaction_ids?.[0] ?? envelope.result?.transaction_id);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+const UNCERTAIN_NOT_SAVED = "não foi possível marcá-lo como incerto. Edite o lançamento para tentar de novo.";
 
 function validDate(value: string): boolean {
   if (!ISO_DATE_PATTERN.test(value)) return false;
@@ -127,7 +147,7 @@ async function transactionSnapshot(transactionId: number): Promise<{
     supabase.auth.getUser(),
     supabase
       .from("transacoes")
-      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id, incerta")
       .eq("id", transactionId)
       .maybeSingle(),
   ]);
@@ -247,6 +267,14 @@ export async function createTransaction(formData: FormData): Promise<Transaction
     payload.category_id = categoryId;
     const result = await executeManualFinancialAction("create_transaction", payload, actionId);
     if (result.erro) return { erro: result.erro };
+    // Incerto: só em receita ou despesa única pendente.
+    if (formString(formData, "uncertain") === "1" && frequency === "unica" && status === "pendente") {
+      const createdId = createdTransactionId(result.data);
+      if (!createdId || !(await setUncertain(createdId, true))) {
+        refreshTransactions();
+        return { erro: null, sucesso: `Lançamento criado, mas ${UNCERTAIN_NOT_SAVED}` };
+      }
+    }
   }
 
   refreshTransactions();
@@ -293,7 +321,15 @@ export async function updateTransaction(formData: FormData): Promise<Transaction
   if (scheduledDate !== current.data_vencimento) changes.scheduled_date = scheduledDate;
   if (accountId !== current.conta_id) changes.account_id = accountId;
   if (!transfer && categoryId !== current.categoria_id) changes.category_id = categoryId;
-  if (Object.keys(changes).length === 0) return { erro: null, sucesso: "Nenhuma alteração necessária." };
+  // "uncertain" só vem quando a tela oferece a opção (receita ou despesa única pendente).
+  const uncertainField = formString(formData, "uncertain");
+  const uncertainChanged = uncertainField !== "" && (uncertainField === "1") !== (current.incerta === true);
+  if (Object.keys(changes).length === 0) {
+    if (!uncertainChanged) return { erro: null, sucesso: "Nenhuma alteração necessária." };
+    if (!(await setUncertain(transactionId, uncertainField === "1"))) return { erro: "Não foi possível mudar a marcação de incerto. Tente novamente." };
+    refreshTransactions();
+    return { erro: null, sucesso: uncertainField === "1" ? "Lançamento marcado como incerto." : "Lançamento marcado como certo." };
+  }
 
   const parentRequestId = requestId(formData);
   if (scope === "one" && current.user_id === snapshot.currentUserId) {
@@ -324,6 +360,10 @@ export async function updateTransaction(formData: FormData): Promise<Transaction
     }
   }
 
+  if (uncertainChanged && !(await setUncertain(transactionId, uncertainField === "1"))) {
+    refreshTransactions();
+    return { erro: null, sucesso: `Lançamento atualizado, mas ${UNCERTAIN_NOT_SAVED}` };
+  }
   refreshTransactions();
   return { erro: null, sucesso: scope === "open_series" ? "Itens pendentes da série atualizados." : "Lançamento atualizado." };
 }

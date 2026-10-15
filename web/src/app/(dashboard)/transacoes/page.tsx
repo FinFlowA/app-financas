@@ -90,7 +90,7 @@ export default async function TransactionsPage({
     for (let start = 0; ; start += pageSize) {
       const result = await supabase
         .from("transacoes")
-        .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+        .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id, incerta")
         .or(filtro)
         .order("id", { ascending: false })
         .range(start, start + pageSize - 1);

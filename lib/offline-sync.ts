@@ -38,7 +38,7 @@ export const OFFLINE_EDIT_SAVED_MESSAGE =
   "Alterações salvas no dispositivo. Sincronizaremos automaticamente quando a conexão voltar.";
 
 export type OfflineActionResult =
-  | { state: "synced" }
+  | { state: "synced"; /** Resposta do banco quando a ação foi feita na hora (ex.: ids criados). */ result?: unknown }
   | { state: "queued" }
   | { state: "uncertain" }
   | { state: "rejected"; errorCode: string };
@@ -91,7 +91,7 @@ async function salvarAcaoFinanceira(
     // definitivamente rejeitada ocupando a fila.
     return { state: "rejected", errorCode };
   }
-  return { state: "synced" };
+  return resultado.result === undefined ? { state: "synced" } : { state: "synced", result: resultado.result };
 }
 
 export async function salvarCriacaoFinanceira(

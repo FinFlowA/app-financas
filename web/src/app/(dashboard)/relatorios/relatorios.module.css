@@ -343,6 +343,24 @@
   color: var(--ff-primary-dark);
 }
 
+/* Filtros de atrasados e incertos lado a lado (empilhados no celular). */
+.flowToggles {
+  display: grid;
+  gap: 10px;
+  margin: -6px 0 18px;
+}
+@media (min-width: 760px) {
+  .flowToggles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.flowToggles .overdueToggle {
+  margin: 0;
+}
+.uncertainToggle {
+  --overdue: #8b6cdb;
+}
+
 .overdueToggle {
   --overdue: var(--ff-orange);
   display: flex;

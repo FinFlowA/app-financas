@@ -179,6 +179,15 @@ function Field({ label, children, className = "" }: { label: string; children: R
   return <label className={`text-sm font-bold text-foreground ${className}`}>{label}{children}</label>;
 }
 
+/** "Não tenho certeza deste lançamento": fica de fora do Fluxo de caixa quando "Considerar incertos" está desligado. */
+function UncertainToggle({ checked, onChange, className = "" }: { checked: boolean; onChange: (value: boolean) => void; className?: string }) {
+  return <label className={`ff-focus flex cursor-pointer items-start gap-3 rounded-xl border px-3.5 py-3 transition ${checked ? "border-purple/50 bg-purple/10" : "border-border bg-surface-muted/40"} ${className}`}>
+    <input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-0.5 h-5 w-5 shrink-0 accent-purple" />
+    <span className="grid gap-0.5"><span className="text-sm font-bold text-foreground">Não tenho certeza deste lançamento</span><span className="text-xs leading-relaxed text-foreground-muted">No Fluxo de caixa, desligue “Considerar incertos” para ver a projeção sem ele.</span></span>
+    <input type="hidden" name="uncertain" value={checked ? "1" : "0"} />
+  </label>;
+}
+
 export function NewTransactionDialog({ accounts, goals = [], categories, today, initialKind, initialDate, onClose, onChanged }: {
   accounts: Conta[];
   goals?: Caixinha[];
@@ -201,6 +210,7 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
   const [accountId, setAccountId] = useState("");
   const [destination, setDestination] = useState("");
   const [categoryId, setCategoryId] = useState("");
+  const [uncertain, setUncertain] = useState(false);
   // A mesma chave precisa sobreviver a uma resposta perdida: se a primeira
   // tentativa chegou ao banco, reenviar o formulário reproduz o recibo em vez
   // de criar um segundo lançamento. O modal desmonta após o sucesso e, então,
@@ -270,6 +280,7 @@ export function NewTransactionDialog({ accounts, goals = [], categories, today, 
               <span>{label}</span>
             </label>)}
           </div></fieldset>}
+          {!recurring && kind !== "transferencia" && status === "pendente" && <UncertainToggle checked={uncertain} onChange={setUncertain} />}
         </div>
         {activeAccounts.length === 0 && <p role="alert" className="text-sm font-semibold text-red lg:col-span-2">Crie ou reative uma conta antes de lançar.</p>}
         {kind !== "transferencia" && compatibleCategories.length === 0 && <p role="alert" className="text-sm font-semibold text-red lg:col-span-2">Crie uma categoria ativa compatível antes de lançar.</p>}
@@ -299,6 +310,9 @@ function EditTransactionDialog({ transaction, summary, accounts, categories, use
   const editableAccounts = accounts.filter((account) => !account.arquivado || account.id === transaction.conta_id);
   const destination = destinationAccount(transaction, accounts);
   const concluded = transaction.status === "paga";
+  // Incerto: só em receita ou despesa única pendente, com categoria.
+  const canBeUncertain = !transfer && !series && !concluded && transaction.categoria_id !== null && !isPagamentoFatura(transaction.descricao);
+  const [uncertain, setUncertain] = useState(transaction.incerta === true);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -332,6 +346,7 @@ function EditTransactionDialog({ transaction, summary, accounts, categories, use
       {transfer ? <div className="rounded-ff-sm bg-blue/10 p-3 text-xs text-blue"><strong>Destino preservado:</strong> {destination?.nome ?? "conta vinculada"}. Para trocar origem e destino, exclua os itens pendentes e crie outra transferência.</div> : <Field label="Categoria"><FinFlowSelect name="category_id" required searchable defaultValue={String(transaction.categoria_id ?? "")} options={compatibleCategories.map((category) => ({ value: String(category.id), label: `${category.nome}${!isActiveCategory(category) ? " (arquivada)" : ""}` }))} /></Field>}
       {transfer && <input type="hidden" name="category_id" value="0" />}
       {canEditSeries && <fieldset className="sm:col-span-2"><legend className="mb-2 text-sm font-bold">Aplicar a</legend><div className="grid gap-2 sm:grid-cols-2">{[["one", "Somente este item"], ["open_series", "Todos os itens pendentes da série"]].map(([value, label]) => <button key={value} type="button" onClick={() => setScope(value as typeof scope)} className={`rounded-ff-sm border px-3 py-2.5 text-sm font-bold ${scope === value ? "border-primary bg-primary-soft text-primary-dark" : "border-border text-foreground-muted"}`}>{label}</button>)}</div></fieldset>}
+      {canBeUncertain && <UncertainToggle checked={uncertain} onChange={setUncertain} className="sm:col-span-2" />}
       {summary.paymentCount > 0 && <p className="sm:col-span-2 rounded-ff-sm bg-orange/10 p-3 text-xs font-semibold text-orange">Como existem pagamentos registrados, somente o saldo deste item pode ser editado. As baixas anteriores permanecem no detalhe.</p>}
       {transaction.user_id !== userId && <p className="sm:col-span-2 text-xs text-foreground-muted">Lançamento compartilhado: conta e categoria pertencem ao titular e podem ter restrições adicionais.</p>}
       <div className="grid gap-3 sm:col-span-2 sm:grid-cols-[1fr_auto_auto] sm:items-center"><Feedback state={feedback} /><button type="button" onClick={onClose} className="ff-focus rounded-full border border-border px-5 py-3 text-sm font-bold text-foreground-muted transition hover:bg-surface-muted sm:col-start-2">Cancelar</button><button disabled={busy} className="ff-focus rounded-full bg-primary px-6 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50 sm:col-start-3">{busy ? "Salvando..." : "Salvar"}</button></div>
@@ -505,7 +520,7 @@ function TransactionCard({ transaction, summary, accounts, categories, today, re
 
   return <article className="ff-card group overflow-hidden border-white/5 shadow-[0_12px_34px_rgba(0,0,0,0.07)] transition duration-300 hover:-translate-y-0.5 hover:border-primary/20 hover:shadow-[0_18px_44px_rgba(0,0,0,0.13)]"><button type="button" onClick={onOpen} className="ff-focus grid w-full gap-3 p-4 text-left sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:items-center">
     <div className="hidden h-14 w-14 place-content-center rounded-2xl border border-border/60 bg-surface-muted/75 text-center transition group-hover:border-primary/25 sm:grid"><span className="text-lg font-black text-foreground">{effectiveDate.slice(8, 10)}</span><span className="text-[10px] font-bold uppercase text-foreground-muted">{new Intl.DateTimeFormat("pt-BR", { month: "short", timeZone: "UTC" }).format(new Date(`${effectiveDate}T12:00:00Z`)).replace(".", "")}</span></div>
-    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${kind === "receita" ? "bg-primary-soft text-primary-dark" : kind === "despesa" ? "bg-red/10 text-red" : "bg-blue/10 text-blue"}`}>{kind === "transferencia" ? "Transferência" : kind}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${statusClass}`}>{status}</span>{recurrence && <span className="rounded-full bg-purple/10 px-2.5 py-1 text-[10px] font-bold text-purple">{recurrence}</span>}</div><h2 className="mt-2 truncate font-extrabold text-foreground">{descricaoVisivel(transaction.descricao)}</h2><div className="mt-1 flex flex-wrap gap-x-2 text-xs font-semibold text-foreground-muted"><span className="sm:hidden">{formatarData(effectiveDate)}</span>{account && <span style={{ color: account.cor }}>{account.nome}</span>}{destination && <span>→ {destination.nome}</span>}{category && <span style={{ color: category.cor }}>{category.nome}</span>}</div>{partial && <p data-private-value="true" className="mt-2 text-xs font-semibold text-orange">Realizado {formatarReais(summary.paidTotal)} · falta {formatarReais(summary.remainingValue)}</p>}</div>
+    <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wide ${kind === "receita" ? "bg-primary-soft text-primary-dark" : kind === "despesa" ? "bg-red/10 text-red" : "bg-blue/10 text-blue"}`}>{kind === "transferencia" ? "Transferência" : kind}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${statusClass}`}>{status}</span>{recurrence && <span className="rounded-full bg-purple/10 px-2.5 py-1 text-[10px] font-bold text-purple">{recurrence}</span>}{transaction.incerta && !summary.isFullyPaid && <span className="rounded-full border border-purple/40 px-2.5 py-1 text-[10px] font-extrabold uppercase text-purple">Incerto</span>}</div><h2 className="mt-2 truncate font-extrabold text-foreground">{descricaoVisivel(transaction.descricao)}</h2><div className="mt-1 flex flex-wrap gap-x-2 text-xs font-semibold text-foreground-muted"><span className="sm:hidden">{formatarData(effectiveDate)}</span>{account && <span style={{ color: account.cor }}>{account.nome}</span>}{destination && <span>→ {destination.nome}</span>}{category && <span style={{ color: category.cor }}>{category.nome}</span>}</div>{partial && <p data-private-value="true" className="mt-2 text-xs font-semibold text-orange">Realizado {formatarReais(summary.paidTotal)} · falta {formatarReais(summary.remainingValue)}</p>}</div>
     <div className="flex items-center justify-between gap-3 sm:block sm:text-right"><span className="text-xs font-semibold text-primary sm:hidden">Ver detalhes</span><div><p data-private-value="true" className={`text-lg font-black ${valueClass}`}>{kind === "receita" ? "+ " : kind === "despesa" ? "- " : "↔ "}{formatarReais(displayValue)}</p>{reconciled && <span className="mt-1 inline-block rounded-full bg-blue/10 px-2.5 py-1 text-[10px] font-extrabold uppercase text-blue">Conciliado</span>}<p className="mt-1 hidden text-xs font-semibold text-primary sm:block">Ver detalhes ›</p></div></div>
   </button></article>;
 }
@@ -616,6 +631,8 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
     const date = effectiveTransactionDate(transaction, summary);
     if (candidate === "attention") return !summary.isFullyPaid && isAttentionDueDate(transaction.data_vencimento, today);
     if (candidate === "overdue") return !summary.isFullyPaid && transaction.data_vencimento < today;
+    // Incertos: os pendentes do mês (e atrasados) marcados como "não tenho certeza".
+    if (candidate === "uncertain") return !summary.isFullyPaid && transaction.incerta === true && (inPeriod(date) || transaction.data_vencimento < today);
     if (candidate === "today") return !summary.isFullyPaid && transaction.data_vencimento === today;
     if (candidate === "next7") return !summary.isFullyPaid && transaction.data_vencimento >= today && transaction.data_vencimento <= nextSeven;
     // Pendentes: mostra o que vence no mês selecionado, mais qualquer item
@@ -639,7 +656,7 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
     if (candidate === "overdue") return !invoice.paid && invoice.dueDate < today;
     // O app mantém os atalhos de hoje e sete dias para agendamentos. Faturas
     // entram no atalho específico de atraso e na navegação mensal.
-    if (candidate === "today" || candidate === "next7") return false;
+    if (candidate === "today" || candidate === "next7" || candidate === "uncertain") return false;
     // No período personalizado, a fatura entra pelo dia do vencimento.
     const inInvoicePeriod = range ? inPeriod(invoice.dueDate) : invoice.invoiceMonth === month;
     if (candidate === "pending") return !invoice.paid && (inInvoicePeriod || invoice.dueDate < today);
@@ -704,7 +721,7 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
   // Trocar de mês ou de período mantém Todos, Concluídos e Pendentes. Atrasados
   // e os atalhos (hoje, próximos 7 dias) não dependem do mês: aí a troca mostra
   // os Pendentes do mês escolhido.
-  const periodForNewDates = (): PeriodFilter => (period === "all" || period === "completed" || period === "pending" ? period : "pending");
+  const periodForNewDates = (): PeriodFilter => (period === "all" || period === "completed" || period === "pending" || period === "uncertain" ? period : "pending");
   function chooseMonth(next: string) { const nextPeriod = periodForNewDates(); setMonth(next); setRange(null); setPeriod(nextPeriod); setLimit(PAGE_SIZE); syncUrl(nextPeriod, next, null); }
   function chooseRange(next: HistoryRange) { const nextPeriod = periodForNewDates(); setRange(next); setPeriod(nextPeriod); setLimit(PAGE_SIZE); syncUrl(nextPeriod, month, next); }
   // Nas setas, o período anda o próprio tamanho (ex.: de 15 em 15 dias).
@@ -835,7 +852,7 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
   const accountSummary = accountIds.length === 0 ? "Todas" : accountIds.length === 1 ? accounts.find((account) => account.id === accountIds[0])?.nome ?? "1 conta" : `${accountIds.length} contas`;
   const categoryDisabled = types.length > 0 && types.every((type) => type === "transferencia");
   const categorySummary = categoryDisabled ? "Não se aplica" : categoryIds.length === 0 ? "Todas" : categoryIds.length === 1 ? categories.find((category) => category.id === categoryIds[0])?.nome ?? "1 categoria" : `${categoryIds.length} categorias`;
-  const periods: { value: PeriodFilter; label: string }[] = [{ value: "all", label: "Todos" }, { value: "completed", label: "Concluídos" }, { value: "pending", label: "Pendentes" }, { value: "overdue", label: "Atrasados" }];
+  const periods: { value: PeriodFilter; label: string }[] = [{ value: "all", label: "Todos" }, { value: "completed", label: "Concluídos" }, { value: "pending", label: "Pendentes" }, { value: "overdue", label: "Atrasados" }, { value: "uncertain", label: "Incertos" }];
   const detailSummary = detail ? detailHistory?.summary ?? summaryFor(detail) : null;
   const activeCategories = categories.filter(isActiveCategory);
   const revenueCategories = activeCategories.filter((category) => category.tipo === "receita" || category.tipo === "ambos");

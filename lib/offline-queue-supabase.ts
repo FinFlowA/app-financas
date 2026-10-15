@@ -6,6 +6,7 @@ type OfflineRpcResponse = {
   ok?: boolean;
   replayed?: boolean;
   error_code?: string;
+  result?: unknown;
 };
 
 type SupabaseLikeError = {
@@ -101,7 +102,11 @@ export function createSupabaseOfflineExecutor(client: SupabaseClient): OfflineEx
       };
     }
     const responseBody = (data ?? {}) as OfflineRpcResponse;
-    if (responseBody.ok) return { ok: true, replayed: responseBody.replayed === true };
+    if (responseBody.ok) {
+      return responseBody.result === undefined
+        ? { ok: true, replayed: responseBody.replayed === true }
+        : { ok: true, replayed: responseBody.replayed === true, result: responseBody.result };
+    }
     const code = safeCode(responseBody.error_code ?? "OFFLINE_SERVER_REJECTED");
     return { ok: false, retryable: RETRYABLE_CODES.has(code), errorCode: code };
   };
