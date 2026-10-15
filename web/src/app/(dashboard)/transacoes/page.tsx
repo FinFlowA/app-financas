@@ -83,37 +83,49 @@ export default async function TransactionsPage({
 
   // O Histórico precisa atravessar meses nos filtros rápidos. Buscamos em
   // páginas para não perder itens no limite padrão de linhas do PostgREST.
-  const transactions: TransactionRow[] = [];
   const pageSize = 1_000;
-  const filtro = await filtroVisiveis;
-  for (let start = 0; ; start += pageSize) {
-    const result = await supabase
-      .from("transacoes")
-      .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
-      .or(filtro)
-      .order("id", { ascending: false })
-      .range(start, start + pageSize - 1);
-    if (result.error) throw new Error("Não foi possível carregar o Histórico agora.");
-    const rows = (result.data ?? []) as TransactionRow[];
-    transactions.push(...rows);
-    if (rows.length < pageSize) break;
-  }
+  const loadTransactions = async () => {
+    const rowsLoaded: TransactionRow[] = [];
+    const filtro = await filtroVisiveis;
+    for (let start = 0; ; start += pageSize) {
+      const result = await supabase
+        .from("transacoes")
+        .select("id, user_id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, version, transacao_pai_id")
+        .or(filtro)
+        .order("id", { ascending: false })
+        .range(start, start + pageSize - 1);
+      if (result.error) throw new Error("Não foi possível carregar o Histórico agora.");
+      const rows = (result.data ?? []) as TransactionRow[];
+      rowsLoaded.push(...rows);
+      if (rows.length < pageSize) return rowsLoaded;
+    }
+  };
 
   // O Histórico de faturas também pode ultrapassar o limite padrão do
   // PostgREST. Mantemos a paginação no servidor e deixamos a RLS restringir
   // tanto cartões quanto itens ao usuário autenticado.
-  const invoiceItems: FaturaItem[] = [];
-  for (let start = 0; ; start += pageSize) {
-    const result = await supabase
-      .from("fatura_itens")
-      .select("id, cartao_id, user_id, descricao, valor, data_compra, mes_fatura, parcela_atual, total_parcelas, categoria_id, pago, grupo_parcela_id")
-      .order("id", { ascending: false })
-      .range(start, start + pageSize - 1);
-    if (result.error) throw new Error("Não foi possível carregar as faturas no Histórico agora.");
-    const rows = (result.data ?? []) as FaturaItem[];
-    invoiceItems.push(...rows);
-    if (rows.length < pageSize) break;
-  }
+  const loadInvoiceItems = async () => {
+    const rowsLoaded: FaturaItem[] = [];
+    for (let start = 0; ; start += pageSize) {
+      const result = await supabase
+        .from("fatura_itens")
+        .select("id, cartao_id, user_id, descricao, valor, data_compra, mes_fatura, parcela_atual, total_parcelas, categoria_id, pago, grupo_parcela_id")
+        .order("id", { ascending: false })
+        .range(start, start + pageSize - 1);
+      if (result.error) throw new Error("Não foi possível carregar as faturas no Histórico agora.");
+      const rows = (result.data ?? []) as FaturaItem[];
+      rowsLoaded.push(...rows);
+      if (rows.length < pageSize) return rowsLoaded;
+    }
+  };
+
+  // Transações, faturas e conciliação ao mesmo tempo (antes, uma depois da
+  // outra); só os resumos de pagamento esperam as transações.
+  const [transactions, invoiceItems, reconciledResult] = await Promise.all([
+    loadTransactions(),
+    loadInvoiceItems(),
+    supabase.rpc("list_bank_reconciled_transaction_ids"),
+  ]);
 
   const rootTransactions = transactions.filter((transaction) => transaction.transacao_pai_id === null);
   const summaryChunks: number[][] = [];
@@ -129,7 +141,6 @@ export default async function TransactionsPage({
   } catch {
     throw new Error("Não foi possível carregar os resumos de pagamentos do Histórico agora.");
   }
-  const reconciledResult = await supabase.rpc("list_bank_reconciled_transaction_ids");
   if (reconciledResult.error && reconciledResult.error.code !== "PGRST202") {
     throw new Error("Não foi possível carregar o estado de conciliação do Histórico agora.");
   }

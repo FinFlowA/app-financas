@@ -735,7 +735,9 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
   }
   function closeDetails() { detailRequest.current += 1; setDetail(null); setDetailHistory(null); setDetailHistoryReady(false); setDetailError(null); setDetailLoading(false); setSelectedPaymentIds([]); }
   function dismissDetails() { closeDetails(); onDetailClosed?.(); }
-  function changed(message: string) { setNewOpen(false); setEditing(null); setCompleting(null); setDeleting(null); setReopening(null); dismissDetails(); setFlash(message); router.refresh(); }
+  // As ações do servidor já devolvem a página atualizada (revalidatePath em
+  // refreshTransactions); pedir a página de novo aqui (router.refresh) montaria tudo duas vezes.
+  function changed(message: string) { setNewOpen(false); setEditing(null); setCompleting(null); setDeleting(null); setReopening(null); dismissDetails(); setFlash(message); }
   function created(message: string) {
     setNewOpen(false);
     if (returnHomeAfterCreate) {
@@ -743,7 +745,6 @@ export default function TransactionManager({ userId, initialMonth, initialRange 
       return;
     }
     setFlash(message);
-    router.refresh();
   }
 
   const openDetails = useCallback(async (transaction: TransactionRow) => {

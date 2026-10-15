@@ -698,6 +698,6 @@ export default function HomeDashboard({ userId, displayName, greeting, month, to
         </div>
       </section>
     </div>, document.body)}
-    {newTransactionKind && <NewTransactionDialog accounts={accounts} goals={goals} categories={categories} today={today} initialKind={newTransactionKind} onClose={() => setNewTransactionKind(null)} onChanged={() => { setNewTransactionKind(null); router.refresh(); }} />}
+    {newTransactionKind && <NewTransactionDialog accounts={accounts} goals={goals} categories={categories} today={today} initialKind={newTransactionKind} onClose={() => setNewTransactionKind(null)} onChanged={() => setNewTransactionKind(null)} />}
   </div>;
 }
