@@ -84,7 +84,8 @@ Use as RPCs canônicas; DML direto pode violar o ledger e é bloqueado por trigg
 - O banco (trigger `finflow_normalizar_incerta`, migration `20261015120000_lancamento_incerto.sql`) só mantém a marcação nesses casos e a tira ao concluir o lançamento.
 - **Fluxo de caixa (app e site):** o filtro "Considerar incertos" vem ligado; desligado, os incertos saem do saldo previsto, do gráfico e dos valores previstos (`web/src/lib/fluxo-incertos.ts`). No site, a escolha vai na URL (`incertos=0`).
 - **Histórico (app e site):** etiqueta "Incerto" no lançamento e filtro "Incertos" (os pendentes marcados).
-- Início, relatório e Finn tratam o incerto como qualquer pendente.
+- Início, relatório e Finn tratam o incerto como qualquer pendente. No relatório (PDF e Excel), sem filtro próprio, a situação do lançamento ganha "· incerto" (por exemplo, "A vencer · incerto") nas Receitas, Despesas e Pendências, com uma nota explicando a marcação.
+- O cartão "Considerar incertos" do Fluxo de caixa é roxo, como a opção no lançamento.
 
 ## Conciliação bancária
 

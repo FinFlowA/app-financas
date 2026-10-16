@@ -27,7 +27,7 @@ export default async function ExportarPage() {
     supabase.from("cartoes").select("id, user_id, nome, cor, limite, dia_vencimento, dia_fechamento, ativo, version").order("nome"),
     fetchAllRows((from, to) => supabase
       .from("transacoes")
-      .select("id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status")
+      .select("id, conta_id, categoria_id, tipo, valor, descricao, data_vencimento, data_realizacao, status, incerta")
       .or(filtro)
       .order("id")
       .range(from, to)),

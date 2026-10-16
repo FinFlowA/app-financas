@@ -85,7 +85,7 @@ export type DadosRelatorio = {
   categorias: Pick<Categoria, "id" | "nome" | "tipo" | "meta_mensal" | "limite_mensal">[];
   objetivos: Pick<Caixinha, "id" | "nome" | "meta_valor" | "saldo_atual" | "data_prazo" | "arquivado">[];
   cartoes: Cartao[];
-  transacoes: Pick<Transacao, "id" | "conta_id" | "categoria_id" | "tipo" | "valor" | "descricao" | "data_vencimento" | "data_realizacao" | "status">[];
+  transacoes: Pick<Transacao, "id" | "conta_id" | "categoria_id" | "tipo" | "valor" | "descricao" | "data_vencimento" | "data_realizacao" | "status" | "incerta">[];
   itensFatura: FaturaItem[];
   /** Hoje em São Paulo, "AAAA-MM-DD". */
   hoje: string;

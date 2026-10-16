@@ -82,7 +82,7 @@ Algumas regras que valem para o site e o app ficam nos testes do site:
 - `seletor-periodo.test.ts`: o mês do calendário do período (Histórico e Relatórios) é clicável e abre a escolha de mês e ano;
 - `historico-filtros.test.ts`: no Histórico do site, trocar de mês mantém Todos, Concluídos e Pendentes, e "Limpar filtros" volta para o mês atual;
 - `finn-tela.test.ts`: a apresentação do Finn com as mesmas sugestões do app (e a mesma apresentação no app), a cota pela leitura do app e a ajuda aberta pelo cabeçalho, sem o botão flutuante nessa tela;
-- `lancamento-incerto.test.ts`: o filtro "Considerar incertos" do Fluxo de caixa (site e app) e a marcação de incerto no Histórico, na criação e na edição;
+- `lancamento-incerto.test.ts`: o filtro "Considerar incertos" do Fluxo de caixa (site e app), a marcação de incerto no Histórico, na criação e na edição, e o "· incerto" na situação do relatório sem mudar nenhum número;
 - `acoes-sem-refresh-duplo.test.ts`: as ações de lançamento atualizam a página pelo servidor, sem `router.refresh()` repetido, e o Histórico busca transações, faturas e conciliação ao mesmo tempo;
 - `fluxo-categorias-do-dia.test.ts`: no Fluxo de caixa diário, Receitas e Despesas por categoria mostram só o dia selecionado, com as compras do cartão no vencimento da fatura;
 - `inicio-detalhe-categoria.test.ts`: no Início do app, tocar numa categoria da Distribuição do Mês mostra os lançamentos e as compras do cartão que formam o valor;
