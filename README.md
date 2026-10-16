@@ -476,6 +476,11 @@ com layouts bancários não padronizados.
 - **Fluxo de caixa (app e site):** filtro "Considerar incertos", ligado por
   padrão; desligado, os incertos saem do saldo previsto e do gráfico.
 - **Histórico (app e site):** etiqueta "Incerto" e filtro "Incertos".
+- **Relatório (PDF e Excel), 16/10/2026:** sem filtro novo; a situação do
+  lançamento incerto ganha "· incerto" ("A vencer · incerto") em Receitas,
+  Despesas e Pendências, com uma nota explicando. Os números não mudam.
+- **Cartão do filtro no site:** roxo, como a opção no lançamento (antes saía
+  laranja: a regra do laranja vinha depois no CSS).
 - **Banco:** coluna `transacoes.incerta` e a trigger
   `finflow_normalizar_incerta` (migration
   `20261015120000_lancamento_incerto.sql`). A criação marca o lançamento

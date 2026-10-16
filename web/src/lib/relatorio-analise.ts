@@ -17,6 +17,7 @@
 // separa um do outro (objetivos, transferências e o cartão).
 import { totaisDoCartao } from "./cartoes-resumo";
 import { dataNoFluxo } from "./fluxo-atrasados";
+import { estaIncerto } from "./fluxo-incertos";
 import { filterInvoiceGroupItems, groupInvoiceItems, isSyntheticInvoiceItem, type InvoiceHistoryGroup } from "./invoices";
 import {
   calcularSaldosPorConta,
@@ -472,6 +473,8 @@ export type ItemPendente = {
   categoria: string;
   contaOuCartao: string;
   situacao: "a_vencer" | "atrasado";
+  /** Marcado como "não tenho certeza" (só receitas e despesas). */
+  incerto: boolean;
   valor: number;
 };
 
@@ -515,6 +518,7 @@ export function itensPendentes(contexto: ContextoRelatorio): ItemPendente[] {
       categoria: interno ? "-" : nomeDaCategoria(contexto, transacao.categoria_id),
       contaOuCartao: contaPorId.get(transacao.conta_id) ?? "Conta",
       situacao,
+      incerto: estaIncerto(transacao),
       valor: centavos(numero(transacao.valor)),
     });
   }
@@ -537,6 +541,7 @@ export function itensPendentes(contexto: ContextoRelatorio): ItemPendente[] {
         categoria: "-",
         contaOuCartao: fatura.cardName,
         situacao,
+        incerto: false,
         valor: aberto,
       });
     }

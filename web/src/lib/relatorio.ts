@@ -8,6 +8,7 @@
 // objetivos fora de Receitas/Despesas, compras do cartão pelo vencimento da
 // fatura e, com todas as contas, o pagamento da fatura fora de Despesas. Os
 // valores aparecem sempre.
+import { estaIncerto } from "./fluxo-incertos";
 import {
   adicionarDias,
   agrupamentos,
@@ -88,6 +89,10 @@ function nomeDoObjetivo(descricao: string, objetivos: DadosRelatorio["objetivos"
 }
 
 const situacaoTexto = { concluido: "Concluído", a_vencer: "A vencer", atrasado: "Atrasado" } as const;
+// Lançamento marcado como "não tenho certeza": entra nas contas como qualquer
+// pendente; o relatório só mostra a marcação ao lado da situação.
+const MARCA_INCERTO = " · incerto";
+const NOTA_INCERTOS = "“Incerto” marca o lançamento que você indicou como “não tenho certeza”. Ele entra nas contas do relatório como qualquer pendente; no Fluxo de caixa, dá para ver a projeção sem ele em “Considerar incertos”.";
 
 export function montarRelatorio(dados: DadosRelatorio, opcoes: OpcoesRelatorio): BlocoRelatorio[] {
   const contexto = criarContexto(dados, opcoes);
@@ -556,7 +561,7 @@ export function montarRelatorio(dados: DadosRelatorio, opcoes: OpcoesRelatorio):
     descricaoVisivel(t.descricao) || "Lançamento",
     nomeCategoria(t.categoria_id),
     nomeConta(t.conta_id),
-    situacaoTexto[situacaoDoLancamento(t, hoje)],
+    situacaoTexto[situacaoDoLancamento(t, hoje)] + (estaIncerto(t) ? MARCA_INCERTO : ""),
     centavos(numero(t.valor)),
   ];
   const doPeriodoNaClasse = (classe: "receita" | "despesa") => contexto.escopo
@@ -564,9 +569,15 @@ export function montarRelatorio(dados: DadosRelatorio, opcoes: OpcoesRelatorio):
     .filter((t) => classeDoLancamento(t, todasAsContas) === classe)
     .filter((t) => passaNosFiltros(contexto, { classe, categoria_id: t.categoria_id, situacao: situacaoDoLancamento(t, hoje) }))
     .sort((a, b) => dataEfetivaTransacao(a).localeCompare(dataEfetivaTransacao(b)) || a.id - b.id);
-  if (quer("receitas")) adicionar("receitas", tabela("receitas", TITULOS.receitas, lancamento, doPeriodoNaClasse("receita").map(linhaLancamento)));
+  if (quer("receitas")) {
+    const receitas = doPeriodoNaClasse("receita");
+    adicionar("receitas", tabela("receitas", TITULOS.receitas, lancamento, receitas.map(linhaLancamento)));
+    if (receitas.some(estaIncerto)) adicionar("receitas", nota("receitas", NOTA_INCERTOS));
+  }
   if (quer("despesas")) {
-    adicionar("despesas", tabela("despesas", TITULOS.despesas, lancamento, doPeriodoNaClasse("despesa").map(linhaLancamento)));
+    const despesas = doPeriodoNaClasse("despesa");
+    adicionar("despesas", tabela("despesas", TITULOS.despesas, lancamento, despesas.map(linhaLancamento)));
+    if (despesas.some(estaIncerto)) adicionar("despesas", nota("despesas", NOTA_INCERTOS));
     if (todasAsContas) adicionar("despesas", nota("despesas", "As compras do cartão estão em Compras no cartão e entram nas despesas do resumo no mês da fatura. O pagamento da fatura não aparece aqui, para o mesmo gasto não contar duas vezes."));
   }
 
@@ -684,7 +695,8 @@ export function montarRelatorio(dados: DadosRelatorio, opcoes: OpcoesRelatorio):
       { titulo: "Conta ou cartão", tipo: "texto" },
       { titulo: "Situação", tipo: "texto" },
       { titulo: "Valor", tipo: "moeda" },
-    ], pendentes.map((item) => [item.vencimento, item.descricao, item.tipo, item.categoria, item.contaOuCartao, situacaoTexto[item.situacao], item.valor])));
+    ], pendentes.map((item) => [item.vencimento, item.descricao, item.tipo, item.categoria, item.contaOuCartao, situacaoTexto[item.situacao] + (item.incerto ? MARCA_INCERTO : ""), item.valor])));
+    if (pendentes.some((item) => item.incerto)) adicionar("pendencias", nota("pendencias", NOTA_INCERTOS));
   }
 
   if (quer("objetivos")) {

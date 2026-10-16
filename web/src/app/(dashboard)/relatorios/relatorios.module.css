@@ -357,8 +357,10 @@
 .flowToggles .overdueToggle {
   margin: 0;
 }
-.uncertainToggle {
-  --overdue: #8b6cdb;
+/* Mais específico que .overdueToggle (que vem depois e define o laranja):
+   o roxo é o mesmo da opção "Não tenho certeza" no lançamento. */
+.overdueToggle.uncertainToggle {
+  --overdue: var(--color-purple);
 }
 
 .overdueToggle {
