@@ -8,6 +8,8 @@ export type DadosOrcamentoPdf = {
   cliente: string;
   observacoes: string;
   validadeDias: number | null;
+  /** Data de entrega (AAAA-MM-DD), opcional. */
+  entrega: string | null;
   itens: ItemOrcamento[];
   logo: ImagemLocal | null;
 };
@@ -64,6 +66,13 @@ export async function gerarPdfOrcamento(dados: DadosOrcamentoPdf) {
     doc.text("Validade:", margem, y);
     doc.setFont("helvetica", "normal");
     doc.text(`${dados.validadeDias} dias (até ${validade})`, margem + 19, y);
+    y += 6;
+  }
+  if (dados.entrega) {
+    doc.setFont("helvetica", "bold");
+    doc.text("Entrega:", margem, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(dados.entrega.split("-").reverse().join("/"), margem + 17, y);
     y += 6;
   }
 

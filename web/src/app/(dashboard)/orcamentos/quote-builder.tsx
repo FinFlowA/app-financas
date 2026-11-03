@@ -3,6 +3,8 @@
 
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { guardarLogo, lerImagemReduzida, logoGuardada, type ImagemLocal } from "@/lib/imagem-local";
+import CurrencyInput from "@/components/ui/currency-input";
+import FinFlowDatePicker from "@/components/ui/finflow-date-picker";
 import { formatarReais } from "@/lib/format";
 import { parseMoney } from "@/lib/money";
 import { lucroDoItem, resumoDoOrcamento, totalDoItem, type ItemOrcamento } from "@/lib/orcamento";
@@ -20,6 +22,18 @@ export default function QuoteBuilder() {
   const [cliente, setCliente] = useState("");
   const [validade, setValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
+  // Data de entrega opcional (AAAA-MM-DD; vazia = sem data no PDF).
+  const [entrega, setEntrega] = useState("");
+  // Recria os campos de moeda depois de adicionar (eles guardam o próprio texto).
+  const [chaveCampos, setChaveCampos] = useState(0);
+  // Foto do item ampliada (clicar na miniatura).
+  const [fotoAberta, setFotoAberta] = useState<{ src: string; nome: string } | null>(null);
+  useEffect(() => {
+    if (!fotoAberta) return;
+    const fechar = (event: KeyboardEvent) => { if (event.key === "Escape") setFotoAberta(null); };
+    window.addEventListener("keydown", fechar);
+    return () => window.removeEventListener("keydown", fechar);
+  }, [fotoAberta]);
   const [erro, setErro] = useState<string | null>(null);
   const [gerando, setGerando] = useState(false);
   // Imagens só no navegador: a logo fica guardada aqui; a do item, só nesta página.
@@ -55,14 +69,14 @@ export default function QuoteBuilder() {
     if (!Number.isFinite(qtd) || qtd <= 0) return setErro("Informe uma quantidade maior que zero.");
     if (custoNum !== null && (!Number.isFinite(custoNum) || custoNum < 0)) return setErro("O custo precisa ser um valor válido.");
     setItens((atual) => [...atual, { id: crypto.randomUUID(), descricao: descricao.trim(), valor: valorNum, quantidade: qtd, custo: custoNum, imagem: imagemItem }]);
-    setDescricao(""); setValor(""); setQuantidade("1"); setCusto(""); setImagemItem(null); setErro(null);
+    setDescricao(""); setValor(""); setQuantidade("1"); setCusto(""); setImagemItem(null); setChaveCampos((k) => k + 1); setErro(null);
   }
 
   async function gerar(modo: "baixar" | "imprimir") {
     if (!itens.length || gerando) return;
     setGerando(true);
     try {
-      const doc = await gerarPdfOrcamento({ cliente, observacoes, validadeDias: Number(validade) > 0 ? Number(validade) : null, itens, logo });
+      const doc = await gerarPdfOrcamento({ cliente, observacoes, validadeDias: Number(validade) > 0 ? Number(validade) : null, entrega: entrega || null, itens, logo });
       if (modo === "baixar") doc.save(`orcamento-${new Date().toISOString().slice(0, 10)}.pdf`);
       else {
         doc.autoPrint();
@@ -82,6 +96,10 @@ export default function QuoteBuilder() {
       <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
         <label className="text-sm font-bold">Cliente (opcional)<input value={cliente} onChange={(e) => setCliente(e.target.value)} maxLength={120} className={`${INPUT} mt-1.5 font-normal`} /></label>
         <label className="text-sm font-bold">Validade em dias (opcional)<input value={validade} onChange={(e) => setValidade(e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={3} className={`${INPUT} mt-1.5 font-normal`} /></label>
+        <div className="text-sm font-bold sm:col-span-2">Data de entrega (opcional)
+          {entrega ? <div className="mt-1.5 flex flex-wrap items-center gap-2"><div className="w-full max-w-xs"><FinFlowDatePicker name="orcamento_entrega" value={entrega} defaultValue={entrega} onChange={setEntrega} /></div><button type="button" onClick={() => setEntrega("")} className="text-xs font-bold text-red">Tirar data</button></div>
+            : <div className="mt-1.5"><button type="button" onClick={() => setEntrega(new Date().toLocaleDateString("sv-SE"))} className="ff-focus rounded-full border border-border px-4 py-2 text-xs font-bold">+ Informar data de entrega</button></div>}
+        </div>
       </div>
 
       <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border p-3">
@@ -93,12 +111,12 @@ export default function QuoteBuilder() {
 
       <form onSubmit={adicionar} className="grid gap-3 rounded-2xl bg-surface-muted/40 p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_6rem_minmax(0,1fr)]">
         <label className="text-xs font-bold">Item<input value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={120} placeholder="Ex.: Camiseta personalizada" className={`${INPUT} mt-1`} /></label>
-        <label className="text-xs font-bold">Valor (R$)<input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${INPUT} mt-1`} /></label>
+        <div className="text-xs font-bold">Valor<div className="mt-1"><CurrencyInput key={`valor-${chaveCampos}`} name="orcamento_valor" ariaLabel="Valor" onValueChange={setValor} className="text-sm font-normal" /></div></div>
         <label className="text-xs font-bold">Quantidade<input value={quantidade} onChange={(e) => setQuantidade(e.target.value)} inputMode="decimal" className={`${INPUT} mt-1`} /></label>
-        <label className="text-xs font-bold">Custo (opcional)<input value={custo} onChange={(e) => setCusto(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${INPUT} mt-1`} /></label>
+        <div className="text-xs font-bold">Custo (opcional)<div className="mt-1"><CurrencyInput key={`custo-${chaveCampos}`} name="orcamento_custo" ariaLabel="Custo (opcional)" onValueChange={setCusto} className="text-sm font-normal" /></div></div>
         <div className="flex flex-wrap items-center gap-2 sm:col-span-4">
           <label className="ff-focus cursor-pointer rounded-full border border-border px-4 py-2 text-xs font-bold">{imagemItem ? "Trocar imagem do item" : "Imagem do item (opcional)"}<input ref={campoImagem} type="file" accept="image/*" className="sr-only" onChange={(e) => void escolherImagem(e, "item")} /></label>
-          {imagemItem && <><img src={imagemItem.dataUrl} alt="" className="h-9 w-9 rounded-md bg-white object-contain" /><button type="button" onClick={() => setImagemItem(null)} className="text-xs font-bold text-red">Tirar</button></>}
+          {imagemItem && <><button type="button" onClick={() => setFotoAberta({ src: imagemItem.dataUrl, nome: descricao || "Item" })} aria-label="Ver a foto do item" className="ff-focus cursor-zoom-in rounded-md hover:ring-2 hover:ring-primary"><img src={imagemItem.dataUrl} alt="" className="h-9 w-9 rounded-md bg-white object-contain" /></button><button type="button" onClick={() => setImagemItem(null)} className="text-xs font-bold text-red">Tirar</button></>}
         </div>
         <div className="sm:col-span-4"><button className="ff-focus rounded-full bg-primary px-6 py-2.5 text-sm font-extrabold text-white transition hover:bg-primary-dark">+ Adicionar</button>{erro && <span role="alert" className="ml-3 text-sm font-semibold text-red">{erro}</span>}</div>
       </form>
@@ -107,7 +125,7 @@ export default function QuoteBuilder() {
         <table className="w-full min-w-[640px] text-sm">
           <thead><tr className="border-b border-border text-left text-xs uppercase text-foreground-muted"><th className="py-2">Item</th><th className="text-right">Valor</th><th className="text-center">Qtd.</th><th className="text-right">Total</th><th className="text-right">Custo</th><th className="text-right">Lucro</th><th className="text-right">Margem</th><th /></tr></thead>
           <tbody>{itens.map((item) => { const lucro = lucroDoItem(item); return <tr key={item.id} className="border-b border-border/60">
-            <td className="py-2.5 font-semibold"><span className="flex items-center gap-2">{item.imagem && <img src={item.imagem.dataUrl} alt="" className="h-9 w-9 shrink-0 rounded-md bg-white object-contain" />}{item.descricao}</span></td>
+            <td className="py-2.5 font-semibold"><span className="flex items-center gap-2">{item.imagem && <button type="button" onClick={() => setFotoAberta({ src: item.imagem!.dataUrl, nome: item.descricao })} aria-label={`Ver a foto de ${item.descricao}`} className="ff-focus shrink-0 cursor-zoom-in rounded-md transition hover:ring-2 hover:ring-primary"><img src={item.imagem.dataUrl} alt="" className="h-9 w-9 rounded-md bg-white object-contain" /></button>}{item.descricao}</span></td>
             <td className="text-right">{formatarReais(item.valor)}</td>
             <td className="text-center">{item.quantidade.toLocaleString("pt-BR")}</td>
             <td className="text-right font-bold">{formatarReais(totalDoItem(item))}</td>
@@ -137,5 +155,12 @@ export default function QuoteBuilder() {
         <p className="self-center text-xs text-foreground-muted">O PDF sai em preto e branco, sem custo e margem: ele é para o cliente.</p>
       </div>
     </section>
+    {fotoAberta && <div role="dialog" aria-modal="true" aria-label={`Foto: ${fotoAberta.nome}`} onClick={() => setFotoAberta(null)} className="fixed inset-0 z-[90] grid place-items-center bg-black/75 p-4">
+      <figure onClick={(event) => event.stopPropagation()} className="relative max-h-full max-w-3xl rounded-2xl bg-surface p-3 shadow-2xl">
+        <button type="button" onClick={() => setFotoAberta(null)} aria-label="Fechar foto" className="ff-focus absolute -right-3 -top-3 grid h-9 w-9 place-items-center rounded-full bg-surface text-lg font-bold shadow">×</button>
+        <img src={fotoAberta.src} alt={fotoAberta.nome} className="max-h-[78vh] w-auto rounded-xl bg-white object-contain" />
+        <figcaption className="mt-2 text-center text-sm font-bold">{fotoAberta.nome}</figcaption>
+      </figure>
+    </div>}
   </div>;
 }
