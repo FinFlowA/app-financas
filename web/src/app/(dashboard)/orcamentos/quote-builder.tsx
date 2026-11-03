@@ -1,6 +1,8 @@
 "use client";
+/* eslint-disable @next/next/no-img-element -- imagens locais (data URL) do navegador, sem o otimizador do Next. */
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { guardarLogo, lerImagemReduzida, logoGuardada, type ImagemLocal } from "@/lib/imagem-local";
 import { formatarReais } from "@/lib/format";
 import { parseMoney } from "@/lib/money";
 import { lucroDoItem, resumoDoOrcamento, totalDoItem, type ItemOrcamento } from "@/lib/orcamento";
@@ -20,6 +22,27 @@ export default function QuoteBuilder() {
   const [observacoes, setObservacoes] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const [gerando, setGerando] = useState(false);
+  // Imagens só no navegador: a logo fica guardada aqui; a do item, só nesta página.
+  const [logo, setLogo] = useState<ImagemLocal | null>(null);
+  const [imagemItem, setImagemItem] = useState<ImagemLocal | null>(null);
+  const campoImagem = useRef<HTMLInputElement>(null);
+  // A logo guardada é lida depois da montagem (o servidor não tem acesso a ela).
+  useEffect(() => {
+    const quadro = requestAnimationFrame(() => setLogo(logoGuardada()));
+    return () => cancelAnimationFrame(quadro);
+  }, []);
+
+  async function escolherImagem(event: ChangeEvent<HTMLInputElement>, destino: "logo" | "item") {
+    const arquivo = event.target.files?.[0];
+    event.target.value = "";
+    if (!arquivo) return;
+    try {
+      const imagem = await lerImagemReduzida(arquivo, destino === "logo" ? 400 : 300);
+      if (destino === "logo") { setLogo(imagem); guardarLogo(imagem); }
+      else setImagemItem(imagem);
+      setErro(null);
+    } catch (falha) { setErro(falha instanceof Error ? falha.message : "Não foi possível ler a imagem."); }
+  }
   const resumo = resumoDoOrcamento(itens);
 
   function adicionar(event: FormEvent<HTMLFormElement>) {
@@ -31,15 +54,15 @@ export default function QuoteBuilder() {
     if (!Number.isFinite(valorNum) || valorNum <= 0) return setErro("Informe um valor maior que zero.");
     if (!Number.isFinite(qtd) || qtd <= 0) return setErro("Informe uma quantidade maior que zero.");
     if (custoNum !== null && (!Number.isFinite(custoNum) || custoNum < 0)) return setErro("O custo precisa ser um valor válido.");
-    setItens((atual) => [...atual, { id: crypto.randomUUID(), descricao: descricao.trim(), valor: valorNum, quantidade: qtd, custo: custoNum }]);
-    setDescricao(""); setValor(""); setQuantidade("1"); setCusto(""); setErro(null);
+    setItens((atual) => [...atual, { id: crypto.randomUUID(), descricao: descricao.trim(), valor: valorNum, quantidade: qtd, custo: custoNum, imagem: imagemItem }]);
+    setDescricao(""); setValor(""); setQuantidade("1"); setCusto(""); setImagemItem(null); setErro(null);
   }
 
   async function gerar(modo: "baixar" | "imprimir") {
     if (!itens.length || gerando) return;
     setGerando(true);
     try {
-      const doc = await gerarPdfOrcamento({ cliente, observacoes, validadeDias: Number(validade) > 0 ? Number(validade) : null, itens });
+      const doc = await gerarPdfOrcamento({ cliente, observacoes, validadeDias: Number(validade) > 0 ? Number(validade) : null, itens, logo });
       if (modo === "baixar") doc.save(`orcamento-${new Date().toISOString().slice(0, 10)}.pdf`);
       else {
         doc.autoPrint();
@@ -61,11 +84,22 @@ export default function QuoteBuilder() {
         <label className="text-sm font-bold">Validade em dias (opcional)<input value={validade} onChange={(e) => setValidade(e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={3} className={`${INPUT} mt-1.5 font-normal`} /></label>
       </div>
 
+      <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-dashed border-border p-3">
+        {logo ? <img src={logo.dataUrl} alt="Logo do orçamento" className="h-12 max-w-[160px] rounded-lg bg-white object-contain p-1" /> : <span className="grid h-12 w-12 place-items-center rounded-lg bg-surface-muted text-xs text-foreground-muted">Logo</span>}
+        <div className="grid gap-0.5"><span className="text-sm font-bold">Logo (opcional)</span><span className="text-xs text-foreground-muted">Sai no topo do PDF. Fica só neste navegador, nada vai para o servidor.</span></div>
+        <label className="ff-focus ml-auto cursor-pointer rounded-full border border-border px-4 py-2 text-xs font-bold">{logo ? "Trocar" : "Escolher imagem"}<input type="file" accept="image/*" className="sr-only" onChange={(e) => void escolherImagem(e, "logo")} /></label>
+        {logo && <button type="button" onClick={() => { setLogo(null); guardarLogo(null); }} className="ff-focus rounded-full border border-red/40 px-4 py-2 text-xs font-bold text-red">Remover</button>}
+      </div>
+
       <form onSubmit={adicionar} className="grid gap-3 rounded-2xl bg-surface-muted/40 p-3 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_6rem_minmax(0,1fr)]">
         <label className="text-xs font-bold">Item<input value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={120} placeholder="Ex.: Camiseta personalizada" className={`${INPUT} mt-1`} /></label>
         <label className="text-xs font-bold">Valor (R$)<input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${INPUT} mt-1`} /></label>
         <label className="text-xs font-bold">Quantidade<input value={quantidade} onChange={(e) => setQuantidade(e.target.value)} inputMode="decimal" className={`${INPUT} mt-1`} /></label>
         <label className="text-xs font-bold">Custo (opcional)<input value={custo} onChange={(e) => setCusto(e.target.value)} inputMode="decimal" placeholder="0,00" className={`${INPUT} mt-1`} /></label>
+        <div className="flex flex-wrap items-center gap-2 sm:col-span-4">
+          <label className="ff-focus cursor-pointer rounded-full border border-border px-4 py-2 text-xs font-bold">{imagemItem ? "Trocar imagem do item" : "Imagem do item (opcional)"}<input ref={campoImagem} type="file" accept="image/*" className="sr-only" onChange={(e) => void escolherImagem(e, "item")} /></label>
+          {imagemItem && <><img src={imagemItem.dataUrl} alt="" className="h-9 w-9 rounded-md bg-white object-contain" /><button type="button" onClick={() => setImagemItem(null)} className="text-xs font-bold text-red">Tirar</button></>}
+        </div>
         <div className="sm:col-span-4"><button className="ff-focus rounded-full bg-primary px-6 py-2.5 text-sm font-extrabold text-white transition hover:bg-primary-dark">+ Adicionar</button>{erro && <span role="alert" className="ml-3 text-sm font-semibold text-red">{erro}</span>}</div>
       </form>
 
@@ -73,7 +107,7 @@ export default function QuoteBuilder() {
         <table className="w-full min-w-[640px] text-sm">
           <thead><tr className="border-b border-border text-left text-xs uppercase text-foreground-muted"><th className="py-2">Item</th><th className="text-right">Valor</th><th className="text-center">Qtd.</th><th className="text-right">Total</th><th className="text-right">Custo</th><th className="text-right">Lucro</th><th className="text-right">Margem</th><th /></tr></thead>
           <tbody>{itens.map((item) => { const lucro = lucroDoItem(item); return <tr key={item.id} className="border-b border-border/60">
-            <td className="py-2.5 font-semibold">{item.descricao}</td>
+            <td className="py-2.5 font-semibold"><span className="flex items-center gap-2">{item.imagem && <img src={item.imagem.dataUrl} alt="" className="h-9 w-9 shrink-0 rounded-md bg-white object-contain" />}{item.descricao}</span></td>
             <td className="text-right">{formatarReais(item.valor)}</td>
             <td className="text-center">{item.quantidade.toLocaleString("pt-BR")}</td>
             <td className="text-right font-bold">{formatarReais(totalDoItem(item))}</td>
