@@ -151,6 +151,20 @@ const HELP_BY_ROUTE: ReadonlyArray<{ route: string; exact?: boolean; content: He
     },
   },
   {
+    route: "/orcamentos",
+    content: {
+      ...FINN.organize,
+      title: "Orçamentos",
+      description: "Monte um orçamento para um cliente e gere um PDF formal para imprimir ou enviar.",
+      items: [
+        "Informe o item, o valor e a quantidade e toque em Adicionar; cada linha tem o botão Excluir.",
+        "O custo é opcional: com ele, a tela mostra o lucro e a margem de cada item e do total.",
+        "Baixar PDF e Imprimir geram um documento em preto e branco, sem custo nem margem.",
+      ],
+      note: "Nada aqui é lançado nas suas contas, e o orçamento não fica salvo: gere o PDF antes de sair da página.",
+    },
+  },
+  {
     route: "/calendario",
     content: {
       ...FINN.organize,
