@@ -4,7 +4,6 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 import { apagar, CALCULADORA_INICIAL, digitar, igual, inverterSinal, operar, porcento, type EstadoCalculadora, type Operacao } from "@/lib/calculadora";
 
 const LARGURA = 264;
-const ALTURA = 372;
 const limitar = (valor: number, minimo: number, maximo: number) => Math.min(Math.max(valor, minimo), Math.max(minimo, maximo));
 
 /**
@@ -79,7 +78,7 @@ export default function FloatingCalculator() {
       role="dialog"
       aria-label="Calculadora"
       className="fixed z-[80] overflow-hidden rounded-2xl border border-border bg-surface shadow-[0_24px_60px_rgba(0,0,0,0.35)]"
-      style={{ left: posicao.x, top: posicao.y, width: LARGURA, height: ALTURA }}
+      style={{ left: posicao.x, top: posicao.y, width: LARGURA }}
     >
       <div onPointerDown={iniciarArraste} onPointerMove={mover} onPointerUp={() => { arraste.current = null; }} className="flex cursor-move touch-none select-none items-center justify-between bg-surface-muted px-3 py-2">
         <span className="text-xs font-extrabold uppercase tracking-wide text-foreground-muted">Calculadora</span>

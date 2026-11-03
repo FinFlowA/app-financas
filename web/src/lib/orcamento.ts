@@ -10,6 +10,8 @@ export type ItemOrcamento = {
   quantidade: number;
   /** Custo unitário (opcional): com ele, a tela mostra a margem de lucro. */
   custo: number | null;
+  /** Imagem do item, só no navegador (vai para o PDF, nunca para o banco). */
+  imagem?: import("./imagem-local").ImagemLocal | null;
 };
 
 const centavos = (valor: number) => Math.round(valor * 100) / 100;
