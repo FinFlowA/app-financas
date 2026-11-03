@@ -468,6 +468,17 @@ com layouts bancários não padronizados.
   `router.refresh()` em seguida (Histórico, Início e Calendário). O Histórico
   também busca transações, faturas e conciliação ao mesmo tempo.
 
+### Orçamentos e calculadora (site) — 03/11/2026
+
+- **Orçamentos** (menu lateral, `/orcamentos`): itens com valor, quantidade e
+  custo opcional; Adicionar e Excluir por linha; com custo, a tela mostra lucro
+  e margem por item e no total (`lib/orcamento.ts`). Baixar PDF e Imprimir
+  geram um documento formal em preto e branco, sem custo nem margem
+  (`lib/orcamento-pdf.ts`). Nada é lançado nem salvo.
+- **Calculadora** (acima do perfil no menu lateral): janela flutuante que pode
+  ser arrastada pela página e fica por cima do conteúdo; aceita o teclado
+  (`lib/calculadora.ts`, sem avaliar texto).
+
 ### Lançamento incerto — 15/10/2026
 
 - **Criar e editar (app e site):** receitas e despesas únicas pendentes podem

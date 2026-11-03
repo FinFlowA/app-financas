@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import SignOutButton from "./sign-out-button";
+import FloatingCalculator from "@/components/layout/floating-calculator";
 import { ThemeInitializer } from "@/components/layout/display-controls";
 import BrandLogo from "@/components/layout/brand-logo";
 import DashboardNav, { MobileDashboardNav } from "@/components/layout/dashboard-nav";
@@ -64,6 +65,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <DashboardNav />
 
         <div className="ff-sidebar__footer">
+          <FloatingCalculator />
           <div className="ff-sidebar-profile">
             <ProfileAvatar imageUrl={avatarUrl} name={nome} />
             <span className="min-w-0"><strong>{nome}</strong><small>{email}</small></span>
