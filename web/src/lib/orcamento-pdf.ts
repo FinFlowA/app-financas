@@ -7,7 +7,6 @@ import { totalDoItem, resumoDoOrcamento, type ItemOrcamento } from "./orcamento"
 export type DadosOrcamentoPdf = {
   cliente: string;
   observacoes: string;
-  validadeDias: number | null;
   /** Data de entrega (AAAA-MM-DD), opcional. */
   entrega: string | null;
   itens: ItemOrcamento[];
@@ -58,14 +57,6 @@ export async function gerarPdfOrcamento(dados: DadosOrcamentoPdf) {
     doc.text("Cliente:", margem, y);
     doc.setFont("helvetica", "normal");
     doc.text(dados.cliente.trim(), margem + 17, y);
-    y += 6;
-  }
-  if (dados.validadeDias) {
-    const validade = new Date(hoje.getTime() + dados.validadeDias * 86_400_000).toLocaleDateString("pt-BR");
-    doc.setFont("helvetica", "bold");
-    doc.text("Validade:", margem, y);
-    doc.setFont("helvetica", "normal");
-    doc.text(`${dados.validadeDias} dias (até ${validade})`, margem + 19, y);
     y += 6;
   }
   if (dados.entrega) {

@@ -20,7 +20,6 @@ export default function QuoteBuilder() {
   const [quantidade, setQuantidade] = useState("1");
   const [custo, setCusto] = useState("");
   const [cliente, setCliente] = useState("");
-  const [validade, setValidade] = useState("");
   const [observacoes, setObservacoes] = useState("");
   // Data de entrega opcional (AAAA-MM-DD; vazia = sem data no PDF).
   const [entrega, setEntrega] = useState("");
@@ -76,7 +75,7 @@ export default function QuoteBuilder() {
     if (!itens.length || gerando) return;
     setGerando(true);
     try {
-      const doc = await gerarPdfOrcamento({ cliente, observacoes, validadeDias: Number(validade) > 0 ? Number(validade) : null, entrega: entrega || null, itens, logo });
+      const doc = await gerarPdfOrcamento({ cliente, observacoes, entrega: entrega || null, itens, logo });
       if (modo === "baixar") doc.save(`orcamento-${new Date().toISOString().slice(0, 10)}.pdf`);
       else {
         doc.autoPrint();
@@ -93,10 +92,9 @@ export default function QuoteBuilder() {
     </header>
 
     <section className="ff-card grid gap-4 p-4 sm:p-5">
-      <div className="grid gap-3 sm:grid-cols-[1fr_10rem]">
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm font-bold">Cliente (opcional)<input value={cliente} onChange={(e) => setCliente(e.target.value)} maxLength={120} className={`${INPUT} mt-1.5 font-normal`} /></label>
-        <label className="text-sm font-bold">Validade em dias (opcional)<input value={validade} onChange={(e) => setValidade(e.target.value.replace(/\D/g, ""))} inputMode="numeric" maxLength={3} className={`${INPUT} mt-1.5 font-normal`} /></label>
-        <div className="text-sm font-bold sm:col-span-2">Data de entrega (opcional)
+        <div className="text-sm font-bold">Data de entrega (opcional)
           {entrega ? <div className="mt-1.5 flex flex-wrap items-center gap-2"><div className="w-full max-w-xs"><FinFlowDatePicker name="orcamento_entrega" value={entrega} defaultValue={entrega} onChange={setEntrega} /></div><button type="button" onClick={() => setEntrega("")} className="text-xs font-bold text-red">Tirar data</button></div>
             : <div className="mt-1.5"><button type="button" onClick={() => setEntrega(new Date().toLocaleDateString("sv-SE"))} className="ff-focus rounded-full border border-border px-4 py-2 text-xs font-bold">+ Informar data de entrega</button></div>}
         </div>
