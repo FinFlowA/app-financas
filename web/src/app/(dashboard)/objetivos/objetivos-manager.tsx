@@ -14,6 +14,7 @@ import {
   criarObjetivo,
   editarObjetivo,
   movimentarObjetivo,
+  registrarRendimentoObjetivo,
 } from "./actions";
 import { CORES_OBJETIVO, ICONES_OBJETIVO } from "./goal-options";
 
@@ -21,7 +22,7 @@ type Movimento = {
   id: number;
   descricao: string;
   valor: number;
-  operacao: "guardar" | "resgatar";
+  operacao: "guardar" | "resgatar" | "rendimento";
   data: string;
   status: "paga" | "pendente";
 };
@@ -29,6 +30,7 @@ type Movimento = {
 export type ObjetivoComPrevisao = Caixinha & {
   previstoMeta: number | null;
   previstoFimAno: number;
+  rendimentoTotal: number;
   movimentos: Movimento[];
 };
 
@@ -37,6 +39,7 @@ type Painel =
   | { tipo: "editar"; objetivo: ObjetivoComPrevisao }
   | { tipo: "movimentar"; objetivo: ObjetivoComPrevisao; operacao: "guardar" | "resgatar" }
   | { tipo: "historico"; objetivo: ObjetivoComPrevisao }
+  | { tipo: "saldoReal"; objetivo: ObjetivoComPrevisao }
   | null;
 
 type Acao = (formData: FormData) => Promise<{ erro: string | null }>;
@@ -387,6 +390,46 @@ function FormularioMovimento({
   );
 }
 
+function FormularioSaldoReal({
+  objetivo,
+  pending,
+  executar,
+}: {
+  objetivo: ObjetivoComPrevisao;
+  pending: boolean;
+  executar: Executar;
+}) {
+  const saldoRegistrado = Number(objetivo.saldo_atual);
+  const hoje = hojeEmSaoPaulo();
+  return (
+    <form
+      action={(formData) => executar(registrarRendimentoObjetivo, formData, "Rendimento registrado.")}
+      className="grid gap-4 sm:grid-cols-2"
+    >
+      <input type="hidden" name="goal_id" value={objetivo.id} />
+      <p data-private-value="true" className="rounded-xl bg-surface-muted px-4 py-3 text-sm text-foreground-muted sm:col-span-2">
+        Guardado hoje no FinFlow: <strong className="text-foreground">{formatarReais(saldoRegistrado)}</strong>.
+        Informe o saldo que aparece no seu banco ou corretora. A diferença entra como rendimento,
+        sem mexer nas suas contas. O valor não pode ser menor que o guardado. Para tirar dinheiro, use Resgatar.
+      </p>
+      <Field titulo="Saldo real">
+        <CurrencyInput name="saldo_real" required defaultValue={saldoRegistrado} />
+      </Field>
+      <Field titulo="Data do saldo">
+        <input type="date" name="date" required max={hoje} defaultValue={hoje} className={inputClass()} />
+      </Field>
+      <div className="sm:col-span-2">
+        <button
+          disabled={pending}
+          className="ff-focus rounded-full bg-primary px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50"
+        >
+          {pending ? "Salvando..." : "Registrar rendimento"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function ObjetivosManager({
   objetivos,
   contas,
@@ -439,6 +482,8 @@ export default function ObjetivosManager({
       ? "Editar objetivo"
       : painel?.tipo === "historico"
         ? `Histórico · ${painel.objetivo.nome}`
+        : painel?.tipo === "saldoReal"
+          ? `Atualizar saldo real · ${painel.objetivo.nome}`
         : painel?.tipo === "movimentar"
           ? `${painel.operacao === "guardar" ? "Guardar em" : "Resgatar de"} ${painel.objetivo.nome}`
           : "";
@@ -497,6 +542,9 @@ export default function ObjetivosManager({
               </div>
             </div>
           )}
+          {painel.tipo === "saldoReal" && (
+            <FormularioSaldoReal objetivo={painel.objetivo} pending={pending} executar={executar} />
+          )}
           {painel.tipo === "movimentar" && (
             <FormularioMovimento
               objetivo={painel.objetivo}
@@ -540,7 +588,7 @@ export default function ObjetivosManager({
                 )}
               </div>
               <div className="relative mb-2 mt-4 flex items-end justify-between gap-3 rounded-xl bg-surface-muted p-3">
-                <div><span className="block text-[10px] font-extrabold uppercase tracking-[.12em] text-foreground-muted">Guardado</span><strong data-private-value="true" className="text-2xl font-black tracking-tight text-foreground">{formatarReais(Number(objetivo.saldo_atual))}</strong></div>
+                <div><span className="block text-[10px] font-extrabold uppercase tracking-[.12em] text-foreground-muted">Guardado</span><strong data-private-value="true" className="text-2xl font-black tracking-tight text-foreground">{formatarReais(Number(objetivo.saldo_atual))}</strong>{objetivo.rendimentoTotal > 0 && <span data-private-value="true" className="block text-[11px] font-bold text-primary">+{formatarReais(objetivo.rendimentoTotal)} de rendimento</span>}<button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "saldoReal", objetivo })} className="ff-focus mt-1 block text-[11px] font-bold text-foreground-muted underline-offset-2 transition hover:text-primary hover:underline">Atualizar saldo real</button></div>
                 <div className="text-right"><strong className="block text-sm text-foreground">{Math.round(percentual)}%</strong><span className="text-[11px] text-foreground-muted">Meta {formatarReais(meta)}</span></div>
               </div>
               <div className="relative h-2.5 overflow-hidden rounded-full bg-surface-muted">
@@ -587,8 +635,8 @@ export default function ObjetivosManager({
                           <p className="text-sm font-semibold text-foreground">{item.descricao}</p>
                           <p className="text-xs text-foreground-muted">{formatarData(item.data)} · Realizado</p>
                         </div>
-                        <p data-private-value="true" className={`font-extrabold ${item.operacao === "guardar" ? "text-primary" : "text-orange"}`}>
-                          {item.operacao === "guardar" ? "+" : "−"}{formatarReais(item.valor)}
+                        <p data-private-value="true" className={`font-extrabold ${item.operacao === "resgatar" ? "text-orange" : "text-primary"}`}>
+                          {item.operacao === "resgatar" ? "−" : "+"}{formatarReais(item.valor)}
                         </p>
                       </div>
                     ))}

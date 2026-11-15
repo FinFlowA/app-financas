@@ -251,6 +251,12 @@ export default function CaixinhasScreen() {
   const [historicoMovimentos, setHistoricoMovimentos] = useState<MovimentoCaixinha[]>([]);
   const [caixaHistorico, setCaixaHistorico] = useState<Caixinha | null>(null);
   const [filtroUsuarioHistorico, setFiltroUsuarioHistorico] = useState<string>("");
+  const [rendimentoHistorico, setRendimentoHistorico] = useState(0);
+
+  // Modal saldo real (rendimento)
+  const [caixaSaldoReal, setCaixaSaldoReal] = useState<Caixinha | null>(null);
+  const [valorSaldoReal, setValorSaldoReal] = useState("");
+  const [salvandoSaldoReal, setSalvandoSaldoReal] = useState(false);
   const scrollY = useRef(new Animated.Value(0)).current;
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
@@ -569,6 +575,49 @@ export default function CaixinhasScreen() {
     setModalMovimentoVisivel(true);
   };
 
+  const abrirSaldoReal = (caixa: Caixinha) => {
+    setModalOpcoesVisivel(false);
+    setCaixaSaldoReal(caixa);
+    setValorSaldoReal(formatarEntradaMoeda(String(Math.round(Number(caixa.saldo_atual) * 100))));
+  };
+
+  const confirmarSaldoReal = async () => {
+    if (!caixaSaldoReal) return;
+    const saldoReal = valorDaEntradaMoeda(valorSaldoReal);
+    const saldoRegistrado = Number(caixaSaldoReal.saldo_atual);
+    if (isNaN(saldoReal) || saldoReal < 0) return Alert.alert("Aviso", "Saldo inválido.");
+    if (saldoReal < saldoRegistrado) {
+      return Alert.alert("Aviso", "O saldo real não pode ser menor que o valor guardado. Para tirar dinheiro, use Resgatar.");
+    }
+    if (Math.abs(saldoReal - saldoRegistrado) < 0.005) {
+      return Alert.alert("Aviso", "O saldo informado é igual ao já guardado.");
+    }
+    if (await dispositivoSemConexao()) {
+      return Alert.alert("Conexão necessária", "Atualizar o saldo real exige conexão.");
+    }
+    setSalvandoSaldoReal(true);
+    const hoje = new Date();
+    const dataHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+    const { error } = await supabase.rpc("registrar_rendimento_objetivo", {
+      p_goal_id: caixaSaldoReal.id,
+      p_saldo_real: saldoReal,
+      p_data: dataHoje,
+    });
+    setSalvandoSaldoReal(false);
+    if (error) {
+      const mensagem = error.message ?? "";
+      return Alert.alert(
+        "Não foi possível salvar",
+        mensagem.includes("FINFLOW_YIELD_BELOW_BALANCE")
+          ? "O saldo real não pode ser menor que o valor guardado. Para tirar dinheiro, use Resgatar."
+          : "Não foi possível atualizar o saldo agora. Nenhuma alteração foi feita.",
+      );
+    }
+    setCaixaSaldoReal(null);
+    carregarDados();
+    showToast(`Rendimento de ${fmtReais(saldoReal - saldoRegistrado)} registrado ✓`, "success");
+  };
+
   const abrirHistorico = async (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
     setCaixaHistorico(caixa);
@@ -586,6 +635,11 @@ export default function CaixinhasScreen() {
     );
 
     setHistoricoMovimentos(dataFiltrada);
+    const { data: rendimentos } = await supabase
+      .from("caixinha_rendimentos")
+      .select("valor")
+      .eq("caixinha_id", caixa.id);
+    setRendimentoHistorico((rendimentos ?? []).reduce((total, item) => total + Number(item.valor), 0));
     setModalHistoricoVisivel(true);
   };
 
@@ -945,6 +999,11 @@ export default function CaixinhasScreen() {
             <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#2A9D8F" }]} onPress={() => caixaOpcoes && abrirMovimento(caixaOpcoes)}>
               <MaterialIcons name="savings" size={20} color="#FFF" />
               <Text style={styles.opcaoBtnText}>Movimentar</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#3A5A40" }]} onPress={() => caixaOpcoes && abrirSaldoReal(caixaOpcoes)}>
+              <MaterialIcons name="trending-up" size={20} color="#FFF" />
+              <Text style={styles.opcaoBtnText}>Atualizar saldo real</Text>
             </TouchableOpacity>
 
             <TouchableOpacity style={[styles.opcaoBtn, { backgroundColor: "#457B9D" }]} onPress={() => caixaOpcoes && abrirHistorico(caixaOpcoes)}>
@@ -1322,6 +1381,35 @@ export default function CaixinhasScreen() {
       </Modal>
       )}
 
+      {/* MODAL SALDO REAL (RENDIMENTO) */}
+      {caixaSaldoReal && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setCaixaSaldoReal(null)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo }]}>
+            <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Atualizar saldo real</Text>
+            <Text style={{ color: Cores.textoSecundario, fontSize: 13, textAlign: "center", marginBottom: 15, lineHeight: 19 }}>
+              {`Guardado no FinFlow: ${fmtReais(Number(caixaSaldoReal.saldo_atual))}. Informe o saldo que aparece no banco ou corretora. A diferença entra como rendimento, sem mexer nas contas. Para tirar dinheiro, use Resgatar.`}
+            </Text>
+            <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+              <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+              <TextInput
+                style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
+                placeholderTextColor={Cores.textoSecundario}
+                placeholder="0,00"
+                value={valorSaldoReal}
+                onChangeText={(texto) => setValorSaldoReal(formatarEntradaMoeda(texto))}
+                keyboardType="decimal-pad"
+              />
+            </View>
+            <View style={styles.modalButtons}>
+              <Button title="Cancelar" color="#999" onPress={() => setCaixaSaldoReal(null)} />
+              <Button title={salvandoSaldoReal ? "Aguarde..." : "Registrar"} color="#2A9D8F" onPress={confirmarSaldoReal} disabled={salvandoSaldoReal} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+      )}
+
       {/* MODAL HISTÓRICO */}
       {modalHistoricoVisivel && (
       <Modal animationType="slide" transparent visible onRequestClose={() => setModalHistoricoVisivel(false)}>
@@ -1375,6 +1463,12 @@ export default function CaixinhasScreen() {
                   <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>Resgatado</Text>
                   <Text style={{ color: "#E76F51", fontWeight: "bold", fontSize: 14 }}>{fmtReais(totalResgatadoHist)}</Text>
                 </View>
+                {!filtroUsuarioHistorico && rendimentoHistorico > 0 && (
+                  <View style={{ alignItems: "center" }}>
+                    <Text style={{ color: Cores.textoSecundario, fontSize: 11 }}>Rendimento</Text>
+                    <Text style={{ color: "#8AB17D", fontWeight: "bold", fontSize: 14 }}>{fmtReais(rendimentoHistorico)}</Text>
+                  </View>
+                )}
               </View>
             )}
 

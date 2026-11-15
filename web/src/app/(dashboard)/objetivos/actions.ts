@@ -182,6 +182,36 @@ export async function alterarCompartilhamentoObjetivo(formData: FormData): Promi
   return resultado;
 }
 
+export async function registrarRendimentoObjetivo(formData: FormData): Promise<ResultadoObjetivo> {
+  const goalId = formInteger(formData, "goal_id");
+  const saldoReal = parseMoney(formData.get("saldo_real"));
+  const date = formString(formData, "date") || hojeEmSaoPaulo();
+
+  if (!Number.isInteger(goalId) || goalId <= 0) return { erro: "Objetivo inválido." };
+  if (!Number.isFinite(saldoReal) || saldoReal < 0) return { erro: "Informe um saldo válido." };
+  if (!validarDataISO(date)) return { erro: "Informe uma data válida." };
+  if (date > hojeEmSaoPaulo()) return { erro: "A data do saldo não pode ser futura." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("registrar_rendimento_objetivo", {
+    p_goal_id: goalId,
+    p_saldo_real: saldoReal,
+    p_data: date,
+  });
+  if (error) {
+    const mensagem = error.message ?? "";
+    if (mensagem.includes("FINFLOW_YIELD_BELOW_BALANCE")) {
+      return { erro: "O saldo real não pode ser menor que o valor guardado. Para tirar dinheiro, use Resgatar." };
+    }
+    if (mensagem.includes("FINFLOW_YIELD_NO_CHANGE")) return { erro: "O saldo informado é igual ao já guardado." };
+    if (mensagem.includes("FUTURE_DATE")) return { erro: "A data do saldo não pode ser futura." };
+    if (mensagem.includes("GOAL_NOT_FOUND")) return { erro: "Objetivo não encontrado." };
+    return { erro: "Não foi possível atualizar o saldo agora." };
+  }
+  revalidarObjetivos();
+  return { erro: null };
+}
+
 export async function movimentarObjetivo(formData: FormData): Promise<ResultadoObjetivo> {
   const goalId = formInteger(formData, "goal_id");
   const accountId = formInteger(formData, "account_id");
