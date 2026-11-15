@@ -212,6 +212,38 @@ export async function registrarRendimentoObjetivo(formData: FormData): Promise<R
   return { erro: null };
 }
 
+export async function registrarRendimentoObjetivos(formData: FormData): Promise<ResultadoObjetivo> {
+  const goalIds = [...new Set(formData.getAll("goal_ids").map((item) => Number(item)))];
+  const saldoReal = parseMoney(formData.get("saldo_real"));
+  const date = formString(formData, "date") || hojeEmSaoPaulo();
+
+  if (goalIds.length === 0) return { erro: "Escolha pelo menos um objetivo." };
+  if (goalIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) return { erro: "Objetivo inválido." };
+  if (!Number.isFinite(saldoReal) || saldoReal < 0) return { erro: "Informe um saldo válido." };
+  if (!validarDataISO(date)) return { erro: "Informe uma data válida." };
+  if (date > hojeEmSaoPaulo()) return { erro: "A data do saldo não pode ser futura." };
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("registrar_rendimento_objetivos", {
+    p_goal_ids: goalIds,
+    p_saldo_real: saldoReal,
+    p_data: date,
+  });
+  if (error) {
+    const mensagem = error.message ?? "";
+    if (mensagem.includes("FINFLOW_YIELD_BELOW_BALANCE")) {
+      return { erro: "O saldo real não pode ser menor que a soma dos objetivos escolhidos. Para tirar dinheiro, use Resgatar." };
+    }
+    if (mensagem.includes("FINFLOW_YIELD_NO_CHANGE")) return { erro: "O saldo informado é igual à soma já guardada." };
+    if (mensagem.includes("NOTHING_TO_SPLIT")) return { erro: "Os objetivos escolhidos estão sem saldo para dividir o rendimento." };
+    if (mensagem.includes("FUTURE_DATE")) return { erro: "A data do saldo não pode ser futura." };
+    if (mensagem.includes("GOAL_NOT_FOUND")) return { erro: "Algum objetivo não foi encontrado. Atualize a página." };
+    return { erro: "Não foi possível atualizar o saldo agora." };
+  }
+  revalidarObjetivos();
+  return { erro: null };
+}
+
 export async function movimentarObjetivo(formData: FormData): Promise<ResultadoObjetivo> {
   const goalId = formInteger(formData, "goal_id");
   const accountId = formInteger(formData, "account_id");

@@ -257,6 +257,11 @@ export default function CaixinhasScreen() {
   const [caixaSaldoReal, setCaixaSaldoReal] = useState<Caixinha | null>(null);
   const [valorSaldoReal, setValorSaldoReal] = useState("");
   const [salvandoSaldoReal, setSalvandoSaldoReal] = useState(false);
+
+  // Modal saldo real conjunto (vários objetivos no mesmo investimento)
+  const [modalConjuntoVisivel, setModalConjuntoVisivel] = useState(false);
+  const [selecionadosConjunto, setSelecionadosConjunto] = useState<number[]>([]);
+  const [valorConjunto, setValorConjunto] = useState("");
   const scrollY = useRef(new Animated.Value(0)).current;
   const cabecalhoCompactoRef = useRef(false);
   const [cabecalhoCompacto, setCabecalhoCompacto] = useState(false);
@@ -618,6 +623,70 @@ export default function CaixinhasScreen() {
     showToast(`Rendimento de ${fmtReais(saldoReal - saldoRegistrado)} registrado ✓`, "success");
   };
 
+  const objetivosDisponiveis = caixinhas.filter(
+    (caixa) => !caixa.bloqueado_plano && !(caixa as { arquivado?: boolean }).arquivado,
+  );
+
+  const abrirConjunto = () => {
+    setSelecionadosConjunto(objetivosDisponiveis.map((caixa) => caixa.id));
+    setValorConjunto("");
+    setModalConjuntoVisivel(true);
+  };
+
+  const escolhidosConjunto = objetivosDisponiveis.filter((caixa) => selecionadosConjunto.includes(caixa.id));
+  const totalConjunto = escolhidosConjunto.reduce((t, caixa) => t + Number(caixa.saldo_atual), 0);
+  const saldoConjunto = valorConjunto ? valorDaEntradaMoeda(valorConjunto) : 0;
+  const rendimentoConjunto = Math.round((saldoConjunto - totalConjunto) * 100) / 100;
+  // Mesma divisão do banco: proporcional ao saldo; centavos que sobram vão
+  // para o objetivo de maior saldo. Só para a prévia.
+  const partesConjunto = (() => {
+    const partes = new Map<number, number>();
+    const totalCents = escolhidosConjunto.reduce((t, c) => t + Math.round(Number(c.saldo_atual) * 100), 0);
+    const rendimentoCents = Math.round(rendimentoConjunto * 100);
+    if (totalCents <= 0 || rendimentoCents <= 0) return partes;
+    let distribuido = 0;
+    for (const caixa of escolhidosConjunto) {
+      const parte = Math.floor(rendimentoCents * Math.round(Number(caixa.saldo_atual) * 100) / totalCents);
+      partes.set(caixa.id, parte);
+      distribuido += parte;
+    }
+    const maior = [...escolhidosConjunto].sort((a, b) => Number(b.saldo_atual) - Number(a.saldo_atual) || a.id - b.id)[0];
+    partes.set(maior.id, (partes.get(maior.id) ?? 0) + rendimentoCents - distribuido);
+    return new Map([...partes].map(([id, cents]) => [id, cents / 100]));
+  })();
+
+  const confirmarConjunto = async () => {
+    if (escolhidosConjunto.length === 0) return Alert.alert("Aviso", "Escolha pelo menos um objetivo.");
+    if (isNaN(saldoConjunto) || saldoConjunto <= 0) return Alert.alert("Aviso", "Saldo inválido.");
+    if (rendimentoConjunto <= 0) {
+      return Alert.alert("Aviso", "O saldo real precisa ser maior que a soma dos objetivos escolhidos. Para tirar dinheiro, use Resgatar.");
+    }
+    if (await dispositivoSemConexao()) {
+      return Alert.alert("Conexão necessária", "Atualizar o saldo real exige conexão.");
+    }
+    setSalvandoSaldoReal(true);
+    const hoje = new Date();
+    const dataHoje = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}-${String(hoje.getDate()).padStart(2, "0")}`;
+    const { error } = await supabase.rpc("registrar_rendimento_objetivos", {
+      p_goal_ids: escolhidosConjunto.map((caixa) => caixa.id),
+      p_saldo_real: saldoConjunto,
+      p_data: dataHoje,
+    });
+    setSalvandoSaldoReal(false);
+    if (error) {
+      const mensagem = error.message ?? "";
+      return Alert.alert(
+        "Não foi possível salvar",
+        mensagem.includes("FINFLOW_YIELD_BELOW_BALANCE")
+          ? "O saldo real não pode ser menor que a soma dos objetivos. Para tirar dinheiro, use Resgatar."
+          : "Não foi possível atualizar o saldo agora. Nenhuma alteração foi feita.",
+      );
+    }
+    setModalConjuntoVisivel(false);
+    carregarDados();
+    showToast(`Rendimento de ${fmtReais(rendimentoConjunto)} dividido ✓`, "success");
+  };
+
   const abrirHistorico = async (caixa: Caixinha) => {
     setModalOpcoesVisivel(false);
     setCaixaHistorico(caixa);
@@ -868,6 +937,18 @@ export default function CaixinhasScreen() {
             <Text style={styles.newObjectiveButtonText}>Novo objetivo</Text>
           </TouchableOpacity>
         </View>
+
+        {objetivosDisponiveis.length > 1 && (
+          <TouchableOpacity
+            accessibilityRole="button"
+            accessibilityLabel="Atualizar saldo real de vários objetivos no mesmo investimento"
+            onPress={abrirConjunto}
+            style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginBottom: 14, paddingVertical: 11, borderRadius: 12, borderWidth: 1, borderColor: "#2A9D8F66", backgroundColor: "#2A9D8F1A" }}
+          >
+            <MaterialIcons name="trending-up" size={18} color="#2A9D8F" style={{ marginRight: 6 }} />
+            <Text style={{ color: "#2A9D8F", fontWeight: "800", fontSize: 14 }}>Saldo real do investimento</Text>
+          </TouchableOpacity>
+        )}
 
         {caixinhas.length === 0 ? (
           <TouchableOpacity
@@ -1417,6 +1498,66 @@ export default function CaixinhasScreen() {
               <Button title="Cancelar" color="#999" onPress={() => setCaixaSaldoReal(null)} />
               <Button title={salvandoSaldoReal ? "Aguarde..." : "Registrar"} color="#2A9D8F" onPress={confirmarSaldoReal} disabled={salvandoSaldoReal} />
             </View>
+          </View>
+        </View>
+      </Modal>
+      )}
+
+      {/* MODAL SALDO REAL CONJUNTO */}
+      {modalConjuntoVisivel && (
+      <Modal animationType="fade" transparent visible onRequestClose={() => setModalConjuntoVisivel(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { backgroundColor: Cores.cardFundo, width: "95%", maxHeight: "90%" }]}>
+            <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.modalTitle, { color: Cores.textoPrincipal }]}>Saldo real do investimento</Text>
+              <Text style={{ color: Cores.textoSecundario, fontSize: 13, textAlign: "center", marginBottom: 15, lineHeight: 19 }}>
+                Marque os objetivos que estão no mesmo investimento e informe o saldo real dele. O rendimento é dividido na proporção do que cada um tem guardado.
+              </Text>
+              {objetivosDisponiveis.map((caixa) => {
+                const marcado = selecionadosConjunto.includes(caixa.id);
+                const parte = partesConjunto.get(caixa.id);
+                return (
+                  <TouchableOpacity
+                    key={caixa.id}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: marcado }}
+                    onPress={() => setSelecionadosConjunto((atual) => marcado ? atual.filter((id) => id !== caixa.id) : [...atual, caixa.id])}
+                    style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 12, marginBottom: 8, borderRadius: 10, borderWidth: 1, borderColor: marcado ? "#2A9D8F" : Cores.borda, backgroundColor: marcado ? "#2A9D8F1A" : Cores.inputFundo }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                      <MaterialIcons name={marcado ? "check-box" : "check-box-outline-blank"} size={20} color={marcado ? "#2A9D8F" : Cores.textoSecundario} style={{ marginRight: 8 }} />
+                      <Text style={{ color: Cores.textoPrincipal, fontWeight: "600", flexShrink: 1 }}>{caixa.nome}</Text>
+                    </View>
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text style={{ color: Cores.textoSecundario, fontSize: 12 }}>{fmtReais(Number(caixa.saldo_atual))}</Text>
+                      {marcado && parte !== undefined && parte > 0 && (
+                        <Text style={{ color: "#2A9D8F", fontSize: 12, fontWeight: "800" }}>+{fmtReais(parte)}</Text>
+                      )}
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              <Text style={[styles.colorLabel, { color: Cores.textoSecundario, marginTop: 8 }]}>Saldo real do investimento:</Text>
+              <View style={[styles.input, { backgroundColor: Cores.inputFundo, borderColor: Cores.borda, flexDirection: "row", alignItems: "center" }]}>
+                <Text style={{ color: Cores.textoSecundario, fontSize: 16, marginRight: 4 }}>R$</Text>
+                <TextInput
+                  style={{ flex: 1, color: Cores.textoPrincipal, fontSize: 16 }}
+                  placeholderTextColor={Cores.textoSecundario}
+                  placeholder="0,00"
+                  value={valorConjunto}
+                  onChangeText={(texto) => setValorConjunto(formatarEntradaMoeda(texto))}
+                  keyboardType="decimal-pad"
+                />
+              </View>
+              <Text style={{ color: Cores.textoSecundario, fontSize: 13, marginBottom: 15 }}>
+                {`Soma dos escolhidos: ${fmtReais(totalConjunto)}`}
+                {valorConjunto ? (rendimentoConjunto > 0 ? ` · Rendimento: ${fmtReais(rendimentoConjunto)}` : " · O saldo real precisa ser maior que a soma.") : ""}
+              </Text>
+              <View style={styles.modalButtons}>
+                <Button title="Cancelar" color="#999" onPress={() => setModalConjuntoVisivel(false)} />
+                <Button title={salvandoSaldoReal ? "Aguarde..." : "Registrar"} color="#2A9D8F" onPress={confirmarConjunto} disabled={salvandoSaldoReal} />
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
