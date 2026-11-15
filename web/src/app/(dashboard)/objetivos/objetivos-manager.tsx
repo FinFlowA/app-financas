@@ -15,6 +15,7 @@ import {
   editarObjetivo,
   movimentarObjetivo,
   registrarRendimentoObjetivo,
+  registrarRendimentoObjetivos,
 } from "./actions";
 import { CORES_OBJETIVO, ICONES_OBJETIVO } from "./goal-options";
 
@@ -40,6 +41,7 @@ type Painel =
   | { tipo: "movimentar"; objetivo: ObjetivoComPrevisao; operacao: "guardar" | "resgatar" }
   | { tipo: "historico"; objetivo: ObjetivoComPrevisao }
   | { tipo: "saldoReal"; objetivo: ObjetivoComPrevisao }
+  | { tipo: "saldoRealConjunto" }
   | null;
 
 type Acao = (formData: FormData) => Promise<{ erro: string | null }>;
@@ -430,6 +432,101 @@ function FormularioSaldoReal({
   );
 }
 
+// Mesma divisão feita no banco: proporcional ao saldo, centavos que sobram
+// vão para o objetivo de maior saldo. Usada só para a prévia.
+function dividirRendimento(saldos: { id: number; saldo: number }[], rendimento: number) {
+  const totalCents = saldos.reduce((t, item) => t + Math.round(item.saldo * 100), 0);
+  const rendimentoCents = Math.round(rendimento * 100);
+  if (totalCents <= 0 || rendimentoCents <= 0) return new Map<number, number>();
+  const partes = new Map(saldos.map((item) => [item.id, Math.floor(rendimentoCents * Math.round(item.saldo * 100) / totalCents)]));
+  const distribuido = [...partes.values()].reduce((t, v) => t + v, 0);
+  const maior = [...saldos].sort((a, b) => b.saldo - a.saldo || a.id - b.id)[0];
+  partes.set(maior.id, (partes.get(maior.id) ?? 0) + rendimentoCents - distribuido);
+  return new Map([...partes].map(([id, cents]) => [id, cents / 100]));
+}
+
+function FormularioSaldoRealConjunto({
+  objetivos,
+  pending,
+  executar,
+}: {
+  objetivos: ObjetivoComPrevisao[];
+  pending: boolean;
+  executar: Executar;
+}) {
+  const [selecionados, setSelecionados] = useState<number[]>(() => objetivos.map((item) => item.id));
+  const [saldoTexto, setSaldoTexto] = useState("");
+  const escolhidos = objetivos.filter((item) => selecionados.includes(item.id));
+  const totalEscolhido = escolhidos.reduce((t, item) => t + Number(item.saldo_atual), 0);
+  const saldoReal = saldoTexto ? Number(saldoTexto.replace(/\D/g, "")) / 100 : 0;
+  const rendimento = Math.round((saldoReal - totalEscolhido) * 100) / 100;
+  const partes = dividirRendimento(escolhidos.map((item) => ({ id: item.id, saldo: Number(item.saldo_atual) })), rendimento);
+  const hoje = hojeEmSaoPaulo();
+
+  return (
+    <form
+      action={(formData) => executar(registrarRendimentoObjetivos, formData, "Rendimento registrado e dividido entre os objetivos.")}
+      className="grid gap-4"
+    >
+      <p className="rounded-xl bg-surface-muted px-4 py-3 text-sm text-foreground-muted">
+        Marque os objetivos que estão no mesmo investimento e informe o saldo real dele.
+        A diferença vira rendimento e é dividida na proporção do que cada objetivo tem guardado.
+        Para tirar dinheiro, use Resgatar.
+      </p>
+      <fieldset className="grid gap-2">
+        <legend className="mb-1 text-xs font-bold uppercase tracking-wide text-foreground-muted">Objetivos no mesmo investimento</legend>
+        {objetivos.map((item) => {
+          const marcado = selecionados.includes(item.id);
+          const parte = partes.get(item.id);
+          return (
+            <label key={item.id} className={`flex cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${marcado ? "border-primary/50 bg-primary-soft" : "border-border bg-surface-muted"}`}>
+              <span className="flex items-center gap-3">
+                <input
+                  type="checkbox"
+                  name="goal_ids"
+                  value={item.id}
+                  checked={marcado}
+                  onChange={() => setSelecionados((atual) => marcado ? atual.filter((id) => id !== item.id) : [...atual, item.id])}
+                  className="h-4 w-4 accent-primary"
+                />
+                <span className="font-semibold text-foreground">{item.nome}</span>
+              </span>
+              <span data-private-value="true" className="text-right text-xs text-foreground-muted">
+                {formatarReais(Number(item.saldo_atual))}
+                {marcado && parte !== undefined && parte > 0 && (
+                  <strong className="block text-primary">+{formatarReais(parte)} → {formatarReais(Number(item.saldo_atual) + parte)}</strong>
+                )}
+              </span>
+            </label>
+          );
+        })}
+      </fieldset>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field titulo="Saldo real do investimento">
+          <CurrencyInput name="saldo_real" required onValueChange={setSaldoTexto} />
+        </Field>
+        <Field titulo="Data do saldo">
+          <input type="date" name="date" required max={hoje} defaultValue={hoje} className={inputClass()} />
+        </Field>
+      </div>
+      <p data-private-value="true" className="text-sm text-foreground-muted">
+        Soma dos escolhidos: <strong className="text-foreground">{formatarReais(totalEscolhido)}</strong>
+        {saldoTexto && (rendimento > 0
+          ? <> · Rendimento: <strong className="text-primary">{formatarReais(rendimento)}</strong></>
+          : <span className="text-red"> · O saldo real precisa ser maior que a soma.</span>)}
+      </p>
+      <div>
+        <button
+          disabled={pending || escolhidos.length === 0 || rendimento <= 0}
+          className="ff-focus rounded-full bg-primary px-5 py-3 text-sm font-extrabold text-white shadow-[0_10px_24px_rgba(22,150,110,0.2)] transition hover:bg-primary-dark disabled:opacity-50"
+        >
+          {pending ? "Salvando..." : "Registrar e dividir rendimento"}
+        </button>
+      </div>
+    </form>
+  );
+}
+
 export default function ObjetivosManager({
   objetivos,
   contas,
@@ -482,6 +579,8 @@ export default function ObjetivosManager({
       ? "Editar objetivo"
       : painel?.tipo === "historico"
         ? `Histórico · ${painel.objetivo.nome}`
+        : painel?.tipo === "saldoRealConjunto"
+          ? "Saldo real do investimento"
         : painel?.tipo === "saldoReal"
           ? `Atualizar saldo real · ${painel.objetivo.nome}`
         : painel?.tipo === "movimentar"
@@ -498,6 +597,18 @@ export default function ObjetivosManager({
             <h1 className="mt-2 text-3xl font-black tracking-tight sm:text-4xl">Objetivos</h1>
             <p className="mt-2 max-w-xl text-sm leading-relaxed text-white/72">Transforme planos em progresso visível e movimente cada reserva com segurança.</p>
           </div>
+          <div className="flex flex-wrap gap-2 self-start">
+          {ativos.length > 1 && (
+            <button
+              type="button"
+              aria-haspopup="dialog"
+              onClick={() => abrirPainel({ tipo: "saldoRealConjunto" })}
+              className="ff-focus inline-flex items-center gap-2 rounded-full border border-mint/50 bg-mint/15 px-5 py-3 text-sm font-extrabold text-mint shadow-xl transition hover:-translate-y-0.5 hover:bg-mint/25"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg>
+              Saldo real
+            </button>
+          )}
           <button
             type="button"
             onClick={() => abrirPainel({ tipo: "novo" })}
@@ -505,6 +616,7 @@ export default function ObjetivosManager({
           >
             + Novo objetivo
           </button>
+          </div>
         </div>
         <div className="relative mt-6 grid gap-2 sm:grid-cols-3">
           <div className="rounded-2xl border border-white/10 bg-black/15 p-4 backdrop-blur-sm"><p className="text-[10px] font-extrabold uppercase tracking-wider text-white/60">Total guardado</p><p data-private-value="true" className="mt-1 text-2xl font-black">{formatarReais(totalGuardado)}</p></div>
@@ -541,6 +653,9 @@ export default function ObjetivosManager({
                 {confirmar?.id === painel.objetivo.id ? <div role="alert" className={`rounded-xl border p-4 text-sm ${confirmar.acao === "delete_goal" ? "border-red/30 bg-red/10" : "border-orange/30 bg-orange/10"}`}><p className="mb-3 font-semibold text-foreground">{confirmar.acao === "delete_goal" ? "Excluir? Se houver saldo ou agendamentos, o objetivo será arquivado e o histórico preservado." : "Arquivar este objetivo?"}</p><div className="flex gap-2"><form action={(formData) => executar(alterarEstadoObjetivo, formData, "Objetivo atualizado.")}><RequestId /><input type="hidden" name="goal_id" value={painel.objetivo.id} /><input type="hidden" name="operacao" value={confirmar.acao} /><button disabled={pending} className={`min-h-11 rounded-full px-6 py-3 font-extrabold text-white ${confirmar.acao === "delete_goal" ? "bg-red" : "bg-orange"}`}>Confirmar</button></form><button type="button" onClick={() => setConfirmar(null)} className="min-h-11 rounded-full border border-border px-6 py-3 font-bold text-foreground-muted">Cancelar</button></div></div> : <div className="grid grid-cols-2 gap-3"><button type="button" onClick={() => setConfirmar({ id: painel.objetivo.id, acao: "archive_goal" })} className="ff-focus flex min-h-12 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-5 py-3 text-sm font-bold text-foreground-muted"><GoalActionIcon action="archive" /> Arquivar objetivo</button><button type="button" onClick={() => setConfirmar({ id: painel.objetivo.id, acao: "delete_goal" })} className="ff-focus flex min-h-12 items-center justify-center gap-2 rounded-xl border border-red/30 bg-red/10 px-5 py-3 text-sm font-bold text-red"><GoalActionIcon action="delete" /> Excluir objetivo</button></div>}
               </div>
             </div>
+          )}
+          {painel.tipo === "saldoRealConjunto" && (
+            <FormularioSaldoRealConjunto objetivos={ativos} pending={pending} executar={executar} />
           )}
           {painel.tipo === "saldoReal" && (
             <FormularioSaldoReal objetivo={painel.objetivo} pending={pending} executar={executar} />
