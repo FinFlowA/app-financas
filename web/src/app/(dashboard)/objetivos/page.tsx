@@ -31,6 +31,7 @@ export default async function ObjetivosPage() {
     { data: contasData, error: contasErro },
     { data: transacoesData, error: transacoesErro },
     partnershipResult,
+    rendimentosResult,
   ] = await Promise.all([
     supabase.from("caixinhas")
       .select("id, user_id, nome, meta_valor, saldo_atual, cor, icone, compartilhado, data_prazo, arquivado, version")
@@ -48,7 +49,15 @@ export default async function ObjetivosPage() {
       .eq("status", "aceito")
       .limit(1)
       .maybeSingle(),
+    supabase.from("caixinha_rendimentos")
+      .select("id, caixinha_id, valor, data")
+      .order("data"),
   ]);
+  // Se a tabela de rendimentos ainda não existir (migration pendente), a página
+  // continua funcionando sem eles.
+  const rendimentos = rendimentosResult.error
+    ? []
+    : (rendimentosResult.data ?? []) as { id: number; caixinha_id: number; valor: number; data: string }[];
 
   if (objetivosErro || contasErro || transacoesErro) {
     throw new Error("Não foi possível carregar seus objetivos agora.");
@@ -77,11 +86,13 @@ export default async function ObjetivosPage() {
     const projetarAte = (limite: string) => Number(objetivo.saldo_atual) + pendentes
       .filter((item) => item.data_vencimento <= limite)
       .reduce((total, item) => total + (ehResgate(item.descricao) ? -Number(item.valor) : Number(item.valor)), 0);
+    const rendimentosDoObjetivo = rendimentos.filter((item) => item.caixinha_id === objetivo.id);
     return {
       ...objetivo,
+      rendimentoTotal: rendimentosDoObjetivo.reduce((total, item) => total + Number(item.valor), 0),
       previstoMeta: objetivo.data_prazo ? Math.max(0, projetarAte(objetivo.data_prazo)) : null,
       previstoFimAno: Math.max(0, projetarAte(fimDoAno)),
-      movimentos: movimentos.filter((item) => item.status === "paga").map((item) => ({
+      movimentos: [...movimentos.filter((item) => item.status === "paga").map((item) => ({
         id: item.id,
         descricao: item.descricao
           .replace(/^\[Transf\.\]\s*/, "")
@@ -91,7 +102,14 @@ export default async function ObjetivosPage() {
         operacao: ehResgate(item.descricao) ? "resgatar" as const : "guardar" as const,
         data: item.data_realizacao || item.data_vencimento,
         status: item.status,
-      })),
+      })), ...rendimentosDoObjetivo.map((item) => ({
+        id: -item.id,
+        descricao: "Rendimento",
+        valor: Number(item.valor),
+        operacao: "rendimento" as const,
+        data: item.data,
+        status: "paga" as const,
+      }))].sort((a, b) => b.data.localeCompare(a.data)),
     };
   });
 
