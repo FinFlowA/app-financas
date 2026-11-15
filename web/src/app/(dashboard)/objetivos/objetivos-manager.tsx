@@ -588,7 +588,7 @@ export default function ObjetivosManager({
                 )}
               </div>
               <div className="relative mb-2 mt-4 flex items-end justify-between gap-3 rounded-xl bg-surface-muted p-3">
-                <div><span className="block text-[10px] font-extrabold uppercase tracking-[.12em] text-foreground-muted">Guardado</span><strong data-private-value="true" className="text-2xl font-black tracking-tight text-foreground">{formatarReais(Number(objetivo.saldo_atual))}</strong>{objetivo.rendimentoTotal > 0 && <span data-private-value="true" className="block text-[11px] font-bold text-primary">+{formatarReais(objetivo.rendimentoTotal)} de rendimento</span>}<button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "saldoReal", objetivo })} className="ff-focus mt-1 block text-[11px] font-bold text-foreground-muted underline-offset-2 transition hover:text-primary hover:underline">Atualizar saldo real</button></div>
+                <div><span className="block text-[10px] font-extrabold uppercase tracking-[.12em] text-foreground-muted">Guardado</span><strong data-private-value="true" className="text-2xl font-black tracking-tight text-foreground">{formatarReais(Number(objetivo.saldo_atual))}</strong>{objetivo.rendimentoTotal > 0 && <span data-private-value="true" className="block text-[11px] font-bold text-primary">+{formatarReais(objetivo.rendimentoTotal)} de rendimento</span>}</div>
                 <div className="text-right"><strong className="block text-sm text-foreground">{Math.round(percentual)}%</strong><span className="text-[11px] text-foreground-muted">Meta {formatarReais(meta)}</span></div>
               </div>
               <div className="relative h-2.5 overflow-hidden rounded-full bg-surface-muted">
@@ -611,12 +611,15 @@ export default function ObjetivosManager({
                 )}
                 <span data-private-value="true" className="rounded-lg border border-border bg-surface-muted px-3 py-2"><small className="block text-[10px] uppercase tracking-wide">Fim do ano</small><strong className="text-foreground">{formatarReais(objetivo.previstoFimAno)}</strong></span>
               </div>
-              <div role="group" aria-label={`Ações do objetivo ${objetivo.nome}`} className="relative mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div role="group" aria-label={`Ações do objetivo ${objetivo.nome}`} className="relative mt-4 grid grid-cols-2 gap-2 lg:grid-cols-4">
                 <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "movimentar", objetivo, operacao: "guardar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl bg-primary px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_8px_20px_rgba(22,150,110,0.2)] transition hover:-translate-y-0.5 hover:bg-primary-dark hover:shadow-[0_12px_24px_rgba(22,150,110,0.26)]">
                   <GoalActionIcon action="save" /> Guardar
                 </button>
                 <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "movimentar", objetivo, operacao: "resgatar" })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-orange/35 bg-orange/10 px-3 py-2.5 text-xs font-extrabold text-orange transition hover:-translate-y-0.5 hover:border-orange/55 hover:bg-orange/15">
                   <GoalActionIcon action="withdraw" /> Resgatar
+                </button>
+                <button type="button" aria-haspopup="dialog" onClick={() => abrirPainel({ tipo: "saldoReal", objetivo })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-mint/40 bg-mint/10 px-3 py-2.5 text-xs font-extrabold text-mint transition hover:-translate-y-0.5 hover:border-mint/70 hover:bg-mint/20">
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8" /><path d="M14 7h7v7" /></svg> Saldo real
                 </button>
                 <button type="button" aria-expanded={historicoAberto} onClick={() => historicoAberto ? setPainel(null) : abrirPainel({ tipo: "historico", objetivo })} className="ff-focus flex min-h-11 items-center justify-center gap-2 rounded-xl border border-border bg-surface-muted px-3 py-2.5 text-xs font-extrabold text-foreground transition hover:-translate-y-0.5 hover:border-primary/35 hover:bg-primary-soft hover:text-primary">
                   <GoalActionIcon action="history" /> Histórico

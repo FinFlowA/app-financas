@@ -966,6 +966,18 @@ export default function CaixinhasScreen() {
                     </View>
                   );
                 })()}
+
+                {!bloqueado && (
+                  <TouchableOpacity
+                    onPress={() => abrirSaldoReal(caixa)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Atualizar saldo real de ${caixa.nome}`}
+                    style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", marginTop: 10, paddingVertical: 9, borderRadius: 10, borderWidth: 1, borderColor: "#2A9D8F66", backgroundColor: "#2A9D8F1A" }}
+                  >
+                    <MaterialIcons name="trending-up" size={16} color="#2A9D8F" style={{ marginRight: 6 }} />
+                    <Text style={{ color: "#2A9D8F", fontWeight: "800", fontSize: 13 }}>Atualizar saldo real</Text>
+                  </TouchableOpacity>
+                )}
               </TouchableOpacity>
             );
           })
